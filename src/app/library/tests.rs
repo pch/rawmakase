@@ -6169,3 +6169,61 @@ fn the_loupe_keeps_its_photo_said_removed_but_still_in_the_catalog() -> Result<(
     assert_eq!(library.selected(), Some(b));
     Ok(())
 }
+
+/// A neighbour the Loupe prepared ahead and had not taken yet when its file
+/// was saved again is of the version before: dropped, and the new version
+/// shown when it is chosen.
+#[test]
+fn a_neighbour_prepared_before_a_save_is_not_shown() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().canonicalize()?.join("photos");
+    std::fs::create_dir(&folder)?;
+    image::RgbImage::from_pixel(300, 200, image::Rgb([200, 120, 40])).save(folder.join("a.jpg"))?;
+    image::RgbImage::from_pixel(300, 200, image::Rgb([40, 120, 200])).save(folder.join("b.jpg"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    let id = |library: &Library, name: &str| {
+        library
+            .session
+            .photos()
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let (a, b) = (id(&library, "a.jpg"), id(&library, "b.jpg"));
+    library.select(Some(a));
+    library.open_loupe();
+    let frame = |library: &mut Library| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200., 800.),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            library.grid(ui, &mut Default::default(), true, None, Default::default());
+        });
+        output.textures_delta.clear();
+    };
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    // b is prepared ahead; its result comes in, not taken by a frame yet.
+    frame(&mut library);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    // b saved again, upright now.
+    let b_path = folder.join("b.jpg");
+    image::RgbImage::from_pixel(200, 300, image::Rgb([40, 120, 200])).save(&b_path)?;
+    library.file_rewritten(&b_path);
+    library.select(Some(b));
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    frame(&mut library);
+    let [w, h] = library.loupe.texture_size().expect("shown");
+    assert!(h > w, "the version saved, upright: {w} × {h}");
+    Ok(())
+}

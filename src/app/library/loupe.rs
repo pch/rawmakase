@@ -91,6 +91,9 @@ pub(super) struct Loupe {
     display: DisplayProfile,
     /// The file shown was saved again: made again, the one shown staying.
     stale: bool,
+    /// Counts what voids the neighbours prepared ahead (a save, a reset), so
+    /// one prepared before is dropped when it comes.
+    ahead_generation: u64,
 }
 impl Loupe {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -150,6 +153,7 @@ impl Loupe {
             unreported: None,
             display: DisplayProfile::default(),
             stale: false,
+            ahead_generation: 0,
         }
     }
     /// A new request: the earlier one's result, and its failure not yet
@@ -213,7 +217,7 @@ impl Loupe {
         self.ahead_cancel = Default::default();
         self.ahead_requested = Some(wanted.clone());
         self.ahead.submit(Job {
-            ticket: 0,
+            ticket: self.ahead_generation,
             ahead: Some(wanted.clone()),
             path: photo.path.clone(),
             edge: wanted.2,
@@ -237,14 +241,11 @@ impl Loupe {
     /// zoomed region, decoded from the version before, go.
     pub(super) fn renew(&mut self, path: &std::path::Path) {
         self.prefetched.retain(|(key, _)| key.1 != path);
-        if self
-            .ahead_requested
-            .as_ref()
-            .is_some_and(|key| key.1 == path)
-        {
-            self.ahead_cancel.store(true, Ordering::Relaxed);
-            self.ahead_requested = None;
-        }
+        // A neighbour on its way, or come and not taken yet, may be of the
+        // version before: dropped, and prepared again.
+        self.ahead_cancel.store(true, Ordering::Relaxed);
+        self.ahead_requested = None;
+        self.ahead_generation += 1;
         if self.requested.as_ref().is_some_and(|key| key.1 == path) {
             self.stale = true;
             self.regions.release();
@@ -270,6 +271,7 @@ impl Loupe {
         self.cancel.store(true, Ordering::Relaxed);
         self.ahead_cancel.store(true, Ordering::Relaxed);
         self.ahead_requested = None;
+        self.ahead_generation += 1;
         self.prefetched.clear();
         self.regions.release();
         self.requested = None;
@@ -287,6 +289,9 @@ impl Loupe {
         self.regions.poll(ctx);
         while let Ok(done) = self.results.try_recv() {
             if let Some(key) = done.ahead {
+                if done.ticket != self.ahead_generation {
+                    continue;
+                }
                 if let Ok(image) = done.result {
                     self.prefetched.push_back((key, image));
                     let bytes = |p: &std::collections::VecDeque<(Key, Prepared)>| {

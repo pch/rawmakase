@@ -74,6 +74,8 @@ pub(crate) enum Event {
     /// Files sent to an editor may have changed: the system said so, or the
     /// slow look found it.
     EditInChanged(Vec<PathBuf>),
+    /// Files sent to an editor whose folder can't be watched.
+    EditInUnwatched(Vec<PathBuf>),
     /// Edit In's look at the files sent to an editor came back.
     EditInLooked(Box<crate::app::edit_in::Looked>),
     /// Edit In's editor was started, or could not be.

@@ -472,8 +472,7 @@ fn followed_files_at_rest_ask_for_no_pass() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A save is told without any help: by the system's event for the folder,
-/// or else by the slow look within a few seconds.
+/// A save is told without any help, by the system's event for the folder.
 #[test]
 fn a_save_is_told_by_the_watch() -> anyhow::Result<()> {
     let (dir, mut e, _) = editor_with_catalog(&[])?;
@@ -483,6 +482,9 @@ fn a_save_is_told_by_the_watch() -> anyhow::Result<()> {
     e.launch_editor(dir.path(), &file, None, None);
     let ctx = e.context.clone();
     e.watch_sent(&ctx);
+    // The watching thread sets the watch up on its own; an editor's save
+    // comes later than this.
+    std::thread::sleep(Duration::from_millis(1000));
     // A save by deleting and writing again, as some editors do.
     std::fs::remove_file(&file)?;
     std::fs::write(&file, b"saved again by the editor")?;
@@ -618,9 +620,9 @@ fn edit_original_opens_a_shared_file_once() -> anyhow::Result<()> {
 fn a_copy_is_named_after_its_original_with_its_own_extension() -> anyhow::Result<()> {
     let dir = tempfile::tempdir()?;
     let source = dir.path().join("IMG_1.JPG");
-    assert_eq!(copy_name(&source), dir.path().join("IMG_1-Edit.JPG"));
+    assert_eq!(copy_name(&source, &[]), dir.path().join("IMG_1-Edit.JPG"));
     std::fs::write(dir.path().join("IMG_1-Edit.JPG"), b"taken")?;
-    assert_eq!(copy_name(&source), dir.path().join("IMG_1-Edit-2.JPG"));
+    assert_eq!(copy_name(&source, &[]), dir.path().join("IMG_1-Edit-2.JPG"));
     Ok(())
 }
 
@@ -1038,5 +1040,246 @@ fn the_copies_are_selected_in_place_of_their_originals() -> anyhow::Result<()> {
     wanted.sort();
     assert_eq!(selected, wanted);
     assert_eq!(library.selected(), Some(copies[1]));
+    Ok(())
+}
+
+/// Opened again in its editor after a save not taken up yet: the version it
+/// is followed from stays the one the catalog's edit is bound to, so the
+/// save is still taken up and the edit follows it.
+#[test]
+fn opening_a_file_again_keeps_the_version_it_is_followed_from() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    e.edit_in.launched = Some(Vec::new());
+    let path = e
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    let was = Identity::read(&path)?;
+    let recipe = crate::model::recipe::Recipe {
+        exposure: 0.5,
+        ..Default::default()
+    };
+    e.library.as_mut().unwrap().session.save_edit(
+        ids[0],
+        &path,
+        &was,
+        &recipe,
+        &Default::default(),
+        crate::catalog::HistoryUpdate::Keep,
+    )?;
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    std::fs::write(&path, b"saved again by the editor")?;
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    assert_eq!(e.edit_in.sent[0].identity, was);
+    looks(&mut e);
+    assert_eq!(e.edit_in.sent[0].identity, Identity::read(&path)?);
+    let library = e.library.as_ref().unwrap();
+    let saved = library.session.catalog().load_edit(ids[0], &path)?;
+    assert_eq!(saved.map(|s| s.recipe.exposure), Some(0.5));
+    Ok(())
+}
+
+/// A save taken up while the photo shown can't be opened again yet (the file
+/// changed once more before its edit could be saved) is taken up all the
+/// same; the next save follows on from it, and the change not saved in
+/// Develop is kept.
+#[test]
+fn a_save_followed_by_another_before_the_reopen_keeps_every_edit() -> anyhow::Result<()> {
+    let (_dir, mut e, id, tiff) = unfocused_editor_with_tiff("IMG_1-Edit.tif")?;
+    e.develop_catalog_photo(id);
+    let loaded = |e: &Editor| !e.document.loading() && e.document.full().is_some_and(|f| !f.fast);
+    assert!(frames_until(&mut e, loaded));
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.launch_editor(tiff.parent().unwrap(), &tiff, Some(&catalog), Some(id));
+    e.change_edit(None, |r| r.exposure = 0.7);
+    // B saved and settled; C lands before B is taken up.
+    image::RgbImage::from_pixel(72, 54, image::Rgb([1, 2, 3])).save(&tiff)?;
+    let b = Identity::read(&tiff)?;
+    image::RgbImage::from_pixel(80, 60, image::Rgb([4, 5, 6])).save(&tiff)?;
+    let announced = e.edit_in.sent[0].announced;
+    e.edit_in.sent[0].pending = true;
+    e.sent_looked(Looked {
+        looks: vec![(tiff.clone(), announced, Look::Settled(b.clone()))],
+        at: Instant::now(),
+    });
+    assert_eq!(e.edit_in.sent[0].identity, b, "B taken up");
+    assert!(e.edit_in.sent[0].reopen, "its reopening waits");
+    // C is announced and taken up from B.
+    let _ =
+        e.tx.send(crate::app::worker::Event::EditInChanged(vec![tiff.clone()]));
+    looks(&mut e);
+    assert!(frames_until(&mut e, |e| loaded(e)
+        && e.document.full().is_some_and(|f| f.width == 80)));
+    assert_eq!(e.edit_in.sent[0].identity, Identity::read(&tiff)?);
+    assert_eq!(e.document.edit.recipe().exposure, 0.7);
+    assert!(!e.document.edit.save_state().is_protected());
+    let library = e.library.as_ref().unwrap();
+    let saved = library.session.catalog().load_edit(id, &tiff)?;
+    assert_eq!(saved.map(|s| s.recipe.exposure), Some(0.7));
+    Ok(())
+}
+
+/// A name taken by a link that leads nowhere is passed over, not tried
+/// again and again.
+#[cfg(unix)]
+#[test]
+fn a_copy_passes_over_a_name_a_dangling_link_takes() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    let path = e
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    std::os::unix::fs::symlink(
+        dir.path().join("nowhere"),
+        path.with_file_name("IMG_1-Edit.JPG"),
+    )?;
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.edit_in.launched = Some(Vec::new());
+    e.edit_in_as(Asking {
+        catalog,
+        ids: vec![ids[0]],
+        plain: vec![(ids[0], path.clone())],
+        editor: dir.path().to_path_buf(),
+        how: How::Copy,
+        adjusted: false,
+    });
+    settle(&mut e);
+    let launched = &e.edit_in.launched.as_ref().unwrap()[0].1;
+    assert_eq!(*launched, path.with_file_name("IMG_1-Edit-2.JPG"));
+    assert_eq!(
+        copy_name(&path, &[]),
+        path.with_file_name("IMG_1-Edit-3.JPG")
+    );
+    Ok(())
+}
+
+/// A look started before a change was announced can't settle it, and an
+/// earlier launch's failure doesn't end a later launch's following.
+#[test]
+fn stale_results_leave_newer_news_standing() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    e.edit_in.launched = Some(Vec::new());
+    let path = e
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    let before = e.edit_in.sent[0].announced;
+    e.sent_changed(vec![path.clone()]);
+    e.sent_looked(Looked {
+        looks: vec![(path.clone(), before, Look::Same)],
+        at: Instant::now(),
+    });
+    assert!(e.edit_in.sent[0].pending, "the newer change stands");
+    let first = e.edit_in.sent[0].launch;
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    e.editor_launched(Launched {
+        file: path.clone(),
+        launch: first,
+        program: "Editor".into(),
+        result: Err("gone".into()),
+    });
+    assert_eq!(e.edit_in.sent.len(), 1, "still followed");
+    Ok(())
+}
+
+/// The watching thread ends, dropping the system watcher, once asked; a
+/// folder on this computer's own drive gets no slow look.
+#[test]
+fn the_watch_ends_on_its_own_thread() -> anyhow::Result<()> {
+    let (dir, mut e, _) = editor_with_catalog(&[])?;
+    assert!(!watch::looks_at(&dir.path().canonicalize()?));
+    let file = dir.path().canonicalize()?.join("a-Edit.tif");
+    std::fs::write(&file, b"rendered")?;
+    e.edit_in.launched = Some(Vec::new());
+    e.launch_editor(dir.path(), &file, None, None);
+    let ctx = e.context.clone();
+    e.watch_sent(&ctx);
+    let thread = e.edit_in.stop_watching().expect("a thread");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !thread.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(thread.is_finished());
+    Ok(())
+}
+
+/// In a collection the copies aren't in, the copy of the active photo is
+/// shown and the selection kept, so each copy takes its original's place.
+#[test]
+fn copies_keep_the_selection_in_a_collection() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG", "IMG_2.JPG"])?;
+    let library = e.library.as_mut().unwrap();
+    let trip = library.create_collection(false, "Trip", None, &ids, false)?;
+    library.select_collection(trip);
+    library.select(Some(ids[0]));
+    library.select_all();
+    library.make_active(ids[0]);
+    let paths: Vec<PathBuf> = ids
+        .iter()
+        .map(|id| library.photo(*id).unwrap().path.clone())
+        .collect();
+    let catalog = library.session.catalog().location().clone();
+    e.edit_in.launched = Some(Vec::new());
+    e.edit_in_as(Asking {
+        catalog,
+        ids: ids.clone(),
+        plain: vec![(ids[0], paths[0].clone()), (ids[1], paths[1].clone())],
+        editor: dir.path().to_path_buf(),
+        how: How::Copy,
+        adjusted: false,
+    });
+    settle(&mut e);
+    let copies: Vec<PhotoId> = ["IMG_1-Edit.JPG", "IMG_2-Edit.JPG"]
+        .iter()
+        .map(|name| e.catalog_photo_at(&paths[0].with_file_name(name)).unwrap())
+        .collect();
+    let library = e.library.as_ref().unwrap();
+    assert_eq!(library.selected(), Some(copies[0]));
+    let mut selected = library.selected_ids();
+    selected.sort();
+    assert_eq!(selected, copies);
     Ok(())
 }

@@ -486,8 +486,8 @@ const WORK: &[Row] = &[
         pauses_checksums: false,
         stop: Some(|e, _| e.stop_folder_sync().into_iter().collect()),
     },
-    // Following Edit In's files: nothing shows; it costs nothing while they
-    // rest, and nothing waits for it.
+    // Following Edit In's files: nothing shows, and it costs nothing while
+    // they rest; its thread drops the system watcher and ends.
     Row {
         kind: Kind::EditInWatch,
         running: None,
@@ -495,10 +495,7 @@ const WORK: &[Row] = &[
         status: None,
         slows_previews: false,
         pauses_checksums: false,
-        stop: Some(|e, _| {
-            e.edit_in.stop_watching();
-            Vec::new()
-        }),
+        stop: Some(|e, _| vec![task::Stopping::new(e.edit_in.stop_watching())]),
     },
     // Their own spinner and "Preparing previews…"/"Rendering …", beside Auto
     // Advance in the Library and in Develop's status row.

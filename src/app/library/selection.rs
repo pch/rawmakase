@@ -95,7 +95,11 @@ impl Library {
             .iter()
             .any(|i| self.session.photos()[*i].id == edit);
         if !shown && self.selection.active == Some(edit) {
+            // Shown as the active photo, the selection kept: the photos a
+            // later copy takes the place of must still be in it.
+            let kept = self.selection.clone();
             self.show(edit);
+            self.selection = kept;
         }
     }
     /// Makes `id` active, keeping the selection when it is part of it.

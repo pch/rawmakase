@@ -64,6 +64,8 @@ pub(in crate::app) struct EditIn {
     looking: bool,
     /// What tells of their changes, and the files it follows now.
     watch: watch::Watch,
+    /// Counts the launches.
+    launches: u64,
     watched: Vec<(PathBuf, crate::storage::Stamp)>,
     /// The question for photos the editor can open as they are.
     pub(in crate::app) asking: Option<Asking>,
@@ -150,6 +152,14 @@ pub(in crate::app) struct Sent {
     /// How many times in a row taking up its change failed for a reason that
     /// may clear; said once.
     retries: u32,
+    /// Counts the changes announced, so a look started before the latest
+    /// one can't settle it.
+    announced: u64,
+    /// Its latest launch, so an earlier launch's failure ends nothing.
+    launch: u64,
+    /// Its version was taken up, but the photo shown is still to be opened
+    /// again from it.
+    reopen: bool,
 }
 
 /// How long a file may be missing while its change is looked at before the
@@ -196,13 +206,16 @@ pub(in crate::app) enum Look {
 /// What the look worker sends back: each file looked at, what it found and
 /// when the look started.
 pub(crate) struct Looked {
-    looks: Vec<(PathBuf, Look)>,
+    /// Each file, the change it was looked at for ([`Sent::announced`]), and
+    /// what the look found.
+    looks: Vec<(PathBuf, u64, Look)>,
     at: std::time::Instant,
 }
 
-/// What the launching worker sends back for `file`.
+/// What the launching worker sends back for `file`'s launch `launch`.
 pub(crate) struct Launched {
     file: PathBuf,
+    launch: u64,
     program: String,
     result: Result<(), String>,
 }
@@ -223,6 +236,7 @@ impl EditIn {
             due: None,
             looking: false,
             watch: Default::default(),
+            launches: 0,
             watched: Vec::new(),
             asking: None,
             #[cfg(test)]
@@ -246,11 +260,11 @@ impl EditIn {
             .collect();
         self.editors = editors;
     }
-    /// Stops following the files sent out, at exit: the system watcher's
-    /// thread ends as it is dropped, the slow look's within its next wait.
-    pub(in crate::app) fn stop_watching(&mut self) {
-        self.watch.stop();
+    /// Stops following the files sent out, at exit: the watching thread
+    /// drops the system watcher and ends; its handle, to wait for.
+    pub(in crate::app) fn stop_watching(&mut self) -> Option<std::thread::JoinHandle<()>> {
         self.watched.clear();
+        self.watch.stop()
     }
     /// The color space's name, as the session saves it.
     pub(in crate::app) fn space_name(&self) -> String {
@@ -608,10 +622,18 @@ impl Editor {
         photo: Option<PhotoId>,
     ) {
         let program = crate::platform::open_with::program_name(editor);
-        match Identity::read(file) {
-            Ok(identity) => {
-                self.edit_in.sent.retain(|s| s.path != file);
-                self.edit_in.sent.push(Sent {
+        self.edit_in.launches += 1;
+        let launch = self.edit_in.launches;
+        // Opened again while followed: the version it is followed from stays,
+        // as the catalog's edit is bound to it until a save is taken up; a
+        // save not taken up yet is looked at.
+        if let Some(sent) = self.edit_in.sent.iter_mut().find(|s| s.path == file) {
+            sent.launch = launch;
+            sent.pending = true;
+            sent.announced += 1;
+        } else {
+            match Identity::read(file) {
+                Ok(identity) => self.edit_in.sent.push(Sent {
                     path: file.to_path_buf(),
                     identity,
                     catalog: catalog.cloned(),
@@ -620,14 +642,17 @@ impl Editor {
                     pending: false,
                     missing: None,
                     retries: 0,
-                });
-            }
-            Err(e) => {
-                self.messages.warn(format!(
-                    "{} was not opened in {program}: {e:#}",
-                    file_name(file)
-                ));
-                return;
+                    announced: 0,
+                    launch,
+                    reopen: false,
+                }),
+                Err(e) => {
+                    self.messages.warn(format!(
+                        "{} was not opened in {program}: {e:#}",
+                        file_name(file)
+                    ));
+                    return;
+                }
             }
         }
         #[cfg(test)]
@@ -648,6 +673,7 @@ impl Editor {
                     .map_err(|e| format!("{e:#}"));
                 let _ = tx.send(Event::EditInLaunched(Box::new(Launched {
                     file,
+                    launch,
                     program,
                     result,
                 })));
@@ -655,6 +681,7 @@ impl Editor {
             move |tx, why| {
                 let _ = tx.send(Event::EditInLaunched(Box::new(Launched {
                     file: failed_file,
+                    launch,
                     program: failed_program,
                     result: Err(why),
                 })));
@@ -671,7 +698,9 @@ impl Editor {
                 .messages
                 .done(format!("Opened {name} in {}", launched.program)),
             Err(why) => {
-                self.edit_in.sent.retain(|s| s.path != launched.file);
+                self.edit_in
+                    .sent
+                    .retain(|s| s.path != launched.file || s.launch != launched.launch);
                 self.messages.warn(format!(
                     "{name} was saved, but not opened in {}: {why}",
                     launched.program
@@ -708,16 +737,8 @@ impl Editor {
             .map(|s| (s.path.clone(), s.identity.stamp()))
             .collect();
         if followed != self.edit_in.watched {
-            let unwatched = self.edit_in.watch.follow(&followed, &self.tx, ctx);
-            for path in &unwatched {
-                self.messages.warn(format!(
-                    "{}: its folder can't be watched, so saves to it are not followed",
-                    file_name(path)
-                ));
-            }
-            self.edit_in.sent.retain(|s| !unwatched.contains(&s.path));
+            self.edit_in.watch.follow(&followed, &self.tx, ctx);
             self.edit_in.watched = followed;
-            self.edit_in.watched.retain(|(p, _)| !unwatched.contains(p));
         }
         if !self.edit_in.sent.iter().any(|s| s.pending) {
             self.edit_in.due = None;
@@ -739,7 +760,7 @@ impl Editor {
             .sent
             .iter()
             .filter(|s| s.pending)
-            .map(|s| (s.path.clone(), s.identity.stamp(), s.seen))
+            .map(|s| (s.path.clone(), s.announced, s.identity.stamp(), s.seen))
             .collect();
         task::spawn(
             self.tx.clone(),
@@ -747,9 +768,9 @@ impl Editor {
             move |tx| {
                 let looks = files
                     .into_iter()
-                    .map(|(path, baseline, seen)| {
+                    .map(|(path, announced, baseline, seen)| {
                         let found = look(&path, baseline, seen, now);
-                        (path, found)
+                        (path, announced, found)
                     })
                     .collect();
                 let _ = tx.send(Event::EditInLooked(Box::new(Looked { looks, at: now })));
@@ -769,9 +790,24 @@ impl Editor {
         for sent in &mut self.edit_in.sent {
             if paths.contains(&sent.path) {
                 sent.pending = true;
+                sent.announced += 1;
             }
         }
         self.edit_in.due = Some(std::time::Instant::now());
+    }
+
+    /// The watching thread could not watch these files' folders: they are no
+    /// longer followed.
+    pub(in crate::app) fn sent_unwatched(&mut self, paths: Vec<PathBuf>) {
+        for path in &paths {
+            if self.edit_in.sent.iter().any(|s| s.path == *path) {
+                self.messages.warn(format!(
+                    "{}: its folder can't be watched, so saves to it are not followed",
+                    file_name(path)
+                ));
+            }
+        }
+        self.edit_in.sent.retain(|s| !paths.contains(&s.path));
     }
 
     /// Looks again at `at`, or sooner when already due.
@@ -787,11 +823,17 @@ impl Editor {
     /// way, looked at again until [`MISSING`] has passed.
     pub(in crate::app) fn sent_looked(&mut self, looked: Looked) {
         self.edit_in.looking = false;
-        for (path, found) in looked.looks {
+        for (path, announced, found) in looked.looks {
             let Some(index) = self.edit_in.sent.iter().position(|s| s.path == path) else {
                 continue;
             };
+            // A change announced since the look started is looked at again.
+            if self.edit_in.sent[index].announced != announced {
+                self.look_again(std::time::Instant::now());
+                continue;
+            }
             match found {
+                Look::Same if self.edit_in.sent[index].reopen => self.reopen_sent(index),
                 Look::Same => {
                     let sent = &mut self.edit_in.sent[index];
                     (sent.seen, sent.missing, sent.pending) = (None, None, false);
@@ -816,11 +858,16 @@ impl Editor {
                 Look::Settled(now) => {
                     let sent = self.edit_in.sent[index].clone();
                     match self.follow_save(&sent, &now) {
-                        Ok(()) => {
+                        // The version is taken up as soon as the catalog's
+                        // edit and the document follow it; opening the photo
+                        // shown again is apart, so a later save follows this
+                        // version whether or not that has happened.
+                        Ok(shown) => {
                             let sent = &mut self.edit_in.sent[index];
                             sent.identity = now;
-                            (sent.seen, sent.missing, sent.pending) = (None, None, false);
-                            sent.retries = 0;
+                            (sent.seen, sent.missing) = (None, None);
+                            sent.reopen = shown;
+                            self.reopen_sent(index);
                         }
                         Err(NotFollowed::Never(why)) => {
                             self.edit_in.sent.remove(index);
@@ -830,22 +877,8 @@ impl Editor {
                             ));
                         }
                         Err(NotFollowed::Later(why)) => {
-                            let sent = &mut self.edit_in.sent[index];
-                            sent.retries += 1;
-                            sent.seen = Some((now.stamp(), looked.at));
-                            if sent.retries == 1 {
-                                self.messages.warn(format!(
-                                    "{} was saved again, but is not updated yet: {why}",
-                                    file_name(&path)
-                                ));
-                            }
-                            if sent.retries < RETRIES {
-                                self.look_again(std::time::Instant::now() + RETRY);
-                            } else {
-                                // Waits for the next save to try again.
-                                sent.pending = false;
-                                sent.retries = 0;
-                            }
+                            self.edit_in.sent[index].seen = Some((now.stamp(), looked.at));
+                            self.not_followed_yet(index, &why);
                         }
                     }
                 }
@@ -853,12 +886,53 @@ impl Editor {
         }
     }
 
+    /// Ends taking up the change of the `index`th file sent out: the photo
+    /// shown, when it is that file, opened again from it.
+    fn reopen_sent(&mut self, index: usize) {
+        let path = self.edit_in.sent[index].path.clone();
+        let reopened = !self.edit_in.sent[index].reopen
+            || self.document.path.as_deref() != Some(path.as_path())
+            || self.load_raw(path.clone(), self.document.catalog_photo);
+        if !reopened {
+            self.not_followed_yet(index, "the photo open could not be opened again");
+            return;
+        }
+        let sent = &mut self.edit_in.sent[index];
+        (sent.pending, sent.reopen, sent.retries) = (false, false, 0);
+        self.messages.note(format!(
+            "{} was saved again, and is updated",
+            file_name(&path)
+        ));
+    }
+
+    /// The change of the `index`th file sent out could not be taken up, for
+    /// a reason that may clear: tried again after [`RETRY`], [`RETRIES`] times
+    /// at most, then at its next save; said once.
+    fn not_followed_yet(&mut self, index: usize, why: &str) {
+        let sent = &mut self.edit_in.sent[index];
+        sent.retries += 1;
+        let first = sent.retries == 1;
+        if sent.retries < RETRIES {
+            self.look_again(std::time::Instant::now() + RETRY);
+        } else {
+            sent.pending = false;
+            sent.retries = 0;
+        }
+        if first {
+            self.messages.warn(format!(
+                "{} was saved again, but is not updated yet: {why}",
+                file_name(&self.edit_in.sent[index].path)
+            ));
+        }
+    }
+
     /// Takes up `now`, a version of `sent`'s file another program saved:
     /// while its catalog is open, nothing else holds the catalog and its
     /// photo is still this file, the photo's edit (made for the version
-    /// before) follows it, its previews are made again and, shown in Develop
-    /// or the Loupe, it opens again. Why not, otherwise.
-    fn follow_save(&mut self, sent: &Sent, now: &Identity) -> Result<(), NotFollowed> {
+    /// before) follows it, as does the document's when it is the photo shown,
+    /// and its previews are made again. Whether the photo shown is it, to open
+    /// again; why not, otherwise.
+    fn follow_save(&mut self, sent: &Sent, now: &Identity) -> Result<bool, NotFollowed> {
         if self.activity.is_busy() {
             return Err(NotFollowed::Later("the catalog is busy".into()));
         }
@@ -900,28 +974,18 @@ impl Editor {
                 Some(id) => ids.contains(&id),
                 None => sent.photo.is_none(),
             };
-        if shown {
-            // The edit open was made for the version before; it is now this
-            // one's, as the catalog's is.
-            if self
+        // The edit open was made for the version before; it is now this
+        // one's, as the catalog's is.
+        if shown
+            && self
                 .document
                 .file
                 .as_ref()
                 .is_some_and(|f| f.same_photo(was))
-            {
-                self.document.file = Some(now.clone());
-            }
-            if !self.load_raw(path.clone(), self.document.catalog_photo) {
-                return Err(NotFollowed::Later(
-                    "the photo open could not be opened again".into(),
-                ));
-            }
+        {
+            self.document.file = Some(now.clone());
         }
-        self.messages.note(format!(
-            "{} was saved again, and is updated",
-            file_name(path)
-        ));
-        Ok(())
+        Ok(shown)
     }
 }
 
@@ -939,11 +1003,17 @@ fn import(location: &CatalogLocation, path: &Path, copy: bool) -> anyhow::Result
         std::io::copy(&mut std::fs::File::open(path)?, staged.as_file_mut())
             .with_context(|| format!("{} could not be copied", path.display()))?;
         staged.as_file().sync_all()?;
+        // Names found taken on publishing: some take a name without being
+        // seen as a file (a dangling link), so each is passed over after.
+        let mut taken = Vec::new();
         loop {
-            let target = copy_name(path);
+            let target = copy_name(path, &taken);
             match crate::storage::persist_noclobber(staged, &target) {
                 Ok(_) => break target,
-                Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => staged = e.file,
+                Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    staged = e.file;
+                    taken.push(target);
+                }
                 Err(e) => return Err(e.error.into()),
             }
         }
@@ -975,8 +1045,9 @@ fn import(location: &CatalogLocation, path: &Path, copy: bool) -> anyhow::Result
 }
 
 /// Where Edit a Copy copies `source`: beside it, `<name>-Edit` with its own
-/// extension, or `-Edit-2` and so on when that is taken.
-pub(in crate::app) fn copy_name(source: &Path) -> PathBuf {
+/// extension, or `-Edit-2` and so on when that is in the folder (a link
+/// included, whether or not it leads anywhere) or among `taken`.
+pub(in crate::app) fn copy_name(source: &Path, taken: &[PathBuf]) -> PathBuf {
     let stem = source.file_stem().unwrap_or_default().to_string_lossy();
     let extension = source
         .extension()
@@ -991,7 +1062,7 @@ pub(in crate::app) fn copy_name(source: &Path) -> PathBuf {
             };
             source.with_file_name(format!("{stem}-{SUFFIX}{number}{extension}"))
         })
-        .find(|path| !path.exists())
+        .find(|path| !taken.contains(path) && std::fs::symlink_metadata(path).is_err())
         .expect("an unused name")
 }
 
