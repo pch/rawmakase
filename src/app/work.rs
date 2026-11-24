@@ -50,6 +50,7 @@ pub(in crate::app) enum Kind {
     Controls,
     Extensions,
     FolderSync,
+    EditInWatch,
     LibraryPreviews,
 }
 
@@ -484,6 +485,20 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: Some(|e, _| e.stop_folder_sync().into_iter().collect()),
+    },
+    // Following Edit In's files: nothing shows; it costs nothing while they
+    // rest, and nothing waits for it.
+    Row {
+        kind: Kind::EditInWatch,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| {
+            e.edit_in.stop_watching();
+            Vec::new()
+        }),
     },
     // Their own spinner and "Preparing previews…"/"Rendering …", beside Auto
     // Advance in the Library and in Develop's status row.

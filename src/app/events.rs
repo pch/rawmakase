@@ -486,6 +486,7 @@ impl Editor {
                 Event::MergeHdr(done) => self.merge_hdr_done(*done),
                 Event::EditIn(added) => self.edit_added(*added),
                 Event::EditInLooked(looked) => self.sent_looked(*looked),
+                Event::EditInChanged(paths) => self.sent_changed(paths),
                 Event::EditInLaunched(launched) => self.editor_launched(*launched),
                 Event::BatchExported { ticket, outcomes } => self.batch_exported(ticket, outcomes),
                 _ => {}

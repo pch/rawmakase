@@ -189,15 +189,22 @@ With the first two, adjustments made in RAWmakase are not in what the editor
 shows; the window says so when the photo has some. RAW photos chosen with them
 are always edited as a TIFF with their adjustments.
 
-While files are open in an editor, RAWmakase keeps an eye on them, whether its
-window is in front or not (on a second screen, say). When the editor has saved one
-and the file has not changed for a third of a second, its thumbnail and previews
-are made again, the ones shown staying until the new ones are ready, and the photo
-is opened again if it is the one shown: about a second after the save for a
-100 MB TIFF. An edit made to the file in RAWmakase stays with it, as do changes
-not saved yet in Develop. Saves are followed only while the catalog the file was
-sent from is open and its photo is still that file; while the catalog is busy (an
-import, a folder change), they are taken up once it is free.
+While files are open in an editor, RAWmakase follows them, whether its window is
+in front or not (on a second screen, say): the system tells it when something in
+their folders changes, and on drives that don't say (a network share changed from
+another computer) it looks at them itself every 5 seconds. Nothing runs while the
+files rest. When the editor has saved one and the file has not changed for a third
+of a second, its thumbnail and previews are made again, the ones shown staying
+until the new ones are ready, and the photo is opened again if it is the one
+shown: under a second after the save for a 100 MB TIFF. An edit made to the file
+in RAWmakase stays with it, as do changes not saved yet in Develop. An editor that
+saves by deleting the file and writing it again is followed through the moment
+it is missing. While the catalog is busy (an import, a folder change), a save is
+tried again each second for half a minute, then at the next save.
+
+A file is followed until RAWmakase quits, another catalog opens, its photo leaves
+the catalog or no longer is that file, a save to it can never be taken up for one
+of those reasons, or its folder can't be watched (said in the top bar).
 
 ## Unused masks and patches
 

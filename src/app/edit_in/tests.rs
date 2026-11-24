@@ -69,14 +69,25 @@ fn a_save_is_taken_up_once_it_has_settled_and_a_missing_file_dropped() -> anyhow
     Ok(())
 }
 
-/// Looks at the files sent out until each one's change, if any, has been
-/// taken up, as the passes do in front or behind: a look on its worker,
-/// then again once SETTLE has passed.
+/// Announces a change to every file sent out, as the system's events do,
+/// and looks at them until each change, if any, has been taken up, as the
+/// passes do in front or behind: a look on its worker, then again once
+/// SETTLE has passed (made to pass here).
 fn follow(e: &mut Editor) {
+    let paths = e.edit_in.sent.iter().map(|s| s.path.clone()).collect();
+    e.sent_changed(paths);
+    looks(e);
+}
+
+/// Looks at the files with a change announced, a few rounds, time made to
+/// pass between them.
+fn looks(e: &mut Editor) {
     let ctx = e.context.clone();
     let deadline = Instant::now() + Duration::from_secs(10);
-    for _ in 0..3 {
-        e.edit_in.checked = None;
+    for _ in 0..4 {
+        if e.edit_in.due.is_some() {
+            e.edit_in.due = Some(Instant::now());
+        }
         e.watch_sent(&ctx);
         while e.edit_in.looking && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(2));
@@ -148,13 +159,14 @@ fn a_save_is_followed_only_for_its_catalog_and_photo() -> anyhow::Result<()> {
         .catalog()
         .location()
         .clone();
-    // Sent as the other photo, whose file this isn't.
+    // Sent as the other photo, whose file this isn't: not followed.
     e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[1]));
-    let was = e.edit_in.sent[0].identity.clone();
     std::fs::write(&path, b"a file put there by someone else")?;
     follow(&mut e);
-    assert_eq!(e.edit_in.sent[0].identity, was, "not taken up");
-    // Another catalog open: no longer followed.
+    assert!(e.edit_in.sent.is_empty(), "not followed");
+    // Sent as its own photo, then another catalog open: no longer followed.
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    assert_eq!(e.edit_in.sent.len(), 1);
     let (_other, other, _) = editor_with_catalog(&["IMG_9.JPG"])?;
     e.library = other.library;
     let ctx = e.context.clone();
@@ -410,48 +422,195 @@ fn an_added_tiff_shows_its_thumbnail_at_once() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// While files are sent out the passes keep coming every 150 ms, as
-/// nothing else wakes a window behind the editor; with none, nothing does.
+/// Files followed and resting cost nothing: no pass is asked for later, as
+/// a timer would (a wake now is the system's event for a change, which the
+/// real watcher here may send for the test's own writes). A change announced
+/// (here a fake event, through the same channel as the system's) is looked
+/// at, and passes asked for only until it is taken up.
 #[test]
-fn files_sent_out_keep_the_window_waking() -> anyhow::Result<()> {
+fn followed_files_at_rest_ask_for_no_pass() -> anyhow::Result<()> {
     let (dir, mut e, _) = editor_with_catalog(&[])?;
     let woken = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let record = woken.clone();
     let ctx = e.context.clone();
     ctx.set_request_repaint_callback(move |info| record.lock().unwrap().push(info.delay));
     let pass = |e: &mut Editor| {
-        let mut output = ctx.run_ui(Default::default(), |ui| e.watch_sent(ui.ctx()));
+        let mut output = ctx.run_ui(Default::default(), |ui| e.background(ui.ctx()));
         output.textures_delta.clear();
     };
+    let file = dir.path().canonicalize()?.join("a-Edit.tif");
+    std::fs::write(&file, b"rendered")?;
+    e.edit_in.launched = Some(Vec::new());
+    e.launch_editor(dir.path(), &file, None, None);
     // egui's own first passes ask for more; once it has settled, nothing does.
     for _ in 0..3 {
         pass(&mut e);
     }
+    assert!(watch::follows(&e.edit_in.watch, &file));
     woken.lock().unwrap().clear();
+    for _ in 0..3 {
+        pass(&mut e);
+    }
+    let timed = |woken: &std::sync::Mutex<Vec<Duration>>| {
+        woken.lock().unwrap().iter().any(|delay| !delay.is_zero())
+    };
+    assert!(!timed(&woken), "{:?}", woken.lock().unwrap());
+    // A save, told by an event.
+    std::fs::write(&file, b"saved again by the editor")?;
+    let _ =
+        e.tx.send(crate::app::worker::Event::EditInChanged(vec![file.clone()]));
     pass(&mut e);
-    assert!(
-        woken.lock().unwrap().is_empty(),
-        "{:?}",
-        woken.lock().unwrap()
-    );
+    assert!(e.edit_in.sent[0].pending);
+    looks(&mut e);
+    assert_eq!(e.edit_in.sent[0].identity, Identity::read(&file)?);
+    assert!(!e.edit_in.sent[0].pending);
+    woken.lock().unwrap().clear();
+    for _ in 0..3 {
+        pass(&mut e);
+    }
+    assert!(!timed(&woken), "{:?}", woken.lock().unwrap());
+    Ok(())
+}
+
+/// A save is told without any help: by the system's event for the folder,
+/// or else by the slow look within a few seconds.
+#[test]
+fn a_save_is_told_by_the_watch() -> anyhow::Result<()> {
+    let (dir, mut e, _) = editor_with_catalog(&[])?;
+    let file = dir.path().canonicalize()?.join("a-Edit.tif");
+    std::fs::write(&file, b"rendered")?;
+    e.edit_in.launched = Some(Vec::new());
+    e.launch_editor(dir.path(), &file, None, None);
+    let ctx = e.context.clone();
+    e.watch_sent(&ctx);
+    // A save by deleting and writing again, as some editors do.
+    std::fs::remove_file(&file)?;
+    std::fs::write(&file, b"saved again by the editor")?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !e.edit_in.sent[0].pending && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+        e.events(&ctx);
+    }
+    assert!(e.edit_in.sent[0].pending, "told of the save");
+    Ok(())
+}
+
+/// The slow look tells of a change once, not at every look after.
+#[test]
+fn the_slow_look_tells_of_a_change_once() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
     let file = dir.path().join("a-Edit.tif");
     std::fs::write(&file, b"rendered")?;
-    e.edit_in.sent.push(Sent {
-        identity: Identity::read(&file)?,
-        path: file,
-        catalog: None,
-        photo: None,
-        seen: None,
-        failing: false,
-    });
-    pass(&mut e);
-    let woken = woken.lock().unwrap();
-    assert!(
-        woken
-            .iter()
-            .any(|delay| *delay <= Duration::from_millis(150)),
-        "{woken:?}"
+    let followed = vec![(file.clone(), crate::storage::Stamp::read(&file)?)];
+    let mut reported = std::collections::HashMap::new();
+    assert!(watch::changed(&followed, &mut reported).is_empty());
+    std::fs::write(&file, b"saved again by the editor")?;
+    assert_eq!(
+        watch::changed(&followed, &mut reported),
+        std::slice::from_ref(&file)
     );
+    assert!(watch::changed(&followed, &mut reported).is_empty());
+    // Missing: nothing to tell.
+    std::fs::remove_file(&file)?;
+    assert!(watch::changed(&followed, &mut reported).is_empty());
+    Ok(())
+}
+
+/// A file missing while its change is looked at (deleted and being written
+/// again) is still followed, and its save taken up once it is back.
+#[test]
+fn a_file_missing_mid_save_is_still_followed() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    e.edit_in.launched = Some(Vec::new());
+    let path = e
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    std::fs::remove_file(&path)?;
+    follow(&mut e);
+    assert_eq!(e.edit_in.sent.len(), 1, "still followed");
+    assert!(e.edit_in.sent[0].pending, "still looked at");
+    std::fs::write(&path, b"saved again by the editor")?;
+    looks(&mut e);
+    assert_eq!(e.edit_in.sent[0].identity, Identity::read(&path)?);
+    Ok(())
+}
+
+/// A save whose photo has left the catalog can never be taken up: the file
+/// is no longer followed, once, rather than tried again and again.
+#[test]
+fn a_save_that_can_never_be_followed_ends_the_following() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG", "IMG_2.JPG"])?;
+    e.edit_in.launched = Some(Vec::new());
+    let path = e
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.launch_editor(dir.path(), &path, Some(&catalog), Some(ids[0]));
+    std::fs::write(&path, b"saved again by the editor")?;
+    let paths = vec![path.clone()];
+    e.sent_changed(paths);
+    // Its photo left the catalog between the save and its look.
+    let mut sent = e.edit_in.sent[0].clone();
+    sent.photo = Some(ids[1]);
+    let now = Identity::read(&path)?;
+    assert!(matches!(
+        e.follow_save(&sent, &now),
+        Err(NotFollowed::Never(_))
+    ));
+    e.edit_in.sent[0].photo = Some(ids[1]);
+    let ctx = e.context.clone();
+    e.watch_sent(&ctx);
+    assert!(e.edit_in.sent.is_empty(), "no longer followed");
+    Ok(())
+}
+
+/// With Edit Original, a photo and its virtual copy share one file, which
+/// opens once.
+#[test]
+fn edit_original_opens_a_shared_file_once() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    e.virtual_copy(crate::app::library::CopyAction::Create(ids[0]));
+    let ids: Vec<PhotoId> = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .photos()
+        .iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(ids.len(), 2);
+    ask(&mut e, dir.path(), ids);
+    let asking = e.edit_in.asking.take().expect("asked how");
+    e.edit_in_as(asking);
+    assert_eq!(e.edit_in.launched.as_ref().unwrap().len(), 1);
+    assert_eq!(e.edit_in.sent.len(), 1);
     Ok(())
 }
 

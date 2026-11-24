@@ -18,11 +18,13 @@
 //! with it. Without a catalog, or with another one open by then, the TIFF is
 //! opened in the program and not added.
 //!
-//! The files sent out (originals included) are remembered while the app
-//! runs, and looked at about seven times a second (a stat is cheap), from the pass that runs even
-//! while the window is behind another (`Editor::watch_sent`, which keeps
-//! asking for the next pass while there are any): a stat each, and a change
-//! is taken up once the file has stayed as it is for [`SETTLE`]. One saved has its
+//! The files sent out (originals included) are followed while the app runs,
+//! their catalog is open and their photo is still that file (`watch`): the
+//! system's events for their folders, or a slow look of its own, announce a
+//! change, which wakes the window; with nothing changing nothing runs. A
+//! file with a change announced is looked at, on a one-shot worker, until it
+//! has stayed as it is for [`SETTLE`], missing for a while included (a save
+//! by deleting and writing again). One saved has its
 //! edit in the catalog bound to the new version (so the edit is not
 //! protected, nor a save refused, as for a photo replaced by another), its
 //! previews made again (those shown staying until the new ones come: another
@@ -56,10 +58,13 @@ pub(in crate::app) struct EditIn {
     generation: u64,
     /// The files handed to a program, as they were then.
     sent: Vec<Sent>,
-    /// When the files sent out were last looked at.
-    checked: Option<std::time::Instant>,
+    /// When the files with a change announced are next looked at.
+    due: Option<std::time::Instant>,
     /// A look at them is under way.
     looking: bool,
+    /// What tells of their changes, and the files it follows now.
+    watch: watch::Watch,
+    watched: Vec<(PathBuf, crate::storage::Stamp)>,
     /// The question for photos the editor can open as they are.
     pub(in crate::app) asking: Option<Asking>,
     /// Stands in for starting a program, for a test: what was opened in what.
@@ -136,14 +141,33 @@ pub(in crate::app) struct Sent {
     /// A change not taken up yet: the file's size and modification time, and
     /// when they were first seen so.
     pub(in crate::app) seen: Option<(crate::storage::Stamp, std::time::Instant)>,
-    /// Taking up the last change failed and said so; said again only once
-    /// it has worked.
-    failing: bool,
+    /// A change was announced (an event, or the slow look) and is looked at
+    /// until it is taken up, or the file is as it was.
+    pub(in crate::app) pending: bool,
+    /// Since when it has been missing while a change was looked at: an editor
+    /// saving by deleting and writing again leaves a moment without it.
+    missing: Option<std::time::Instant>,
+    /// How many times in a row taking up its change failed for a reason that
+    /// may clear; said once.
+    retries: u32,
 }
 
-/// How often the files sent out are looked at, while there are any: a stat
-/// each, on a worker.
-const WATCH: std::time::Duration = std::time::Duration::from_millis(150);
+/// How long a file may be missing while its change is looked at before the
+/// looks stop until the next change is announced; it is still followed.
+const MISSING: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long after a failure that may clear (the catalog busy, the photo open
+/// not reopened) the change is tried again, and how many times in a row
+/// before it waits for the next save.
+const RETRY: std::time::Duration = std::time::Duration::from_secs(1);
+const RETRIES: u32 = 30;
+
+/// Why a change could not be taken up.
+enum NotFollowed {
+    /// It may clear: tried again after [`RETRY`].
+    Later(String),
+    /// It can't: the file is no longer followed.
+    Never(String),
+}
 /// How long a changed file must stay as it is before it is read, so one the
 /// editor is still writing is not.
 pub(in crate::app) const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
@@ -196,8 +220,10 @@ impl EditIn {
             adding: None,
             generation: 0,
             sent: Vec::new(),
-            checked: None,
+            due: None,
             looking: false,
+            watch: Default::default(),
+            watched: Vec::new(),
             asking: None,
             #[cfg(test)]
             launched: None,
@@ -219,6 +245,12 @@ impl EditIn {
             .map(|e| crate::platform::open_with::program_name(e))
             .collect();
         self.editors = editors;
+    }
+    /// Stops following the files sent out, at exit: the system watcher's
+    /// thread ends as it is dropped, the slow look's within its next wait.
+    pub(in crate::app) fn stop_watching(&mut self) {
+        self.watch.stop();
+        self.watched.clear();
     }
     /// The color space's name, as the session saves it.
     pub(in crate::app) fn space_name(&self) -> String {
@@ -359,8 +391,13 @@ impl Editor {
         match how {
             How::Adjusted => {}
             How::Original => {
+                // A photo and its virtual copies share one file, opened once.
+                let mut opened: Vec<&PathBuf> = Vec::new();
                 for (id, path) in &plain {
-                    self.launch_editor(&editor, path, Some(&catalog), Some(*id));
+                    if !opened.contains(&path) {
+                        opened.push(path);
+                        self.launch_editor(&editor, path, Some(&catalog), Some(*id));
+                    }
                 }
             }
             How::Copy => {
@@ -572,7 +609,9 @@ impl Editor {
                     catalog: catalog.cloned(),
                     photo,
                     seen: None,
-                    failing: false,
+                    pending: false,
+                    missing: None,
+                    retries: 0,
                 });
             }
             Err(e) => {
@@ -633,63 +672,111 @@ impl Editor {
         }
     }
 
-    /// Looks at the files sent out about seven times a second while there are
-    /// any, whether the window is in front or not, on a worker so a slow
-    /// drive never holds up the window: a save the editor made is taken up
-    /// once it has settled. Files sent from a catalog no longer open stop
-    /// being followed. Called each pass, also while the window is behind
-    /// another, and keeps the passes coming while it waits.
+    /// Keeps what tells of the files' changes in step with the files sent
+    /// out, and looks at those with a change announced. Files sent from a
+    /// catalog no longer open, or whose photo has left it or now is another
+    /// file, and those whose folder can't be watched, stop being followed.
+    /// With no change announced nothing is looked at and no pass is asked
+    /// for: following costs nothing while the files rest. Called each pass,
+    /// also while the window is behind another.
     pub(in crate::app) fn watch_sent(&mut self, ctx: &eframe::egui::Context) {
-        let open = self
-            .library
-            .as_ref()
-            .map(|l| l.session.catalog().location().clone());
-        self.edit_in
+        let library = self.library.as_deref();
+        let open = library.map(|l| l.session.catalog().location());
+        self.edit_in.sent.retain(|s| match (&s.catalog, s.photo) {
+            (None, _) => true,
+            (Some(catalog), photo) => {
+                open == Some(catalog)
+                    && photo.is_none_or(|id| {
+                        library
+                            .and_then(|l| l.photo(id))
+                            .is_some_and(|p| p.path == s.path)
+                    })
+            }
+        });
+        let followed: Vec<(PathBuf, crate::storage::Stamp)> = self
+            .edit_in
             .sent
-            .retain(|s| s.catalog.is_none() || s.catalog == open);
-        if self.edit_in.sent.is_empty() {
-            self.edit_in.checked = None;
+            .iter()
+            .map(|s| (s.path.clone(), s.identity.stamp()))
+            .collect();
+        if followed != self.edit_in.watched {
+            let unwatched = self.edit_in.watch.follow(&followed, &self.tx, ctx);
+            for path in &unwatched {
+                self.messages.warn(format!(
+                    "{}: its folder can't be watched, so saves to it are not followed",
+                    file_name(path)
+                ));
+            }
+            self.edit_in.sent.retain(|s| !unwatched.contains(&s.path));
+            self.edit_in.watched = followed;
+            self.edit_in.watched.retain(|(p, _)| !unwatched.contains(p));
+        }
+        if !self.edit_in.sent.iter().any(|s| s.pending) {
+            self.edit_in.due = None;
             return;
         }
         let now = std::time::Instant::now();
-        let due = self.edit_in.checked.is_none_or(|at| now - at >= WATCH);
-        if due && !self.edit_in.looking {
-            self.edit_in.checked = Some(now);
-            self.edit_in.looking = true;
-            let files: Vec<_> = self
-                .edit_in
-                .sent
-                .iter()
-                .map(|s| (s.path.clone(), s.identity.stamp(), s.seen))
-                .collect();
-            task::spawn(
-                self.tx.clone(),
-                self.context.clone(),
-                move |tx| {
-                    let looks = files
-                        .into_iter()
-                        .map(|(path, baseline, seen)| {
-                            let found = look(&path, baseline, seen, now);
-                            (path, found)
-                        })
-                        .collect();
-                    let _ = tx.send(Event::EditInLooked(Box::new(Looked { looks, at: now })));
-                },
-                move |tx, _| {
-                    let _ = tx.send(Event::EditInLooked(Box::new(Looked {
-                        looks: Vec::new(),
-                        at: now,
-                    })));
-                },
-            );
+        let due = *self.edit_in.due.get_or_insert(now);
+        if due > now {
+            ctx.request_repaint_after(due - now);
+            return;
         }
-        ctx.request_repaint_after(WATCH);
+        if self.edit_in.looking {
+            return;
+        }
+        self.edit_in.due = None;
+        self.edit_in.looking = true;
+        let files: Vec<_> = self
+            .edit_in
+            .sent
+            .iter()
+            .filter(|s| s.pending)
+            .map(|s| (s.path.clone(), s.identity.stamp(), s.seen))
+            .collect();
+        task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let looks = files
+                    .into_iter()
+                    .map(|(path, baseline, seen)| {
+                        let found = look(&path, baseline, seen, now);
+                        (path, found)
+                    })
+                    .collect();
+                let _ = tx.send(Event::EditInLooked(Box::new(Looked { looks, at: now })));
+            },
+            move |tx, _| {
+                let _ = tx.send(Event::EditInLooked(Box::new(Looked {
+                    looks: Vec::new(),
+                    at: now,
+                })));
+            },
+        );
     }
 
-    /// A look at the files sent out came back: each change seen is kept until
-    /// it settles; a settled one is taken up ([`Self::follow_save`]) and
-    /// becomes the file's new version only once that worked, else it is
-    /// tried again after [`SETTLE`].
+    /// The system, or the slow look, says these files may have changed: they
+    /// are looked at at once.
+    pub(in crate::app) fn sent_changed(&mut self, paths: Vec<PathBuf>) {
+        for sent in &mut self.edit_in.sent {
+            if paths.contains(&sent.path) {
+                sent.pending = true;
+            }
+        }
+        self.edit_in.due = Some(std::time::Instant::now());
+    }
+
+    /// Looks again at `at`, or sooner when already due.
+    fn look_again(&mut self, at: std::time::Instant) {
+        self.edit_in.due = Some(self.edit_in.due.map_or(at, |due| due.min(at)));
+    }
+
+    /// A look at the files sent out came back: a change seen is looked at
+    /// again until it settles; a settled one is taken up
+    /// ([`Self::follow_save`]) and becomes the file's version only once that
+    /// worked. One that can't be taken up yet is tried again a while later,
+    /// one that never can ends the following. A file missing is a save under
+    /// way, looked at again until [`MISSING`] has passed.
     pub(in crate::app) fn sent_looked(&mut self, looked: Looked) {
         self.edit_in.looking = false;
         for (path, found) in looked.looks {
@@ -697,33 +784,59 @@ impl Editor {
                 continue;
             };
             match found {
-                Look::Gone => {
-                    self.edit_in.sent.remove(index);
+                Look::Same => {
+                    let sent = &mut self.edit_in.sent[index];
+                    (sent.seen, sent.missing, sent.pending) = (None, None, false);
                 }
-                Look::Same => self.edit_in.sent[index].seen = None,
+                Look::Gone => {
+                    let sent = &mut self.edit_in.sent[index];
+                    let since = *sent.missing.get_or_insert(looked.at);
+                    if looked.at.duration_since(since) < MISSING {
+                        self.look_again(looked.at + SETTLE);
+                    } else {
+                        sent.pending = false;
+                    }
+                }
                 Look::Changing(stamp) => {
                     let sent = &mut self.edit_in.sent[index];
+                    sent.missing = None;
                     if sent.seen.is_none_or(|(seen, _)| seen != stamp) {
                         sent.seen = Some((stamp, looked.at));
                     }
+                    self.look_again(looked.at + SETTLE);
                 }
                 Look::Settled(now) => {
                     let sent = self.edit_in.sent[index].clone();
-                    let followed = self.follow_save(&sent, &now);
-                    let sent = &mut self.edit_in.sent[index];
-                    match followed {
+                    match self.follow_save(&sent, &now) {
                         Ok(()) => {
+                            let sent = &mut self.edit_in.sent[index];
                             sent.identity = now;
-                            sent.seen = None;
-                            sent.failing = false;
+                            (sent.seen, sent.missing, sent.pending) = (None, None, false);
+                            sent.retries = 0;
                         }
-                        Err(why) => {
-                            sent.seen = Some((now.stamp(), std::time::Instant::now()));
-                            if !std::mem::replace(&mut sent.failing, true) {
+                        Err(NotFollowed::Never(why)) => {
+                            self.edit_in.sent.remove(index);
+                            self.messages.warn(format!(
+                                "{} was saved again, and is no longer followed: {why}",
+                                file_name(&path)
+                            ));
+                        }
+                        Err(NotFollowed::Later(why)) => {
+                            let sent = &mut self.edit_in.sent[index];
+                            sent.retries += 1;
+                            sent.seen = Some((now.stamp(), looked.at));
+                            if sent.retries == 1 {
                                 self.messages.warn(format!(
                                     "{} was saved again, but is not updated yet: {why}",
-                                    file_name(&sent.path)
+                                    file_name(&path)
                                 ));
+                            }
+                            if sent.retries < RETRIES {
+                                self.look_again(std::time::Instant::now() + RETRY);
+                            } else {
+                                // Waits for the next save to try again.
+                                sent.pending = false;
+                                sent.retries = 0;
                             }
                         }
                     }
@@ -736,23 +849,25 @@ impl Editor {
     /// while its catalog is open, nothing else holds the catalog and its
     /// photo is still this file, the photo's edit (made for the version
     /// before) follows it, its previews are made again and, shown in Develop
-    /// or the Loupe, it opens again. Why not, otherwise, to try again later.
-    fn follow_save(&mut self, sent: &Sent, now: &Identity) -> Result<(), String> {
+    /// or the Loupe, it opens again. Why not, otherwise.
+    fn follow_save(&mut self, sent: &Sent, now: &Identity) -> Result<(), NotFollowed> {
         if self.activity.is_busy() {
-            return Err("the catalog is busy".into());
+            return Err(NotFollowed::Later("the catalog is busy".into()));
         }
         let was = &sent.identity;
         let path = &sent.path;
         let mut ids = Vec::new();
         if let (Some(catalog), Some(photo)) = (&sent.catalog, sent.photo) {
             let Some(library) = &mut self.library else {
-                return Err("its catalog is closed".into());
+                return Err(NotFollowed::Never("its catalog is closed".into()));
             };
             if library.session.catalog().location() != catalog {
-                return Err("its catalog is closed".into());
+                return Err(NotFollowed::Never("its catalog is closed".into()));
             }
             if library.photo(photo).is_none_or(|p| p.path != *path) {
-                return Err("its photo is no longer in the catalog".into());
+                return Err(NotFollowed::Never(
+                    "its photo is no longer in the catalog".into(),
+                ));
             }
             ids = library
                 .session
@@ -765,7 +880,9 @@ impl Editor {
                 library
                     .session
                     .follow_rewritten_file(*id, was, now)
-                    .map_err(|e| format!("its edit could not follow it: {e:#}"))?;
+                    .map_err(|e| {
+                        NotFollowed::Later(format!("its edit could not follow it: {e:#}"))
+                    })?;
             }
             library.file_rewritten(path);
             self.refresh_previews(&ids);
@@ -787,7 +904,9 @@ impl Editor {
                 self.document.file = Some(now.clone());
             }
             if !self.load_raw(path.clone(), self.document.catalog_photo) {
-                return Err("the photo open could not be opened again".into());
+                return Err(NotFollowed::Later(
+                    "the photo open could not be opened again".into(),
+                ));
             }
         }
         self.messages.note(format!(
@@ -878,3 +997,4 @@ fn file_name(path: &Path) -> String {
 mod dialog;
 #[cfg(test)]
 mod tests;
+mod watch;
