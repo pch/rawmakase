@@ -100,7 +100,7 @@ const fn option_short(parts: &'static [Part], action: &'static str) -> Row {
 use crate::app::shell::commands::registry::bindings as b;
 use Part::{EveryKey, Keys, Text};
 
-static LIBRARY: [Row; 19] = [
+static LIBRARY: [Row; 20] = [
     row(
         &[
             Keys(&b::GRID_PREVIOUS),
@@ -155,6 +155,13 @@ static LIBRARY: [Row; 19] = [
     row(
         &[Keys(&b::LIBRARY_AUTO)],
         "Auto Settings on each selected photo",
+    ),
+    row(
+        &[
+            Keys(&b::LIBRARY_ROTATE_LEFT),
+            Keys(&b::LIBRARY_ROTATE_RIGHT),
+        ],
+        "Rotate each selected photo left / right",
     ),
     row(
         &[Keys(&b::KEYWORD_SET_1), Keys(&b::KEYWORD_SET_9)],
@@ -328,7 +335,7 @@ static GENERAL: [Row; 16] = [
     row(&[Keys(&b::PREFERENCES)], "Preferences"),
     row(&[Keys(&b::SHORTCUTS)], "These shortcuts"),
 ];
-static DEVELOP: [Row; 56] = [
+static DEVELOP: [Row; 57] = [
     row(&[Keys(&b::CROP)], "Crop & Straighten"),
     row(&[Keys(&b::FINISH_CROP)], "Finish the crop"),
     row(
@@ -344,6 +351,10 @@ static DEVELOP: [Row; 56] = [
         "Next crop overlay / turn it",
     ),
     row(&[Text("Cmd+drag")], "Straighten along a line"),
+    row(
+        &[Keys(&b::ROTATE_LEFT), Keys(&b::ROTATE_RIGHT)],
+        "Rotate left / right",
+    ),
     row(&[Keys(&b::GUIDED_UPRIGHT)], "Guided Upright: draw guides"),
     row(
         &[Keys(&b::REMOVE_DELETE)],

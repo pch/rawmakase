@@ -1219,6 +1219,17 @@ impl Editor {
             if keys.take(&bindings::LIBRARY_AUTO).is_some() {
                 self.start_batch(crate::app::library::sync::BatchChange::AutoSettings);
             }
+            // Lightroom's Rotate Left and Rotate Right, on each selected photo. The
+            // frame's first press starts the batch; a later one is dropped, as a
+            // press while a batch runs is.
+            let turns = quarter_turns(
+                &keys,
+                &bindings::LIBRARY_ROTATE_LEFT,
+                &bindings::LIBRARY_ROTATE_RIGHT,
+            );
+            if let Some(turn) = turns.first() {
+                self.start_batch(crate::app::library::sync::BatchChange::Turn(*turn));
+            }
             // Lightroom's Keyword Set keys, on what the Keywording panel edits.
             let slot = keys.take_first(&[
                 &bindings::KEYWORD_SET_1,
@@ -1757,6 +1768,15 @@ impl Editor {
             if self.keys(ctx).take(&b::REFERENCE_VIEW).is_some() {
                 self.toggle_reference_view();
             }
+            // Lightroom's Rotate Left and Rotate Right: the Crop panel's buttons,
+            // each press in order, one History step in this frame. Not while the
+            // pointer is held: a crop drag sets the crop from where it started.
+            if !ctx.input(|i| i.pointer.any_down()) {
+                let keys = self.keys(ctx);
+                for turn in quarter_turns(&keys, &b::ROTATE_LEFT, &b::ROTATE_RIGHT) {
+                    crate::develop::turn(self.document.edit.recipe_mut(), turn);
+                }
+            }
             // Lightroom's I: the photo info overlay, Info 1, Info 2 or off.
             // Once per press: a held I must not flicker through them.
             if self.keys(ctx).take(&b::DEVELOP_INFO).is_some()
@@ -2251,6 +2271,29 @@ impl Editor {
             self.dropped(dropped);
         }
     }
+}
+
+/// The frame's presses of `left` and `right`, taken, as the quarter turns they ask
+/// for in the order they came.
+fn quarter_turns(
+    keys: &FrameKeys,
+    left: &crate::app::shell::keymap::Binding,
+    right: &crate::app::shell::keymap::Binding,
+) -> Vec<crate::develop::QuarterTurn> {
+    use crate::develop::QuarterTurn;
+    let mut turns = Vec::new();
+    for press in keys.presses() {
+        let turn = if keys.is(&press, left) {
+            QuarterTurn::Left
+        } else if keys.is(&press, right) {
+            QuarterTurn::Right
+        } else {
+            continue;
+        };
+        keys.take_press(&press);
+        turns.push(turn);
+    }
+    turns
 }
 
 /// egui-winit reads Cmd+C, Cmd+V and Cmd+X with any other modifier as the

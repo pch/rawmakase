@@ -287,6 +287,8 @@ names where they have one. Fixed commands keep their keys.
 | `stack:to_top` | Move to the top of the stack |
 | `merge_hdr` | Merge the selected photos to HDR |
 | `edit_in` | Edit in the first external editor (Cmd+E, in the Library and Develop) |
+| `rotate_left` | Rotate left |
+| `rotate_right` | Rotate right |
 | `select_all` | Select all (fixed) |
 | `select_none` | Select none |
 | `deselect_active` | Deselect the active photo |

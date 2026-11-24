@@ -3,7 +3,7 @@
 //! exactly so.
 type Shortcut = (&'static str, &'static str);
 
-pub(super) const LIBRARY: [Shortcut; 19] = [
+pub(super) const LIBRARY: [Shortcut; 20] = [
     ("Arrows", "Move the active photo"),
     (
         "Page Up / Page Down",
@@ -30,6 +30,7 @@ pub(super) const LIBRARY: [Shortcut; 19] = [
         "Sync the active photo's settings to the selection",
     ),
     ("Cmd+Shift+U", "Auto Settings on each selected photo"),
+    ("Cmd+[ / Cmd+]", "Rotate each selected photo left / right"),
     (
         "Alt+1 / Alt+9",
         "Add or remove the keyword of Keyword Set slot 1 to 9",
@@ -104,13 +105,14 @@ pub(super) const GENERAL: [Shortcut; 16] = [
     ("Cmd+,", "Preferences"),
     ("Cmd+/", "These shortcuts"),
 ];
-pub(super) const DEVELOP: [Shortcut; 56] = [
+pub(super) const DEVELOP: [Shortcut; 57] = [
     ("R", "Crop & Straighten"),
     ("Return", "Finish the crop"),
     ("X", "Swap the crop's orientation"),
     ("A", "Lock or unlock the crop's aspect"),
     ("O / Shift+O", "Next crop overlay / turn it"),
     ("Cmd+drag", "Straighten along a line"),
+    ("Cmd+[ / Cmd+]", "Rotate left / right"),
     ("Shift+T", "Guided Upright: draw guides"),
     ("Delete", "Delete the selected spot, guide or red eye"),
     ("Q", "Spot removal"),

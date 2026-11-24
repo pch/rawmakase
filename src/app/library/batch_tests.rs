@@ -236,6 +236,52 @@ fn library_auto_settings_key_applies_to_the_whole_selection() -> anyhow::Result<
     Ok(())
 }
 
+/// Cmd+] and Cmd+[ in the Library turn every selected photo a quarter turn, as
+/// the Crop panel's buttons turn the open one: one batch, one Undo.
+#[test]
+fn library_rotate_keys_turn_the_whole_selection_in_one_step() -> anyhow::Result<()> {
+    let (_d, mut e, photos) =
+        editor_with_scenes(&[("a.png", 0.3), ("b.png", 0.6), ("c.png", 0.9)])?;
+    let ids: Vec<_> = photos.iter().map(|p| p.0).collect();
+    select(&mut e, &ids[..2]);
+    press(&mut e, egui::Key::CloseBracket, egui::Modifiers::COMMAND);
+    assert_eq!(
+        e.activity.batch().expect("a batch runs").name(),
+        "Rotate Right"
+    );
+    finish_batch(&mut e);
+    for photo in &photos[..2] {
+        let r = saved(&e, photo).expect("saved");
+        assert_eq!((r.rotation, r.crop), (1, [0., 0., 1., 1.]), "{photo:?}");
+    }
+    assert!(saved(&e, &photos[2]).is_none());
+    let history = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .load_history(ids[0])?
+        .unwrap();
+    let step = history.steps.last().unwrap();
+    assert_eq!((step.name.as_str(), step.value.as_str()), ("Crop", ""));
+    assert!(
+        e.messages
+            .line()
+            .starts_with("Rotate Right: 2 photos changed"),
+        "{}",
+        e.messages.line()
+    );
+    // One Undo turns both back.
+    e.undo();
+    assert!(photos.iter().all(|p| saved(&e, p).is_none()));
+    // Rotate Left turns the other way.
+    press(&mut e, egui::Key::OpenBracket, egui::Modifiers::COMMAND);
+    finish_batch(&mut e);
+    assert_eq!(saved(&e, &photos[0]).unwrap().rotation, 3);
+    Ok(())
+}
+
 /// Quick Develop's Auto Settings and Saved Preset start the same batch, on the
 /// selection, with the preset read when it starts.
 #[test]
