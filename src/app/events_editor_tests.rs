@@ -1057,6 +1057,83 @@ fn a_region_rendered_after_a_turn_shows_at_once() {
 /// turned, at the turned photo's shape, so its outline and clicks, which follow
 /// the turned photo, land on the part they show.
 #[test]
+fn a_region_alone_is_drawn_turned_until_the_one_for_the_turn_lands() {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    let frame = |e: &mut Editor| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(16., 16.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                e.viewport_ui(ui);
+            },
+        );
+        output.textures_delta.clear();
+        output
+    };
+    // Opened at 100%: a region is all there is.
+    e.view.viewport = Vec2::new(400., 400.);
+    e.set_zoom(1.);
+    frame(&mut e);
+    e.tx.send(Event::Rendered {
+        id: e.preview.task.id(),
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: 16,
+                height: 16,
+                pixels: vec![[0.5; 3]; 16 * 16],
+            },
+            display_rgb: vec![128; 16 * 16 * 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Fit,
+        status: String::new(),
+    })
+    .unwrap();
+    e.events(&ctx);
+    let region = e.preview.region.as_ref().expect("the region landed").id();
+    assert!(e.preview.texture.is_none(), "no whole render");
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    // The pixels kept for the readout were sampled before the turn.
+    e.preview.samples_recipe = None;
+    assert!(e.samples_fit());
+    let mut before = e.effective_recipe();
+    before.rotation = (before.rotation + 3) % 4;
+    e.preview.samples_recipe = Some(before);
+    assert!(!e.samples_fit(), "samples from before a turn don't fit");
+    let output = frame(&mut e);
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape, egui::epaint::Shape::Mesh(m) if m.texture_id == region)),
+        "the region from before the turn is still drawn, turned"
+    );
+}
+
+#[test]
 fn the_minimap_turns_its_picture_from_before_a_turn() {
     let ctx = egui::Context::default();
     let (mut e, _) = editor_with_blue_photo(

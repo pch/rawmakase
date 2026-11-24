@@ -399,6 +399,9 @@ impl Editor {
                     if navigated {
                         self.preview.navigator_orientation = orientation;
                     }
+                    if self.preview.opened_orientation.is_none() {
+                        self.preview.opened_orientation = orientation;
+                    }
                     self.preview.samples_recipe = request.recipe;
                     self.preview.mode = request.mode;
                     self.preview.region_frame = request.frame;

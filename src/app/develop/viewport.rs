@@ -131,7 +131,15 @@ impl Editor {
                     .library
                     .as_ref()?
                     .thumbnail(self.document.catalog_photo?)?;
-                Some((texture.id(), texture.size_vec2(), 0))
+                // Turned since it opened, the thumbnail turns with it.
+                let turns = self
+                    .preview
+                    .opened_orientation
+                    .and_then(|then| then.turns_to(Orientation::of(&self.effective_recipe())))
+                    .unwrap_or(0);
+                let size = texture.size_vec2();
+                let size = if turns % 2 == 1 { size.yx() } else { size };
+                Some((texture.id(), size, turns))
             });
         (photo, shown)
     }
@@ -500,6 +508,35 @@ impl Editor {
                 clipped.add(turned_image(id, at, turns));
             }
         }
+        // A region rendered before a turn, with no whole render to show instead,
+        // is drawn turned where it now sits until the one for the turn lands.
+        if let (Some(region), Some(at), true, None) = (
+            &region_texture,
+            region_rect,
+            region_turned,
+            self.preview.texture.as_ref(),
+        ) {
+            let region_turns = self
+                .preview
+                .region_orientation
+                .and_then(|then| then.turns_to(shown))
+                .unwrap_or(0);
+            let mut n = [
+                (at.left() - rect.left()) / rect.width(),
+                (at.top() - rect.top()) / rect.height(),
+                (at.right() - rect.left()) / rect.width(),
+                (at.bottom() - rect.top()) / rect.height(),
+            ];
+            for _ in 0..region_turns {
+                let [left, top, right, bottom] = n;
+                n = [1. - bottom, left, 1. - top, right];
+            }
+            let turned = Rect::from_min_max(
+                rect.min + Vec2::new(n[0], n[1]) * rect.size(),
+                rect.min + Vec2::new(n[2], n[3]) * rect.size(),
+            );
+            painter.add(turned_image(region.id(), turned, region_turns));
+        }
         let mut gpu_region = false;
         if let (Some(region), Some(at), false) = (&region_texture, region_rect, region_turned) {
             let hdr = gpu_hdr(region);
@@ -627,9 +664,7 @@ impl Editor {
             .filter(|p| edit_shown && panes.after.clip.contains(*p));
         // Not over pixels rendered for another crop, which sit elsewhere until the
         // render for this one lands.
-        let crop = self.effective_recipe().crop;
-        let sampled_crop = self.preview.samples_recipe.as_ref().map(|r| r.crop);
-        let hover = hover.filter(|_| sampled_crop.is_none_or(|c| c == crop));
+        let hover = hover.filter(|_| self.samples_fit());
         self.update_readout(hover, rect, region_rect);
         if self.wants_samples() {
             // The loupe and the readout read the shown pixels, which renders keep only
@@ -907,6 +942,9 @@ impl Editor {
     /// The shown color (encoded sRGB, 0–1) at `pos`, from the samples renders keep while
     /// an eyedropper is active.
     fn shown_color(&self, pos: Pos2, rect: Rect, region: Option<Rect>) -> Option<[f32; 3]> {
+        if !self.samples_fit() {
+            return None;
+        }
         let (samples, shown) = match (&self.preview.region_samples, region) {
             (Some(samples), Some(region)) if region.contains(pos) => (samples, region),
             _ => (self.preview.samples.as_ref()?, rect),
@@ -935,6 +973,17 @@ impl Editor {
     /// Lightroom's white balance selector over the photo: an eyedropper cursor
     /// whose tip is the picked point, and a loupe of the pixels around it with the
     /// values of the one under the tip.
+    /// Whether the pixels kept for the readout and the loupe were rendered for
+    /// the crop and orientation shown: until the render for a new crop or a
+    /// turn lands, they sit elsewhere.
+    pub(in crate::app) fn samples_fit(&self) -> bool {
+        let now = self.effective_recipe();
+        self.preview
+            .samples_recipe
+            .as_ref()
+            .is_none_or(|r| r.crop == now.crop && Orientation::of(r) == Orientation::of(&now))
+    }
+
     fn white_balance_loupe(
         &self,
         ui: &egui::Ui,
@@ -972,6 +1021,9 @@ impl Editor {
             );
         }
         icons::paint_at(&painter, Icon::Eyedropper, pos + tip, icon, Color32::WHITE);
+        if !self.samples_fit() {
+            return;
+        }
         let (samples, shown) = match (&self.preview.region_samples, region) {
             (Some(samples), Some(region)) if region.contains(pos) => (samples, region),
             _ => match &self.preview.samples {

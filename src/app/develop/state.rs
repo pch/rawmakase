@@ -329,6 +329,10 @@ pub(in crate::app) struct PreviewState {
     pub(in crate::app) region_orientation: Option<Orientation>,
     /// The same for `navigator`, which a whole render while zoomed in leaves.
     pub(in crate::app) navigator_orientation: Option<Orientation>,
+    /// The orientation of the photo's first render: the Library thumbnail
+    /// the minimap shows without a navigator was made from the edit it opened
+    /// with.
+    pub(in crate::app) opened_orientation: Option<Orientation>,
     /// Before's render, while it shows beside the edit.
     pub(in crate::app) before: crate::app::develop::before_after::BeforePreview,
     /// The magnifier's render, while it is shown.
@@ -365,6 +369,7 @@ impl Default for PreviewState {
             orientation: None,
             region_orientation: None,
             navigator_orientation: None,
+            opened_orientation: None,
             before: Default::default(),
             magnifier: Default::default(),
             stand_in: None,
@@ -773,6 +778,7 @@ impl PreviewState {
         self.orientation = None;
         self.region_orientation = None;
         self.navigator_orientation = None;
+        self.opened_orientation = None;
         self.before.clear();
         self.magnifier.clear();
         // The pixels the readout and loupes read belong to the photo left.
