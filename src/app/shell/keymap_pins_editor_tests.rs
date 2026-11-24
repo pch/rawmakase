@@ -1169,6 +1169,91 @@ fn rotate_keys_wait_for_the_pointer() {
     assert!(o.get("recipe").is_some(), "{o:?}");
 }
 
+/// A turn in the frame that undoes is a History step of its own on top of what
+/// the Undo restored, not a change History never sees.
+#[test]
+fn a_turn_in_the_frame_of_an_undo_is_its_own_step() {
+    use crate::develop::{QuarterTurn, turn};
+    let mut f = Fixture::new(Place::Develop);
+    let undone = f.e.document.edit.recipe().clone();
+    f.e.change_edit(None, |r| r.exposure += 0.3);
+    f.taps(&[(Key::Z, cmd()), (Key::CloseBracket, cmd())]);
+    let mut turned = undone.clone();
+    turn(&mut turned, QuarterTurn::Right);
+    assert_eq!(*f.e.document.edit.recipe(), turned);
+    let (steps, applied) = f.e.document.edit.history().steps();
+    assert_eq!(steps[applied - 1].name, "Crop");
+    f.e.undo();
+    assert_eq!(*f.e.document.edit.recipe(), undone);
+}
+
+/// A turn in the frame that releases a crop drag is a step of its own: Undo takes
+/// back the turn and leaves the drag.
+#[test]
+fn a_turn_in_the_frame_that_ends_a_crop_drag_is_its_own_step() {
+    use eframe::egui::{Event, PointerButton, Pos2, Vec2};
+    let mut f = Fixture::new(Place::Crop);
+    // A render to draw the crop over; the fixture's own may not have landed.
+    let texture = f.e.context.load_texture(
+        "photo",
+        eframe::egui::ColorImage::filled([300, 200], eframe::egui::Color32::GRAY),
+        eframe::egui::TextureOptions::LINEAR,
+    );
+    f.e.preview.texture = Some(texture.into());
+    f.frame(Vec::new());
+    let start = f.e.document.edit.recipe().clone();
+    let photo = f.e.view.shown_rect.expect("the photo is drawn");
+    let at = photo.min + Vec2::new(0.3, 0.4) * photo.size();
+    let button = |pos: Pos2, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: NONE,
+    };
+    f.frame(vec![Event::PointerMoved(at), button(at, true)]);
+    let to = at + Vec2::new(30., 20.);
+    for step in 1..=3 {
+        f.frame(vec![Event::PointerMoved(at + (to - at) * step as f32 / 3.)]);
+    }
+    let dragged = f.e.document.edit.recipe().crop;
+    assert_ne!(dragged, start.crop, "the drag moved the crop");
+    let mut events = vec![button(to, false)];
+    events.extend(tap_events(Key::CloseBracket, Key::CloseBracket, cmd()));
+    f.frame(events);
+    assert_eq!(
+        f.e.document.edit.recipe().rotation,
+        (start.rotation + 1) % 4
+    );
+    f.e.undo();
+    assert_eq!(f.e.document.edit.recipe().rotation, start.rotation);
+    assert_eq!(f.e.document.edit.recipe().crop, dragged);
+}
+
+/// A turn in the frame that moves on to the next photo turns the next photo, as a
+/// History step, once it is ready; until then it turns nothing. The photo left
+/// keeps its settings.
+#[test]
+fn a_turn_in_the_frame_that_moves_on_edits_no_photo_left_behind() {
+    let mut f = Fixture::new(Place::Develop);
+    let left = f.e.document.catalog_photo;
+    let before = f.e.document.edit.recipe().clone();
+    f.taps(&[(Key::ArrowRight, NONE), (Key::CloseBracket, cmd())]);
+    assert_ne!(f.e.document.catalog_photo, left, "moved on");
+    let photo = f.photo(3);
+    let saved = f
+        .library()
+        .session
+        .catalog()
+        .load_edit(photo.id, &photo.path)
+        .unwrap()
+        .map(|e| e.recipe);
+    assert!(saved.is_none_or(|r| r.rotation == before.rotation));
+    let (steps, applied) = f.e.document.edit.history().steps();
+    let turned = f.e.document.edit.recipe().rotation != 0;
+    let stepped = applied > 0 && steps[applied - 1].name == "Crop";
+    assert_eq!(turned, stepped, "{steps:?}");
+}
+
 // ---------------------------------------------------------------------------
 // Develop.
 

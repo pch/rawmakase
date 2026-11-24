@@ -190,7 +190,7 @@ impl Editor {
     /// Whether the keys may act this frame: a decoded photo open in Develop, which
     /// no dialog, window, typing or busy task has the keys of, and that is not
     /// closing, being left for files dropped on the window, or waiting to close.
-    fn basic_keys_ready(&self, ctx: &egui::Context) -> bool {
+    pub(in crate::app) fn basic_keys_ready(&self, ctx: &egui::Context) -> bool {
         self.require_develop().is_ok()
             && !self.activity.is_busy()
             && !self.onboarding.visible

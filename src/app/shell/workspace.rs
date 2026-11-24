@@ -505,6 +505,7 @@ impl Editor {
         self.update_notice(&ctx, dialog);
         // Last, after whatever else this frame opened or asked: see its docs.
         self.develop_key_steps(&ctx, typing);
+        self.develop_rotate_keys(&ctx);
         // A press that ran neither of two commands on one key says so.
         for report in FrameKeys::of(&ctx).take_reports() {
             self.messages.warn(report);
@@ -1768,15 +1769,6 @@ impl Editor {
             if self.keys(ctx).take(&b::REFERENCE_VIEW).is_some() {
                 self.toggle_reference_view();
             }
-            // Lightroom's Rotate Left and Rotate Right: the Crop panel's buttons,
-            // each press in order, one History step in this frame. Not while the
-            // pointer is held: a crop drag sets the crop from where it started.
-            if !ctx.input(|i| i.pointer.any_down()) {
-                let keys = self.keys(ctx);
-                for turn in quarter_turns(&keys, &b::ROTATE_LEFT, &b::ROTATE_RIGHT) {
-                    crate::develop::turn(self.document.edit.recipe_mut(), turn);
-                }
-            }
             // Lightroom's I: the photo info overlay, Info 1, Info 2 or off.
             // Once per press: a held I must not flicker through them.
             if self.keys(ctx).take(&b::DEVELOP_INFO).is_some()
@@ -2269,6 +2261,26 @@ impl Editor {
         });
         if !dropped.is_empty() {
             self.dropped(dropped);
+        }
+    }
+}
+
+impl Editor {
+    /// Lightroom's Rotate Left and Rotate Right in Develop: the Crop panel's
+    /// buttons, each press in order a History step of its own. Run as
+    /// [`Editor::develop_key_steps`] runs, last in the frame and outside its edit
+    /// frame, on the photo the frame ends on once it is ready. Not while a drag,
+    /// wheel scroll or dial turn is under way: a crop drag sets the crop from
+    /// where it started.
+    fn develop_rotate_keys(&mut self, ctx: &egui::Context) {
+        use bindings as b;
+        let held = ctx.input(|i| i.pointer.any_down()) || self.document.edit.history().in_gesture();
+        if held || !self.basic_keys_ready(ctx) {
+            return;
+        }
+        let keys = self.keys(ctx);
+        for turn in quarter_turns(&keys, &b::ROTATE_LEFT, &b::ROTATE_RIGHT) {
+            self.change_edit(None, |r| crate::develop::turn(r, turn));
         }
     }
 }
