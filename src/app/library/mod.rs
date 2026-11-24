@@ -1723,6 +1723,7 @@ impl Library {
     /// compression can take a while to decode.
     pub(in crate::app) fn file_rewritten(&mut self, path: &std::path::Path) {
         self.cache.renew_file(path);
+        self.loupe.renew(path);
         let ids: Vec<PhotoId> = self
             .session
             .photos()

@@ -170,7 +170,9 @@ RAW photo RAWmakase saves a 16-bit TIFF with its edit beside the original, named
 `DSC_0001-Edit.tif` (`-Edit-2` and so on when that name is taken), in the color
 space chosen on the same page (ProPhoto RGB unless you choose Adobe RGB or sRGB).
 The TIFF is added to the catalog on top of a stack with its original (Undo takes
-the stack back) and opened in the editor. The TIFF carries the photo's metadata
+the stack back) and opened in the editor. As in Lightroom, it takes the
+original's place: selected instead of it, and open in Develop when the original
+was, so the photo shown is the one being edited. The TIFF carries the photo's metadata
 but not its develop settings, which are in its pixels. Your last export's settings
 are left as they were.
 

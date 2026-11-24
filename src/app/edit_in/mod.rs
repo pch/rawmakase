@@ -30,7 +30,7 @@
 //! previews made again (those shown staying until the new ones come: another
 //! program's file can be slow to decode) and it is opened again when it is
 //! the photo shown.
-use crate::app::{Editor, task, worker::Event};
+use crate::app::{Editor, Module, task, worker::Event};
 use crate::catalog::{CatalogLocation, PhotoId};
 use crate::color::OutputSpace;
 use crate::export_settings::{Destination, ExportSettings, Format, Include, Naming};
@@ -576,6 +576,11 @@ impl Editor {
         if let (Some(photo), Some((original, _)), Some(library)) =
             (photo, original, &mut self.library)
         {
+            // As in Lightroom, the copy takes its original's place: selected
+            // in its stead (before the stack hides the original, which would
+            // hand its place on), and open in Develop when the original was,
+            // so the photo shown is the one being edited and follows its saves.
+            library.select_edit(original, photo);
             if let Err(e) =
                 library.stack_merge(photo, vec![original], "Stacked the edit with its original")
             {
@@ -583,6 +588,9 @@ impl Editor {
                     .fail(format!("Edit In: {name} added, but not stacked: {e:#}"));
             }
             self.messages.absorb(&mut library.messages);
+            if self.module == Module::Develop && self.document.catalog_photo == Some(original) {
+                self.develop_catalog_photo(photo);
+            }
         }
         let catalog = rendered.catalog.clone();
         self.launch_editor(&rendered.editor, &path, catalog.as_ref(), photo);

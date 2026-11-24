@@ -871,3 +871,172 @@ fn the_question_ends_with_its_catalog() -> anyhow::Result<()> {
     assert_eq!(e.edit_in.launched, Some(Vec::new()));
     Ok(())
 }
+
+/// A catalog of one small TIFF, `name`, in an editor, its window behind
+/// another: frames run unfocused, as a second screen leaves it.
+fn unfocused_editor_with_tiff(
+    name: &str,
+) -> anyhow::Result<(tempfile::TempDir, Editor, PhotoId, PathBuf)> {
+    let dir = tempfile::tempdir()?;
+    let photos = dir.path().canonicalize()?.join("photos");
+    std::fs::create_dir(&photos)?;
+    let tiff = photos.join(name);
+    image::RgbImage::from_pixel(64, 48, image::Rgb([200, 120, 40])).save(&tiff)?;
+    let path = dir.path().join("t.rawmakase");
+    crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
+    let ctx = eframe::egui::Context::default();
+    let mut e = Editor::with_context(&ctx, None, Default::default(), None);
+    e.onboarding.visible = false;
+    e.library = Some(Box::new(crate::app::library::Library::load(&path, ctx)?));
+    let id = e.library.as_ref().unwrap().session.photos()[0].id;
+    e.edit_in.launched = Some(Vec::new());
+    Ok((dir, e, id, tiff))
+}
+
+/// Frames, unfocused, until `done` or a few seconds.
+fn frames_until(e: &mut Editor, done: impl Fn(&Editor) -> bool) -> bool {
+    use eframe::egui;
+    let ctx = e.context.clone();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::Vec2::new(1400., 900.),
+                )),
+                focused: false,
+                ..Default::default()
+            },
+            |ui| e.draw(ui),
+        );
+        output.textures_delta.clear();
+        if done(e) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    false
+}
+
+/// A save in the editor, told as the system's event tells it.
+fn save_as(e: &mut Editor, file: &Path, width: u32) -> anyhow::Result<()> {
+    image::RgbImage::from_pixel(width, width * 3 / 4, image::Rgb([40, 120, 200])).save(file)?;
+    let _ = e.tx.send(crate::app::worker::Event::EditInChanged(vec![
+        file.to_path_buf(),
+    ]));
+    Ok(())
+}
+
+/// Edit In from Develop: the copy takes the original's place, selected and
+/// open in Develop, so the photo shown is the file being edited; a save to
+/// it then shows there, with the window behind the editor.
+#[test]
+fn the_copy_opens_in_place_of_the_photo_open_and_shows_its_saves() -> anyhow::Result<()> {
+    let (_dir, mut e, id, original) = unfocused_editor_with_tiff("IMG_1.tif")?;
+    e.develop_catalog_photo(id);
+    let loaded = |e: &Editor| !e.document.loading() && e.document.full().is_some_and(|f| !f.fast);
+    assert!(frames_until(&mut e, loaded));
+    let tiff = original.with_file_name("IMG_1-Edit.tif");
+    image::RgbImage::from_pixel(64, 48, image::Rgb([90, 90, 90])).save(&tiff)?;
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.edit_in_rendered(
+        Sending {
+            editor: original.parent().unwrap().to_path_buf(),
+            catalog: Some(catalog),
+            originals: vec![Some((id, original.clone()))],
+        },
+        &[Outcome::Exported {
+            path: tiff.clone(),
+            notes: Vec::new(),
+        }],
+    );
+    assert!(frames_until(&mut e, |e| e
+        .catalog_photo_at(&tiff)
+        .is_some()));
+    let copy = e.catalog_photo_at(&tiff).unwrap();
+    assert!(frames_until(&mut e, loaded));
+    assert_eq!(e.document.catalog_photo, Some(copy), "the copy is open");
+    assert_eq!(e.document.path.as_deref(), Some(tiff.as_path()));
+    assert_eq!(e.library.as_ref().unwrap().selected(), Some(copy));
+    save_as(&mut e, &tiff, 80)?;
+    assert!(
+        frames_until(&mut e, |e| loaded(e)
+            && e.document.full().is_some_and(|f| f.width == 80)),
+        "the save shows in Develop"
+    );
+    Ok(())
+}
+
+/// The Library's Loupe shows its own preview of an unedited TIFF: a save
+/// makes it again, with the window behind the editor.
+#[test]
+fn the_loupe_shows_a_save() -> anyhow::Result<()> {
+    let (dir, mut e, id, tiff) = unfocused_editor_with_tiff("IMG_1-Edit.tif")?;
+    e.module = crate::app::Module::Library;
+    e.library.as_mut().unwrap().select(Some(id));
+    e.library.as_mut().unwrap().open_loupe();
+    let size = |e: &Editor| e.library.as_ref().unwrap().loupe_texture_size_for_tests();
+    assert!(frames_until(&mut e, |e| size(e) == Some([64, 48])));
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    e.launch_editor(dir.path(), &tiff, Some(&catalog), Some(id));
+    save_as(&mut e, &tiff, 80)?;
+    assert!(
+        frames_until(&mut e, |e| size(e) == Some([80, 60])),
+        "the save shows in the Loupe: {:?}",
+        size(&e)
+    );
+    Ok(())
+}
+
+/// Copies made of the photos selected are selected in their stead, the copy
+/// of the active photo active.
+#[test]
+fn the_copies_are_selected_in_place_of_their_originals() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG", "IMG_2.JPG", "IMG_3.JPG"])?;
+    let library = e.library.as_mut().unwrap();
+    library.select(Some(ids[1]));
+    library.select_all();
+    library.make_active(ids[1]);
+    let paths: Vec<PathBuf> = ids[..2]
+        .iter()
+        .map(|id| library.photo(*id).unwrap().path.clone())
+        .collect();
+    let catalog = library.session.catalog().location().clone();
+    e.edit_in.launched = Some(Vec::new());
+    e.edit_in_as(Asking {
+        catalog,
+        ids: ids[..2].to_vec(),
+        plain: vec![(ids[0], paths[0].clone()), (ids[1], paths[1].clone())],
+        editor: dir.path().to_path_buf(),
+        how: How::Copy,
+        adjusted: false,
+    });
+    settle(&mut e);
+    let copies: Vec<PhotoId> = ["IMG_1-Edit.JPG", "IMG_2-Edit.JPG"]
+        .iter()
+        .map(|name| e.catalog_photo_at(&paths[0].with_file_name(name)).unwrap())
+        .collect();
+    let library = e.library.as_ref().unwrap();
+    let mut selected = library.selected_ids();
+    selected.sort();
+    let mut wanted = vec![copies[0], copies[1], ids[2]];
+    wanted.sort();
+    assert_eq!(selected, wanted);
+    assert_eq!(library.selected(), Some(copies[1]));
+    Ok(())
+}
