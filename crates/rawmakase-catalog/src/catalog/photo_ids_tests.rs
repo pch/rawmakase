@@ -24,11 +24,13 @@ fn add(
     for file in names {
         std::fs::write(folder.join(file), file)?;
     }
+    let before: Vec<FolderId> = catalog.folders()?.iter().map(|f| f.id).collect();
     catalog.add_folder(&folder)?;
+    // The new one, as its path reads differently on Windows.
     Ok(catalog
         .folders()?
         .into_iter()
-        .find(|f| f.path == folder)
+        .find(|f| !before.contains(&f.id))
         .unwrap())
 }
 
