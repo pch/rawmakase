@@ -401,6 +401,7 @@ impl CurveSet {
                         });
                         let lum = colors.par_iter().map(|c| scene(*c)).collect();
                         crate::develop::local_tone::MapBase::new(lum, size)
+                            .with_crop(crate::develop::local_tone::active_crop_rect(&small))
                     }),
                     None => Arc::new(crate::develop::local_tone::MapBase::of(&small, |p| {
                         scene(scene_color(p, r, &lut, camera, None))
@@ -418,46 +419,50 @@ impl CurveSet {
         if (r.shadows != 0. || local_tone)
             && let (Some(map), Some(base)) = (&lut.local, &base)
         {
-            // Camera Raw keys its default black on the photo's levels as Shadows
-            // leaves them, not as it finds them, so the black response follows the
-            // Shadows gain. Masks select this response locally; an unmasked pixel
-            // keeps the global key.
+            // Camera Raw keys its default black on the photo's 0.1th percentile as
+            // Shadows leaves it, not as it finds it, so the per-channel black response
+            // follows the post-Shadows dark level for both positive and negative
+            // Shadows. Masks select this response locally; an unmasked pixel keeps
+            // the global key.
             let levels = base.lum();
-            // Shadows' log2 gain at a cell of the map.
-            let gain = |i: usize, shadows: f32| {
-                let y = levels[i];
-                let x = (i % small.width as usize) as f32 / map.scale[0];
-                let yy = (i / small.width as usize) as f32 / map.scale[1];
-                (map.gain_with(x, yy, y, y, [shadows, 0., 0.])
-                    / map.gain_with(x, yy, y, y, [0., 0., 0.]))
-                .log2()
+            let sw = small.width as usize;
+            let active: Vec<usize> = match crate::develop::local_tone::active_crop_rect(&small) {
+                Some([x0, y0, x1, y1]) => (y0..y1)
+                    .flat_map(|y| (x0..x1).map(move |x| y * sw + x))
+                    .collect(),
+                None => (0..levels.len()).collect(),
             };
-            let median = |mut gains: Vec<f32>| {
-                let k = (gains.len() - 1) / 2;
-                gains.select_nth_unstable_by(k, f32::total_cmp);
-                gains[k]
-            };
-            // The darkest 0.1% of the map are the levels the dark key reads.
-            let count = (levels.len() / 1000).max(1);
-            let mut darkest: Vec<usize> = (0..levels.len()).collect();
-            darkest.select_nth_unstable_by(count - 1, |a, b| levels[*a].total_cmp(&levels[*b]));
-            darkest.truncate(count);
-            let shift = |shadows: f32| {
-                if shadows > 0. {
-                    // Positive Shadows moves the key by its median gain over the
-                    // whole map, the rule its curve was accepted with.
-                    let cells = (0..levels.len()).into_par_iter();
-                    median(cells.map(|i| gain(i, shadows)).collect())
-                } else if shadows < 0. {
-                    // Negative Shadows moves it by its gain on the darkest levels.
-                    // With the key left alone, Shadows −100 rendered tones four to
-                    // eight stops under the top 0.3 to 0.6 stop too dark on 228
-                    // training photos, and with the median gain 0.2 to 0.5
-                    // (2026-11-16).
-                    median(darkest.iter().map(|&i| gain(i, shadows)).collect())
-                } else {
-                    0.
+            let q001 = |mut vals: Vec<f32>| {
+                if vals.is_empty() {
+                    return 0.;
                 }
+                let k = ((vals.len() - 1) as f32 * 0.001) as usize;
+                vals.select_nth_unstable_by(k, f32::total_cmp);
+                vals[k]
+            };
+            let pre: Vec<f32> = active
+                .iter()
+                .map(|&i| crate::develop::local_tone::level(levels[i]))
+                .collect();
+            let q_pre = q001(pre.clone());
+            let shift = |shadows: f32| {
+                if shadows == 0. {
+                    return 0.;
+                }
+                let post: Vec<f32> = active
+                    .par_iter()
+                    .zip(&pre)
+                    .map(|(&i, &l_pre)| {
+                        let y = levels[i];
+                        let x = ((i % sw) as f32 + 0.5) / map.scale[0] - 0.5;
+                        let yy = ((i / sw) as f32 + 0.5) / map.scale[1] - 0.5;
+                        let g = (map.gain_with(x, yy, y, [shadows, 0., 0.])
+                            / map.gain_with(x, yy, y, [0., 0., 0.]))
+                        .log2();
+                        l_pre + g
+                    })
+                    .collect();
+                q001(post) - q_pre
             };
             let mut adjusted = lut.measures;
             adjusted.dark += shift(r.shadows);
@@ -685,7 +690,7 @@ pub(super) fn photo_measures(
     let lut = CurveSet::new(&base);
     let scene = measured_scene(&small, &base, &lut, camera);
     // The copy without retouching, when it differs, for the darkest level.
-    let mut unretouched: Vec<f32> = match (im.measured, im.unretouched) {
+    let unretouched: Vec<f32> = match (im.measured, im.unretouched) {
         (Some(copy), Some(plain)) if !Arc::ptr_eq(copy, plain) => {
             measured_scene(plain, &base, &lut, camera)
                 .into_iter()
@@ -729,10 +734,33 @@ pub(super) fn photo_measures(
         .into_iter()
         .flatten()
         .fold(f32::MIN_POSITIVE, f32::max);
-    let mut lum: Vec<f32> = scene
-        .iter()
-        .map(|p| crate::develop::scene_tone::luminance(*p))
-        .collect();
+    let crop = crate::develop::local_tone::active_crop_rect(&small).filter(|&[x0, y0, x1, y1]| {
+        // Tiny sub-percent sensor margins are already clamped at raw resolution by
+        // `crop_clamped_preview`; only slice `small` when a substantial optical-black
+        // border (>2% of pixels, e.g. Sony A7R VI) would bias quantiles like `p99`.
+        (x1 - x0) * (y1 - y0) < small.pixels.len() * 98 / 100
+    });
+    let in_crop = |vals: Vec<f32>| -> Vec<f32> {
+        let Some([x0, y0, x1, y1]) = crop else {
+            return vals;
+        };
+        if vals.is_empty() {
+            return vals;
+        }
+        let w = small.width as usize;
+        let mut out = Vec::with_capacity((x1 - x0) * (y1 - y0));
+        for y in y0..y1 {
+            out.extend_from_slice(&vals[y * w + x0..y * w + x1]);
+        }
+        out
+    };
+    let mut lum: Vec<f32> = in_crop(
+        scene
+            .iter()
+            .map(|p| crate::develop::scene_tone::luminance(*p))
+            .collect(),
+    );
+    let mut unretouched = in_crop(unretouched);
     let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
     // The 0.1th percentile, before red eye corrections and spot removal: a few dark
     // pixels do not move it, and a local repair does not move the whole photo's black.

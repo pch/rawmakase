@@ -58,6 +58,25 @@ impl<'a> LensMap<'a> {
         r.lens_correction(&im.metadata)
             .map_or_else(|| crate::lens::auto_ca::centre(&im.metadata), |l| l.centre)
     }
+    /// The camera's built-in lens distortion at 100%, when the file ships one on by
+    /// default. Used by `measurement_source` to clamp optical black corners that the
+    /// built-in correction crops away.
+    pub(crate) fn builtin_default(im: &'a CameraImage) -> Option<Self> {
+        let lens = im
+            .metadata
+            .lens
+            .as_ref()
+            .filter(|l| l.default_on && l.distortion.is_some())?;
+        let (w, h) = (im.width as f32, im.height as f32);
+        Some(Self {
+            chromatic: None,
+            center: [lens.centre[0] * w, lens.centre[1] * h],
+            half: (w * w + h * h).sqrt() * 0.5,
+            fill: Self::fill(im, lens, 1.),
+            lens: std::borrow::Cow::Borrowed(lens),
+            amount: 1.,
+        })
+    }
     /// The scale that keeps green's samples for the photo's edge inside the decoded
     /// image: the camera's default crop. Sony's built-in correction is the camera's
     /// own, whose JPEG is its aspect-ratio crop of the sensor (the ZV-1's 16:9 of 3:2),

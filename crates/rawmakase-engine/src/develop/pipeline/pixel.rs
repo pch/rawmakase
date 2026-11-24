@@ -47,9 +47,10 @@ pub(super) fn tone_stage(
     let (scene, clarity_lum) = scene_input(p, r, lut, camera, local);
     profile_stage(scene_stage(scene, clarity_lum, r, lut, pos, local), r)
 }
-/// S1/S2 output and Clarity's fine luminance on the measurement map's basis.
+/// S1/S2 output and the fine luminance on the measurement map's pre-mask basis.
 /// Mask color and Exposure change the rendered pixel, but must not become detail
-/// relative to a blur that was measured before those mask adjustments.
+/// relative to a map (Clarity blur or Shadows/Highlights local Laplacian base) that
+/// was measured before those mask adjustments.
 fn scene_input(
     p: [f32; 3],
     r: &Recipe,
@@ -59,10 +60,7 @@ fn scene_input(
 ) -> ([f32; 3], f32) {
     let color = scene_color(p, r, lut, camera, local);
     let scene = exposure_stage(color, lut, local);
-    let clarity_scene = if lut
-        .local
-        .as_ref()
-        .is_some_and(|m| m.clarity.is_some() || m.clarity_detail.is_some())
+    let clarity_scene = if lut.local.is_some()
         && local.is_some_and(|l| {
             local::uses(
                 l.delta,
@@ -144,7 +142,6 @@ pub(super) fn scene_stage(
 ) -> [f32; 3] {
     let gain = match &lut.local {
         Some(map) => {
-            let lum = crate::develop::scene_tone::luminance(pro);
             let sliders = local
                 .filter(|l| local::uses(l.delta, &[slot::SHADOWS, slot::HIGHLIGHTS, slot::CLARITY]))
                 .map(|l| {
@@ -155,8 +152,8 @@ pub(super) fn scene_stage(
                     ]
                 });
             match sliders {
-                Some(sliders) => map.gain_with(pos[0], pos[1], lum, clarity_lum, sliders),
-                None => map.gain(pos[0], pos[1], lum, clarity_lum),
+                Some(sliders) => map.gain_with(pos[0], pos[1], clarity_lum, sliders),
+                None => map.gain(pos[0], pos[1], clarity_lum),
             }
         }
         None => 1.,

@@ -383,6 +383,7 @@ impl Editor {
                     self.preview.keep_samples(region, samples);
                     self.preview.samples_recipe = request.recipe;
                     self.preview.mode = request.mode;
+                    self.preview.region_frame = request.frame;
                     if !region {
                         self.preview.crop = Some(request.crop);
                     }
