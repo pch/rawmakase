@@ -892,3 +892,81 @@ fn a_render_of_the_photo_left_starts_no_prefetch() {
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert!(!cached.is_cached());
 }
+
+/// A turn changes the photo's aspect at once, and its render comes later: until
+/// it lands the last render is drawn turned with the photo, not stretched into
+/// the turned frame, so the photo doesn't jump from a squashed picture to the
+/// right one.
+#[test]
+fn a_turned_photo_shows_its_last_render_turned_until_the_new_one_lands() {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    e.view.viewport = Vec2::new(400., 400.);
+    e.schedule();
+    e.tx.send(Event::Rendered {
+        id: e.preview.task.id(),
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: 32,
+                height: 24,
+                pixels: vec![[0.5; 3]; 32 * 24],
+            },
+            display_rgb: vec![128; 32 * 24 * 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Fit,
+        status: "landscape".into(),
+    })
+    .unwrap();
+    e.events(&ctx);
+    let texture = e.preview.texture.as_ref().expect("rendered").id();
+    // The render for the turn is held: the landscape render is all there is.
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(400., 400.),
+            )),
+            ..Default::default()
+        },
+        |ui| {
+            e.viewport_ui(ui);
+        },
+    );
+    output.textures_delta.clear();
+    let mesh = output
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::epaint::Shape::Mesh(mesh) if mesh.texture_id == texture => Some(mesh),
+            _ => None,
+        })
+        .expect("the last render is drawn");
+    let bounds = mesh.calc_bounds();
+    assert!(bounds.height() > bounds.width(), "{bounds:?}");
+    // Turned right: the render's bottom-left corner shows at the top left.
+    let top_left = mesh
+        .vertices
+        .iter()
+        .find(|v| (v.pos - bounds.left_top()).length() < 0.5)
+        .expect("a corner at the top left");
+    assert_eq!(top_left.uv, egui::Pos2::new(0., 1.));
+}

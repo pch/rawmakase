@@ -295,6 +295,7 @@ impl Editor {
                     // until then, or the camera's own crop when the JPEG is of that
                     // (`viewport::embedded_frame`).
                     self.preview.crop = Some([0., 0., 1., 1.]);
+                    self.preview.orientation = None;
                     self.preview.status = "Camera preview • developing RAW…".into();
                 }
                 Event::Ready {
@@ -385,6 +386,12 @@ impl Editor {
                     // Pixels asked for by a hover or loupe that has since ended are
                     // not kept.
                     self.preview.keep_samples(region, samples);
+                    if !region {
+                        self.preview.orientation = request
+                            .recipe
+                            .as_ref()
+                            .map(crate::app::develop::state::Orientation::of);
+                    }
                     self.preview.samples_recipe = request.recipe;
                     self.preview.mode = request.mode;
                     self.preview.region_frame = request.frame;

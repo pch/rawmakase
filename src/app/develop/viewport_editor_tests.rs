@@ -1039,3 +1039,26 @@ fn the_next_photo_shows_at_the_zoom_from_its_first_frame() -> anyhow::Result<()>
     assert_eq!(full.knob, knob);
     Ok(())
 }
+
+/// The turns between two orientations are counted as the photo is shown: under a
+/// single mirror, Rotate Right lowers the recorded turns and still shows clockwise.
+#[test]
+fn turns_between_orientations_count_as_shown() {
+    use crate::app::develop::state::Orientation;
+    use crate::develop::{QuarterTurn, turn};
+    for flips in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut r = crate::model::recipe::Recipe {
+            flip_x: flips.0,
+            flip_y: flips.1,
+            ..Default::default()
+        };
+        let then = Orientation::of(&r);
+        turn(&mut r, QuarterTurn::Right);
+        assert_eq!(then.turns_to(Orientation::of(&r)), Some(1), "{flips:?}");
+        turn(&mut r, QuarterTurn::Right);
+        turn(&mut r, QuarterTurn::Right);
+        assert_eq!(then.turns_to(Orientation::of(&r)), Some(3), "{flips:?}");
+        r.flip_x = !r.flip_x;
+        assert_eq!(then.turns_to(Orientation::of(&r)), None, "{flips:?}");
+    }
+}

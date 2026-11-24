@@ -1,7 +1,7 @@
 use crate::app::Editor;
 use crate::app::Module;
 use crate::app::develop::before_after;
-use crate::app::develop::state::{TextureMode, Tool};
+use crate::app::develop::state::{Orientation, TextureMode, Tool};
 use crate::app::develop::tools::crop_drag::{self, CropDrag, Handle};
 use crate::app::develop::tools::crop_tool::{Attention, Guide, Ruler, crop_aspect_shown};
 use crate::app::ui::design::{Tone, radius, text};
@@ -440,6 +440,14 @@ impl Editor {
         let gpu_hdr = |picture: &crate::app::develop::state::Picture| {
             gpu_hdr_for(Some(picture), due.as_ref().ok())
         };
+        // A turn changes the shown aspect before the render for it lands: the old
+        // render is drawn turned with it, its crop turned as `turn` turns it, and
+        // a 100% region of it waits for its own.
+        let turns = (!self.preview.embedded)
+            .then_some(self.preview.orientation)
+            .flatten()
+            .and_then(|then| then.turns_to(Orientation::of(&self.effective_recipe())))
+            .unwrap_or(0);
         let mut gpu_whole = false;
         if self.preview.texture.is_some() {
             let hdr = gpu_hdr(&texture);
@@ -453,7 +461,13 @@ impl Editor {
                 .or_else(|| self.document.full().map(|im| &im.metadata));
             let then = match (self.preview.embedded, metadata) {
                 (true, Some(m)) => Some(embedded_frame(m, texture.size_vec2())),
-                _ => self.preview.crop,
+                _ => self.preview.crop.map(|mut c| {
+                    for _ in 0..turns {
+                        let [left, top, right, bottom] = c;
+                        c = [1. - bottom, left, 1. - top, right];
+                    }
+                    c
+                }),
             };
             let (at, clipped) = match then {
                 Some(then) if then != now && zoomed.is_some() => {
@@ -468,11 +482,11 @@ impl Editor {
                 _ => (rect, painter.clone()),
             };
             for id in std::iter::once(texture.id()).chain(hdr.map(|h| h.id)) {
-                clipped.image(id, at, uv, Color32::WHITE);
+                clipped.add(turned_image(id, at, turns));
             }
         }
         let mut gpu_region = false;
-        if let (Some(region), Some(at)) = (&region_texture, region_rect) {
+        if let (Some(region), Some(at), 0) = (&region_texture, region_rect, turns) {
             let hdr = gpu_hdr(region);
             gpu_region = hdr.is_some();
             for id in std::iter::once(region.id()).chain(hdr.map(|h| h.id)) {
@@ -1042,6 +1056,35 @@ impl Editor {
             palette.tone(Tone::TEXT),
         );
     }
+}
+
+/// `texture` drawn in `rect` turned `turns` quarter turns clockwise.
+fn turned_image(texture: egui::TextureId, rect: Rect, turns: u8) -> egui::Shape {
+    let corners = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+    ];
+    let uvs = [
+        Pos2::new(0., 0.),
+        Pos2::new(1., 0.),
+        Pos2::new(1., 1.),
+        Pos2::new(0., 1.),
+    ];
+    let mut mesh = egui::Mesh::with_texture(texture);
+    for (i, pos) in corners.into_iter().enumerate() {
+        // A clockwise turn shows the texture's bottom-left corner at the top left.
+        let uv = uvs[(i + 4 - usize::from(turns % 4)) % 4];
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos,
+            uv,
+            color: Color32::WHITE,
+        });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    egui::Shape::mesh(mesh)
 }
 
 /// The GPU's HDR master preview presented with `picture`, when it is the master `due`
