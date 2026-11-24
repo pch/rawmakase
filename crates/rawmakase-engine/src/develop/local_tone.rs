@@ -718,9 +718,12 @@ impl LocalToneMap {
             .as_ref()
             .and_then(|p| p.at(sliders.shadows, sliders.highlights));
         let (shadows, highlights) = match (blend, shadows, highlights) {
-            (Some([[fs, es], [fh, eh]]), Some(mut s), Some(mut h)) => {
-                let (a, b) = (sliders.shadows.abs(), sliders.highlights.abs());
-                s.table = s.table.map(|v| v + fs * (a * es - v));
+            (Some(([[fs, es], [fh, eh]], shift)), Some(mut s), Some(mut h)) => {
+                let (a, b) = (
+                    sliders.shadows.abs().min(1.),
+                    sliders.highlights.abs().min(1.),
+                );
+                s.table = s.table.map(|v| v + fs * (a * es - v) + shift);
                 h.table = h.table.map(|v| v + fh * (b * eh - v));
                 (Some(s), Some(h))
             }
@@ -783,10 +786,11 @@ impl LocalToneMap {
         // The rule's curve of each sign, blended toward its extreme where both sliders
         // are set (`local_tone_rule::Pair`) and scaled by the slider; the fitted
         // families only where a map carries no rule.
-        let blend = self
+        let pair_at = self
             .pair
             .as_ref()
             .and_then(|p| p.at(sliders[0], sliders[1]));
+        let blend = pair_at.map(|(b, _)| b);
         let ruled = |up: RuleCurve, down: RuleCurve, slider: f32, which: usize| {
             let kind = if slider > 0. { up } else { down };
             self.rule[kind as usize]
@@ -804,14 +808,18 @@ impl LocalToneMap {
                     (gain + pix) * slider.abs().min(1.)
                 })
         };
-        let shadows = ruled(RuleCurve::ShadowsUp, RuleCurve::ShadowsDown, sliders[0], 0)
-            .unwrap_or_else(|| family(&SHADOWS, sliders[0], self.keys[0], base));
+        let shadows = ruled(RuleCurve::ShadowsUp, RuleCurve::ShadowsDown, sliders[0], 0);
         let highlights = ruled(
             RuleCurve::HighlightsUp,
             RuleCurve::HighlightsDown,
             sliders[1],
             1,
         );
+        let pair_shift = match (pair_at, shadows.is_some() && highlights.is_some()) {
+            (Some((_, shift)), true) => shift,
+            _ => 0.,
+        };
+        let shadows = shadows.unwrap_or_else(|| family(&SHADOWS, sliders[0], self.keys[0], base));
         let highlights = highlights.unwrap_or_else(|| {
             family_t(
                 &HIGHLIGHTS,
@@ -821,7 +829,7 @@ impl LocalToneMap {
                 self.tail_base(x, y, base),
             )
         });
-        (shadows + highlights + lift + clarity).exp2()
+        (shadows + highlights + pair_shift + lift + clarity).exp2()
     }
     /// The regional level on this grid, when positive Shadows may read it.
     pub(crate) fn region(&self) -> Option<&[f32]> {
@@ -1432,8 +1440,9 @@ mod tests {
         for (s, h) in [(0.8, -0.6), (-0.5, 1.), (1., 1.), (-0.3, -0.9)] {
             let m = both(&lum, s, h, false, false);
             let pair = m.pair.as_ref().expect("both sliders are set");
-            let [[fs, es], [fh, eh]] = pair.at(s, h).unwrap();
+            let ([[fs, es], [fh, eh]], shift) = pair.at(s, h).unwrap();
             assert!((0. ..=1.).contains(&fs) && (0. ..=1.).contains(&fh));
+            assert!(shift.is_finite() && shift.abs() <= 1.5);
             let unit = |kind: RuleCurve| m.rule[kind as usize].as_ref().unwrap();
             let (us, uh) = (
                 unit(if s > 0. {
@@ -1449,7 +1458,7 @@ mod tests {
             );
             let (ts, th) = (m.shadows.as_ref().unwrap(), m.highlights.as_ref().unwrap());
             for i in 0..48 {
-                let want = s.abs() * (us.table[i] + fs * (es - us.table[i]));
+                let want = s.abs() * (us.table[i] + fs * (es - us.table[i])) + shift;
                 assert!((ts.table[i] - want).abs() < 1e-5, "Shadows {s}, {h}: {i}");
                 let want = h.abs() * (uh.table[i] + fh * (eh - uh.table[i]));
                 assert!(
@@ -1457,6 +1466,14 @@ mod tests {
                     "Highlights {s}, {h}: {i}"
                 );
             }
+            // Equal half sliders scale the uniform shift linearly; vanishing either
+            // slider makes the shift vanish smoothly.
+            let (_, full_shift) = pair.at(s.signum(), h.signum()).unwrap();
+            let (_, half_shift) = pair.at(0.5 * s.signum(), 0.5 * h.signum()).unwrap();
+            assert!((half_shift - 0.5 * full_shift).abs() < 1e-5);
+            let (_, tiny_shift) = pair.at(1e-4 * s.signum(), h.signum()).unwrap();
+            assert!(tiny_shift.abs() < 1e-3);
+            assert!(pair.at(s, 0.).is_none() && pair.at(0., h).is_none());
             // One slider alone renders as before.
             let alone = both(&lum, s, 0., false, false);
             assert!(alone.pair.is_none());

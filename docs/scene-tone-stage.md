@@ -495,67 +495,37 @@ The stage ramps a fraction in as the ratio's power 1.7 for one sign and as
 
 The fractions at equal sliders differ by photo (Highlights' between 0.15 and 0.5 on
 half of the photos) and by the sliders' signs, and a photo's own agree from one sign
-combination to another (correlation 0.5 to 0.99). They are predicted from the photo's own curves, per sign combination, by a
-linear map of six numbers: how much of the photo each of the two curves reaches (the
-mean over the map of its gain as a fraction of the extreme's), the two extremes' sizes
-and their reciprocals (`local_tone_rule_pair_data.rs`, fitted by
-`scene-tone-rule.py pair`). It is fitted on what the blend then leaves of Camera Raw's
-combined gain, the stage's white curve undone as for the second ensemble, at the
-unclipped pixels of 212 training photos (of 228 that align; 16 more had too few
-unclipped pixels or did not align at one of the nine renders). The gain's error at each
-pair, RMS over a photo's pixels in stops, median (mean) over the photos, held out by
-photo in five folds:
+combination to another (correlation 0.5 to 0.99). Since 2026-11-24 `Pair` also predicts
+a uniform log2 shift `c0` (scaled by `min(|s|, |h|) · ramp(min/max, same)` and clamped to
+`±1.5 EV`) alongside the two blend fractions, from 14 photo inputs: the six curve
+descriptors above (reach, extreme magnitude and reciprocal extreme for both sliders) plus
+eight histogram brightness descriptors (`top`, `q50`, `mean`, `bot`, `top − q50`,
+`q50 − bot`, `q90 − q10`, `lin_mean − mean`), z-scored and clamped to `±4σ`
+(`local_tone_rule_pair_data.rs`, fitted by `scene-tone-rule.py pair`). Each sign
+combination is fitted to Camera Raw's own pair interaction `I = gp − gs − gh` (rather than
+the single-curve-polluted residual `−E`) with each pair's own `dark_key` shift undone, over
+per-pair unclipped pixels of 212 training photos. In `pipeline/tone.rs`, `default_black`'s
+dark-key shift divides out the Highlights-only gain,
+`log2(gain([s, h, 0]) / gain([0, h, 0]))`, so it stays bit-identical for single sliders,
+continuous at `s → 0`, and captures the full pair interaction when both sliders are set.
+Held-out five-fold CV gain error (EV RMS over pixels, median (mean) over 212 photos;
+plain sum → 14-feature `Pair` fitted on `I`): `S+100/H+100` `0.324 (0.432) → 0.155 (0.212)`
+(`187/14` closer/further by 0.02 EV), `S−100/H−100` `0.325 (0.439) → 0.169 (0.230)`
+(`171/23`), `S+100/H−100` `0.160 (0.191) → 0.143 (0.174)` (`84/29`), `S−100/H+100`
+`0.179 (0.210) → 0.152 (0.183)` (`110/26`).
 
-| | Shadows +100, Highlights +100 | −100, −100 | +100, −100 | −100, +100 |
-| --- | --- | --- | --- | --- |
-| Camera Raw's gain less the sum of its singles | 0.260 (0.361) | 0.294 (0.420) | 0.096 (0.121) | 0.110 (0.126) |
-| The sum of the stage's two curves | 0.318 (0.410) | 0.359 (0.479) | 0.197 (0.226) | 0.220 (0.249) |
-| Fractions fitted to each photo | 0.154 (0.163) | 0.184 (0.209) | 0.157 (0.181) | 0.173 (0.193) |
-| Fractions predicted, photo held out | 0.205 (0.234) | 0.231 (0.279) | 0.174 (0.197) | 0.192 (0.213) |
-| Photos closer / further by 0.02 than the sum | 166 / 20 | 173 / 19 | 104 / 8 | 129 / 7 |
-
-What stays is mostly the two single curves' own error (0.15 to 0.16 stop for Shadows and
-0.09 to 0.10 for Highlights on these pixels).
-
-Rendered by the stage on 60 of those training photos (the RMS of cube-root differences
-of each build's change against Camera Raw's, median; the sum of the two curves, then
-with the blend):
-
-| Setting | Sum | Blend | Photos closer / further |
-| --- | --- | --- | --- |
-| Shadows +100, Highlights −100 | 0.0198 | 0.0148 | 50 / 5 |
-| Shadows −100, Highlights +100 | 0.0182 | 0.0145 | 41 / 16 |
-| Shadows +100, Highlights +100 | 0.0430 | 0.0262 | 45 / 14 |
-| Shadows −100, Highlights −100 | 0.0285 | 0.0151 | 47 / 10 |
-| Shadows −50, Highlights +50 | 0.0089 | 0.0078 | 36 / 21 |
-| Highlights +40, Shadows −40, Whites +20, Blacks −20 | 0.0140 | 0.0122 | 33 / 22 |
-
-The last one's 90th percentile grows (0.0246 → 0.0275): with Blacks lowered too, the
-deep shadows end 0.3 to 0.4 stop too bright, 0.1 more than before. Over the sliders'
-grid on 16 of the photos, at settings the fit did not see, the blend is closer at all
-twelve other settings of ±50 and ±100 (Shadows +50 with Highlights −50 0.0101 → 0.0075,
-14 photos closer and 1 further; +50 with +50 0.0287 → 0.0114; +100 with −50 0.0171 →
-0.0135) and level where one slider is a tenth or a quarter of the other (eight
-settings: 0.0095–0.0151 with the sum, 0.0098–0.0132 with the blend, none more than
-0.0003 further).
-
-On validation the dataset gate has one combined case of the two, Shadows +50 with
-Highlights −50 (56 photos of six families, against the recorded baseline of main,
-median ΔE00 of a photo): median 1.04 → 0.85, mean 1.26 → 1.12, 90th percentile 2.13 →
-2.03; 39 photos closer by more than 0.05 and 3 further, the largest 1.14 → 1.59 (a
-backlit hut whose shadows the blend leaves a little dark). 210 windows on seven photos
-are more than 2 ΔE00 closer and 4 windows on one photo further; that photo, itself
-closer in the median (0.39 → 0.31), fails the gate's regression rule for its stratum
-(129 of the mixed sets' 180 setting and stratum pairs pass, 1 fails, 50 have too few
-photos). The mixed sets' other 504 cases render as before. On the synthetic chart the
-three cases that set both sliders get closer to Camera Raw's (mean ΔE00): a look with
-Shadows +40 and Highlights −40 at half and at twice its amount 0.85 → 0.68 and 2.58 →
-2.00, and the combined look with Highlights −40 and Shadows +30 2.51 → 2.45.
-
-One slider alone renders as before: nothing is blended with either at zero. Masks carry
-the same blend at the total of the recipe's and the mask's values, on the CPU and the
-GPU. An HDR master keeps the sum of the two curves, which is what its renders were
-judged with. The default black's key still follows Shadows alone.
+On the four `pairs-validation` sets (33 photos) and six `mixed-validation` sets (56 photos)
+against the 2026-11-24 Laplacian build (`v6.1-metric2`, pooled median / mean ΔE00):
+`shadows-100+highlights-100` `1.25/1.17 → 0.86/1.05` (`18/5` better/worse),
+`shadows+100+highlights+100` `2.76/3.20 → 2.62/3.07` (`21/11`),
+`shadows+60+highlights-60+whites+30+blacks-30` `1.16/1.48 → 1.09/1.48`,
+`shadows+100+highlights-100` `1.42/1.85 → 1.39/1.81` (`14/10`),
+`shadows-100+highlights+100` `0.98/1.11 → 0.95/1.11` (`8/5`),
+`shadows+80+highlights-30` `1.26/1.65 → 1.24/1.65` (`9/7`), and
+`shadows+50+highlights-50` `0.71/1.03 → 0.70/1.02` (`8/1`, all six `mixed-validation` sets
+passing). Single-slider renders and `mask-exposure+shadows` (`0.68/1.02`, `0/0`) stay
+bit-identical. Masks carry the same blend and shift on both CPU and GPU (`P_PAIR: 16`). An
+HDR master keeps the sum of the two curves, which is what its renders were judged with.
 
 **Local Laplacian base and additive pixel-contrast curve `G_pix(l)` (2026-11-24).**
 Replacing the guided-filter base with a local Laplacian base level (`local_tone.rs`,

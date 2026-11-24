@@ -203,10 +203,11 @@ HALVES = {'S-100': ('S-50', {'Shadows2012': '-50'}), 'H+100': ('H+50', {'Highlig
 # and its render (`pair`).
 PAIRS = {'S+100_H+100': ('S+100', 'H+100'), 'S-100_H-100': ('S-100', 'H-100'),
          'S+100_H-100': ('S+100', 'H-100'), 'S-100_H+100': ('S-100', 'H+100')}
-# `local_tone_rule.rs`: where a curve is read for its extreme, and the least extreme the
-# fractions' inputs divide by.
+# `local_tone_rule.rs`: where a curve is read for its extreme, the least extreme the
+# fractions' inputs divide by, input z-score clamp, and uniform shift clamp.
 PAIR_LOW, PAIR_HIGH, PAIR_EXTREME_MIN = 0.01, 0.99, 0.05
-PAIR_RIDGE = 3.0    # on the standardized weights, per hundred photos
+PAIR_Z_CLAMP, PAIR_SHIFT_MAX = 4.0, 1.5
+PAIR_RIDGE = 10.0   # on the standardized weights, per hundred photos
 # The second ensemble's targets count up to WHITE at default. A Highlights +100 result
 # from CLIP_HIGH up sits in Camera Raw's clipping and a Shadows −100 result from
 # CLIP_LOW down at its floor: such a render shows only a bound on the gain.
@@ -1406,14 +1407,14 @@ def curve_at(curves, k, base):
 
 def pair_sample(job):
     """One photo for `pair`: per pair of `PAIRS`, at up to 6000 map pixels where none of
-    the renders is clipped, what blending each curve toward its extreme adds per unit
-    of its fraction (`X`, Shadows' then Highlights'), what the sum of the engine's two
-    curves is off Camera Raw's combined gain (`E`, the engine's white curve undone as in
-    `samples_ext`), Camera Raw's own difference from the sum of its single gains (`I`)
-    and each curve's own error at its single setting (`S`); and the inputs the engine
-    predicts the fractions from (`F`, `RuleStats::pair`). The renders are taken back
-    through the stage's whole curve as in `samples_ext`, a pair's at the key its Shadows
-    setting gives the black."""
+    that pair's renders (default, single Shadows, single Highlights, pair) is clipped,
+    what blending each curve toward its extreme and adding a uniform shift adds per unit
+    of its coefficients (`X`: Shadows' blend, Highlights' blend, uniform shift), what
+    the sum of the engine's two curves is off Camera Raw's combined gain (`E`, the
+    engine's white curve and pair's own `dark_key` undone), Camera Raw's own difference
+    from the sum of its single gains (`I`) and each curve's own error at its single
+    setting (`S`); and the 14 photo inputs the engine predicts the coefficients from
+    (`F`, `RuleStats::pair`)."""
     key, root = job
     cr = root / 'photos' / 'crlin'
     m, curves = np.load(root / 'maps' / f'{key}.npz'), np.load(root / 'curves' / f'{key}.npz')
@@ -1427,18 +1428,13 @@ def pair_sample(job):
         return None
     lum, peak = images[:len(names)], images[len(names):]
     on = [on_map(ph, a) for a in lum]
-    moved = {n: key_shift(m, ph, on[0], on[names.index(n)], KEY_MOVES[n]) for n in KEY_MOVES if n in names}
-    level = lambda n, a: np.log2(np.maximum(on_map(ph, to_scene(m, moved.get(n.split('_')[0], 0.))(a)), FLOOR))
-    valid = np.ones(ph.base.shape, bool)
-    for a, b in zip(lum, peak):
-        valid &= (on_map(ph, a) > CLIP_LOW) & (on_map(ph, b) < CLIP_HIGH)
-    idx = np.flatnonzero(valid.ravel())
-    if idx.size < 2000:
-        print('too few unclipped pixels', key)
-        return None
-    idx = np.random.default_rng(int(key[5:])).choice(idx, min(6000, idx.size), replace=False)
+    pk = [on_map(ph, a) for a in peak]
+    # Every Shadows setting (single and pair) moves default_black by its own q0.001 shift.
+    moved = {n: key_shift(m, ph, on[0], on[names.index(n)], n.startswith('S+'))
+             for n in names[1:] if n.startswith('S+') or n.startswith('S-')}
+    level = lambda n, a: np.log2(np.maximum(on_map(ph, to_scene(m, moved.get(n, 0.))(a)), FLOOR))
     default = level(names[0], lum[0])
-    gain = {n: (level(n, a) - default).ravel()[idx] for n, a in zip(names[1:], lum[1:])}
+    gain_maps = {n: level(n, a) - default for n, a in zip(names[1:], lum[1:])}
     base, logs = ph.base.ravel(), ph.logs.ravel()
     ordered = np.sort(base.astype(np.float32))
     at = lambda q: ordered[int(np.float32(base.size - 1) * np.float32(q))]
@@ -1453,47 +1449,68 @@ def pair_sample(job):
         f = np.clip((np.asarray(x, np.float64) - lo) / (hi - lo) * len(tab) - 0.5, 0, len(tab) - 1)
         i = np.minimum(f.astype(int), len(tab) - 2)
         return tab[i] + (tab[i + 1] - tab[i]) * (f - i)
+    photo_stats = [float(ph.top), float(ph.q[0.5]), float(ph.mean), float(ph.bot),
+                   float(ph.top - ph.q[0.5]), float(ph.q[0.5] - ph.bot),
+                   float(ph.q[0.9] - ph.q[0.1]), float(ph.lin_mean - ph.mean)]
+    rng = np.random.default_rng(int(key[5:]))
     out = dict(key=key, X=[], E=[], I=[], S=[], F=[])
     for name, (sn, hn) in PAIRS.items():
         ks, kh = kinds.index(sn), kinds.index(hn)
+        i_s, i_h, i_p = names.index(sn), names.index(hn), names.index(name)
+        valid = np.ones(ph.base.shape, bool)
+        for j in (0, i_s, i_h, i_p):
+            valid &= (on[j] > CLIP_LOW) & (pk[j] < CLIP_HIGH)
+        idx = np.flatnonzero(valid.ravel())
+        if idx.size < 500:
+            print('too few unclipped pixels', key, name)
+            return None
+        idx = rng.choice(idx, min(6000, idx.size), replace=False)
         a, b = curve_at(curves, ks, base[idx]), curve_at(curves, kh, base[idx])
         pa, pb = pix_at(ks, logs[idx]), pix_at(kh, logs[idx])
-        out['X'].append(np.stack([extreme[sn] - a, extreme[hn] - b], 1))
-        out['E'].append((a + pa) + (b + pb) - gain[name])
-        out['I'].append(gain[name] - gain[sn] - gain[hn])
-        out['S'].append(np.stack([(a + pa) - gain[sn], (b + pb) - gain[hn]], 1))
+        gp, gs, gh = gain_maps[name].ravel()[idx], gain_maps[sn].ravel()[idx], gain_maps[hn].ravel()[idx]
+        out['X'].append(np.stack([extreme[sn] - a, extreme[hn] - b, np.ones_like(a)], 1))
+        out['E'].append((a + pa) + (b + pb) - gp)
+        out['I'].append(gp - gs - gh)
+        out['S'].append(np.stack([(a + pa) - gs, (b + pb) - gh], 1))
         es, eh = abs(extreme[sn]), abs(extreme[hn])
-        out['F'].append(np.array([reach[sn], reach[hn], es, eh, 1 / max(es, PAIR_EXTREME_MIN), 1 / max(eh, PAIR_EXTREME_MIN)]))
+        out['F'].append(np.array([reach[sn], reach[hn], es, eh,
+                                  1 / max(es, PAIR_EXTREME_MIN), 1 / max(eh, PAIR_EXTREME_MIN)] + photo_stats))
     return out
 
 
 def pair_fit(data, c):
-    """For pair `c`, the inputs' means and deviations and each slider's intercept and
-    weights: the linear map from a photo's inputs to its two fractions that leaves the
-    least of `E` over the photos (each photo's pixels weighing as one photo)."""
+    """For pair `c`, the 14 inputs' means and deviations and the intercept and weights
+    for Shadows' blend fraction, Highlights' blend fraction and the uniform shift: the
+    linear map that best reproduces Camera Raw's own pair interaction `I` (`gp - gs - gh`,
+    free of single-curve noise) over the photos (each photo's pixels weighing as one
+    photo)."""
     F = np.array([d['F'][c] for d in data])
     mu, sd = F.mean(0), F.std(0) + 1e-9
     rows, target = [], []
-    for d, z in zip(data, (F - mu) / sd):
+    for d, z in zip(data, np.clip((F - mu) / sd, -PAIR_Z_CLAMP, PAIR_Z_CLAMP)):
         p = np.r_[1., z]
-        w = 1 / np.sqrt(len(d['E'][c]))
-        rows.append(np.concatenate([d['X'][c][:, :1] * p, d['X'][c][:, 1:] * p], 1) * w)
-        target.append(-d['E'][c] * w)
+        w = 1 / np.sqrt(len(d['I'][c]))
+        X = d['X'][c]
+        rows.append(np.concatenate([X[:, :1] * p, X[:, 1:2] * p, X[:, 2:3] * p], 1) * w)
+        target.append(d['I'][c] * w)
     A, t = np.concatenate(rows), np.concatenate(target)
     n = F.shape[1] + 1
-    ridge = PAIR_RIDGE * len(data) / 100 * np.eye(2 * n)
-    ridge[0, 0] = ridge[n, n] = 0
+    ridge = PAIR_RIDGE * len(data) / 100 * np.eye(3 * n)
+    ridge[0, 0] = ridge[n, n] = ridge[2 * n, 2 * n] = 0
     beta = np.linalg.solve(A.T @ A + ridge, A.T @ t)
-    return mu, sd, beta.reshape(2, n)
+    return mu, sd, beta.reshape(3, n)
 
 
 def pair_fractions(model, d, c):
     mu, sd, beta = model
-    return np.clip(beta @ np.r_[1., (d['F'][c] - mu) / sd], 0, 1)
+    z = np.clip((d['F'][c] - mu) / sd, -PAIR_Z_CLAMP, PAIR_Z_CLAMP)
+    coef = beta @ np.r_[1., z]
+    return np.array([np.clip(coef[0], 0., 1.), np.clip(coef[1], 0., 1.),
+                     np.clip(coef[2], -PAIR_SHIFT_MAX, PAIR_SHIFT_MAX)])
 
 
 def pair(args):
-    """Fits `Pair`'s fractions and writes local_tone_rule_pair_data.rs."""
+    """Fits `Pair`'s fractions and uniform shifts and writes local_tone_rule_pair_data.rs."""
     keys = [p.stem for p in sorted((args.root / 'maps').glob('photo[0-9]*.npz'))
             if (args.root / 'curves' / p.name).exists()
             and all(rendered(args.root / 'photos' / 'crlin' / f'{p.stem[5:]}-{n}.tif') for n in list(SETTINGS) + list(PAIRS))]
@@ -1509,8 +1526,10 @@ def pair(args):
         line(f'the engine\'s {label} curve alone', np.array([[rms(d['S'][c][:, k]) for c in range(4)] for d in data]))
     plain = np.array([[rms(d['E'][c]) for c in range(4)] for d in data])
     line('the sum of the engine\'s two curves', plain)
-    own = lambda d, c: np.clip(np.linalg.lstsq(d['X'][c], -d['E'][c], rcond=None)[0], 0, 1)
-    line('fractions fitted to each photo', np.array([[rms(d['E'][c] + d['X'][c] @ own(d, c)) for c in range(4)] for d in data]))
+    def own(d, c):
+        w = np.linalg.lstsq(d['X'][c], -d['E'][c], rcond=None)[0]
+        return np.array([np.clip(w[0], 0., 1.), np.clip(w[1], 0., 1.), np.clip(w[2], -PAIR_SHIFT_MAX, PAIR_SHIFT_MAX)])
+    line('coefs fitted to each photo', np.array([[rms(d['E'][c] + d['X'][c] @ own(d, c)) for c in range(4)] for d in data]))
     if args.cv:
         fold = np.random.default_rng(0).permutation(len(data)) % 5
         held = np.zeros((len(data), 4))
@@ -1520,26 +1539,29 @@ def pair(args):
                 model = pair_fit(train, c)
                 for i in np.flatnonzero(fold == k):
                     held[i, c] = rms(data[i]['E'][c] + data[i]['X'][c] @ pair_fractions(model, data[i], c))
-        line('fractions predicted, photo held out', held)
+        line('coefs predicted, photo held out', held)
         print('  photos closer / further by 0.02 EV than the sum: ' + '  '.join(
             f'{int((held[:, c] < plain[:, c] - 0.02).sum())} / {int((held[:, c] > plain[:, c] + 0.02).sum())}' for c in range(4)))
     models = [pair_fit(data, c) for c in range(4)]
     fitted = np.array([[rms(d['E'][c] + d['X'][c] @ pair_fractions(models[c], d, c)) for c in range(4)] for d in data])
-    line('fractions predicted, fitted on all', fitted)
-    fractions = np.array([[pair_fractions(models[c], d, c) for c in range(4)] for d in data])
-    print('  median fractions (Shadows, Highlights): ' + '  '.join(
-        f'{np.median(fractions[:, c, 0]):.2f}, {np.median(fractions[:, c, 1]):.2f}' for c in range(4)))
+    line('coefs predicted, fitted on all', fitted)
+    coefs = np.array([[pair_fractions(models[c], d, c) for c in range(4)] for d in data])
+    print('  median (Shadows f, Highlights f, shift c0): ' + '  '.join(
+        f'({np.median(coefs[:, c, 0]):.2f}, {np.median(coefs[:, c, 1]):.2f}, {np.median(coefs[:, c, 2]):+.2f})' for c in range(4)))
+    nf = models[0][0].size
     arr = lambda v: '[' + ', '.join(repr(float(np.float32(x))) for x in v) + ']'
     DATA_PAIR.write_text(
-        "//! How Shadows' and Highlights' fractions follow the photo (`local_tone_rule::Pair`):\n"
-        "//! per sign combination, the inputs' means and deviations and, for each slider, the\n"
-        "//! intercept and weights. Written by `scripts/corpus/scene-tone-rule.py pair`.\n"
+        "//! How Shadows' and Highlights' blend fractions and uniform shift follow the photo\n"
+        "//! (`local_tone_rule::Pair`): per sign combination, the 14 inputs' means and\n"
+        "//! deviations and, for Shadows' blend, Highlights' blend and the uniform shift,\n"
+        "//! the intercept and weights. Written by `scripts/corpus/scene-tone-rule.py pair`.\n"
         '#![allow(clippy::excessive_precision, clippy::unreadable_literal)]\n'
+        f'/// Photo inputs `Pair` reads.\npub(super) const FEATURES: usize = {nf};\n'
         # One row of numbers per line: rustfmt would put each number on a line of its own.
-        + '#[rustfmt::skip]\npub(super) const MU: [[f32; 6]; 4] = [\n' + ''.join(f'    {arr(m[0])},\n' for m in models) + '];\n'
-        + '#[rustfmt::skip]\npub(super) const SD: [[f32; 6]; 4] = [\n' + ''.join(f'    {arr(m[1])},\n' for m in models) + '];\n'
-        + '#[rustfmt::skip]\npub(super) const BETA: [[[f32; 7]; 2]; 4] = [\n'
-        + ''.join(f'    [\n        {arr(m[2][0])},\n        {arr(m[2][1])},\n    ],\n' for m in models) + '];\n')
+        + f'#[rustfmt::skip]\npub(super) const MU: [[f32; FEATURES]; 4] = [\n' + ''.join(f'    {arr(m[0])},\n' for m in models) + '];\n'
+        + f'#[rustfmt::skip]\npub(super) const SD: [[f32; FEATURES]; 4] = [\n' + ''.join(f'    {arr(m[1])},\n' for m in models) + '];\n'
+        + f'#[rustfmt::skip]\npub(super) const BETA: [[[f32; FEATURES + 1]; 3]; 4] = [\n'
+        + ''.join(f'    [\n        {arr(m[2][0])},\n        {arr(m[2][1])},\n        {arr(m[2][2])},\n    ],\n' for m in models) + '];\n')
     print('wrote', DATA_PAIR)
 
 

@@ -445,7 +445,7 @@ impl CurveSet {
                 .map(|&i| crate::develop::local_tone::level(levels[i]))
                 .collect();
             let q_pre = q001(pre.clone());
-            let shift = |shadows: f32| {
+            let shift = |shadows: f32, highlights: f32| {
                 if shadows == 0. {
                     return 0.;
                 }
@@ -456,8 +456,11 @@ impl CurveSet {
                         let y = levels[i];
                         let x = ((i % sw) as f32 + 0.5) / map.scale[0] - 0.5;
                         let yy = ((i / sw) as f32 + 0.5) / map.scale[1] - 0.5;
-                        let g = (map.gain_with(x, yy, y, [shadows, 0., 0.])
-                            / map.gain_with(x, yy, y, [0., 0., 0.]))
+                        // Divide out the highlights-only gain so the shift vanishes
+                        // continuously as shadows -> 0 while capturing both Shadows and
+                        // any Shadows+Highlights pair interaction when shadows != 0.
+                        let g = (map.gain_with(x, yy, y, [shadows, highlights, 0.])
+                            / map.gain_with(x, yy, y, [0., highlights, 0.]))
                         .log2();
                         l_pre + g
                     })
@@ -465,11 +468,11 @@ impl CurveSet {
                 q001(post) - q_pre
             };
             let mut adjusted = lut.measures;
-            adjusted.dark += shift(r.shadows);
+            adjusted.dark += shift(r.shadows, r.highlights);
             // One row for each tenth of a mask's total Shadows, −100 to +100.
             let mask_keys = local_tone.then(|| {
                 std::array::from_fn(|i| {
-                    lut.measures.dark_key(r.exposure) + shift((i as f32 - 10.) / 10.)
+                    lut.measures.dark_key(r.exposure) + shift((i as f32 - 10.) / 10., r.highlights)
                 })
             });
             let haze = lut.scene.haze.take();
@@ -1027,5 +1030,72 @@ mod tests {
             let pro = [v, v * 0.8, v * 0.6];
             assert_eq!(with.apply(pro), without.apply(pro), "{v}");
         }
+    }
+
+    /// With Shadows and Highlights both set, `default_black`'s dark key follows the pair's
+    /// combined dark-end lift rather than Shadows alone, stays continuous as Shadows → 0,
+    /// and leaves Highlights-only identical to default.
+    #[test]
+    fn pair_dark_key_follows_both_sliders_and_vanishes_at_zero_shadows() {
+        let (w, h) = (64u32, 64u32);
+        // Dark scene with a bright highlight corner so default_black stays well inside
+        // its active [-14, -7] EV range even after Shadows +100, and the pair interaction
+        // shifts dark tones beyond Shadows alone.
+        let pixels: Vec<[f32; 3]> = (0..w * h)
+            .map(|i| {
+                let x = (i % w) as f32 / w as f32;
+                let y = (i / w) as f32 / h as f32;
+                let v = if x > 0.85 && y > 0.85 {
+                    0.8
+                } else {
+                    (-14. + 6. * x + 0.3 * ((i * 37 % 13) as f32 / 13.)).exp2()
+                };
+                [v; 3]
+            })
+            .collect();
+        let im = CameraImage {
+            width: w,
+            height: h,
+            recovered: Default::default(),
+            pixels: pixels.into(),
+            metadata: Metadata {
+                wb: [1., 1., 1.],
+                matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let eval = |shadows: f32, highlights: f32| {
+            let r = Recipe {
+                shadows,
+                highlights,
+                ..Default::default()
+            };
+            let cam = camera_stage(&im.metadata, &r);
+            let lut = CurveSet::for_image(Source::new(&im), &r, cam, false);
+            // Probe a deep shadow pixel through default_black (`GlobalTone::apply`).
+            lut.scene.global.apply([(-10.0f32).exp2(); 3])[0]
+        };
+        let def = eval(0., 0.);
+        let h_only = eval(0., 1.);
+        let tiny_s_with_h = eval(1e-4, 1.);
+        let s_only = eval(1., 0.);
+        let both_up = eval(1., 1.);
+        // Highlights alone does not shift default_black; tiny Shadows + Highlights stays
+        // continuous with Highlights alone (no jump at shadows = 0).
+        assert_eq!(h_only, def);
+        assert!(
+            (tiny_s_with_h - h_only).abs() < 1e-4,
+            "jump at shadows -> 0: h_only={h_only} tiny={tiny_s_with_h}"
+        );
+        // S+100/H+100 lifts the dark end further than S+100 alone, moving default_black's
+        // key upward (darker output at the same scene input as the black point rises).
+        assert!(
+            (both_up - s_only).abs() > 1e-5,
+            "pair dark_key did not move from S-only: s_only={s_only} both_up={both_up}"
+        );
     }
 }

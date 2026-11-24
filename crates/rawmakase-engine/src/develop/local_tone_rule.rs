@@ -476,7 +476,9 @@ impl RuleStats {
                     .sum();
                 (sum / n as f64) as f32
             });
-            let fractions = std::array::from_fn(|c| {
+            let mut fractions = [[0f32; 2]; 4];
+            let mut shifts = [0f32; 4];
+            for c in 0..4 {
                 let [s, h] = Pair::KINDS[c].map(|kind| kind as usize);
                 let size = |k: usize| extremes[k].abs();
                 let x = [
@@ -486,18 +488,33 @@ impl RuleStats {
                     size(h),
                     1. / size(s).max(PAIR_EXTREME_MIN),
                     1. / size(h).max(PAIR_EXTREME_MIN),
+                    self.top,
+                    self.q50,
+                    self.mean,
+                    self.bot,
+                    self.top - self.q50,
+                    self.q50 - self.bot,
+                    self.q90 - self.q10,
+                    self.lin_mean - self.mean,
                 ];
-                std::array::from_fn(|slider| {
-                    let w = &pair::BETA[c][slider];
-                    let z = x.iter().zip(&pair::MU[c]).zip(&pair::SD[c]);
-                    z.zip(&w[1..])
-                        .fold(w[0], |sum, (((x, mu), sd), w)| sum + w * (x - mu) / sd)
-                        .clamp(0., 1.)
-                })
-            });
+                let eval = |row: usize| {
+                    let w = &pair::BETA[c][row];
+                    x.iter()
+                        .zip(&pair::MU[c])
+                        .zip(&pair::SD[c])
+                        .zip(&w[1..])
+                        .fold(w[0], |sum, (((&v, &mu), &sd), &w)| {
+                            let z = ((v - mu) / sd).clamp(-PAIR_Z_CLAMP, PAIR_Z_CLAMP);
+                            sum + w * z
+                        })
+                };
+                fractions[c] = [eval(0).clamp(0., 1.), eval(1).clamp(0., 1.)];
+                shifts[c] = eval(2).clamp(-PAIR_SHIFT_MAX, PAIR_SHIFT_MAX);
+            }
             Pair {
                 extremes,
                 fractions,
+                shifts,
             }
         })
     }
@@ -509,6 +526,11 @@ const PAIR_LOW: f32 = 0.01;
 const PAIR_HIGH: f32 = 0.99;
 /// The smallest extreme (stops) the fractions' fit divides by.
 const PAIR_EXTREME_MIN: f32 = 0.05;
+/// Standardized feature clamp for [`Pair`] so out-of-distribution synthetic frames never
+/// extrapolate linearly.
+const PAIR_Z_CLAMP: f32 = 4.;
+/// Maximum magnitude (stops) of [`Pair::shifts`] at equal full sliders.
+const PAIR_SHIFT_MAX: f32 = 1.5;
 /// How a slider's fraction sets in with the other slider's share of it
 /// ([`Pair::at`]): as this power of the ratio for two sliders of one sign.
 pub(crate) const PAIR_SAME_POWER: f32 = 1.7;
@@ -517,16 +539,14 @@ pub(crate) const PAIR_SAME_POWER: f32 = 1.7;
 pub(crate) const PAIR_OPPOSITE_RATE: f32 = 2.4;
 /// Shadows and Highlights together. Camera Raw's render of the two is not the product
 /// of their single gains (60 training photos, 2026-11-17): moved the same way they
-/// brighten or darken every level by nearly half a stop more, moved opposite ways each
-/// does less at its own end. What fits its combined renders to 0.01–0.05 stop per photo:
-/// with both set, each slider's curve is blended toward a uniform gain at the curve's
-/// extreme, `(1 − f) · curve(level) + f · extreme`, so each protects the other end of
-/// the tonal range less. The two fractions differ by photo and by the sliders' signs,
-/// and are predicted here from the photo's own curves (`local_tone_rule_pair_data.rs`,
-/// `scene-tone-rule.py pair`). They do not depend on the sliders' size, only on their
-/// ratio: a slider's fraction grows with the other slider up to equal amounts and stays
-/// there beyond (16 photos, one slider at a tenth, a quarter and a half of the other;
-/// docs/scene-tone-stage.md).
+/// brighten or darken every level by nearly half a stop more (and over a stop on dark
+/// scenes), moved opposite ways each does less at its own end. With both set, each
+/// slider's curve is blended toward a uniform gain at its extreme,
+/// `(1 − f) · curve(level) + f · extreme`, plus a photo-dependent uniform shift `c0`
+/// (predicted from the curves and photo brightness statistics in
+/// `local_tone_rule_pair_data.rs`, `scene-tone-rule.py pair`). Fractions ramp in with
+/// the other slider's share up to equal amounts; the uniform shift scales with the
+/// smaller slider times the same ramp, so both vanish smoothly when either slider is 0.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Pair {
     /// Each unit curve's gain at the photo's extreme for its control, in
@@ -536,6 +556,9 @@ pub(crate) struct Pair {
     /// Per sign combination ([`Self::combination`]): Shadows' and Highlights' fraction
     /// at equal sliders.
     pub(crate) fractions: [[f32; 2]; 4],
+    /// Per sign combination ([`Self::combination`]): uniform log2 gain shift at equal
+    /// full sliders (`|s| = |h| = 1`).
+    pub(crate) shifts: [f32; 4],
 }
 impl Pair {
     /// The curves of each sign combination, Shadows' then Highlights': both up, both
@@ -555,21 +578,26 @@ impl Pair {
             (false, true) => 3,
         }
     }
-    /// For Shadows and for Highlights at these slider values: the fraction of its unit
-    /// curve that turns into a uniform gain, and that curve's extreme. None with either
+    /// For Shadows and for Highlights at these slider values: each slider's blend
+    /// fraction and unit extreme, plus the uniform log2 gain shift. None with either
     /// slider at 0, where each renders as it does alone.
-    pub(crate) fn at(&self, shadows: f32, highlights: f32) -> Option<[[f32; 2]; 2]> {
+    pub(crate) fn at(&self, shadows: f32, highlights: f32) -> Option<([[f32; 2]; 2], f32)> {
         if shadows == 0. || highlights == 0. {
             return None;
         }
         let c = Self::combination(shadows, highlights);
         let same = c < 2;
         let (s, h) = (shadows.abs().min(1.), highlights.abs().min(1.));
+        let lo = s.min(h);
+        let hi = s.max(h);
         let extreme = |slider: usize| self.extremes[Self::KINDS[c][slider] as usize];
-        Some([
-            [self.fractions[c][0] * ramp(h / s, same), extreme(0)],
-            [self.fractions[c][1] * ramp(s / h, same), extreme(1)],
-        ])
+        Some((
+            [
+                [self.fractions[c][0] * ramp(h / s, same), extreme(0)],
+                [self.fractions[c][1] * ramp(s / h, same), extreme(1)],
+            ],
+            self.shifts[c] * lo * ramp(lo / hi, same),
+        ))
     }
 }
 /// How much of a slider's fraction applies when the other slider is `ratio` of it
@@ -683,6 +711,7 @@ mod tests {
         Pair {
             extremes: [2., -1., -3., 1.5],
             fractions: [[0.1, 0.4], [0.2, 0.3], [0.12, 0.25], [0.08, 0.35]],
+            shifts: [0.3, -0.2, 0.05, 0.15],
         }
     }
 
@@ -694,13 +723,17 @@ mod tests {
 
     #[test]
     fn a_pair_reads_its_sign_combinations_curves() {
-        // Each combination has its own fractions and blends toward the extremes of the
-        // two curves it uses, at equal sliders in full.
+        // Each combination has its own fractions and uniform shift, blending toward the
+        // extremes of the two curves it uses, at equal sliders in full (shift scaling
+        // linearly with slider size).
         let p = pair();
-        assert_eq!(p.at(1., 1.), Some([[0.1, 2.], [0.4, 1.5]]));
-        assert_eq!(p.at(-0.5, -0.5), Some([[0.2, -3.], [0.3, -1.]]));
-        assert_eq!(p.at(0.3, -0.3), Some([[0.12, 2.], [0.25, -1.]]));
-        assert_eq!(p.at(-1., 1.), Some([[0.08, -3.], [0.35, 1.5]]));
+        assert_eq!(p.at(1., 1.), Some(([[0.1, 2.], [0.4, 1.5]], 0.3)));
+        assert_eq!(p.at(-0.5, -0.5), Some(([[0.2, -3.], [0.3, -1.]], -0.1)));
+        assert_eq!(
+            p.at(0.3, -0.3),
+            Some(([[0.12, 2.], [0.25, -1.]], 0.05 * 0.3))
+        );
+        assert_eq!(p.at(-1., 1.), Some(([[0.08, -3.], [0.35, 1.5]], 0.15)));
     }
 
     #[test]
@@ -708,21 +741,24 @@ mod tests {
         // A slider's fraction grows with the other slider's share of it and is whole
         // from equal sliders on; the larger slider's stays whole. There is no jump at 0.
         let p = pair();
-        let shadows = |h: f32| p.at(1., h).unwrap()[0][0];
-        assert!(shadows(1e-4) < 1e-6 && p.at(1., -1e-4).unwrap()[0][0] < 1e-4);
+        let shadows = |h: f32| p.at(1., h).unwrap().0[0][0];
+        assert!(shadows(1e-4) < 1e-6 && p.at(1., -1e-4).unwrap().0[0][0] < 1e-4);
+        assert!(p.at(1., 1e-4).unwrap().1.abs() < 1e-6);
         let mut last = 0.;
         for h in [0.1, 0.25, 0.5, 0.75, 1.] {
             assert!(shadows(h) > last, "{h}");
             last = shadows(h);
         }
         assert_eq!(shadows(1.), 0.1);
-        assert_eq!(p.at(0.25, 1.).unwrap()[0][0], 0.1);
+        assert_eq!(p.at(0.25, 1.).unwrap().0[0][0], 0.1);
         // The measured shapes: the power 1.7 of the ratio for one sign, faster for
         // opposite signs.
         assert!((shadows(0.25) / 0.1 - 0.25f32.powf(1.7)).abs() < 1e-5);
-        let opposite = p.at(1., -0.25).unwrap()[0][0] / 0.12;
+        let opposite = p.at(1., -0.25).unwrap().0[0][0] / 0.12;
         assert!((opposite - 0.4962).abs() < 1e-3, "{opposite}");
-        assert_eq!(p.at(1., -0.25).unwrap()[1][0], 0.25);
+        assert_eq!(p.at(1., -0.25).unwrap().0[1][0], 0.25);
+        // Shift scales with min(|s|, |h|) * ramp(min/max, same).
+        assert!((p.at(1., 0.25).unwrap().1 - 0.3 * 0.25 * 0.25f32.powf(1.7)).abs() < 1e-5);
     }
 
     #[test]
