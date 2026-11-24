@@ -32,19 +32,7 @@ impl Editor {
                 ui.visuals_mut().widgets.hovered.bg_fill = palette.tone(Tone::OUTLINE);
                 ui.visuals_mut().widgets.hovered.weak_bg_fill = palette.tone(Tone::OUTLINE);
                 ui.horizontal(|ui| {
-                    if toolbar_action(ui, "", 32., false, can_undo, 1)
-                        .on_hover_text("Undo · Ctrl+Z")
-                        .clicked()
-                    {
-                        self.undo();
-                    }
-                    if toolbar_action(ui, "", 32., false, can_redo, 2)
-                        .on_hover_text("Redo · Ctrl+Shift+Z")
-                        .clicked()
-                    {
-                        self.redo();
-                    }
-                    toolbar_divider(ui);
+                    let gap = ui.spacing().item_spacing.x;
                     let before_only = self.view.compare == Compare::BeforeOnly;
                     // Short of room, Before is its icon: the zoom slider keeps its
                     // width on the right.
@@ -53,16 +41,62 @@ impl Editor {
                     } else {
                         ("", 32.)
                     };
-                    if toolbar_action(ui, label, width, before_only, true, 3)
-                        .on_hover_text("Show Before · Backslash")
-                        .clicked()
+                    // Undo, Redo, the divider, Before, Before/After, Reference and
+                    // Clipping, in that order, as many as the right side leaves room
+                    // for at its least; the rest are in the photo's menu.
+                    let shown = shown_buttons(
+                        [
+                            32.,
+                            32.,
+                            12.,
+                            width,
+                            104.,
+                            self.reference_controls_width(gap),
+                            78.,
+                        ],
+                        ui.available_width() - RIGHT_LEAST,
+                        gap,
+                    );
+                    if shown > 0
+                        && toolbar_action(ui, "", 32., false, can_undo, 1)
+                            .on_hover_text("Undo · Ctrl+Z")
+                            .clicked()
+                    {
+                        self.undo();
+                    }
+                    if shown > 1
+                        && toolbar_action(ui, "", 32., false, can_redo, 2)
+                            .on_hover_text("Redo · Ctrl+Shift+Z")
+                            .clicked()
+                    {
+                        self.redo();
+                    }
+                    if shown > 3 {
+                        toolbar_divider(ui);
+                    }
+                    if shown > 3
+                        && toolbar_action(ui, label, width, before_only, true, 3)
+                            .on_hover_text("Show Before · Backslash")
+                            .clicked()
                     {
                         let view = self.view.compare.toggled(Compare::BeforeOnly);
                         self.set_compare(view);
                     }
-                    self.before_after_menu(ui);
-                    self.reference_controls(ui);
-                    if toolbar_action(ui, "Clipping", 78., self.view.clipping.both_on(), true, 0)
+                    if shown > 4 {
+                        self.before_after_menu(ui);
+                    }
+                    if shown > 5 {
+                        self.reference_controls(ui);
+                    }
+                    if shown > 6
+                        && toolbar_action(
+                            ui,
+                            "Clipping",
+                            78.,
+                            self.view.clipping.both_on(),
+                            true,
+                            0,
+                        )
                         .on_hover_text("Show clipped shadows and highlights · J")
                         .clicked()
                     {
@@ -82,6 +116,10 @@ impl Editor {
                         egui::Popup::menu(&settings).show(|ui| {
                             crate::app::ui::widgets::menu_width(ui, 270.);
                             ui.spacing_mut().item_spacing.y = 0.;
+                            if shown < 7 {
+                                self.hidden_toolbar_items(ui, shown, can_undo, can_redo);
+                                menu_separator(ui);
+                            }
                             let (cmd, shift) = if cfg!(target_os = "macos") {
                                 ("⌘ ", "Shift ")
                             } else {
@@ -271,9 +309,8 @@ impl Editor {
     /// Reference View's button, and while it shows, its layout and lock, as in
     /// Lightroom's toolbar.
     fn reference_controls(&mut self, ui: &mut egui::Ui) {
-        use crate::app::develop::before_after::Axis;
         let shown = self.reference_view();
-        if toolbar_action(ui, "Reference", 84., shown, true, 0)
+        if toolbar_action(ui, "Reference", REFERENCE_WIDTH, shown, true, 0)
             .on_hover_text("Reference View · Shift+R")
             .clicked()
         {
@@ -282,23 +319,27 @@ impl Editor {
         if !shown {
             return;
         }
-        for (layout, label, width) in [
-            (Axis::LeftRight, "Left / Right", 92.),
-            (Axis::TopBottom, "Top / Bottom", 98.),
-        ] {
+        for (layout, label, width) in REFERENCE_LAYOUTS {
             let chosen = self.view.compare == Compare::Reference(layout);
             if toolbar_action(ui, label, width, chosen, true, 0).clicked() {
                 self.set_reference_layout(layout);
             }
         }
         let locked = self.reference.locked;
-        if toolbar_action(ui, "Lock", 54., locked, self.reference.photo.is_some(), 0)
-            .on_hover_text(if locked {
-                "The reference photo stays when you leave Develop"
-            } else {
-                "Keep the reference photo when you leave Develop"
-            })
-            .clicked()
+        if toolbar_action(
+            ui,
+            "Lock",
+            LOCK_WIDTH,
+            locked,
+            self.reference.photo.is_some(),
+            0,
+        )
+        .on_hover_text(if locked {
+            "The reference photo stays when you leave Develop"
+        } else {
+            "Keep the reference photo when you leave Develop"
+        })
+        .clicked()
         {
             self.reference.locked = !locked;
         }
@@ -309,51 +350,133 @@ impl Editor {
         let two_up = self.view.compare.two_up() && self.view.compare.shows_before();
         let button = toolbar_action(ui, "Before / After", 104., two_up, true, 0)
             .on_hover_text("Before/After views · Y, Option+Y, Shift+Y");
-        let mac = cfg!(target_os = "macos");
-        let alt = if mac { "⌥ " } else { "Alt+" };
-        let transfer = if mac { "⌥⇧⌘ " } else { "Ctrl+Alt+Shift+" };
         egui::Popup::menu(&button).show(|ui| {
             crate::app::ui::widgets::menu_width(ui, 300.);
             ui.spacing_mut().item_spacing.y = 0.;
-            for (view, name) in crate::app::develop::before_after::VIEWS {
-                let keys = match view {
-                    Compare::BeforeOnly => "\\".to_string(),
-                    Compare::SideBySide(crate::app::develop::before_after::Axis::LeftRight) => {
-                        "Y".into()
-                    }
-                    Compare::SideBySide(_) => format!("{alt}Y"),
-                    Compare::Split(crate::app::develop::before_after::Axis::LeftRight) => {
-                        "Shift+Y".into()
-                    }
-                    _ => String::new(),
-                };
-                if menu_item(ui, name, &keys, true, self.view.compare == view) {
-                    let view = self.view.compare.toggled(view);
-                    self.set_compare(view);
-                    ui.close();
-                }
-            }
-            menu_separator(ui);
-            for (transfer_kind, name, key) in [
-                (
-                    Transfer::BeforeToAfter,
-                    "Copy Before's Settings to After",
-                    "→",
-                ),
-                (
-                    Transfer::AfterToBefore,
-                    "Copy After's Settings to Before",
-                    "←",
-                ),
-                (Transfer::Swap, "Swap Before and After Settings", "↑"),
-            ] {
-                let keys = format!("{transfer}{key}");
-                if menu_item(ui, name, &keys, self.document.full().is_some(), false) {
-                    self.transfer(transfer_kind);
-                    ui.close();
-                }
-            }
+            self.before_after_items(ui);
         });
+    }
+    /// The Before/After menu's items: the views, and copying or swapping settings.
+    fn before_after_items(&mut self, ui: &mut egui::Ui) {
+        let mac = cfg!(target_os = "macos");
+        let alt = if mac { "⌥ " } else { "Alt+" };
+        let transfer = if mac { "⌥⇧⌘ " } else { "Ctrl+Alt+Shift+" };
+        for (view, name) in crate::app::develop::before_after::VIEWS {
+            let keys = match view {
+                Compare::BeforeOnly => "\\".to_string(),
+                Compare::SideBySide(crate::app::develop::before_after::Axis::LeftRight) => {
+                    "Y".into()
+                }
+                Compare::SideBySide(_) => format!("{alt}Y"),
+                Compare::Split(crate::app::develop::before_after::Axis::LeftRight) => {
+                    "Shift+Y".into()
+                }
+                _ => String::new(),
+            };
+            if menu_item(ui, name, &keys, true, self.view.compare == view) {
+                let view = self.view.compare.toggled(view);
+                self.set_compare(view);
+                ui.close();
+            }
+        }
+        menu_separator(ui);
+        for (transfer_kind, name, key) in [
+            (
+                Transfer::BeforeToAfter,
+                "Copy Before's Settings to After",
+                "→",
+            ),
+            (
+                Transfer::AfterToBefore,
+                "Copy After's Settings to Before",
+                "←",
+            ),
+            (Transfer::Swap, "Swap Before and After Settings", "↑"),
+        ] {
+            let keys = format!("{transfer}{key}");
+            if menu_item(ui, name, &keys, self.document.full().is_some(), false) {
+                self.transfer(transfer_kind);
+                ui.close();
+            }
+        }
+    }
+    /// The width [`Self::reference_controls`] takes, its layouts and lock with it
+    /// while Reference View shows.
+    fn reference_controls_width(&self, gap: f32) -> f32 {
+        if self.reference_view() {
+            REFERENCE_LAYOUTS
+                .iter()
+                .map(|(_, _, width)| width + gap)
+                .sum::<f32>()
+                + REFERENCE_WIDTH
+                + LOCK_WIDTH
+                + gap
+        } else {
+            REFERENCE_WIDTH
+        }
+    }
+    /// The toolbar's buttons from the `shown`th on (Undo, Redo, the divider,
+    /// Before, Before/After, Reference, Clipping), which found no room, as the
+    /// photo menu's first items. Before/After's items have Before alone.
+    fn hidden_toolbar_items(
+        &mut self,
+        ui: &mut egui::Ui,
+        shown: usize,
+        can_undo: bool,
+        can_redo: bool,
+    ) {
+        let (cmd, shift) = if cfg!(target_os = "macos") {
+            ("⌘ ", "Shift ")
+        } else {
+            ("Ctrl+", "Shift+")
+        };
+        if shown < 1 && menu_item(ui, "Undo", &format!("{cmd}Z"), can_undo, false) {
+            self.undo();
+            ui.close();
+        }
+        if shown < 2 && menu_item(ui, "Redo", &format!("{cmd}{shift}Z"), can_redo, false) {
+            self.redo();
+            ui.close();
+        }
+        if shown < 2 {
+            menu_separator(ui);
+        }
+        if shown <= 4 {
+            crate::app::ui::widgets::submenu(ui, "Before / After", true, |ui| {
+                crate::app::ui::widgets::menu_width(ui, 300.);
+                ui.spacing_mut().item_spacing.y = 0.;
+                self.before_after_items(ui);
+            });
+        }
+        if shown <= 5 {
+            crate::app::ui::widgets::submenu(ui, "Reference", true, |ui| {
+                crate::app::ui::widgets::menu_width(ui, 220.);
+                ui.spacing_mut().item_spacing.y = 0.;
+                let reference = self.reference_view();
+                if menu_item(ui, "Reference View", "Shift+R", true, reference) {
+                    self.toggle_reference_view();
+                    ui.close();
+                }
+                for (layout, label, _) in REFERENCE_LAYOUTS {
+                    let chosen = self.view.compare == Compare::Reference(layout);
+                    if menu_item(ui, label, "", reference, chosen) {
+                        self.set_reference_layout(layout);
+                        ui.close();
+                    }
+                }
+                let locked = self.reference.locked;
+                let photo = reference && self.reference.photo.is_some();
+                if menu_item(ui, "Lock", "", photo, locked) {
+                    self.reference.locked = !locked;
+                    ui.close();
+                }
+            });
+        }
+        let clipping = self.view.clipping.both_on();
+        if menu_item(ui, "Show Clipping", "J", true, clipping) {
+            self.view.clipping.toggle_both();
+            ui.close();
+        }
     }
     /// Back to the raw defaults, like Lightroom's Reset.
     pub(in crate::app) fn reset_settings(&mut self) {
@@ -391,6 +514,44 @@ const NARROW_TOOLBAR: f32 = 1000.;
 /// The zoom slider's least and greatest widths in the toolbar.
 const ZOOM_SLIDER: (f32, f32) = (176., 220.);
 const PHOTO_MENU_WIDTH: f32 = 82.;
+/// Reference View's button, its layouts' buttons and its lock's, which the
+/// toolbar and the photo menu share.
+const REFERENCE_WIDTH: f32 = 84.;
+const REFERENCE_LAYOUTS: [(crate::app::develop::before_after::Axis, &str, f32); 2] = [
+    (
+        crate::app::develop::before_after::Axis::LeftRight,
+        "Left / Right",
+        92.,
+    ),
+    (
+        crate::app::develop::before_after::Axis::TopBottom,
+        "Top / Bottom",
+        98.,
+    ),
+];
+const LOCK_WIDTH: f32 = 54.;
+/// The least the toolbar's right side takes: the photo menu as its icon, the
+/// divider, the zoom slider at its least and the magnifier without its level,
+/// with the room [`Editor::zoom_controls`] keeps around them.
+const RIGHT_LEAST: f32 = 32.
+    + 12.
+    + ZOOM_SLIDER.0
+    + crate::app::view::magnifier::CONTROLS_NARROW_WIDTH
+    + space::L * 2.
+    + space::M * 2.;
+
+/// How many of the buttons of `widths`, in order, fit in `room` with `gap`
+/// after each.
+fn shown_buttons<const N: usize>(widths: [f32; N], room: f32, gap: f32) -> usize {
+    let mut left = room;
+    widths
+        .iter()
+        .take_while(|w| {
+            left -= *w + gap;
+            left >= 0.
+        })
+        .count()
+}
 
 /// The photo's menu button: "Photo" and a chevron, or `…` alone when not `wide`.
 fn photo_menu_button(ui: &mut egui::Ui, wide: bool) -> egui::Response {
@@ -423,4 +584,20 @@ fn photo_menu_button(ui: &mut egui::Ui, wide: bool) -> egui::Response {
         color,
     );
     response
+}
+
+#[cfg(test)]
+mod overflow_tests {
+    use super::shown_buttons;
+
+    #[test]
+    fn the_buttons_that_fit_show_in_order() {
+        let widths = [32., 104., 84., 78.];
+        // 32 + 104 + 84 + 78 and a gap of 8 after each.
+        assert_eq!(shown_buttons(widths, 330., 8.), 4);
+        assert_eq!(shown_buttons(widths, 329., 8.), 3);
+        assert_eq!(shown_buttons(widths, 40. + 112., 8.), 2);
+        assert_eq!(shown_buttons(widths, 39., 8.), 0);
+        assert_eq!(shown_buttons(widths, -50., 8.), 0);
+    }
 }

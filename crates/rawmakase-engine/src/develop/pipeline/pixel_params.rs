@@ -56,6 +56,8 @@ pub(crate) mod slot {
         LOCAL_FINE: 1,
         SHADOWS: 4,
         HIGHLIGHTS: 4,
+        // Combined global pixel-level contrast curve (`local_tone::LocalToneMap::pix`).
+        PIX: 4,
         // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
         // grid or -1 (see `local_tone::LocalToneMap::lift`).
         LIFT: 8,
@@ -63,6 +65,9 @@ pub(crate) mod slot {
         // +100, Highlights −100, Shadows −100 and Highlights +100, for masks
         // (`local_tone::LocalToneMap::rule`).
         RULE: 16,
+        // Full-strength pixel-level contrast curves in `RULE`'s order, for masks
+        // (`local_tone::LocalToneMap::rule_pix`).
+        RULE_PIX: 16,
         // How Shadows and Highlights act together, for masks (`local_tone_rule::Pair`):
         // the four unit curves' extremes in `RULE`'s order, then Shadows' and Highlights'
         // fraction for each sign combination. All 0 without one: nothing is blended.
@@ -162,11 +167,12 @@ pub(crate) fn wgsl_prelude() -> String {
              const SCENE_U: vec3<f32> = vec3({U_FIRST:?}, {U_STEP:?}, {U_SAMPLES}.0);\n\
              const SCENE_S: vec3<f32> = vec3(-1.0, {SLIDER_STEP:?}, {SLIDERS}.0);\n\
              const MASK_VALUES = array<f32, {}>({});\n\
-             const LOCAL_FLOOR: f32 = {:?};\n\
+             const LOCAL_FLOOR: f32 = {:?};\nconst LAPLACIAN_SIGMA: f32 = {:?};\n\
              const PAIR_SAME_POWER: f32 = {:?};\nconst PAIR_OPPOSITE_RATE: f32 = {:?};\n",
             MASK_VALUES.len(),
             MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
             crate::develop::local_tone::FLOOR,
+            crate::develop::local_tone::LAPLACIAN_SIGMA,
             crate::develop::local_tone_rule::PAIR_SAME_POWER,
             crate::develop::local_tone_rule::PAIR_OPPOSITE_RATE
         )
@@ -462,6 +468,7 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     };
     let shadows = curve(local.shadows.as_ref());
     let highlights = curve(local.highlights.as_ref());
+    let pix = curve(local.pix.as_ref());
     let [detail, region] = match &local.lift {
         Some([d, r]) => [curve(Some(d)), curve(Some(r))],
         None => [curve(None), curve(None)],
@@ -471,10 +478,17 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         .iter()
         .flat_map(|unit| curve(unit.as_ref()))
         .collect();
+    let rule_pix: Vec<f32> = local
+        .rule_pix
+        .iter()
+        .flat_map(|unit| curve(unit.as_ref()))
+        .collect();
     p.set(slot::SHADOWS, &shadows);
     p.set(slot::HIGHLIGHTS, &highlights);
+    p.set(slot::PIX, &pix);
     p.set(slot::LIFT, &[detail, region].concat());
     p.set(slot::RULE, &rule);
+    p.set(slot::RULE_PIX, &rule_pix);
     if let Some(pair) = &local.pair {
         let values: Vec<f32> = pair
             .extremes

@@ -30,9 +30,14 @@
 //! its statistics and table to `<path>` as a JSON line and writes the map it read to
 //! `<path>.map` (diagnostics; `scene-tone-rule.py taps` trains on those maps and curves).
 use super::local_tone::{Curve, blur};
-use super::local_tone_rule_data::{B1, B2, B3, FEATURES, MU, SD, W1, W2, W3};
+use super::local_tone_rule_data::{
+    B1, B2, B3, FEATURES, MU, PB1, PB2, PB3, PW1, PW2, PW3, SD, W1, W2, W3,
+};
 use super::local_tone_rule_ext_data as ext;
 use super::local_tone_rule_pair_data as pair;
+
+/// Number of histogram-relative features produced by [`RuleStats::features`].
+const HIST_FEATURES: usize = 28;
 
 /// The controls the rule has a curve for, in the order of [`RuleStats`]' gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,10 +58,6 @@ impl RuleCurve {
         Self::ShadowsDown,
         Self::HighlightsUp,
     ];
-    /// Whether the control brightens: its gains are never negative (else never positive).
-    fn lifts(self) -> bool {
-        matches!(self, Self::ShadowsUp | Self::HighlightsUp)
-    }
     /// Whether the curve is one of Shadows' (else of Highlights').
     fn shadows(self) -> bool {
         matches!(self, Self::ShadowsUp | Self::ShadowsDown)
@@ -85,15 +86,24 @@ const LEVEL_MIN: usize = 50;
 
 /// Histogram statistics of a photo's base levels (its measurement copy).
 pub(super) struct RuleStats {
+    /// The base levels in order: the per-level texture and the pair model read them.
     sorted: Vec<f32>,
+    /// The levels the histogram is read from, in order: the log map under a box blur
+    /// of radius [`STAT_BLUR`].
+    levels: Vec<f32>,
     top: f32,
     bot: f32,
     mean: f32,
+    /// Log2 of the linear-light mean of the blurred levels: captures bright-tail energy
+    /// that the log-space mean misses.
+    lin_mean: f32,
+    q01: f32,
     q10: f32,
     q25: f32,
     q50: f32,
     q75: f32,
     q90: f32,
+    q99: f32,
     /// Fraction of the map within one and two stops of the top.
     m_top1: f32,
     m_top2: f32,
@@ -111,6 +121,12 @@ pub(super) struct RuleStats {
     lo: f32,
     hi: f32,
     gains: [[f32; 4]; LEVELS],
+    /// Pixel-level contrast curves (`G_pix(l)`) sampled over `[pix_lo, pix_hi]` =
+    /// `[bot, top]` (clamped outside so specular highlights and sensor noise do not
+    /// extrapolate), in [`RuleCurve::ALL`]'s order.
+    pix_lo: f32,
+    pix_hi: f32,
+    pix_gains: [[f32; 4]; LEVELS],
     /// How Shadows and Highlights act together on this photo ([`Self::pair`]).
     pair: std::sync::OnceLock<Pair>,
 }
@@ -124,6 +140,15 @@ const LEVELS: usize = 48;
 /// stop too dark, while the eight between three and four stops were as good as the
 /// rest (2026-11-17). The first ensemble reads the bottom as it was fitted with.
 const BOTTOM_GAP: f32 = 3.5;
+/// The histogram's levels (top, bottom, mean, percentiles, masses) are the log map's
+/// under a box blur of this radius in map pixels: nine of the map's 512, 1.8% of the
+/// frame's width. Camera Raw counts a region in its curve from about 1.5% of the frame's
+/// width, whatever the frame's size, while the gain the region takes itself goes by its
+/// size in pixels: a bright spot of 0.12% of the frame lifts a dark field 0.63 EV at
+/// Shadows +100, and seventy-five spots of the same total area 0.04 EV (gap probes,
+/// docs/records/parity-gaps.md, 2026-11-22). So the levels a curve is read at stay the
+/// base's, and what the curve is made from is blurred.
+const STAT_BLUR: usize = 4;
 impl RuleStats {
     /// From the map's log2 luminance and base level (a · log + b), `w` × `h`.
     pub(super) fn new(logs: &[f32], base: &[f32], w: usize, h: usize) -> Self {
@@ -141,10 +166,16 @@ impl RuleStats {
         order.sort_by(|&a, &b| base[a as usize].total_cmp(&base[b as usize]));
         let sorted: Vec<f32> = order.iter().map(|&i| base[i as usize]).collect();
         let n = sorted.len();
-        let q = |p: f32| sorted[((p * (n - 1) as f32) as usize).min(n - 1)];
-        let mean = (sorted.iter().map(|v| *v as f64).sum::<f64>() / n as f64) as f32;
-        // The maximum, not a percentile: a small bright object sets the top, and the
-        // mass features then see it as a small mass (the textured-square probes).
+        let mut levels = blur(logs, w, h, STAT_BLUR);
+        levels.sort_by(f32::total_cmp);
+        let q = |p: f32| levels[((p * (n - 1) as f32) as usize).min(n - 1)];
+        let mean = (levels.iter().map(|v| *v as f64).sum::<f64>() / n as f64) as f32;
+        let lin_mean =
+            (levels.iter().map(|v| f64::from(*v).exp2()).sum::<f64>() / n as f64).log2() as f32;
+        // The maximum, not a percentile: a bright object sets the top, and the mass
+        // features then see it as a small mass (the textured-square probes).
+        let stat_top = levels[n - 1];
+        // The band the top's texture is read in is the base's.
         let top = sorted[n - 1];
         let smooth = blur(logs, w, h, TEXTURE_RADIUS);
         let (mut sum, mut sum_top, mut count_top) = (0f64, 0f64, 0usize);
@@ -173,20 +204,26 @@ impl RuleStats {
             .collect();
         let fine_median = median(&fine_by_level);
         let coarse_median = median(&coarse_by_level);
+        let (base_lo, base_hi) = (sorted[0], top);
+        let top = stat_top;
         let mut stats = Self {
             top,
             bot: q(0.001),
             mean,
+            lin_mean,
+            q01: q(0.01),
             q10: q(0.1),
             q25: q(0.25),
             q50: q(0.5),
             q75: q(0.75),
             q90: q(0.9),
-            m_top1: 1. - sorted.partition_point(|v| *v <= top - 1.) as f32 / n as f32,
-            m_top2: 1. - sorted.partition_point(|v| *v <= top - 2.) as f32 / n as f32,
+            q99: q(0.99),
+            m_top1: 1. - levels.partition_point(|v| *v <= top - 1.) as f32 / n as f32,
+            m_top2: 1. - levels.partition_point(|v| *v <= top - 2.) as f32 / n as f32,
             tex,
             tex_top,
             sorted,
+            levels,
             fine_by_level,
             coarse_by_level,
             fine_median,
@@ -194,12 +231,22 @@ impl RuleStats {
             lo: 0.,
             hi: 0.,
             gains: [[0.; 4]; LEVELS],
+            pix_lo: 0.,
+            pix_hi: 0.,
+            pix_gains: [[0.; 4]; LEVELS],
             pair: Default::default(),
         };
-        stats.lo = stats.bot - 1.;
-        stats.hi = stats.top + 1.;
+        // The curves span the base levels too: a small region's level lies outside the
+        // blurred histogram's ends, and the rule was fitted at such levels as they are.
+        stats.lo = stats.bot.min(base_lo) - 1.;
+        stats.hi = stats.top.max(base_hi) + 1.;
         let step = (stats.hi - stats.lo) / LEVELS as f32;
         stats.gains = std::array::from_fn(|i| stats.gain(stats.lo + (i as f32 + 0.5) * step));
+        stats.pix_lo = stats.bot;
+        stats.pix_hi = stats.top.max(stats.bot + 1e-3);
+        let pix_step = (stats.pix_hi - stats.pix_lo) / LEVELS as f32;
+        stats.pix_gains =
+            std::array::from_fn(|i| stats.gain_pix(stats.pix_lo + (i as f32 + 0.5) * pix_step));
         stats
     }
     /// Fine and coarse texture of the pixels within [`LEVEL_WINDOW`] of base level `x`.
@@ -217,13 +264,13 @@ impl RuleStats {
             median(&self.coarse_by_level[lo..hi]).min(TEX_AT_CLAMP),
         )
     }
-    /// Fraction of base levels at or below `x`.
+    /// Fraction of the histogram's levels at or below `x`.
     fn cdf(&self, x: f32) -> f32 {
-        self.sorted.partition_point(|v| *v <= x) as f32 / self.sorted.len() as f32
+        self.levels.partition_point(|v| *v <= x) as f32 / self.levels.len() as f32
     }
     /// The network's inputs for base level `x` (`scene-tone-rule.py`'s `FEAT`, in order).
     /// The descriptors of level `x`, with the histogram's bottom at `bot`.
-    fn features(&self, x: f32, bot: f32) -> [f32; FEATURES] {
+    fn features(&self, x: f32, bot: f32) -> [f32; HIST_FEATURES] {
         let m = |lo: f32, hi: f32| self.cdf(x + hi) - self.cdf(x + lo);
         let (fine, coarse) = self.texture_at(x);
         [
@@ -254,40 +301,74 @@ impl RuleStats {
             // stop or two over the rest (the `partial` and `clipwb` probes).
             self.m_top1,
             self.m_top2,
+            self.lin_mean - x,
+            self.q99 - x,
+            x - self.q01,
+            self.lin_mean - self.mean,
         ]
     }
-    /// Log2 gain at base level `x`, in [`RuleCurve::ALL`]'s order (each ensemble's mean).
-    fn gain(&self, x: f32) -> [f32; 4] {
+    /// Standardised 32-feature vector for the first ensemble (`[28 hist, top, q50, mean, x]`).
+    fn features_first_z(&self, x: f32) -> [f32; FEATURES] {
         let f = self.features(x, self.bot);
-        let z: [f32; FEATURES] = std::array::from_fn(|i| (f[i] - MU[i]) / SD[i]);
-        let [up, down] = ensemble(&z, &W1, &B1, &W2, &B2, &W3, &B3);
-        // The second ensemble's inputs: the same, then the photo's top, median and mean
-        // and the level itself (`scene-tone-rule.py`'s `FEAT_EXT`), with the bottom no
-        // more than `BOTTOM_GAP` under the 10th percentile and darker levels read as it.
+        let absolute = [self.top, self.q50, self.mean, x];
+        std::array::from_fn(|i| {
+            let v = if i < HIST_FEATURES {
+                f[i]
+            } else {
+                absolute[i - HIST_FEATURES]
+            };
+            (v - MU[i]) / SD[i]
+        })
+    }
+    /// Standardised 32-feature vector for the second ensemble (`[28 hist, top, q50, mean, x]`),
+    /// with the bottom held within [`BOTTOM_GAP`] of the 10th percentile.
+    fn features_ext_z(&self, x: f32) -> [f32; ext::FEATURES] {
         let floor = self.bot.max(self.q10 - BOTTOM_GAP);
         let (x, f) = if floor > self.bot {
             let x = x.max(floor);
             (x, self.features(x, floor))
         } else {
-            (x, f)
+            (x, self.features(x, self.bot))
         };
         let absolute = [self.top, self.q50, self.mean, x];
-        let z: [f32; ext::FEATURES] = std::array::from_fn(|i| {
-            let v = if i < FEATURES {
+        std::array::from_fn(|i| {
+            let v = if i < HIST_FEATURES {
                 f[i]
             } else {
-                absolute[i - FEATURES]
+                absolute[i - HIST_FEATURES]
             };
             (v - ext::MU[i]) / ext::SD[i]
-        });
+        })
+    }
+    /// Log2 gain at base level `x`, in [`RuleCurve::ALL`]'s order (each ensemble's mean).
+    fn gain(&self, x: f32) -> [f32; 4] {
+        let z = self.features_first_z(x);
+        let [up, down] = ensemble(&z, &W1, &B1, &W2, &B2, &W3, &B3);
+        let z_ext = self.features_ext_z(x);
         let [shadows_down, highlights_up] = ensemble(
-            &z,
+            &z_ext,
             &ext::W1,
             &ext::B1,
             &ext::W2,
             &ext::B2,
             &ext::W3,
             &ext::B3,
+        );
+        [up, down, shadows_down, highlights_up]
+    }
+    /// Pixel-level contrast gain `G_pix(l)` at log2 luminance `x`, in [`RuleCurve::ALL`]'s order.
+    fn gain_pix(&self, x: f32) -> [f32; 4] {
+        let z = self.features_first_z(x);
+        let [up, down] = ensemble(&z, &PW1, &PB1, &PW2, &PB2, &PW3, &PB3);
+        let z_ext = self.features_ext_z(x);
+        let [shadows_down, highlights_up] = ensemble(
+            &z_ext,
+            &ext::PW1,
+            &ext::PB1,
+            &ext::PW2,
+            &ext::PB2,
+            &ext::PW3,
+            &ext::PB3,
         );
         [up, down, shadows_down, highlights_up]
     }
@@ -301,15 +382,24 @@ impl RuleStats {
         let step = (hi - lo) / LEVELS as f32;
         let k = RuleCurve::ALL.iter().position(|c| *c == kind).unwrap_or(0);
         let shadows = kind == RuleCurve::ShadowsUp;
-        let mut table: [f32; LEVELS] = std::array::from_fn(|i| {
-            let g = self.gains[i][k];
-            if kind.lifts() { g.max(0.) } else { g.min(0.) }
-        });
+        let mut table: [f32; LEVELS] = std::array::from_fn(|i| self.gains[i][k]);
         monotone(&mut table, step);
+        let curve = Curve {
+            key: 0.,
+            lo,
+            hi,
+            table,
+            tail: 0.,
+        };
         if let Ok(path) = std::env::var("RAWMAKASE_RULE_DUMP") {
+            let pix = self.curve_pix(kind, &curve);
+            let (pix_lo, pix_hi, pix_table) = match pix {
+                Some(p) => (p.lo, p.hi, p.table),
+                None => (self.pix_lo, self.pix_hi, [0.; LEVELS]),
+            };
             // Diagnostics: the statistics and curve, one JSON line per curve.
             let line = format!(
-                "{{\"shadows\":{shadows},\"top\":{},\"bot\":{},\"mean\":{},\"q\":[{},{},{},{},{}],\"tex\":{},\"tex_top\":{},\"n\":{},\"lo\":{lo},\"hi\":{hi},\"table\":{:?}}}\n",
+                "{{\"shadows\":{shadows},\"top\":{},\"bot\":{},\"mean\":{},\"q\":[{},{},{},{},{}],\"tex\":{},\"tex_top\":{},\"n\":{},\"lo\":{lo},\"hi\":{hi},\"table\":{:?},\"pix_lo\":{pix_lo},\"pix_hi\":{pix_hi},\"pix_table\":{:?}}}\n",
                 self.top,
                 self.bot,
                 self.mean,
@@ -321,7 +411,8 @@ impl RuleStats {
                 self.tex,
                 self.tex_top,
                 self.sorted.len(),
-                table
+                table,
+                pix_table,
             );
             let _ = std::fs::OpenOptions::new()
                 .create(true)
@@ -329,13 +420,33 @@ impl RuleStats {
                 .open(path)
                 .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
         }
-        Curve {
+        curve
+    }
+    /// Pixel-level contrast curve (`G_pix(l)`) of one control at full strength over
+    /// `[bot, top]`, held flat outside so specular highlights and sensor noise do not
+    /// extrapolate. Projected so both `l + G_pix(l)` (detail at a fixed base) and
+    /// `l + G_base(l) + G_pix(l)` (smooth gradients where `base ≈ l`) stay nondecreasing.
+    pub(super) fn curve_pix(&self, kind: RuleCurve, base: &Curve) -> Option<Curve> {
+        let k = RuleCurve::ALL.iter().position(|c| *c == kind)?;
+        let (lo, hi) = (self.pix_lo, self.pix_hi);
+        let step = (hi - lo) / LEVELS as f32;
+        let mut table: [f32; LEVELS] = std::array::from_fn(|i| self.pix_gains[i][k]);
+        let mut pos = [0f32; LEVELS];
+        let mut prev_base = base.eval(lo + 0.5 * step);
+        for i in 1..LEVELS {
+            let cur_base = base.eval(lo + (i as f32 + 0.5) * step);
+            let delta = step.min(step + (cur_base - prev_base)).max(0.);
+            pos[i] = pos[i - 1] + delta;
+            prev_base = cur_base;
+        }
+        monotone_pos(&mut table, &pos);
+        Some(Curve {
             key: 0.,
             lo,
             hi,
             table,
             tail: 0.,
-        }
+        })
     }
     /// How Shadows and Highlights act together on this photo, from its four unit
     /// curves `units` ([`RuleCurve::ALL`]'s order; [`Self::curve`]'s). Kept with the
@@ -473,17 +584,17 @@ fn ramp(ratio: f32, same: bool) -> f32 {
         (1. - (-PAIR_OPPOSITE_RATE * r).exp()) / (1. - (-PAIR_OPPOSITE_RATE).exp())
     }
 }
-/// Projects the output log luminance (level + gain) of a 48-column table with columns
-/// `step` apart onto nondecreasing values, by pooled adjacent violators: the
-/// least-squares correction, as `Family::monotone` does for the fitted tables. A
-/// brighter base never renders darker than a dimmer one, so a clipped plateau keeps
-/// no bright rim (`clipped_highlights_do_not_solarize`); flat compression is allowed.
-fn monotone(table: &mut [f32; 48], step: f32) {
+/// Projects the output log luminance (`pos[i] + table[i]`) of a 48-column table onto
+/// nondecreasing values, by pooled adjacent violators: the least-squares correction,
+/// as `Family::monotone` does for the fitted tables. A brighter level never renders
+/// darker than a dimmer one, so a clipped plateau or smooth gradient keeps no solarized
+/// rim (`clipped_highlights_do_not_solarize`); flat compression is allowed.
+fn monotone_pos(table: &mut [f32; 48], pos: &[f32; 48]) {
     let mut sums = [0f32; 48];
     let mut counts = [0usize; 48];
     let mut blocks = 0;
     for (i, g) in table.iter().enumerate() {
-        sums[blocks] = g + i as f32 * step;
+        sums[blocks] = g + pos[i];
         counts[blocks] = 1;
         blocks += 1;
         while blocks > 1
@@ -499,11 +610,15 @@ fn monotone(table: &mut [f32; 48], step: f32) {
     for block in 0..blocks {
         for _ in 0..counts[block] {
             if counts[block] > 1 {
-                table[i] = sums[block] / counts[block] as f32 - i as f32 * step;
+                table[i] = sums[block] / counts[block] as f32 - pos[i];
             }
             i += 1;
         }
     }
+}
+fn monotone(table: &mut [f32; 48], step: f32) {
+    let pos: [f32; 48] = std::array::from_fn(|i| i as f32 * step);
+    monotone_pos(table, &pos);
 }
 /// The median of `values`: the mean of the two middle values of an even count, as
 /// `numpy.median` computes the training inputs.
@@ -750,6 +865,78 @@ mod tests {
                 (a - b).abs() < 0.15,
                 "{level}: {a} without the tail, {b} with it"
             );
+        }
+    }
+
+    /// All four rule curves carry a monotone pixel-level contrast curve (`G_pix(l)`)
+    /// over `[bot, top]` that holds flat outside `[bot, top]` so specular highlights
+    /// and deep sensor noise never extrapolate.
+    #[test]
+    fn pixel_contrast_curves_exist_are_monotone_and_clamp_outside_bot_top() {
+        let (w, h) = (64, 64);
+        let logs: Vec<f32> = (0..w * h)
+            .map(|i| -6. + 6.5 * ((i % w) as f32 / w as f32))
+            .collect();
+        let stats = RuleStats::new(&logs, &logs, w, h);
+        for kind in RuleCurve::ALL {
+            let base = stats.curve(kind);
+            let pix = stats
+                .curve_pix(kind, &base)
+                .expect("every rule curve has a pixel-level contrast curve");
+            let step = (pix.hi - pix.lo) / LEVELS as f32;
+            for i in 1..LEVELS {
+                let x_prev = pix.lo + (i as f32 - 0.5) * step;
+                let x_curr = pix.lo + (i as f32 + 0.5) * step;
+                assert!(
+                    pix.table[i] + i as f32 * step
+                        >= pix.table[i - 1] + (i - 1) as f32 * step - 1e-5,
+                    "{kind:?} bin {i} pix inverted"
+                );
+                assert!(
+                    x_curr + base.eval(x_curr) + pix.eval(x_curr)
+                        >= x_prev + base.eval(x_prev) + pix.eval(x_prev) - 1e-5,
+                    "{kind:?} bin {i} combined base+pix inverted"
+                );
+            }
+            assert_eq!(pix.eval(pix.lo - 5.), pix.eval(pix.lo - 0.5));
+            assert_eq!(pix.eval(pix.hi + 5.), pix.eval(pix.hi + 0.5));
+        }
+    }
+
+    /// Even on high-contrast dark-surround scenes with steep highlight compression,
+    /// `l + G_base(l) + G_pix(l)` stays nondecreasing so smooth gradients never solarize.
+    #[test]
+    fn combined_base_and_pix_curve_is_monotone_on_high_contrast_scenes() {
+        let (w, h) = (128, 128);
+        let mut ramp_in_dark = vec![-8f32; w * h];
+        for y in 96..h {
+            for x in 0..w {
+                ramp_in_dark[y * w + x] = -8. + 8. * (x as f32 / (w - 1) as f32);
+            }
+        }
+        let mut block_in_dark = vec![-10f32; w * h];
+        for y in 48..80 {
+            for x in 48..80 {
+                block_in_dark[y * w + x] = 0.;
+            }
+        }
+        for (name, logs) in [("ramp", ramp_in_dark), ("block", block_in_dark)] {
+            let stats = RuleStats::new(&logs, &logs, w, h);
+            for kind in RuleCurve::ALL {
+                let base = stats.curve(kind);
+                let pix = stats.curve_pix(kind, &base).unwrap();
+                let step = (pix.hi - pix.lo) / LEVELS as f32;
+                for i in 1..LEVELS {
+                    let x0 = pix.lo + (i as f32 - 0.5) * step;
+                    let x1 = pix.lo + (i as f32 + 0.5) * step;
+                    let out0 = x0 + base.eval(x0) + pix.eval(x0);
+                    let out1 = x1 + base.eval(x1) + pix.eval(x1);
+                    assert!(
+                        out1 >= out0 - 1e-4,
+                        "{name} {kind:?} bin {i}: {out0} -> {out1}"
+                    );
+                }
+            }
         }
     }
 }

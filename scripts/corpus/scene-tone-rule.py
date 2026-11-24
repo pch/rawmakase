@@ -24,18 +24,22 @@ with the four more; Shadows −100 0.216 and 0.215, its worst tenth 0.54 and 0.4
                               the second ensemble's clipped targets, and the four pairs
                               of Shadows ±100 with Highlights ±100); numbering continues
                               ROOT/photos
-  taps ROOT RAWMAKASE         dumps the engine's measurement map of every probe and photo
-                              into ROOT/maps (RAWMAKASE_RULE_DUMP; needs RAWMAKASE_DATA_DIR),
-                              with its white curve there, and each photo's four rule
-                              curves into ROOT/curves (a build of the ensembles `pair` is
-                              for: run it again after `train`)
+  scenes ROOT [--count N]     renders N (4,000) scenes made from the photos' maps in Camera
+                              Raw (default and the four full sliders) into ROOT/scenes;
+                              run after `taps` has the photos' maps, and `taps` again after
+  gaps ROOT                   renders the gap probes in Camera Raw into ROOT/gaps
+  taps ROOT RAWMAKASE         dumps the engine's measurement map of every probe, photo,
+                              scene and gap probe into ROOT/maps (RAWMAKASE_RULE_DUMP; needs
+                              RAWMAKASE_DATA_DIR), with its white curve there, and each
+                              photo's four rule curves into ROOT/curves (a build of the
+                              ensembles `pair` is for: run it again after `train`)
   train ROOT [--cv] [--out] [--first]
                               builds the samples, optionally cross-validates by photo, fits
                               the second ensemble on everything and writes the JSON and
                               crates/rawmakase-engine/src/develop/local_tone_rule_ext_data.rs;
                               with --first it refits the first ensemble too and writes
-                              local_tone_rule_data.rs (shipped from the fit of 2026-10-30,
-                              on 496 mosaics and 283 photos, and left alone otherwise)
+                              local_tone_rule_data.rs (both refitted 2026-11-23 on 436
+                              mosaics, 467 photos, 4,000 scenes and 128 gap probes)
   pair ROOT [--cv]            fits how Shadows and Highlights act together (`Pair` in
                               local_tone_rule.rs) on the photos' renders of the four
                               pairs and writes local_tone_rule_pair_data.rs
@@ -69,6 +73,33 @@ the rule reads a reconstructed top like an unclipped one), 10 to 35% of the patc
 clipped in every channel or in green (`clipwb2`), and a square of 0.2 to 12% at four
 levels from just under white to clipped in every channel (`partial`: Camera Raw's lift
 hardly depends on how many channels clip, 2026-10-30).
+
+Scenes (`scene`, 2026-11-22) are Camera Raw questioned on input that is known exactly:
+a training photo's own map as a grey picture, or two joined, through a random tone
+curve and exposure, written as a probe DNG (DefaultBlackRender None). Camera Raw treats
+such a picture as it treats the photo (a photo's map rendered as a scene keeps the
+photo's departure from the average curve on 9 or 10 of 12), a scene's gain needs no
+alignment and carries no default black, and a tone curve gives a distribution of
+levels no photo in the set has. Held out by photo, with a scene made from a held-out
+photo's map left out too, 4,000 scenes take the first ensemble's error on the photos
+from 0.152 to 0.134 EV (median) at Shadows +100 and from 0.101 to 0.092 at Highlights
+−100, most of it with the first thousand; a network two or four times as wide is
+worse. A scene's or gap probe's samples are 1,500 map pixels, kept as float32.
+
+Gap probes (`gap_plan`, 2026-11-22) measure what a small region is to Camera Raw: a
+field with round spots of 2 to 64 pixels' radius covering 0.03 to 10% of a 1024-pixel
+frame. One bright spot of 16 pixels' radius (0.12% of the frame) lifts a dark field
+0.63 EV at Shadows +100, seventy-five spots of 2 pixels with the same total area 0.04
+EV, and with no spot the field is not lifted at all. The field's lift is the same at
+1024, 2048 and 4096 pixels for the same layout, so a region counts in the curve from
+about 1.5% of the frame's width whatever the frame's size; the gain a spot takes itself
+goes by its size in pixels (a dark spot of 2 pixels +0.1 EV, of 4 pixels +1.2, of 8 and
+more +1.9). The histogram the rule reads is therefore the log map's under a box blur
+of STAT_BLUR map pixels (`Photo`), while a level's gain is read at its base level:
+with the histogram from the base levels the rule lifted the dark field 0.6 to 1.0 EV
+for spots of any size, and read from the blurred map its error on the photos is no
+larger (0.133 and 0.090 EV). Block means in linear light do not do (a few bright
+pixels then count); block means that do not overlap alias.
 
 Targets count down to 13 stops under white (`targets`): with a 9-stop floor the
 network never saw the deepest tones and under-lifted them by 1.5 EV on interiors.
@@ -104,6 +135,9 @@ its Highlights +50 render from default and +100 that way is off by 0.00 to 0.02 
 so where the full slider clipped, the half-slider render of a photo gives twice its own
 gain as the target, or twice the bound where it clipped too.
 
+The maps' base level is the engine's own (`engine_map`): since 2026-11-23 a local
+Laplacian filter of the map (`laplacian_base` in local_tone.rs).
+
 Features (`Photo.features`, mirrored by `RuleStats::features`): top − x, x − bottom,
 mean − x, five quantiles − x, the CDF at x, the range, the mass within eight bands
 of stops around x, two global texture measures clamped so the network cannot
@@ -135,6 +169,7 @@ Camera Raw 18.7, and each set's samples drawn with its place in the list of sets
 the seed (`load`).
 """
 import argparse
+import hashlib
 import json
 import os
 import pickle
@@ -180,9 +215,13 @@ WHITE, CLIP_HIGH, CLIP_LOW = 0.98, 0.97, 2.0 ** -13
 # more: twice the fit's error on held-out photos, so that its scatter does not leave
 # half of those pixels just under white.
 CLIP_MARGIN = 0.25
-PHOTO_WEIGHT = 1    # photo samples against mosaic samples in the fit
+PHOTO_WEIGHT = 2    # photo samples against scene/mosaic samples in the fit
+PIX_REG = 1e-3      # L2 penalty on G_pix(l) to fix the constant gauge against G_base(b)
 HIDDEN = 64         # units in each of the two hidden layers
 MEMBERS = 4         # networks in the ensemble (seeds 0..MEMBERS-1), averaged by the engine
+STAT_BLUR = 4       # radius, in map pixels, of the box blur the histogram is read under (`STAT_BLUR` in local_tone_rule.rs)
+SCENES = 4000       # scenes `scenes` makes
+SCENE_SAMPLES = 1500    # map pixels drawn from a scene or gap probe (a mosaic or photo gives 2500)
 # `local_tone.rs`: the measurement copy's long edge, the map's floor, the guided filter.
 MAP, FLOOR, EPS, RADIUS = 512, 2.0 ** -14, 0.5, 0.032
 TEX_CLAMP, TEX_TOP_CLAMP = 0.6, 0.05
@@ -193,7 +232,7 @@ LEVEL_WINDOW, COARSE_RADIUS, TEX_AT_CLAMP, LEVEL_MIN = 0.5, 12, 1.0, 50
 BOTTOM_GAP = 3.5
 FEAT = ['top-x', 'x-bot', 'mean-x', 'p50-x', 'p75-x', 'p90-x', 'p25-x', 'p10-x', 'cdf', 'range',
         'm(0,1]', 'm(1,2]', 'm(2,3]', 'm(3,5]', 'm(-1,0]', 'm(-2,-1]', 'm(-3,-2]', 'm(-5,-3]', 'tex', 'tex_top',
-        'tex_at', 'coarse_at', 'm_top1', 'm_top2']
+        'tex_at', 'coarse_at', 'm_top1', 'm_top2', 'lin_mean-x', 'p99-x', 'x-p01', 'lin_skew']
 # The second ensemble's inputs: FEAT, then the photo's top, median and mean and the level.
 FEAT_EXT = FEAT + ['top', 'median', 'mean', 'x']
 NEUTRAL = {'A': (0.5, 1., 0.7), 'B': (0.35, 1., 0.7)}   # AsShotNeutral of the clipping families
@@ -234,15 +273,21 @@ class Photo:
             logs = np.log2(np.maximum(small, FLOOR))
             base = guided(logs)
         self.logs, self.base = np.asarray(logs, dtype=np.float64), np.asarray(base, dtype=np.float64)
-        b = np.sort(self.base.ravel())
-        self.sorted = b
+        # The base levels in order: the per-level texture reads them.
+        self.sorted = np.sort(self.base.ravel())
+        # The histogram's levels (top, bottom, mean, quantiles, CDF) are the log map's
+        # under a box blur: Camera Raw counts a region in its curve from about 1.5% of the
+        # frame's width, while the gain is read at the base level (`gaps`).
+        b = np.sort(box(self.logs, STAT_BLUR).ravel())
+        self.levels = b
         n = b.size
         q = lambda p: b[min(n - 1, int(p * (n - 1)))]
         self.top, self.bot, self.mean = b[-1], q(0.001), b.mean()
-        self.q = {p: q(p) for p in (0.1, 0.25, 0.5, 0.75, 0.9)}
+        self.lin_mean = float(np.log2(np.mean(np.exp2(b))))
+        self.q = {p: q(p) for p in (0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99)}
         d = self.logs - box(self.logs, 2)
         self.tex = float(np.sqrt(np.mean(d * d)))
-        top = self.base > self.top - 2
+        top = self.base > self.sorted[-1] - 2
         self.tex_top = float(np.sqrt(np.mean(d[top] ** 2))) if top.any() else self.tex
         # The residuals in order of base level, for the per-level medians; a median
         # ignores the few edge pixels whose residual spans stops.
@@ -252,7 +297,7 @@ class Photo:
         self.fine_median, self.coarse_median = float(np.median(self.fine_by_level)), float(np.median(self.coarse_by_level))
 
     def cdf(self, x):
-        return np.searchsorted(self.sorted, x, side='right') / self.sorted.size
+        return np.searchsorted(self.levels, x, side='right') / self.levels.size
 
     def texture_at(self, x):
         """Fine and coarse texture of the pixels within LEVEL_WINDOW of each level in `x`."""
@@ -275,7 +320,15 @@ class Photo:
                          self.q[0.9] - x, self.q[0.25] - x, self.q[0.1] - x, c(x), const(self.top - bot),
                          m(0, 1), m(1, 2), m(2, 3), m(3, 5), m(-1, 0), m(-2, -1), m(-3, -2), m(-5, -3),
                          const(min(self.tex, TEX_CLAMP)), const(min(self.tex_top, TEX_TOP_CLAMP) / TEX_TOP_CLAMP),
-                         fine, coarse, const(1 - c(self.top - 1)), const(1 - c(self.top - 2))], -1)
+                         fine, coarse, const(1 - c(self.top - 1)), const(1 - c(self.top - 2)),
+                         self.lin_mean - x, self.q[0.99] - x, x - self.q[0.01], const(self.lin_mean - self.mean)], -1)
+
+    def features_first(self, x):
+        """`features`, then the absolute levels the first ensemble reads (`FEAT_EXT`),
+        without BOTTOM_GAP clamping (`RuleStats::features_first_z`)."""
+        x = np.asarray(x, dtype=np.float64)
+        const = lambda v: np.full_like(x, v)
+        return np.concatenate([self.features(x, self.bot), np.stack([const(self.top), const(self.q[0.5]), const(self.mean), x], -1)], -1)
 
     def features_ext(self, x):
         """`features`, then the absolute levels the second ensemble reads (`FEAT_EXT`), with
@@ -598,6 +651,185 @@ def photos(args):
     print(f'{len(jobs)} renders, {len(failures)} failed')
 
 
+# --- scenes and gap probes -----------------------------------------------------------
+
+def scene(root, idx):
+    """Scene `idx`, made from the training photos' maps: its image (linear scene values,
+    grey, twice the map's size), its luminance at the map's size, and its parameters.
+
+    One photo's map (ROOT/maps/photoNN.npz, its log2 luminance), or two joined along a
+    random straight line with the second up to 3 stops off the first; through a random
+    monotone tone curve about the scene's key (a slope of 0.5 to 1.74 for each stop);
+    exposed −1.5 to +1 stop; with 1% noise a pixel in half of the scenes; clipped at the
+    sensor's top, which is 0.65, 1, 1.5 or 2 stops over white (the DNG's baseline
+    exposure, `head`). Everything is drawn from `idx` alone."""
+    from PIL import Image
+    names = sorted(p.stem[5:] for p in (root / 'maps').glob('photo[0-9]*.npz'))
+    rng = np.random.default_rng(900000 + idx)
+    load = lambda k: np.load(root / 'maps' / f'photo{k}.npz')['logs'].astype(np.float64)
+    resize = lambda a, w, h: np.asarray(Image.fromarray(a.astype(np.float32), 'F').resize((w, h), Image.BICUBIC),
+                                        dtype=np.float64)
+    a = names[rng.integers(len(names))]
+    l = load(a)
+    l = l[:l.shape[0] // 2 * 2, :l.shape[1] // 2 * 2]
+    par = dict(idx=idx, a=a, b=None)
+    if rng.random() < 0.5:
+        b = names[rng.integers(len(names))]
+        lb = load(b)
+        if (lb.shape[0] > lb.shape[1]) != (l.shape[0] > l.shape[1]):
+            lb = np.rot90(lb)
+        lb = resize(lb, l.shape[1], l.shape[0])
+        off = rng.uniform(-3, 3)
+        lb = lb - np.log2(np.exp2(lb).mean()) + np.log2(np.exp2(l).mean()) + off
+        frac = rng.uniform(0.2, 0.8)
+        yy, xx = np.mgrid[0:l.shape[0], 0:l.shape[1]]
+        ang = rng.uniform(0, np.pi)
+        proj = np.cos(ang) * xx / l.shape[1] + np.sin(ang) * yy / l.shape[0]
+        l = np.where(proj < np.quantile(proj, frac), l, lb)
+        par.update(b=b, off=float(off), frac=float(frac), ang=float(ang))
+    key = np.log2(np.exp2(l).mean())
+    knots = np.arange(-14, 10.01, 1.)
+    slopes = np.exp2(rng.uniform(-1.0, 0.8, len(knots) - 1))
+    f = np.r_[0, np.cumsum(slopes)]
+    f -= np.interp(0, knots, f)
+    ev = rng.uniform(-1.5, 1.0)
+    out = key + np.interp(l - key, knots, f) + ev
+    head = float(rng.choice([0.65, 1., 1.5, 2., 2.]))
+    noise = float(rng.choice([0., 0.01]))
+    big = resize(np.exp2(out), l.shape[1] * 2, l.shape[0] * 2)
+    if noise:
+        big = big * (1 + noise * rng.normal(0, 1, big.shape))
+    big = np.clip(big, FLOOR, 2. ** head)
+    par.update(ev=float(ev), head=head, noise=noise, slopes=[float(v) for v in slopes])
+    return np.repeat(big[..., None], 3, -1), big.reshape(l.shape[0], 2, l.shape[1], 2).mean((1, 3)), par
+
+
+GAP_SIZE = (1024, 680)
+GAP_RADII = (2, 4, 8, 16, 32, 64)
+GAP_SHARES = (0.0003, 0.0015, 0.006, 0.025, 0.10)
+
+
+def gap_plan():
+    """The gap probes' parameters: a field with round spots of radius `r` pixels on a
+    jittered lattice, covering `share` of a 1024 × 680 frame. `bright`: a field 6.3
+    stops under white with spots at `level` (0.7 over white, 1.3 or 3.3 under);
+    `dark`: a field a stop under white with spots 6 stops under. The field is the slow
+    sinusoid of ±0.7 stop of tests/color/scene_probes.rs's dark scene (`smooth`), or
+    that with 0.15-stop blobs and 1% noise (`tex`)."""
+    w, h = GAP_SIZE
+    count = lambda r, share: int(round(share * w * h / (np.pi * r * r)))
+    plan = []
+    for field in ('smooth', 'tex'):
+        plan.append(dict(kind='bright', field=field, r=0, share=0., level=0.7))
+        for level in (0.7, -1.3):
+            plan += [dict(kind='bright', field=field, r=r, share=share, level=level)
+                     for r in GAP_RADII for share in GAP_SHARES if count(r, share) >= 1]
+        plan += [dict(kind='bright', field=field, r=r, share=share, level=-3.3) for r in (4, 32) for share in (0.006, 0.10)]
+        plan.append(dict(kind='dark', field=field, r=0, share=0., level=-6.))
+        plan += [dict(kind='dark', field=field, r=r, share=share, level=-6.)
+                 for r in GAP_RADII for share in (0.0015, 0.025) if count(r, share) >= 1]
+    return plan
+
+
+def gap_scene(idx):
+    """Gap probe `idx` of `gap_plan`: its luminance (linear scene values, a stop of
+    headroom over white) and the spots' mask."""
+    from scipy.ndimage import gaussian_filter
+    w, h = GAP_SIZE
+    p = gap_plan()[idx]
+    rng = np.random.default_rng(570000 + idx)
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    f = (-6.3 if p['kind'] == 'bright' else -1.0) + 0.7 * np.sin(xx / 640 * 2 * np.pi) * np.sin(yy / 640 * 2 * np.pi)
+    if p['field'] == 'tex':
+        blobs = gaussian_filter(rng.normal(0, 1, (h, w)), 6)
+        f = f + 0.15 * blobs / blobs.std()
+    cover = np.zeros((h, w))
+    if p['r']:
+        r = p['r']
+        n = int(round(p['share'] * w * h / (np.pi * r ** 2)))
+        pitch = np.sqrt(w * h / n)
+        nx, ny = max(1, int(round(w / pitch))), max(1, int(round(h / pitch)))
+        cells = [(a, b) for b in range(ny) for a in range(nx)]
+        if len(cells) >= n:
+            cells = [cells[k] for k in rng.permutation(len(cells))[:n]]
+        free = max(0., min(w / nx, h / ny) / 2 - r - 1)
+        for a, b in cells:
+            cx = (a + 0.5) * w / nx + rng.uniform(-1, 1) * min(free, 0.3 * w / nx)
+            cy = (b + 0.5) * h / ny + rng.uniform(-1, 1) * min(free, 0.3 * h / ny)
+            x0, x1, y0, y1 = int(max(0, cx - r - 2)), int(min(w, cx + r + 3)), int(max(0, cy - r - 2)), int(min(h, cy + r + 3))
+            d = np.hypot(xx[y0:y1, x0:x1] - cx, yy[y0:y1, x0:x1] - cy)
+            cover[y0:y1, x0:x1] = np.maximum(cover[y0:y1, x0:x1], np.clip(r + 0.5 - d, 0, 1))
+    lin = np.exp2(f) * (1 - cover) + np.exp2(p['level']) * cover
+    if p['field'] == 'tex':
+        lin = lin * (1 + 0.01 * rng.normal(0, 1, lin.shape))
+    return np.clip(lin, FLOOR, 2.), cover > 0.5
+
+
+def capture(folder, todo, make, digits):
+    """Camera Raw's renders (default and the four full sliders) of the scenes `todo`
+    as `folder`/NNN.npz: `make(i)` gives a scene's image, the arrays to keep with it,
+    its headroom and the reduction its renders are kept at. Ten scenes a batch."""
+    folder.mkdir(parents=True, exist_ok=True)
+    name = lambda i: f'{i:0{digits}d}'
+    for start in range(0, len(todo), 10):
+        chunk, jobs, kept = todo[start:start + 10], [], {}
+        for i in chunk:
+            image, keep, head, factor = make(i)
+            kept[i] = (image.shape[:2], keep, factor)
+            source = folder / f'{name(i)}.dng'
+            probe_dng.write(source, image, baseline_exposure=head, black_render=1)
+            jobs += [dict(source=str(source), settings=st, out=str(folder / f'{name(i)}-{n}.tif')) for n, st in SETTINGS.items()]
+        failures = camera_raw.render(jobs, work=folder / 'work')
+        if failures:
+            print('failed', failures[:3])
+        for i in chunk:
+            shape, keep, factor = kept[i]
+            tifs = {n: folder / f'{name(i)}-{n}.tif' for n in SETTINGS}
+            if all(t.exists() for t in tifs.values()):
+                renders = {n: np.maximum(camera_raw.read_linear(t) @ YW, 0) for n, t in tifs.items()}
+                if all(r.shape == shape for r in renders.values()):
+                    small = lambda a: a.reshape(shape[0] // factor, factor, shape[1] // factor, factor).mean((1, 3))
+                    kind = np.float16 if factor > 1 else np.float32
+                    np.savez(folder / f'{name(i)}.npz', **keep, **{n: small(r).astype(kind) for n, r in renders.items()})
+                else:
+                    print(name(i), 'rendered at another size')
+            for t in tifs.values():
+                t.unlink(missing_ok=True)
+            (folder / f'{name(i)}.dng').unlink(missing_ok=True)
+        print(f'{min(start + 10, len(todo))} of {len(todo)}', flush=True)
+
+
+def scenes(args):
+    """ROOT/scenes/NNNNN.npz: each scene's luminance at the map's size (`lum`), its
+    parameters (`par`, JSON) and Camera Raw's renders at that size (luminance)."""
+    folder = args.root / 'scenes'
+    def make(i):
+        image, lum, par = scene(args.root, i)
+        return image, dict(lum=lum.astype(np.float32), par=json.dumps(par)), par['head'], 2
+    capture(folder, [i for i in range(args.count) if not (folder / f'{i:05d}.npz').exists()], make, 5)
+
+
+def gaps(args):
+    """ROOT/gaps/NNN.npz: each gap probe's luminance (`lum`), its spots (`mask`), its
+    parameters (`par`, JSON) and Camera Raw's renders at full size (luminance)."""
+    folder = args.root / 'gaps'
+    def make(i):
+        lum, mask = gap_scene(i)
+        keep = dict(lum=lum.astype(np.float32), mask=mask, par=json.dumps(dict(gap_plan()[i], idx=i)))
+        return np.repeat(lum[..., None], 3, -1), keep, 1., 1
+    capture(folder, [i for i in range(len(gap_plan())) if not (folder / f'{i:03d}.npz').exists()], make, 3)
+
+
+def scene_sets(root):
+    """The captured scenes and gap probes: (map name, renders, the DNG's image and
+    headroom when asked for, sample seed's offset)."""
+    sets = [(f's{p.stem}', p, lambda i=int(p.stem): (scene(root, i)[0], scene(root, i)[2]['head']), int(p.stem))
+            for p in sorted((root / 'scenes').glob('[0-9]*.npz'))]
+    sets += [(f'g{p.stem}', p, lambda i=int(p.stem): (np.repeat(gap_scene(i)[0][..., None], 3, -1), 1.), 500000 + int(p.stem))
+             for p in sorted((root / 'gaps').glob('[0-9]*.npz'))]
+    return sets
+
+
 def engine_map(rawmakase, dng, out, settings):
     """The engine's own measurement map of `dng` (log luminance and base level, 512 px)
     and its white curve there (scene value against output, from 2^-6 to 2^5, so also
@@ -635,13 +867,17 @@ def engine_curves(rawmakase, dng, out, settings):
     lines = [json.loads(line) for line in tmp.read_text().splitlines() if line.strip()][-4:]
     if len(lines) != 4 or not lines[0]['shadows'] or any(line['shadows'] for line in lines[1:]):
         raise SystemExit(f'{dng}: the dump does not end with the four curves of one map')
+    if any('pix_table' not in line for line in lines):
+        raise SystemExit(f'{dng}: the dump is missing pix_table; rebuild rawmakase with G_pix dump support')
     np.savez(out, tables=np.array([line['table'] for line in lines], np.float32),
-             lo=np.float32(lines[0]['lo']), hi=np.float32(lines[0]['hi']))
+             lo=np.float32(lines[0]['lo']), hi=np.float32(lines[0]['hi']),
+             pix_tables=np.array([line['pix_table'] for line in lines], np.float32),
+             pix_lo=np.float32(lines[0]['pix_lo']), pix_hi=np.float32(lines[0]['pix_hi']))
 
 
 def taps(args):
-    """The engine's measurement map and white curve of every probe and photo, and each
-    photo's four rule curves."""
+    """The engine's measurement map and white curve of every probe, photo, scene and gap
+    probe, and each photo's four rule curves."""
     out = args.root / 'maps'
     out.mkdir(parents=True, exist_ok=True)
     (args.root / 'curves').mkdir(exist_ok=True)
@@ -651,6 +887,14 @@ def taps(args):
         settings = {'CameraProfile': linear_profile.NAME}
         engine_map(args.rawmakase, dng, out / f'photo{dng.stem}.npz', settings)
         engine_curves(args.rawmakase, dng, args.root / 'curves' / f'photo{dng.stem}.npz', settings)
+    # A scene's DNG is not kept: it is written again from the scene's number.
+    dng = Path(f'/tmp/rule-scene-{os.getpid()}.dng')
+    for name, _, image, _ in scene_sets(args.root):
+        if not (out / f'{name}.npz').exists():
+            pixels, head = image()
+            probe_dng.write(dng, pixels, baseline_exposure=head, black_render=1)
+            engine_map(args.rawmakase, dng, out / f'{name}.npz', {})
+    dng.unlink(missing_ok=True)
 
 
 # --- training ------------------------------------------------------------------------
@@ -716,26 +960,134 @@ def on_map(ph, image):
     return np.asarray(Image.fromarray(image.astype(np.float32), 'F').resize(ph.base.shape[::-1], Image.BOX), dtype=np.float64)
 
 
-def samples(key, root, images, rng, n=2500):
-    """The first ensemble's inputs (`FEAT`) and targets (S+100, H−100) at `n` map pixels
-    of one mosaic or photo; `images`: Camera Raw's luminance at default and at the two."""
+# The default black in a photo's targets. The stage applies the rule's gain and then the
+# default black (the None → Auto transfer at the photo's dark key, which Shadows moves),
+# as Camera Raw does: on the dark scene with gaps (tests/color/scene_probes.rs) the stage
+# lifts 0.59, 0.76 and 0.55 EV at Exposure −2, 0 and +2 against Camera Raw's 0.60, 0.79
+# and 0.57. A photo's renders carry that black, so the ratio of two of them is not the
+# gain in the deep tones: it read 0.79 EV where the gain was 0.52, and the rule lifted
+# the deepest tones of photos 0.6 stop too far at Shadows +100. Each render of a photo
+# is therefore taken back through the stage's own black before the gain is read. The
+# mosaics are rendered without the black, and their ratios are gains as they are.
+
+BLACK = ROOT / 'crates/rawmakase-engine/src/develop/scene_tone/default_black.bin'
+BLACK_KEYS = -14 + 0.5 * np.arange(15)      # the table's dark keys (`DEFAULT_BLACK_KEYS`)
+BLACK_LEVELS = -16 + np.arange(129) / 8.    # log2 of the table's inputs
+# The settings under which the stage moves the black's key: True by positive Shadows'
+# rule, False by negative's (`key_shift`).
+KEY_MOVES = {'S+100': True, 'S-100': False, 'S-50': False}
+
+
+def black_row(key):
+    """The default black's transfer at dark key `key`: its output at each of
+    `BLACK_LEVELS`, between the table's rows and held past its ends, as
+    `scene_tone::global` reads default_black.bin."""
+    table = np.fromfile(BLACK, dtype='<f4').reshape(len(BLACK_KEYS), len(BLACK_LEVELS)).astype(np.float64)
+    f = (np.clip(key, BLACK_KEYS[0], BLACK_KEYS[-1]) - BLACK_KEYS[0]) / 0.5
+    i = min(int(f), len(BLACK_KEYS) - 2)
+    return table[i] * (1 - (f - i)) + table[i + 1] * (f - i)
+
+
+def black_taken(row, v):
+    """What the transfer `row` takes from scene values `v`: in proportion under the
+    table's first input, and nothing from white up."""
+    v = np.asarray(v, np.float64)
+    low = 2. ** BLACK_LEVELS[0]
+    out = np.where(v <= low, v * row[0] / low, np.interp(np.log2(np.maximum(v, low)), BLACK_LEVELS, row))
+    return np.where(v < 1, np.maximum(v - out, 0), 0.)
+
+
+def dark_key(m):
+    """A photo's dark key from its map `m`: log2 of the 0.1th percentile of its
+    luminance, no lower than the table's first key."""
+    return float(np.log2(max(np.percentile(np.exp2(m['logs'].astype(np.float64)), 0.1), 2. ** BLACK_KEYS[0])))
+
+
+def black_undone(m, shift=0.):
+    """A photo's render value → that value before the default black at the photo's dark
+    key moved by `shift` stops. Values the black took to nothing stay as they are."""
+    x = np.exp2(np.arange(-16, 0.01, 1 / 32.))
+    y = np.maximum(x - black_taken(black_row(dark_key(m) + shift), x), 0.)
+    rising = np.r_[True, np.diff(y) > 0]
+    x, y = x[rising], y[rising]
+    return lambda a: np.where((a > y[0]) & (a < y[-1]), np.interp(a, y, x), a)
+
+
+def stage_curve(m, shift=0.):
+    """A photo's global curve through the stage, scene value → output, with the default
+    black at the photo's dark key moved by `shift` stops. From 2^-6 up it is the dumped
+    white curve, which carries the black of the tables' own key (the first), less what
+    the photo's black takes beyond that; below, where the white curve is straight, it
+    is the black's transfer alone."""
+    x, y = m['white'].astype(np.float64)
+    photo, own = black_row(dark_key(m) + shift), black_row(BLACK_KEYS[0])
+    deep = np.exp2(np.arange(-16, np.log2(x[0]) - 1e-9, 1 / 16.))
+    xs = np.r_[deep, x]
+    ys = np.maximum(np.r_[deep - black_taken(photo, deep), y - (black_taken(photo, x) - black_taken(own, x))], 0.)
+    rising = np.r_[True, np.diff(ys) > 0]
+    return xs[rising], ys[rising]
+
+
+def to_scene(m, shift=0.):
+    """A photo's render value → the scene value `stage_curve` renders as it."""
+    x, y = stage_curve(m, shift)
+    return lambda a: np.where(a > y[0], np.interp(a, y, x), a)
+
+
+def key_shift(m, ph, default, setting, positive=True, rounds=4):
+    """The stops by which the stage moves the black's key under a Shadows setting
+    (`pipeline/tone.rs`), from Camera Raw's renders at the map's size: the change in
+    the 0.1th percentile of scene log-luminance (`q0.001(post) - q0.001(pre)`) for both
+    positive and negative Shadows. Solved by fixed-point iteration from no shift."""
+    del ph, positive
+    d = np.log2(np.maximum(to_scene(m)(default), FLOOR)).ravel()
+    q_pre = float(np.quantile(d, 0.001))
+    shift = 0.
+    for _ in range(rounds):
+        s = np.log2(np.maximum(to_scene(m, shift)(setting), FLOOR)).ravel()
+        shift = float(np.quantile(s, 0.001) - q_pre)
+    return shift
+
+
+def samples(key, root, images, rng, n=2500, photo=False, peaks=None):
+    """The first ensemble's inputs (`Xb` at `base`, `Xl` at `logs`, both `FEAT_EXT`),
+    targets (S+100, H−100) with the engine's white curve undone, and validity mask `C`
+    (0 valid, 2 ignored) at `n` map pixels of one mosaic, scene or photo."""
     m = np.load(root / 'maps' / f'{key}.npz')
     ph = Photo(logs=m['logs'], base=m['base'])
-    images = aligned(ph, images)
-    if images is None:
+    if peaks is None:
+        peaks = images
+    al = aligned(ph, list(images) + list(peaks), coarse=photo)
+    if al is None:
         print('misaligned', key)
         return None
-    gains, valid = [], np.ones(ph.base.shape, bool)
-    for setting in images[1:]:
-        g, v = targets(images[0], setting, size=ph.base.shape)
-        gains.append(g)
-        valid &= v
-    idx = np.flatnonzero(valid.ravel())
+    count = len(images)
+    imgs, pks = [on_map(ph, a) for a in al[:count]], [on_map(ph, a) for a in al[count:]]
+    x, y = m['white'].astype(np.float64)
+    rising = np.r_[True, np.diff(y) > 0]
+    x, y = x[rising], y[rising]
+    white_undone = lambda a: np.where(a > y[0], np.interp(a, y, x), a)
+    if photo:
+        moved = key_shift(m, ph, imgs[0], imgs[1], True)
+        ld = np.log2(np.maximum(to_scene(m, 0.)(imgs[0]), FLOOR))
+        ls = np.log2(np.maximum(to_scene(m, moved)(imgs[1]), FLOOR))
+        lh = np.log2(np.maximum(to_scene(m, 0.)(imgs[2]), FLOOR))
+    else:
+        ld = np.log2(np.maximum(white_undone(imgs[0]), FLOOR))
+        ls = np.log2(np.maximum(white_undone(imgs[1]), FLOOR))
+        lh = np.log2(np.maximum(white_undone(imgs[2]), FLOOR))
+    vs = (imgs[0] > CLIP_LOW) & (pks[0] < WHITE) & (pks[1] < CLIP_HIGH)
+    vh = (imgs[0] > CLIP_LOW) & (pks[0] < WHITE) & (pks[2] < CLIP_HIGH)
+    idx = np.flatnonzero((vs | vh).ravel())
+    if idx.size < 100:
+        return None
     idx = rng.choice(idx, min(n, idx.size), replace=False)
-    return dict(key=key, X=ph.features(ph.base.ravel()[idx]), Y=np.stack([g.ravel()[idx] for g in gains], 1))
+    Y = np.stack([(ls - ld).ravel()[idx], (lh - ld).ravel()[idx]], 1)
+    C = np.stack([np.where(vs.ravel()[idx], 0, 2), np.where(vh.ravel()[idx], 0, 2)], 1).astype(np.int8)
+    return dict(key=key, X=ph.features_first(ph.base.ravel()[idx]), Xl=ph.features_first(ph.logs.ravel()[idx]), Y=Y, C=C)
 
 
-def samples_ext(key, root, images, halves, peaks, rng, n=2500):
+def samples_ext(key, root, images, halves, peaks, rng, n=2500, photo=False):
     """The second ensemble's inputs (`FEAT_EXT`), targets (`OUTPUTS`) and their censoring
     (`C`: 0 an exact target, +1 a lower bound, −1 an upper bound) at `n` map pixels of one
     mosaic or photo. `images`: Camera Raw's luminance at default and at each of
@@ -752,10 +1104,15 @@ def samples_ext(key, root, images, halves, peaks, rng, n=2500):
     channel to the level the engine renders white, and `CLIP_MARGIN` more. Camera Raw's
     gain is linear in the slider before the white curve, so the half-slider render tells
     more there: twice its gain, exact where it is unclipped itself and a tighter bound
-    where not."""
+    where not.
+
+    A `photo`'s renders carry the default black as well, so they are taken back through
+    the stage's whole curve (`stage_curve`), each at the key the stage gives the black
+    under its setting."""
     m = np.load(root / 'maps' / f'{key}.npz')
     ph = Photo(logs=m['logs'], base=m['base'])
     count, total = len(images), len(images) + len(halves)
+    names = list(SETTINGS) + [half for half, _ in HALVES.values()]
     images = aligned(ph, images + halves + peaks, coarse=True)
     if images is None:
         print('misaligned', key)
@@ -765,16 +1122,23 @@ def samples_ext(key, root, images, halves, peaks, rng, n=2500):
     x, y = m['white']
     rising = np.r_[True, np.diff(y) > 0]
     x, y = x[rising], y[rising]
-    level = lambda a: np.log2(np.maximum(on_map(ph, np.where(a > y[0], np.interp(a, y, x), a)), FLOOR))
-    default = level(images[0])
+    white_undone = lambda a: np.where(a > y[0], np.interp(a, y, x), a)
+    in_stops = lambda a: np.log2(np.maximum(on_map(ph, a), FLOOR))
+    if photo:
+        on = [on_map(ph, a) for a in images]
+        moved = [key_shift(m, ph, on[0], on[k], KEY_MOVES[names[k]]) if names[k] in KEY_MOVES else 0. for k in range(total)]
+        level = lambda k: in_stops(to_scene(m, moved[k])(images[k]))
+    else:
+        level = lambda k: in_stops(white_undone(images[k]))
+    default = level(0)
     valid = (on_map(ph, images[0]) > CLIP_LOW) & (on_map(ph, peaks[0]) < WHITE)
     idx = np.flatnonzero(valid.ravel())
     if idx.size < 200:
         return None
     idx = rng.choice(idx, min(n, idx.size), replace=False)
-    gain = lambda k: (level(images[k]) - default).ravel()[idx]
+    gain = lambda k: (level(k) - default).ravel()[idx]
     at = lambda group, k: on_map(ph, group[k]).ravel()[idx]
-    to_white = (np.log2(x[-1]) + CLIP_MARGIN - level(peaks[0])).ravel()[idx]
+    to_white = (np.log2(x[-1]) + CLIP_MARGIN - in_stops(white_undone(peaks[0]))).ravel()[idx]
     Y = np.stack([gain(k) for k in range(1, count)], 1)
     C = np.zeros(Y.shape, np.int8)
     for output, sign in (('H+100', 1), ('S-100', -1)):
@@ -791,17 +1155,40 @@ def samples_ext(key, root, images, halves, peaks, rng, n=2500):
             bound &= ~exact
             Y[bound, j] = 2 * to_white[bound] if sign > 0 else np.minimum(Y[bound, j], twice[bound])
         C[bound, j] = sign
-    return dict(key=key, X=ph.features_ext(ph.base.ravel()[idx]), Y=Y, C=C)
+    return dict(key=key, X=ph.features_ext(ph.base.ravel()[idx]), Xl=ph.features_ext(ph.logs.ravel()[idx]), Y=Y, C=C)
 
 
 def sample_job(job):
     kind, key, root, renders, halves, ext, seed = job
     rng = np.random.default_rng(seed)
+    if kind == 'scene':
+        # A scene's renders show its gain as a mosaic's do (no default black, grey), so
+        # its brightest channel is its luminance. Kept as float32: there are thousands.
+        z = np.load(renders[0])
+        images = [z[n].astype(np.float64) for n in SETTINGS]
+        if ext:
+            smp = samples_ext(key, root, images, [], list(images), rng, n=SCENE_SAMPLES)
+            if smp:
+                # Scenes have no half-slider renders, so clipped pixels would enter as
+                # unbounded one-sided bounds (with CLIP_MARGIN) and bias H+100/S-100
+                # clipping; keep only exact scene samples.
+                exact = (smp['C'][:, OUTPUTS.index('S-100')] == 0) & (smp['C'][:, OUTPUTS.index('H+100')] == 0)
+                if not exact.any():
+                    return None
+                smp = {k: (v[exact] if k in ('X', 'Xl', 'Y', 'C') else v) for k, v in smp.items()}
+        else:
+            smp = samples(key, root, images[:3], rng, n=SCENE_SAMPLES)
+        if not smp:
+            return None
+        par = json.loads(str(z['par']))
+        made_of = {f'photo{par[k]}' for k in 'ab' if par.get(k)}
+        return dict({k: v.astype(np.float32) if k in ('X', 'Xl', 'Y') else v for k, v in smp.items()}, kind=kind, made_of=made_of)
     if ext:
         smp = samples_ext(key, root, [cr_linear(r) for r in renders], [cr_linear(r) for r in halves],
-                          [cr_linear(r, peak=True) for r in renders + halves], rng)
+                          [cr_linear(r, peak=True) for r in renders + halves], rng, photo=kind == 'photo')
     else:
-        smp = samples(key, root, [cr_linear(r) for r in renders], rng)
+        smp = samples(key, root, [cr_linear(r) for r in renders], rng, photo=kind == 'photo',
+                      peaks=[cr_linear(r, peak=True) for r in renders])
     return dict(smp, kind=kind) if smp else None
 
 
@@ -836,9 +1223,15 @@ def load(root, ext, photos_dir=None):
             halves = [cr / f'{i}-{s}.tif' for s, _ in HALVES.values()]
             halves = halves if all(rendered(h) for h in halves) else []
         jobs.append(('photo', f'photo{i}', root, renders, halves, ext, len(jobs)))
+    for name, renders, _, offset in scene_sets(root):
+        if (root / 'maps' / f'{name}.npz').exists():
+            jobs.append(('scene', name, root, [renders], [], ext, (80000 if ext else 70000) + offset))
     made_from = dict(
-        features=FEAT_EXT if ext else FEAT,
-        constants=dict(BOTTOM_GAP=BOTTOM_GAP, WHITE=WHITE, CLIP_HIGH=CLIP_HIGH, CLIP_LOW=CLIP_LOW, CLIP_MARGIN=CLIP_MARGIN) if ext else {},
+        features=FEAT_EXT,
+        black=[hashlib.sha256(BLACK.read_bytes()).hexdigest(), sorted(KEY_MOVES.items())],
+        constants=dict(BOTTOM_GAP=BOTTOM_GAP, WHITE=WHITE, CLIP_HIGH=CLIP_HIGH, CLIP_LOW=CLIP_LOW,
+                       CLIP_MARGIN=CLIP_MARGIN, STAT_BLUR=STAT_BLUR, SCENE_SAMPLES=SCENE_SAMPLES,
+                       dual_pix=True),
         inputs=[[key, stamp(root / 'maps' / f'{key}.npz')] + [stamp(r) for r in renders + halves]
                 for _, key, _, renders, halves, _, _ in jobs])
     if cache.exists():
@@ -856,41 +1249,52 @@ def load(root, ext, photos_dir=None):
     return data
 
 
-def fit(X, Y, C, mu, sd, steps=6000, seed=0, lr=2e-3):
-    """A network from `X` to `Y`. Where `C` is +1 the target is a lower bound and costs
-    only a prediction under it; where −1 an upper bound, only a prediction over it."""
+def fit(X, Xl, Y, C, mu, sd, steps=6000, seed=0, lr=2e-3, pix_reg=PIX_REG):
+    """Additive dual-MLP `G_base(b) + G_pix(l)` from `(X, Xl)` to `Y`. Where `C` is 2
+    the target is ignored; +1 a lower bound; −1 an upper bound."""
     import mlx.core as mx
     import mlx.nn as nn
     import mlx.optimizers as optim
 
-    class MLP(nn.Module):
+    class DualMLP(nn.Module):
         def __init__(s, n, h=HIDDEN):
             super().__init__()
-            s.l1, s.l2, s.l3 = nn.Linear(n, h), nn.Linear(h, h), nn.Linear(h, Y.shape[1])
+            s.b1, s.b2, s.b3 = nn.Linear(n, h), nn.Linear(h, h), nn.Linear(h, Y.shape[1])
+            s.p1, s.p2, s.p3 = nn.Linear(n, h), nn.Linear(h, h), nn.Linear(h, Y.shape[1])
 
-        def __call__(s, x):
-            return s.l3(nn.silu(s.l2(nn.silu(s.l1(x)))))
+        def __call__(s, xb, xl):
+            gb = s.b3(nn.silu(s.b2(nn.silu(s.b1(xb)))))
+            gp = s.p3(nn.silu(s.p2(nn.silu(s.p1(xl)))))
+            return gb, gp
 
     mx.random.seed(seed)
-    m, opt = MLP(X.shape[1]), optim.Adam(lr)
-    x, y, c = mx.array(((X - mu) / sd).astype(np.float32)), mx.array(Y.astype(np.float32)), mx.array(C.astype(np.float32))
+    m, opt = DualMLP(X.shape[1]), optim.Adam(lr)
+    xb = mx.array(((X - mu) / sd).astype(np.float32))
+    xl = mx.array(((Xl - mu) / sd).astype(np.float32))
+    y, c = mx.array(Y.astype(np.float32)), mx.array(C.astype(np.float32))
 
-    def loss(m, xb, yb, cb):
-        d = m(xb) - yb
-        d = mx.where(cb > 0, mx.minimum(d, 0), mx.where(cb < 0, mx.maximum(d, 0), d))
-        return (d ** 2).mean()
+    def loss(m, xb, xl, yb, cb):
+        gb, gp = m(xb, xl)
+        d = (gb + gp) - yb
+        d = mx.where(cb == 2, 0., mx.where(cb > 0, mx.minimum(d, 0), mx.where(cb < 0, mx.maximum(d, 0), d)))
+        return (d ** 2).mean() + pix_reg * (gp ** 2).mean()
 
     g = nn.value_and_grad(m, loss)
     rng = np.random.default_rng(seed)
     for _ in range(steps):
-        b = mx.array(rng.integers(0, x.shape[0], 8192))
-        _, grads = g(m, x[b], y[b], c[b])
+        b = mx.array(rng.integers(0, xb.shape[0], 8192))
+        _, grads = g(m, xb[b], xl[b], y[b], c[b])
         opt.update(m, grads)
         mx.eval(m.parameters(), opt.state)
-    predict = lambda Xn: np.array(m(mx.array(((Xn - mu) / sd).astype(np.float32))))
-    weights = {k: np.array(v).tolist() for k, v in [('l1.w', m.l1.weight), ('l1.b', m.l1.bias), ('l2.w', m.l2.weight),
-                                                     ('l2.b', m.l2.bias), ('l3.w', m.l3.weight), ('l3.b', m.l3.bias)]}
-    return predict, weights
+
+    def predict(Xbn, Xln):
+        gb, gp = m(mx.array(((Xbn - mu) / sd).astype(np.float32)), mx.array(((Xln - mu) / sd).astype(np.float32)))
+        return np.array(gb + gp)
+
+    ext_w = lambda l1, l2, l3: {k: np.array(v).tolist() for k, v in [
+        ('l1.w', l1.weight), ('l1.b', l1.bias), ('l2.w', l2.weight),
+        ('l2.b', l2.bias), ('l3.w', l3.weight), ('l3.b', l3.bias)]}
+    return predict, (ext_w(m.b1, m.b2, m.b3), ext_w(m.p1, m.p2, m.p3))
 
 
 def report(predict, ds, label, outputs=OUTPUTS):
@@ -900,7 +1304,7 @@ def report(predict, ds, label, outputs=OUTPUTS):
     def rms(d):
         exact = d['C'] == 0
         n = exact.sum(0)
-        return np.where(n > 0, np.sqrt(((predict(d['X']) - d['Y']) ** 2 * exact).sum(0) / np.maximum(n, 1)), np.nan)
+        return np.where(n > 0, np.sqrt(((predict(d['X'], d['Xl']) - d['Y']) ** 2 * exact).sum(0) / np.maximum(n, 1)), np.nan)
     r = np.array([rms(d) for d in ds])
     scored = lambda k: '' if np.isfinite(r[:, k]).all() else f' ({int(np.isfinite(r[:, k]).sum())} scored)'
     print(f'  {label} (n={len(ds)}): ' + ' | '.join(
@@ -916,33 +1320,43 @@ def train(args):
 
 
 def ensemble(data, outputs, cv, json_path, rust_path, keep):
-    """Fits MEMBERS networks to the samples' targets `outputs` and writes those in `keep`."""
+    """Fits MEMBERS dual networks to the samples' targets `outputs` and writes those in `keep`."""
     data = [dict(d, C=d.get('C', np.zeros(d['Y'].shape, np.int8))) for d in data]
     mos, pho = [d for d in data if d['kind'] == 'mosaic'], [d for d in data if d['kind'] == 'photo']
-    stack = lambda ds: tuple(np.concatenate([d[k] for d in ds]) for k in 'XYC')
-    Xall = np.concatenate([d['X'] for d in data])
+    sce = [d for d in data if d['kind'] == 'scene']
+    stack = lambda ds: tuple(np.concatenate([d[k] for d in ds]) for k in ('X', 'Xl', 'Y', 'C'))
+    Xall = np.concatenate([d['X'] for d in mos + pho + sce])
     mu, sd = Xall.mean(0), Xall.std(0) + 1e-6
     if cv:
+        # A scene made from a held-out photo's map is left out with it.
         folds = np.array_split(np.random.default_rng(1).permutation(len(pho)), 4)
         for f in folds:
             held = [pho[i] for i in f]
-            predict, _ = fit(*stack(mos + [pho[i] for i in range(len(pho)) if i not in f] * PHOTO_WEIGHT), mu, sd, steps=4000)
+            keys = {d['key'] for d in held}
+            others = [pho[i] for i in range(len(pho)) if i not in f] * PHOTO_WEIGHT
+            predict, _ = fit(*stack(mos + others + [d for d in sce if not d['made_of'] & keys]), mu, sd, steps=4000)
             report(predict, held, 'held-out photos', outputs)
-    members = [fit(*stack(mos + pho * PHOTO_WEIGHT), mu, sd, seed=seed) for seed in range(MEMBERS)]
-    predict = lambda Xn: np.mean([p(Xn) for p, _ in members], 0)
+    members = [fit(*stack(mos + pho * PHOTO_WEIGHT + sce), mu, sd, seed=seed) for seed in range(MEMBERS)]
+    predict = lambda Xbn, Xln: np.mean([p(Xbn, Xln) for p, _ in members], 0)
     report(predict, pho, 'photos (in-sample, ensemble)', outputs)
     report(predict, mos, 'mosaics (in-sample, ensemble)', outputs)
+    if sce:
+        report(predict, sce, 'scenes and gap probes (in-sample, ensemble)', outputs)
     rows = [outputs.index(o) for o in keep]
-    kept = [dict(w, **{'l3.w': np.array(w['l3.w'])[rows].tolist(), 'l3.b': np.array(w['l3.b'])[rows].tolist()}) for _, w in members]
-    names = (FEAT_EXT if rust_path == DATA_EXT else FEAT)
-    rule = dict(features=names, outputs=keep, mu=mu.tolist(), sd=sd.tolist(), members=kept)
+    slice_w = lambda w: dict(w, **{'l3.w': np.array(w['l3.w'])[rows].tolist(), 'l3.b': np.array(w['l3.b'])[rows].tolist()})
+    kept_base = [slice_w(wb) for _, (wb, _) in members]
+    kept_pix = [slice_w(wp) for _, (_, wp) in members]
+    rule = dict(features=FEAT_EXT, outputs=keep, mu=mu.tolist(), sd=sd.tolist(),
+                members_base=kept_base, members_pix=kept_pix)
     json_path.write_text(json.dumps(rule))
     rust_path.write_text(rust(rule, rust_path == DATA_EXT))
     print(f'-> {rust_path.relative_to(ROOT)}')
 
 
 def rust(g, ext=False):
-    members, hidden, features = len(g['members']), len(g['members'][0]['l1.b']), len(g['mu'])
+    mb = g.get('members_base', g.get('members'))
+    mp = g['members_pix']
+    members, hidden, features = len(mb), len(mb[0]['l1.b']), len(g['mu'])
     # One row of numbers per line: rustfmt would put each number on a line of its own.
     def arr(name, v, ty):
         v = np.array(v, dtype=np.float32)
@@ -954,26 +1368,30 @@ def rust(g, ext=False):
             return f'{item}[\n    ' + ',\n    '.join(row(r) for r in v) + ',\n];\n'
         mats = ',\n    '.join('[\n        ' + ',\n        '.join(row(r) for r in m) + ',\n    ]' for m in v)
         return f'{item}[\n    {mats},\n];\n'
-    about = ('//! The global rule of negative Shadows and positive Highlights: an ensemble of small networks\n'
-             '//! from histogram and per-level texture descriptors of a base level, and from the level and the\n'
-             "//! photo's top, median and mean themselves, to the log2 gain at Shadows −100 and Highlights\n"
-             '//! +100, fitted from different seeds to Camera Raw 18.7 on textured flat-patch mosaics and\n'
-             "//! linear-profile training photos, from the engine's own measurement maps\n" if ext else
-             '//! The global Shadows/Highlights rule: an ensemble of small networks from histogram and\n'
-             '//! per-level texture descriptors of a base level to the log2 gain at Shadows +100 and\n'
-             '//! Highlights −100, fitted from different seeds to Camera Raw 18.7 on textured flat-patch\n'
-             "//! mosaics and linear-profile training photos, from the engine's own measurement maps\n")
+    about = ('//! The global rule of negative Shadows and positive Highlights (`G_base(b) + G_pix(l)`):\n'
+             '//! dual ensembles of small networks from histogram, per-level texture and absolute-level\n'
+             '//! descriptors to the log2 gain at Shadows −100 and Highlights +100, fitted from different\n'
+             '//! seeds to Camera Raw 18.7 on textured flat-patch mosaics, linear-profile training photos\n'
+             "//! and scenes made from those photos' maps, from the engine's own measurement maps\n" if ext else
+             '//! The global Shadows/Highlights rule (`G_base(b) + G_pix(l)`): dual ensembles of small\n'
+             '//! networks from histogram, per-level texture and absolute-level descriptors to the log2\n'
+             '//! gain at Shadows +100 and Highlights −100, fitted from different seeds to Camera Raw 18.7\n'
+             '//! on textured flat-patch mosaics, linear-profile training photos and scenes made from\n'
+             "//! those photos' maps, from the engine's own measurement maps\n")
     head = (about +
             '//! (scripts/corpus/scene-tone-rule.py). Generated; do not edit.\n'
             '#![allow(\n    clippy::excessive_precision,\n    clippy::approx_constant,\n    clippy::unreadable_literal\n)]\n'
             f'/// Networks in the ensemble.\npub(super) const MEMBERS: usize = {members};\n'
             f'/// Units in each hidden layer.\npub(super) const HIDDEN: usize = {hidden};\n'
             f'/// Inputs the networks read.\npub(super) const FEATURES: usize = {features};\n')
-    stack = lambda k: [m[k] for m in g['members']]
+    stack = lambda ms, k: [m[k] for m in ms]
     return head + arr('MU', g['mu'], '[f32; FEATURES]') + arr('SD', g['sd'], '[f32; FEATURES]') + \
-        arr('W1', stack('l1.w'), '[[[f32; FEATURES]; HIDDEN]; MEMBERS]') + arr('B1', stack('l1.b'), '[[f32; HIDDEN]; MEMBERS]') + \
-        arr('W2', stack('l2.w'), '[[[f32; HIDDEN]; HIDDEN]; MEMBERS]') + arr('B2', stack('l2.b'), '[[f32; HIDDEN]; MEMBERS]') + \
-        arr('W3', stack('l3.w'), '[[[f32; HIDDEN]; 2]; MEMBERS]') + arr('B3', stack('l3.b'), '[[f32; 2]; MEMBERS]')
+        arr('W1', stack(mb, 'l1.w'), '[[[f32; FEATURES]; HIDDEN]; MEMBERS]') + arr('B1', stack(mb, 'l1.b'), '[[f32; HIDDEN]; MEMBERS]') + \
+        arr('W2', stack(mb, 'l2.w'), '[[[f32; HIDDEN]; HIDDEN]; MEMBERS]') + arr('B2', stack(mb, 'l2.b'), '[[f32; HIDDEN]; MEMBERS]') + \
+        arr('W3', stack(mb, 'l3.w'), '[[[f32; HIDDEN]; 2]; MEMBERS]') + arr('B3', stack(mb, 'l3.b'), '[[f32; 2]; MEMBERS]') + \
+        arr('PW1', stack(mp, 'l1.w'), '[[[f32; FEATURES]; HIDDEN]; MEMBERS]') + arr('PB1', stack(mp, 'l1.b'), '[[f32; HIDDEN]; MEMBERS]') + \
+        arr('PW2', stack(mp, 'l2.w'), '[[[f32; HIDDEN]; HIDDEN]; MEMBERS]') + arr('PB2', stack(mp, 'l2.b'), '[[f32; HIDDEN]; MEMBERS]') + \
+        arr('PW3', stack(mp, 'l3.w'), '[[[f32; HIDDEN]; 2]; MEMBERS]') + arr('PB3', stack(mp, 'l3.b'), '[[f32; 2]; MEMBERS]')
 
 
 # --- Shadows and Highlights together -----------------------------------------------------
@@ -993,7 +1411,9 @@ def pair_sample(job):
     curves is off Camera Raw's combined gain (`E`, the engine's white curve undone as in
     `samples_ext`), Camera Raw's own difference from the sum of its single gains (`I`)
     and each curve's own error at its single setting (`S`); and the inputs the engine
-    predicts the fractions from (`F`, `RuleStats::pair`)."""
+    predicts the fractions from (`F`, `RuleStats::pair`). The renders are taken back
+    through the stage's whole curve as in `samples_ext`, a pair's at the key its Shadows
+    setting gives the black."""
     key, root = job
     cr = root / 'photos' / 'crlin'
     m, curves = np.load(root / 'maps' / f'{key}.npz'), np.load(root / 'curves' / f'{key}.npz')
@@ -1006,10 +1426,9 @@ def pair_sample(job):
         print('misaligned', key)
         return None
     lum, peak = images[:len(names)], images[len(names):]
-    x, y = m['white']
-    rising = np.r_[True, np.diff(y) > 0]
-    x, y = x[rising], y[rising]
-    level = lambda a: np.log2(np.maximum(on_map(ph, np.where(a > y[0], np.interp(a, y, x), a)), FLOOR))
+    on = [on_map(ph, a) for a in lum]
+    moved = {n: key_shift(m, ph, on[0], on[names.index(n)], KEY_MOVES[n]) for n in KEY_MOVES if n in names}
+    level = lambda n, a: np.log2(np.maximum(on_map(ph, to_scene(m, moved.get(n.split('_')[0], 0.))(a)), FLOOR))
     valid = np.ones(ph.base.shape, bool)
     for a, b in zip(lum, peak):
         valid &= (on_map(ph, a) > CLIP_LOW) & (on_map(ph, b) < CLIP_HIGH)
@@ -1018,22 +1437,31 @@ def pair_sample(job):
         print('too few unclipped pixels', key)
         return None
     idx = np.random.default_rng(int(key[5:])).choice(idx, min(6000, idx.size), replace=False)
-    default = level(lum[0])
-    gain = {n: (level(a) - default).ravel()[idx] for n, a in zip(names[1:], lum[1:])}
-    base = ph.base.ravel()
+    default = level(names[0], lum[0])
+    gain = {n: (level(n, a) - default).ravel()[idx] for n, a in zip(names[1:], lum[1:])}
+    base, logs = ph.base.ravel(), ph.logs.ravel()
     ordered = np.sort(base.astype(np.float32))
     at = lambda q: ordered[int(np.float32(base.size - 1) * np.float32(q))]
     kinds = list(OUTPUTS)    # RuleCurve::ALL's order
     extreme = {n: float(curve_at(curves, k, at(PAIR_LOW if n[0] == 'S' else PAIR_HIGH))) for k, n in enumerate(kinds)}
     reach = {n: float(np.clip(curve_at(curves, k, base) / extreme[n], 0, 1).mean()) if extreme[n] else 0.
              for k, n in enumerate(kinds)}
+    if 'pix_tables' not in curves.files:
+        raise SystemExit(f'{key}: curves npz is missing pix_tables; re-run `taps` with a current build')
+    def pix_at(k, x):
+        tab, lo, hi = curves['pix_tables'][k].astype(np.float64), float(curves['pix_lo']), float(curves['pix_hi'])
+        f = np.clip((np.asarray(x, np.float64) - lo) / (hi - lo) * len(tab) - 0.5, 0, len(tab) - 1)
+        i = np.minimum(f.astype(int), len(tab) - 2)
+        return tab[i] + (tab[i + 1] - tab[i]) * (f - i)
     out = dict(key=key, X=[], E=[], I=[], S=[], F=[])
     for name, (sn, hn) in PAIRS.items():
-        a, b = curve_at(curves, kinds.index(sn), base[idx]), curve_at(curves, kinds.index(hn), base[idx])
+        ks, kh = kinds.index(sn), kinds.index(hn)
+        a, b = curve_at(curves, ks, base[idx]), curve_at(curves, kh, base[idx])
+        pa, pb = pix_at(ks, logs[idx]), pix_at(kh, logs[idx])
         out['X'].append(np.stack([extreme[sn] - a, extreme[hn] - b], 1))
-        out['E'].append(a + b - gain[name])
+        out['E'].append((a + pa) + (b + pb) - gain[name])
         out['I'].append(gain[name] - gain[sn] - gain[hn])
-        out['S'].append(np.stack([a - gain[sn], b - gain[hn]], 1))
+        out['S'].append(np.stack([(a + pa) - gain[sn], (b + pb) - gain[hn]], 1))
         es, eh = abs(extreme[sn]), abs(extreme[hn])
         out['F'].append(np.array([reach[sn], reach[hn], es, eh, 1 / max(es, PAIR_EXTREME_MIN), 1 / max(eh, PAIR_EXTREME_MIN)]))
     return out
@@ -1128,6 +1556,11 @@ def main():
     s.add_argument('root', type=Path)
     s.add_argument('raws', type=Path, nargs='*')
     s.add_argument('--list', type=Path, help='JSON list of raw paths relative to $RAWMAKASE_DATASET')
+    s = sub.add_parser('scenes')
+    s.add_argument('root', type=Path)
+    s.add_argument('--count', type=int, default=SCENES)
+    s = sub.add_parser('gaps')
+    s.add_argument('root', type=Path)
     s = sub.add_parser('taps')
     s.add_argument('root', type=Path)
     s.add_argument('rawmakase', type=Path)
@@ -1145,7 +1578,8 @@ def main():
     args.root = args.root.expanduser().resolve()
     if getattr(args, 'histograms', None):
         args.histograms = args.histograms.expanduser().resolve()
-    {'probes': probes, 'photos': photos, 'taps': taps, 'train': train, 'pair': pair}[args.step](args)
+    steps = {'probes': probes, 'photos': photos, 'scenes': scenes, 'gaps': gaps, 'taps': taps, 'train': train, 'pair': pair}
+    steps[args.step](args)
 
 
 if __name__ == '__main__':

@@ -142,19 +142,18 @@ Exposure, and parts of the cool magenta corner of Temp and Tint.
   Global Shadows moves this key by its log-luminance gain: Camera Raw keys its default
   black on the photo's levels as Shadows leaves them, not as it finds them (with and
   without the profile's automatic black, the black's curve at Dehaze ±100 is a curve of
-  the rendered image, not the default render's; 2026-11-16). Positive Shadows moves it
-  by its median gain over the measurement copy; using the unchanged key overstated the
-  gain at negative Exposure. Negative Shadows moves it by its gain on the darkest 0.1%
-  of the copy, the levels the key reads: on 228 training photos at Shadows −100, with
-  the key left alone the tones four to eight stops under the top render 0.3 to 0.6 stop
-  too dark, with the median gain 0.2 to 0.5, and with the darkest levels' gain 0.04 to
-  0.14 (lighter tones within 0.02). Reading the darkest levels for positive Shadows
-  too halved the deepest shadows' over-lift at +100 on those photos (+0.11, +0.17 and
-  +0.30 stop at four, five and six to eight stops under the top to +0.03, +0.06 and
-  +0.14) but left the validation sets' medians more than 0.1 ΔE00 worse in three
-  strata, so positive Shadows keeps the median. Highlights does not move the key:
-  moving it by Highlights' gain on the darkest levels changed Highlights +100 on the
-  training photos by 0.0002 (0.0118 against 0.0120 in the measure of
+  the rendered image, not the default render's; 2026-11-16). Both positive and negative
+  Shadows move it by the change in the 0.1th percentile of log luminance over the
+  measurement copy's active crop (`q0.001(post) − q0.001(pre)`): on 228 training photos at
+  Shadows −100, with the key left alone the tones four to eight stops under the top render
+  0.3 to 0.6 stop too dark, with the median gain 0.2 to 0.5, and with the darkest levels'
+  gain 0.04 to 0.14 (lighter tones within 0.02). Unifying positive Shadows to the same
+  `q0.001` shift (2026-11-24, with the local-Laplacian `G_base + G_pix` rule refitted on
+  targets extracted with that shift) also removes the systematic deep-shadow chroma
+  under-saturation on warm/green hues at Shadows +100 (`orange` 0.97 → 0.99, `yellow`
+  0.96 → 0.99, `green` 0.95 → 0.98 across 44 validation and stress photos). Highlights does
+  not move the key: moving it by Highlights' gain on the darkest levels changed Highlights
+  +100 on the training photos by 0.0002 (0.0118 against 0.0120 in the measure of
   [the global rule](#the-global-rule)).
   A mask selects the response at its combined Shadows value locally, from −100 to
   +100, interpolating prepared curves at steps of 0.1; pixels outside it keep the
@@ -557,6 +556,37 @@ One slider alone renders as before: nothing is blended with either at zero. Mask
 the same blend at the total of the recipe's and the mask's values, on the CPU and the
 GPU. An HDR master keeps the sum of the two curves, which is what its renders were
 judged with. The default black's key still follows Shadows alone.
+
+**Local Laplacian base and additive pixel-contrast curve `G_pix(l)` (2026-11-24).**
+Replacing the guided-filter base with a local Laplacian base level (`local_tone.rs`,
+`LAPLACIAN_SIGMA = 1.5`) and decomposing all four Shadows/Highlights directions into an
+additive pair `G_base(base(x, y)) + G_pix(l(x, y))` removes the detail flattening of a
+base-only gain without introducing edge halos. Both ensembles take the same 32 features
+(the 28 histogram/texture descriptors plus `[top, q50, mean, x]`), trained as 4-member
+dual-head MLPs (`H = 64`, `local_tone_rule_data.rs` and `local_tone_rule_ext_data.rs`,
+fitted by `scripts/corpus/scene-tone-rule.py`); `G_pix(l)` spans `[bot, top]` and holds
+flat outside, projected together with `G_base` so both `l + G_pix(l)` and
+`l + G_base(l) + G_pix(l)` stay nondecreasing. `Pair` (`local_tone_rule_pair_data.rs`) is
+refitted with `G_pix(l)` included, and `RuleStats` tallies only the active default crop
+(`active_crop_rect`) on cropped sensors while `measurement_source` clamps optical-black
+default-crop margins and dark built-in barrel-distortion corners. Across all 23 affected
+validation sets (all six Camera Raw 18.7 families plus Sony A7R VI, against
+`main-6ef32ab87-metric2`, pooled medians): Shadows +100 `1.74 → 1.19`, Adobe Color
+Shadows +100 `1.36 → 0.95`, Shadows +50 `0.88 → 0.81`, Shadows −100 `0.54 → 0.51`,
+Highlights +100 `0.86 → 0.68`, Highlights +50 `0.70 → 0.58`, Highlights −100 `0.72 → 0.64`,
+Highlights −50 `0.58 → 0.52`, Shadows +100 / Highlights +100 `3.73 → 2.76`, Shadows +100 /
+Highlights −100 `1.82 → 1.42`, Shadows +50 / Highlights −50 `0.84 → 0.70`, and masked
+Exposure + Shadows `0.76 → 0.68` (22,349 regional windows >2 ΔE00 better vs 5,229 worse,
+4.3×). On the synthetic chart, `shadows+100` improves `3.63 → 1.51`, `shadows+60`
+`1.96 → 0.94`, and `highlights-100` `10.85 → 7.17`; only `amount-look-150` (mean
+`1.29 → 1.24`, p95 `3.25 → 3.60`), `amount-look-200` (mean `1.51 → 1.58`, p95
+`4.07 → 5.34`), `scene1/H-100` (mae `0.0092 → 0.0072`, effect `0.056 → 0.038 EV`,
+`max 0.0551 → 0.0799`), and `scene3/S-50` (`mae 0.0013 → 0.0019`) update their
+accepted-distance baselines, alongside the 17 Shadows/Highlights engine snapshots on
+`synthetic-d65`. Remaining gaps outside S3 tone mapping: 7–10% lower chroma in
+sensor-clipped bright highlights recovered under Highlights −100 (S0 highlight
+reconstruction; unclipped highlights sit at 0.99–1.00 across all six hue bands) and
+extreme night/specular-light outliers under same-sign `Pair` (`Shadows +100 / Highlights +100`).
 
 ### Local operators
 
