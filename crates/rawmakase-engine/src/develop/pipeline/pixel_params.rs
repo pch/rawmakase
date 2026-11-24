@@ -70,8 +70,9 @@ pub(crate) mod slot {
         RULE_PIX: 16,
         // How Shadows and Highlights act together, for masks (`local_tone_rule::Pair`):
         // the four unit curves' extremes in `RULE`'s order, then Shadows' and Highlights'
-        // fraction for each sign combination. All 0 without one: nothing is blended.
-        PAIR: 12,
+        // blend fractions for each sign combination, then the four uniform log2 shifts.
+        // All 0 without one: nothing is blended or shifted.
+        PAIR: 16,
         LOCAL_REGION: 1,
         BASIC: 1,
         LEVELS: 3,
@@ -494,6 +495,7 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
             .extremes
             .into_iter()
             .chain(pair.fractions.into_iter().flatten())
+            .chain(pair.shifts)
             .collect();
         p.set(slot::PAIR, &values);
     }

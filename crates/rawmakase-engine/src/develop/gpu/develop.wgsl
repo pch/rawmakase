@@ -1062,17 +1062,21 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
         // (`local_tone_rule::Pair::at`): its fraction for the sliders' signs, ramped in
         // over the other slider's share of it.
         var blend = vec4(0.0);
+        var pair_shift = 0.0;
         if s != 0.0 && h != 0.0 {
             let same = (s > 0.0) == (h > 0.0);
             let c = select(select(3u, 1u, h < 0.0), select(2u, 0u, h > 0.0), s > 0.0);
             let a = min(abs(s), 1.0);
             let b = min(abs(h), 1.0);
+            let lo = min(a, b);
+            let hi = max(a, b);
             blend = vec4(
                 p(P_PAIR + 4u + 2u * c) * pair_ramp(b / a, same),
                 p(P_PAIR + select(2u, 0u, s > 0.0)),
                 p(P_PAIR + 5u + 2u * c) * pair_ramp(a / b, same),
                 p(P_PAIR + select(1u, 3u, h > 0.0)),
             );
+            pair_shift = p(P_PAIR + 12u + c) * lo * pair_ramp(lo / hi, same);
         }
         var sg = family(0u, s, p(P_LOCAL_KEYS), base, base);
         if s > 0.0 && offset(P_RULE) >= 0 {
@@ -1094,7 +1098,7 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
             let pg = local_curve(P_RULE_PIX + 12u, own, own);
             hg = (g + blend.z * (blend.w - g) + pg) * min(h, 1.0);
         }
-        return exp2(sg + hg + lift + clarity);
+        return exp2(sg + hg + pair_shift + lift + clarity);
     }
     var lift = 0.0;
     if r >= 0 {
