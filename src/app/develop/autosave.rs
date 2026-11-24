@@ -56,7 +56,7 @@ impl Completion {
 }
 
 /// Writes one job, reusing the catalog connection between jobs.
-type Saver = fn(&mut Option<Catalog>, &Job) -> anyhow::Result<CatalogLocation>;
+type Write = fn(&mut Option<Catalog>, &Job) -> anyhow::Result<CatalogLocation>;
 
 /// The saver thread's two ends, held while it runs.
 struct Worker {
@@ -66,57 +66,75 @@ struct Worker {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
+/// Where the saver thread is. A job is in flight only on a running saver.
+#[derive(Default)]
+enum Saver {
+    /// No thread: none started yet, or the last one was lost or closed. The
+    /// next [`Autosave::submit`] starts one.
+    #[default]
+    Stopped,
+    /// Running, with nothing to save.
+    Idle(Worker),
+    /// Running, writing the job submitted last; its [`Completion`] is still
+    /// to be received.
+    Saving(Worker),
+}
+
 pub(in crate::app) struct Autosave {
-    worker: Option<Worker>,
-    in_flight: bool,
+    saver: Saver,
     /// The catalog and photo of the last job submitted, until
     /// [`Self::take_written`] takes them.
     written: Option<(CatalogLocation, PhotoId)>,
-    saver: Saver,
+    write: Write,
 }
 impl Default for Autosave {
     fn default() -> Self {
         Self {
-            worker: None,
-            in_flight: false,
+            saver: Saver::Stopped,
             written: None,
-            saver: save,
+            write: save,
         }
     }
 }
 impl Autosave {
     /// Starts saving `job`, or hands it back if the saver cannot run.
     pub(crate) fn submit(&mut self, job: Job, ctx: &egui::Context) -> Result<(), Box<Job>> {
-        debug_assert!(!self.in_flight);
-        if self.worker.is_none() {
-            let (jobs, rx) = mpsc::channel();
-            let (tx, completions) = mpsc::channel();
-            let ctx = ctx.clone();
-            let saver = self.saver;
-            let spawned = std::thread::Builder::new()
-                .name("autosave".into())
-                .spawn(move || run(rx, tx, ctx, saver));
-            let Ok(thread) = spawned else {
+        let worker = match std::mem::take(&mut self.saver) {
+            Saver::Idle(worker) => worker,
+            Saver::Stopped => {
+                let (jobs, rx) = mpsc::channel();
+                let (tx, completions) = mpsc::channel();
+                let ctx = ctx.clone();
+                let write = self.write;
+                let spawned = std::thread::Builder::new()
+                    .name("autosave".into())
+                    .spawn(move || run(rx, tx, ctx, write));
+                let Ok(thread) = spawned else {
+                    return Err(Box::new(job));
+                };
+                Worker {
+                    jobs,
+                    completions,
+                    thread: Some(thread),
+                }
+            }
+            Saver::Saving(worker) => {
+                debug_assert!(false, "a save is already in flight");
+                self.saver = Saver::Saving(worker);
                 return Err(Box::new(job));
-            };
-            self.worker = Some(Worker {
-                jobs,
-                completions,
-                thread: Some(thread),
-            });
-        }
-        let worker = self.worker.as_ref().expect("started above");
+            }
+        };
         let written = (job.catalog.clone(), job.photo);
         if let Err(mpsc::SendError(job)) = worker.jobs.send(job) {
-            self.worker = None;
+            // The thread is gone: the saver stays stopped.
             return Err(Box::new(job));
         }
         self.written = Some(written);
-        self.in_flight = true;
+        self.saver = Saver::Saving(worker);
         Ok(())
     }
     pub(crate) fn busy(&self) -> bool {
-        self.in_flight
+        matches!(self.saver, Saver::Saving(_))
     }
     /// The catalog and photo of the save that finished last, once: a save
     /// that failed or whose worker was lost may have written it too.
@@ -126,8 +144,10 @@ impl Autosave {
     /// Drops the saver's channels at exit: it ends once the save in flight, if any,
     /// is written, and is then waited for.
     pub(in crate::app) fn close(&mut self) -> crate::app::task::Stopping {
-        self.in_flight = false;
-        let thread = self.worker.take().and_then(|worker| worker.thread);
+        let thread = match std::mem::take(&mut self.saver) {
+            Saver::Stopped => None,
+            Saver::Idle(worker) | Saver::Saving(worker) => worker.thread,
+        };
         crate::app::task::Stopping::new(thread)
     }
     /// The finished save, if one finished.
@@ -153,30 +173,31 @@ impl Autosave {
             }
         })
     }
+    /// The save in flight's completion, as `get` reads it; `None` while it is
+    /// still running, or when nothing is in flight. A lost thread leaves the saver
+    /// stopped.
     fn receive(
         &mut self,
         get: impl FnOnce(&Receiver<Completion>) -> Option<Completion>,
     ) -> Option<Completion> {
-        if !self.in_flight {
+        let Saver::Saving(worker) = &self.saver else {
             return None;
-        }
-        let Some(worker) = &self.worker else {
-            self.in_flight = false;
-            return Some(Completion::WorkerLost);
         };
         let completion = get(&worker.completions)?;
-        self.in_flight = false;
-        if matches!(completion, Completion::WorkerLost) {
-            self.worker = None;
-        }
+        self.saver = match std::mem::take(&mut self.saver) {
+            Saver::Saving(worker) if !matches!(completion, Completion::WorkerLost) => {
+                Saver::Idle(worker)
+            }
+            _ => Saver::Stopped,
+        };
         Some(completion)
     }
 }
 
-fn run(jobs: Receiver<Job>, completions: Sender<Completion>, ctx: egui::Context, saver: Saver) {
+fn run(jobs: Receiver<Job>, completions: Sender<Completion>, ctx: egui::Context, write: Write) {
     let mut catalog = None;
     for job in jobs {
-        let saved = panic::catch_unwind(AssertUnwindSafe(|| saver(&mut catalog, &job)));
+        let saved = panic::catch_unwind(AssertUnwindSafe(|| write(&mut catalog, &job)));
         let completion = match saved {
             Ok(Ok(path)) => Completion::Saved(path),
             Ok(Err(e)) => Completion::Failed(e.to_string()),
@@ -228,7 +249,7 @@ impl Autosave {
             Ok(job.catalog.clone())
         }
         Self {
-            saver: stall,
+            write: stall,
             ..Self::default()
         }
     }
@@ -281,7 +302,7 @@ mod tests {
     fn a_panicking_save_fails_and_the_next_save_runs() {
         let ctx = egui::Context::default();
         let mut autosave = Autosave {
-            saver: panics_on_photo_one,
+            write: panics_on_photo_one,
             ..Autosave::default()
         };
         assert!(autosave.submit(job(PhotoId(1)), &ctx).is_ok());
@@ -302,18 +323,17 @@ mod tests {
         let (jobs, _) = mpsc::channel();
         let (_, completions) = mpsc::channel();
         let mut autosave = Autosave {
-            worker: Some(Worker {
+            saver: Saver::Saving(Worker {
                 jobs,
                 completions,
                 thread: None,
             }),
-            in_flight: true,
             written: None,
-            saver: panics_on_photo_one,
+            write: panics_on_photo_one,
         };
         assert!(matches!(autosave.poll(), Some(Completion::WorkerLost)));
         assert!(!autosave.busy());
-        assert!(autosave.worker.is_none());
+        assert!(matches!(autosave.saver, Saver::Stopped));
 
         let ctx = egui::Context::default();
         assert!(autosave.submit(job(PhotoId(2)), &ctx).is_ok());
@@ -325,14 +345,13 @@ mod tests {
         let (jobs, _) = mpsc::channel();
         let (_, completions) = mpsc::channel();
         let mut autosave = Autosave {
-            worker: Some(Worker {
+            saver: Saver::Saving(Worker {
                 jobs,
                 completions,
                 thread: None,
             }),
-            in_flight: true,
             written: None,
-            saver: save,
+            write: save,
         };
         assert!(matches!(autosave.wait(), Some(Completion::WorkerLost)));
         assert!(!autosave.busy());

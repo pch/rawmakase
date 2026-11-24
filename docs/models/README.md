@@ -6,7 +6,7 @@ its header; change the model with the code.
 
 | Model | Code | What TLC checks |
 | --- | --- | --- |
-| `Autosave` | `src/edit_session/save_state.rs`, `src/app/develop/autosave.rs`, `Editor::flush` | A clean edit is what the catalog holds; a save is in flight only on a running saver and only for the open photo |
+| `Autosave` | `src/edit_session/save_state.rs`, `src/app/develop/autosave.rs`, `Editor::flush` | A clean edit is what the catalog holds; a job is on the saver only while it is Saving, and only for the open photo |
 | `DenoiseQueue` (via `MCDenoiseQueue`) | `crates/rawmakase-denoise/src/lib.rs` | The worker never runs a job nobody wants (no Develop request, no export waiting, a cancelled export included), and a waiting export's job is never dropped, also after a GPU failure moves it to the CPU's key |
 
 `DenoiseQueueBefore.cfg` models the queue before export waiters were counted

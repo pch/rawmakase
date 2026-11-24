@@ -13,13 +13,12 @@ VARIABLES
     ver,        \* the version of its edit on screen
     st,         \* SaveState: "Clean" | "Pending" | "Saving" | "Failed" | "Protected"
     changed,    \* Saving { changed: Some(_) }
-    worker,     \* the saver thread: "None" | "Up"
-    inFlight,   \* Autosave::in_flight
+    saver,      \* Autosave's Saver: "Stopped" | "Idle" | "Saving"
     job,        \* the job on the saver: [d, v] or <<>>
     done,       \* a completion waiting in the channel: "none" | "ok" | "err" | "lost"
     stored      \* the catalog
 
-vars == <<doc, ver, st, changed, worker, inFlight, job, done, stored>>
+vars == <<doc, ver, st, changed, saver, job, done, stored>>
 
 NoJob == [d |-> "none", v |-> 0]
 
@@ -29,8 +28,7 @@ Init ==
     /\ ver = 0
     /\ st = "Clean"
     /\ changed = FALSE
-    /\ worker = "None"
-    /\ inFlight = FALSE
+    /\ saver = "Stopped"
     /\ job = NoJob
     /\ done = "none"
 
@@ -53,14 +51,13 @@ Edit ==
     /\ ver < MaxVer
     /\ ver' = ver + 1
     /\ MarkChanged
-    /\ UNCHANGED <<doc, worker, inFlight, job, done, stored>>
+    /\ UNCHANGED <<doc, saver, job, done, stored>>
 
 \* Editor::autosave once the edit settled (ready) and nothing is in flight.
 Submit ==
     /\ st \in {"Pending", "Failed"}
-    /\ ~inFlight
-    /\ worker' = "Up"
-    /\ inFlight' = TRUE
+    /\ saver /= "Saving"
+    /\ saver' = "Saving"
     /\ job' = [d |-> doc, v |-> ver]
     /\ st' = "Saving" /\ changed' = FALSE
     /\ UNCHANGED <<doc, ver, done, stored>>
@@ -71,7 +68,7 @@ WorkerSaves ==
     /\ \/ /\ stored' = [stored EXCEPT ![job.d] = job.v] /\ done' = "ok"
        \/ /\ done' = "err" /\ UNCHANGED stored
     /\ job' = NoJob
-    /\ UNCHANGED <<doc, ver, st, changed, worker, inFlight>>
+    /\ UNCHANGED <<doc, ver, st, changed, saver>>
 
 \* The saver thread is gone, after or before writing.
 WorkerLost ==
@@ -79,13 +76,12 @@ WorkerLost ==
     /\ \/ stored' = [stored EXCEPT ![job.d] = job.v]
        \/ UNCHANGED stored
     /\ done' = "lost" /\ job' = NoJob
-    /\ UNCHANGED <<doc, ver, st, changed, worker, inFlight>>
+    /\ UNCHANGED <<doc, ver, st, changed, saver>>
 
 \* Autosave::poll / wait, then Editor::background_saved.
 Receive ==
-    /\ inFlight /\ done /= "none"
-    /\ inFlight' = FALSE
-    /\ worker' = IF done = "lost" THEN "None" ELSE worker
+    /\ saver = "Saving" /\ done /= "none"
+    /\ saver' = IF done = "lost" THEN "Stopped" ELSE "Idle"
     /\ Finished(done = "ok")
     /\ done' = "none"
     /\ UNCHANGED <<doc, ver, job, stored>>
@@ -94,7 +90,7 @@ Receive ==
 \* the save in flight, saves synchronously, and opens only once nothing needs
 \* saving.
 Navigate(p) ==
-    /\ ~inFlight
+    /\ saver /= "Saving"
     /\ \/ /\ ~NeedsSave
           /\ UNCHANGED stored
        \/ /\ NeedsSave
@@ -102,7 +98,7 @@ Navigate(p) ==
     /\ doc' = p
     /\ ver' = stored'[p]
     /\ st' = "Clean" /\ changed' = FALSE
-    /\ UNCHANGED <<worker, inFlight, job, done>>
+    /\ UNCHANGED <<saver, job, done>>
 
 Next ==
     \/ Edit \/ Submit \/ WorkerSaves \/ WorkerLost \/ Receive
@@ -112,8 +108,8 @@ Spec == Init /\ [][Next]_vars
 
 \* A clean edit is what the catalog holds.
 CleanIsStored == st = "Clean" => stored[doc] = ver
-\* Something is in flight only on a saver.
-InFlightHasWorker == inFlight => worker = "Up"
+\* A job is on the saver only while it is Saving.
+JobOnlyWhileSaving == job /= NoJob => saver = "Saving"
 \* A save in flight carries an edit of the open photo.
 JobIsOpenPhoto == job /= NoJob => job.d = doc
 =============================================================================
