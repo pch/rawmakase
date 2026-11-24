@@ -672,9 +672,7 @@ impl eframe::App for Editor {
             move || ctx.request_repaint()
         });
         let display_changes_announced = crate::platform::display::changes_announced();
-        let focused = ui.ctx().input(|i| i.focused);
-        self.headroom.focus(focused);
-        self.edit_in_focus(focused);
+        self.headroom.focus(ui.ctx().input(|i| i.focused));
         self.view.hdr_display =
             crate::app::shell::display::HdrDisplay::of(frame, &mut self.headroom);
         self.render_state = frame.wgpu_render_state().cloned();

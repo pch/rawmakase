@@ -166,7 +166,7 @@ Right-click a photo in the grid or the filmstrip and choose **Edit In**, or use
 Develop's Photo menu, Photo › Edit in External Editor on a Mac, or Cmd+E. Edit In
 takes the photos Export would: the selection in the Library, in Develop the
 filmstrip's selection when the open photo is in it, else the open photo. For each
-photo RAWmakase saves a 16-bit TIFF with its edit beside the original, named
+RAW photo RAWmakase saves a 16-bit TIFF with its edit beside the original, named
 `DSC_0001-Edit.tif` (`-Edit-2` and so on when that name is taken), in the color
 space chosen on the same page (ProPhoto RGB unless you choose Adobe RGB or sRGB).
 The TIFF is added to the catalog on top of a stack with its original (Undo takes
@@ -174,9 +174,27 @@ the stack back) and opened in the editor. The TIFF carries the photo's metadata
 but not its develop settings, which are in its pixels. Your last export's settings
 are left as they were.
 
-When the editor saves the TIFF, RAWmakase notices as its window comes back to the
-front: the thumbnail and previews are made again, the ones shown staying until the
-new ones are ready, and the photo is opened again if it is the one shown. An edit made to the TIFF in RAWmakase stays with it.
+A JPEG, PNG or TIFF (any photo that isn't a RAW, an Edit In TIFF included) can be
+opened as it is, so RAWmakase asks first, as Lightroom does, once for all of them:
+
+- **Edit Original** (the default): the file itself opens in the editor. Nothing is
+  copied or added, so editing an Edit In TIFF again makes no new file.
+- **Edit a Copy**: the file is copied as it is beside the original
+  (`IMG_0001-Edit.jpg`, `-Edit-2` and so on), added on top of a stack with it and
+  opened.
+- **Edit a Copy with RAWmakase Adjustments**: a 16-bit TIFF with the edit, as for
+  a RAW.
+
+With the first two, adjustments made in RAWmakase are not in what the editor
+shows; the window says so when the photo has some. RAW photos chosen with them
+are always edited as a TIFF with their adjustments.
+
+While files are open in an editor, RAWmakase looks at them about once a second,
+whether its window is in front or not (on a second screen, say). When the editor
+has saved one and the file has stopped changing, its thumbnail and previews are
+made again, the ones shown staying until the new ones are ready, and the photo is
+opened again if it is the one shown. An edit made to the file in RAWmakase stays
+with it.
 
 ## Unused masks and patches
 

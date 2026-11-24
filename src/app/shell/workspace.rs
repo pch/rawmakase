@@ -34,6 +34,7 @@ impl Editor {
             || self.smart_editor_open()
             || self.collection_dialog_open()
             || self.merge_hdr.dialog_open()
+            || self.edit_in.asking.is_some()
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
@@ -295,6 +296,8 @@ impl Editor {
         self.end_command_input_when_stale();
         self.finish_paused_turn(ctx);
         self.save_when_due(ctx);
+        // Files an external editor may save, followed in front or behind.
+        self.watch_sent(ctx);
         // Once work has gone quiet, what it freed goes back to the system.
         if let Some(after) = self.freed.poll() {
             ctx.request_repaint_after(after);
@@ -470,6 +473,7 @@ impl Editor {
         self.discard_for_find_window(&ctx);
         self.read_metadata_window(&ctx);
         self.merge_hdr_window(&ctx);
+        self.edit_in_window(&ctx);
         self.file_op_window(&ctx);
         // Opened from the sidebar in either module, with or without photos.
         if let Some(asked) = self

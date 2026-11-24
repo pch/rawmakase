@@ -56,11 +56,14 @@ fn a_file_saved_again_is_found_once_and_a_missing_one_forgotten() -> anyhow::Res
         .map(|path| Sent {
             path: path.to_path_buf(),
             identity: Identity::read(path).unwrap(),
+            seen: None,
         })
         .collect();
     let was = sent[1].identity.clone();
     std::fs::write(&saved, b"saved again by the editor")?;
     std::fs::remove_file(&gone)?;
+    // Seen once: not taken up until it has settled.
+    assert!(rewritten(&mut sent).is_empty());
     let changed = rewritten(&mut sent);
     assert_eq!(changed.len(), 1);
     assert_eq!(changed[0].0, saved);
@@ -68,10 +71,16 @@ fn a_file_saved_again_is_found_once_and_a_missing_one_forgotten() -> anyhow::Res
     assert_eq!(changed[0].2, Identity::read(&saved)?);
     assert_eq!(
         sent.iter().map(|s| s.path.clone()).collect::<Vec<_>>(),
-        [kept, saved]
+        [kept.clone(), saved]
     );
-    // Checked again with nothing saved since: nothing to do.
+    // Looked at again with nothing saved since: nothing to do.
     assert!(rewritten(&mut sent).is_empty());
+    // Still being written at each look: never taken up mid-write.
+    for part in ["s", "sa", "sav"] {
+        std::fs::write(&kept, part)?;
+        assert!(rewritten(&mut sent).is_empty(), "{part}");
+    }
+    assert_eq!(rewritten(&mut sent).len(), 1, "settled");
     Ok(())
 }
 
@@ -156,8 +165,13 @@ fn a_tiff_is_added_stacked_on_its_original_and_opened_then_followed() -> anyhow:
     std::fs::write(&tiff, b"saved again by the editor")?;
     let library = e.library.as_ref().unwrap();
     assert!(library.session.catalog().load_edit(photo, &tiff).is_err());
-    e.edit_in_focus(false);
-    e.edit_in_focus(true);
+    // Taken up by the passes that run with the window behind the editor:
+    // seen once, then settled at the next look.
+    let ctx = e.context.clone();
+    for _ in 0..2 {
+        e.edit_in.checked = None;
+        e.background(&ctx);
+    }
     let now = Identity::read(&tiff)?;
     let library = e.library.as_ref().unwrap();
     let saved = library.session.catalog().load_edit(photo, &tiff)?;
@@ -273,4 +287,167 @@ fn an_added_tiff_shows_its_thumbnail_at_once() -> anyhow::Result<()> {
     };
     assert!(shown < Duration::from_secs(2), "{shown:?}");
     Ok(())
+}
+
+/// While files are sent out the passes keep coming about once a second, as
+/// nothing else wakes a window behind the editor; with none, nothing does.
+#[test]
+fn files_sent_out_keep_the_window_waking() -> anyhow::Result<()> {
+    let (dir, mut e, _) = editor_with_catalog(&[])?;
+    let woken = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let record = woken.clone();
+    let ctx = e.context.clone();
+    ctx.set_request_repaint_callback(move |info| record.lock().unwrap().push(info.delay));
+    let pass = |e: &mut Editor| {
+        let mut output = ctx.run_ui(Default::default(), |ui| e.watch_sent(ui.ctx()));
+        output.textures_delta.clear();
+    };
+    // egui's own first passes ask for more; once it has settled, nothing does.
+    for _ in 0..3 {
+        pass(&mut e);
+    }
+    woken.lock().unwrap().clear();
+    pass(&mut e);
+    assert!(
+        woken.lock().unwrap().is_empty(),
+        "{:?}",
+        woken.lock().unwrap()
+    );
+    let file = dir.path().join("a-Edit.tif");
+    std::fs::write(&file, b"rendered")?;
+    e.edit_in.sent.push(Sent {
+        identity: Identity::read(&file)?,
+        path: file,
+        seen: None,
+    });
+    pass(&mut e);
+    let woken = woken.lock().unwrap();
+    assert!(
+        woken.iter().any(|delay| *delay <= Duration::from_secs(1)),
+        "{woken:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_copy_is_named_after_its_original_with_its_own_extension() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("IMG_1.JPG");
+    assert_eq!(copy_name(&source), dir.path().join("IMG_1-Edit.JPG"));
+    std::fs::write(dir.path().join("IMG_1-Edit.JPG"), b"taken")?;
+    assert_eq!(copy_name(&source), dir.path().join("IMG_1-Edit-2.JPG"));
+    Ok(())
+}
+
+/// An editor that exists, and Edit In on `ids` with it.
+fn ask(e: &mut Editor, dir: &Path, ids: Vec<PhotoId>) {
+    e.edit_in.launched = Some(Vec::new());
+    e.edit_in.set_editors(vec![dir.to_path_buf()]);
+    e.edit_in(ids, 0);
+}
+
+#[test]
+fn a_raw_is_rendered_without_asking() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.CR3"])?;
+    ask(&mut e, dir.path(), ids);
+    assert!(e.edit_in.asking.is_none());
+    assert!(e.exporting());
+    Ok(())
+}
+
+#[test]
+fn edit_original_opens_the_file_itself_and_follows_it() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    ask(&mut e, dir.path(), ids.clone());
+    let asking = e.edit_in.asking.take().expect("asked how");
+    assert_eq!(asking.how, How::Original, "the default");
+    assert!(!asking.adjusted);
+    e.edit_in_as(asking);
+    let original = e
+        .library
+        .as_ref()
+        .unwrap()
+        .photo(ids[0])
+        .unwrap()
+        .path
+        .clone();
+    assert_eq!(
+        e.edit_in.launched,
+        Some(vec![(dir.path().to_path_buf(), original.clone())])
+    );
+    assert_eq!(e.edit_in.sent[0].path, original);
+    assert!(!e.exporting());
+    assert_eq!(e.library.as_ref().unwrap().session.photos().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn edit_a_copy_adds_the_file_as_it_is_stacked_on_top() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.JPG"])?;
+    for name in ["IMG_1-Edit.JPG", "IMG_1-Edit-2.JPG"] {
+        ask(&mut e, dir.path(), vec![ids[0]]);
+        let mut asking = e.edit_in.asking.take().expect("asked how");
+        asking.how = How::Copy;
+        e.edit_in_as(asking);
+        settle(&mut e);
+        assert!(!e.exporting());
+        let copy = dir.path().canonicalize()?.join("photos").join(name);
+        assert_eq!(std::fs::read(&copy)?, b"fixture", "copied as it is");
+        let photo = e
+            .catalog_photo_at(&copy)
+            .unwrap_or_else(|| panic!("{name} is in the Library: {}", e.messages.line()));
+        let library = e.library.as_ref().unwrap();
+        assert!(
+            library
+                .photo(photo)
+                .unwrap()
+                .stack
+                .expect("stacked")
+                .is_top()
+        );
+        assert_eq!(e.edit_in.launched.as_ref().unwrap().last().unwrap().1, copy);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_copy_with_adjustments_is_rendered_and_raws_always_are() -> anyhow::Result<()> {
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.CR3", "IMG_2.JPG"])?;
+    ask(&mut e, dir.path(), ids);
+    let asking = e.edit_in.asking.take().expect("asked about the JPEG");
+    assert_eq!(asking.plain.len(), 1);
+    // Edit Original for the JPEG: the RAW is still rendered.
+    e.edit_in_as(asking);
+    assert!(e.exporting());
+    assert_eq!(e.edit_in.launched.as_ref().unwrap().len(), 1);
+
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_2.JPG"])?;
+    ask(&mut e, dir.path(), ids);
+    let mut asking = e.edit_in.asking.take().expect("asked how");
+    asking.how = How::Adjusted;
+    e.edit_in_as(asking);
+    assert!(e.exporting());
+    assert_eq!(e.edit_in.launched, Some(Vec::new()));
+    Ok(())
+}
+
+/// Edit In's question for a JPEG with an edit, for `RAWMAKASE_UI_SHOTS`
+/// ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_the_edit_in_question() {
+    crate::app::ui::shots::shot(
+        "edit-in-question",
+        eframe::egui::Vec2::new(900., 600.),
+        |e, _| {
+            e.onboarding.visible = false;
+            e.edit_in.asking = Some(Asking {
+                ids: vec![PhotoId(1), PhotoId(2)],
+                plain: vec![(PhotoId(2), PathBuf::from("/photos/IMG_2.JPG"))],
+                editor: PathBuf::from("/Applications/Affinity.app"),
+                how: How::Original,
+                adjusted: true,
+            });
+        },
+        |e, ctx| e.edit_in_window(ctx),
+    );
 }
