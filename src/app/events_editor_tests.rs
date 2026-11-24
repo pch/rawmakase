@@ -1052,3 +1052,51 @@ fn a_region_rendered_after_a_turn_shows_at_once() {
         "the region rendered after the turn is drawn"
     );
 }
+
+/// Zoomed in, the minimap keeps its picture from before a turn: it is drawn
+/// turned, at the turned photo's shape, so its outline and clicks, which follow
+/// the turned photo, land on the part they show.
+#[test]
+fn the_minimap_turns_its_picture_from_before_a_turn() {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    e.view.viewport = Vec2::new(400., 400.);
+    e.schedule();
+    e.tx.send(Event::Rendered {
+        id: e.preview.task.id(),
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: 32,
+                height: 24,
+                pixels: vec![[0.5; 3]; 32 * 24],
+            },
+            display_rgb: vec![128; 32 * 24 * 3],
+            navigator: Some(image::RgbImage::new(32, 24)),
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Fit,
+        status: String::new(),
+    })
+    .unwrap();
+    e.events(&ctx);
+    e.set_zoom(2.);
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    let (_, size, turns) = e.navigator_view().0.expect("a minimap picture");
+    assert_eq!((size, turns), (Vec2::new(24., 32.), 1));
+}

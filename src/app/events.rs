@@ -296,6 +296,7 @@ impl Editor {
                     // (`viewport::embedded_frame`).
                     self.preview.crop = Some([0., 0., 1., 1.]);
                     self.preview.orientation = None;
+                    self.preview.navigator_orientation = None;
                     self.preview.status = "Camera preview • developing RAW…".into();
                 }
                 Event::Ready {
@@ -364,7 +365,7 @@ impl Editor {
                     if !region {
                         self.preview.histogram = *histogram;
                     }
-                    match preview {
+                    let navigated = match preview {
                         worker::Preview::Pixels {
                             image,
                             display_rgb,
@@ -382,7 +383,7 @@ impl Editor {
                             navigator,
                             hdr,
                         } => self.set_presented(region, (id, size), navigator, hdr),
-                    }
+                    };
                     // Pixels asked for by a hover or loupe that has since ended are
                     // not kept.
                     self.preview.keep_samples(region, samples);
@@ -394,6 +395,9 @@ impl Editor {
                         self.preview.region_orientation = orientation;
                     } else {
                         self.preview.orientation = orientation;
+                    }
+                    if navigated {
+                        self.preview.navigator_orientation = orientation;
                     }
                     self.preview.samples_recipe = request.recipe;
                     self.preview.mode = request.mode;

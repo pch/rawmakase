@@ -79,7 +79,7 @@ impl Editor {
         &mut self,
         ui: &egui::Ui,
         area: Rect,
-        (texture, size): crate::app::view::navigator::Photo,
+        (texture, size, turns): crate::app::view::navigator::Photo,
         shown: [f32; 4],
     ) -> (bool, Option<[f32; 2]>) {
         const EDGE: f32 = 180.;
@@ -124,8 +124,9 @@ impl Editor {
         }
         let painter = ui.painter().with_clip_rect(area);
         painter.rect_filled(rect.expand(2.), 4., Color32::from_black_alpha(170));
-        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
-        painter.image(texture, rect, uv, Color32::WHITE);
+        painter.add(crate::app::develop::viewport::turned_image(
+            texture, rect, turns,
+        ));
         let [x, y, w, h] = shown;
         let (x, y) = heading.map_or((x, y), |[tx, ty]| {
             (

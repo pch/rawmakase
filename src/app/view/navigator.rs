@@ -234,8 +234,9 @@ impl Glide {
     }
 }
 
-/// A photo's texture and its size.
-pub(in crate::app) type Photo = (egui::TextureId, Vec2);
+/// A photo's texture, its size as shown, and the quarter turns clockwise it is
+/// drawn with: a render from before a turn, until one after it lands.
+pub(in crate::app) type Photo = (egui::TextureId, Vec2, u8);
 
 /// The zoom slider, in a toolbar button's shape `height` high: `−`, a track from
 /// Fit to 1600% on a log scale, `+`, and the level shown. `zoom` is on a photo

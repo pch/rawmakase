@@ -110,18 +110,28 @@ impl Editor {
             self.view.zoom.shown(self.view.viewport, size)
         });
         // Until a whole render makes one (none while zoomed in), the
-        // Library's preview stands in.
+        // Library's preview stands in. One from before a turn is drawn turned,
+        // as the photo is.
         let photo = self
             .preview
             .navigator
             .as_ref()
-            .map(|p| (p.id(), p.size_vec2()))
+            .map(|p| {
+                let turns = self
+                    .preview
+                    .navigator_orientation
+                    .and_then(|then| then.turns_to(Orientation::of(&self.effective_recipe())))
+                    .unwrap_or(0);
+                let size = p.size_vec2();
+                let size = if turns % 2 == 1 { size.yx() } else { size };
+                (p.id(), size, turns)
+            })
             .or_else(|| {
                 let texture = self
                     .library
                     .as_ref()?
                     .thumbnail(self.document.catalog_photo?)?;
-                Some((texture.id(), texture.size_vec2()))
+                Some((texture.id(), texture.size_vec2(), 0))
             });
         (photo, shown)
     }
@@ -1064,7 +1074,7 @@ impl Editor {
 }
 
 /// `texture` drawn in `rect` turned `turns` quarter turns clockwise.
-fn turned_image(texture: egui::TextureId, rect: Rect, turns: u8) -> egui::Shape {
+pub(in crate::app) fn turned_image(texture: egui::TextureId, rect: Rect, turns: u8) -> egui::Shape {
     let corners = [
         rect.left_top(),
         rect.right_top(),

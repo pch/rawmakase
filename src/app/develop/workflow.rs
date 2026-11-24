@@ -636,19 +636,19 @@ impl Editor {
         [w, h]: [u32; 2],
         data: &[u8],
         navigator: Option<image::RgbImage>,
-    ) {
+    ) -> bool {
         let image = egui::ColorImage::from_rgb([w as usize, h as usize], data);
         if region {
             Picture::upload(&mut self.preview.region, ctx, "photo region", image);
             // Zoomed in before the photo was decoded: the region is the live render.
             self.preview.stand_in = None;
-            return;
+            return false;
         }
         // Zoomed in, a whole render still fills a minimap that has none,
         // e.g. after moving on to the next photo at the same zoom.
-        if (!self.view.zoom.on || self.preview.navigator.is_none())
-            && let Some(small) = navigator
-        {
+        let navigated =
+            (!self.view.zoom.on || self.preview.navigator.is_none()) && navigator.is_some();
+        if navigated && let Some(small) = navigator {
             let small = egui::ColorImage::from_rgb(
                 [small.width() as usize, small.height() as usize],
                 small.as_raw(),
@@ -660,6 +660,7 @@ impl Editor {
         // again once shown.
         self.preview.embedded = false;
         self.preview.stand_in = None;
+        navigated
     }
     /// A GPU render, presented into textures the renderer registered.
     pub(in crate::app) fn set_presented(
@@ -668,21 +669,22 @@ impl Editor {
         (id, size): (egui::TextureId, [usize; 2]),
         navigator: Option<(egui::TextureId, [usize; 2])>,
         hdr: Option<crate::app::worker::HdrTexture>,
-    ) {
+    ) -> bool {
         let picture = Some(Picture::presented_with(id, size, hdr));
         if region {
             self.preview.region = picture;
             self.preview.stand_in = None;
-            return;
+            return false;
         }
-        if (!self.view.zoom.on || self.preview.navigator.is_none())
-            && let Some((id, size)) = navigator
-        {
+        let navigated =
+            (!self.view.zoom.on || self.preview.navigator.is_none()) && navigator.is_some();
+        if navigated && let Some((id, size)) = navigator {
             self.preview.navigator = Some(Picture::presented(id, size));
         }
         self.preview.texture = picture;
         self.preview.embedded = false;
         self.preview.stand_in = None;
+        navigated
     }
     pub(in crate::app) fn navigate(&mut self, delta: isize) {
         if let Some(id) = self.document.catalog_photo
