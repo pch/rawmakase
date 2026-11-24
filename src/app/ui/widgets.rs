@@ -2078,18 +2078,7 @@ pub(in crate::app) fn menu_item(
             Sense::hover()
         },
     );
-    if needed > rect.width().ceil() {
-        // Counting the width in the menu's bounds lets egui place the
-        // popup for it already on the frame it opens, before the redraw.
-        ui.expand_to_include_x(rect.left() + needed);
-        let id = menu_width_id(ui);
-        let recorded = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.);
-        if needed > recorded {
-            ui.ctx().data_mut(|d| d.insert_temp(id, needed));
-            ui.ctx()
-                .request_discard("a menu row is wider than its menu");
-        }
-    }
+    fit_menu_row(ui, rect, needed);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
     if enabled && response.hovered() {
         ui.painter()
@@ -2151,26 +2140,76 @@ pub(in crate::app) fn context_menu(response: &egui::Response, add: impl FnOnce(&
         .at_pointer_fixed()
         .show(add);
 }
-/// Makes egui submenu buttons match `menu_item` rows: same height, text
-/// inset and hover color.
-pub(in crate::app) fn submenu_style(ui: &mut egui::Ui) {
-    let palette = theme::palette(ui.ctx());
-    let spacing = ui.spacing_mut();
-    spacing.item_spacing.y = 0.;
-    spacing.button_padding = Vec2::new(space::XXL, space::XS);
-    spacing.interact_size.y = size::MENU;
-    let visuals = ui.visuals_mut();
-    for widget in [
-        &mut visuals.widgets.hovered,
-        &mut visuals.widgets.open,
-        &mut visuals.widgets.active,
-    ] {
-        widget.weak_bg_fill = palette.accent();
-        widget.bg_fill = palette.accent();
-        widget.bg_stroke = Stroke::NONE;
-        widget.fg_stroke = Stroke::new(1., palette.on_accent_text(Tone::BRIGHT));
+/// Widens the menu for a row of `rect` that needs `needed`, as [`menu_item`]
+/// describes.
+fn fit_menu_row(ui: &mut egui::Ui, rect: Rect, needed: f32) {
+    if needed > rect.width().ceil() {
+        // Counting the width in the menu's bounds lets egui place the
+        // popup for it already on the frame it opens, before the redraw.
+        ui.expand_to_include_x(rect.left() + needed);
+        let id = menu_width_id(ui);
+        let recorded = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.);
+        if needed > recorded {
+            ui.ctx().data_mut(|d| d.insert_temp(id, needed));
+            ui.ctx()
+                .request_discard("a menu row is wider than its menu");
+        }
     }
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1., palette.tone(Tone::TEXT));
+}
+/// A menu row that opens `add` as a submenu, drawn as [`menu_item`] draws its
+/// rows: the label where theirs start, a chevron where their shortcuts end,
+/// highlighted while hovered, focused or open.
+pub(in crate::app) fn submenu<R>(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    const CHEVRON: f32 = 12.;
+    let palette = theme::palette(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(text::BODY),
+        Color32::PLACEHOLDER,
+    );
+    let needed =
+        (MENU_LABEL_INSET + galley.size().x + MENU_SHORTCUT_GAP + CHEVRON + MENU_SHORTCUT_INSET)
+            .ceil();
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), 24.),
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    fit_menu_row(ui, rect, needed);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    let inner = enabled
+        .then(|| egui::containers::menu::SubMenu::new().show(ui, &response, add))
+        .flatten();
+    let lit = enabled && (response.hovered() || response.has_focus() || inner.is_some());
+    if lit {
+        ui.painter()
+            .rect_filled(rect, radius::CONTROL, palette.accent());
+    }
+    let color = if lit {
+        palette.on_accent_text(Tone::BRIGHT)
+    } else {
+        palette.tone(if enabled { Tone::TEXT } else { Tone::DISABLED })
+    };
+    let y = rect.center().y - galley.size().y / 2.;
+    ui.painter().galley_with_override_text_color(
+        Pos2::new(rect.left() + MENU_LABEL_INSET, y),
+        galley,
+        color,
+    );
+    let chevron = Pos2::new(
+        rect.right() - MENU_SHORTCUT_INSET - CHEVRON / 2.,
+        rect.center().y,
+    );
+    icons::paint_at(ui.painter(), Icon::ChevronRight, chevron, CHEVRON, color);
+    inner.map(|r| r.inner)
 }
 /// The frame of a modal window such as Preferences or Export.
 pub(in crate::app) fn modal_frame(palette: &theme::Palette) -> egui::Frame {
