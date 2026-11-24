@@ -476,9 +476,10 @@ the destination one at a time.
  "options":{"title":"Ola & Tomek","layout":"Grid","columns":3}}
 ```
 
-`export.begin` comes when the export is queued. `folder` is the folder the
-export settings chose, with its subfolder; it is left out when the photos go
-beside their originals, which may be in several folders. `count` is how many
+`export.begin` comes when the export is queued. `folder` is the one folder
+the files go to, with its subfolder: the folder the export settings chose, or
+the originals' folder when the photos go beside originals that are all in one.
+It is left out when they go beside originals in several folders. `count` is how many
 photos the export is to write; fewer files can come, as a photo can be
 skipped, fail or be cancelled. `options` holds every
 [option](manifest.md#export-destination) the destination declares, by id:

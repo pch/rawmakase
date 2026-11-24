@@ -1007,14 +1007,17 @@ impl ExportSettings {
         let (file, note) = self.file_name_for(source, at);
         Some((folder.join(file), note))
     }
-    /// The one folder every file exports to, its subfolder included; `None`
-    /// beside the originals, which may be in several folders, and until a
-    /// specific folder is picked.
-    pub fn export_folder(&self) -> Option<PathBuf> {
-        match self.destination {
-            Destination::SameFolder => None,
-            _ => self.folder_for(Path::new("")),
-        }
+    /// The one folder the files of `sources` export to, its subfolder
+    /// included; `None` when they go to several (beside originals in
+    /// several folders), with no source, and until a specific folder is
+    /// picked.
+    pub fn export_folder<'a>(
+        &self,
+        sources: impl IntoIterator<Item = &'a Path>,
+    ) -> Option<PathBuf> {
+        let mut folders = sources.into_iter().map(|s| self.folder_for(s));
+        let first = folders.next()??;
+        folders.all(|f| f.as_ref() == Some(&first)).then_some(first)
     }
     /// Where `source` exports to, its subfolder included.
     fn folder_for(&self, source: &Path) -> Option<PathBuf> {
@@ -1205,13 +1208,23 @@ mod tests {
             s.target(source),
             Some(PathBuf::from("/photos/2026/Exported/DSC0001-web.TIF"))
         );
-        // Beside the originals there is no one export folder.
-        assert_eq!(s.export_folder(), None);
+        // Beside originals in one folder, that folder's subfolder; in two,
+        // no one folder.
+        let other = Path::new("/photos/2025/DSC0002.ARW");
+        assert_eq!(
+            s.export_folder([source, source]),
+            Some(PathBuf::from("/photos/2026/Exported"))
+        );
+        assert_eq!(s.export_folder([source, other]), None);
+        assert_eq!(s.export_folder([]), None);
         s.destination = Destination::Folder;
         assert_eq!(s.target(source), None);
-        assert_eq!(s.export_folder(), None);
+        assert_eq!(s.export_folder([source]), None);
         s.folder = Some("/exports".into());
-        assert_eq!(s.export_folder(), Some(PathBuf::from("/exports/Exported")));
+        assert_eq!(
+            s.export_folder([source, other]),
+            Some(PathBuf::from("/exports/Exported"))
+        );
     }
     #[test]
     fn a_format_from_a_later_release_keeps_the_other_settings() {

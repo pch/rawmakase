@@ -1018,9 +1018,10 @@ pub struct ExportBegin {
     pub delivery: String,
     /// The export destination's id within its extension.
     pub destination: String,
-    /// The folder the export settings chose, absolute (its subfolder, when
-    /// it has one); `None` when the files go beside their originals, which
-    /// may be in several folders.
+    /// The one folder the files go to, absolute (its subfolder, when it has
+    /// one): the folder the export settings chose, or the originals' folder
+    /// when they are all in one. `None` when the files go beside originals
+    /// in several folders.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<PathBuf>,
     /// How many photos the export is to write. Fewer files may come: a
