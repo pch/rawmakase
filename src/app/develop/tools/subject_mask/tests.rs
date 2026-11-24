@@ -262,7 +262,7 @@ fn begin(editor: &mut Editor, request: Request) -> u64 {
             generation,
             cancel,
             lifecycle,
-            sent: None,
+            phase: Phase::Preparing,
         },
     });
     generation

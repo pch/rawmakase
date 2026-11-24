@@ -22,6 +22,7 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Glossary](glossary.md) | Current | Recipe, raw defaults, stand-in, generation, receipt and the other terms the code uses |
 | [Adding an adjustment](howto/add-adjustment.md) | Current | A new develop setting, from the model to tests |
 | [Shutdown](shutdown.md) | Current | What each worker blocks on, how it stops, and what quitting waits for |
+| [State machine models](models/README.md) | Current | TLA+ models of autosave and the AI Denoise queue, and how to check them with TLC |
 | [Dependencies](dependencies.md) | Current | Third-party code, models and data, their licences and how they are linked or downloaded |
 | [Test corpus](../tests/corpus/README.md) | Current | The color corpus, the private dataset and how to run parity checks |
 

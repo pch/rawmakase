@@ -246,9 +246,22 @@ struct Call {
     ///
     /// [`Host::mask_lifecycle`]: crate::app::extensions::Host::mask_lifecycle
     lifecycle: u64,
-    /// The host's ticket for it and what it asked, from when it is sent until
-    /// its outcome arrives.
-    sent: Option<(u64, MaskGenerate)>,
+    phase: Phase,
+}
+
+/// Where a running request is.
+enum Phase {
+    /// Its input is being rendered on the selection worker.
+    Preparing,
+    /// Sent to the extension as `ticket`, asking `asked`, until its outcome
+    /// arrives.
+    Sent {
+        ticket: u64,
+        asked: Box<MaskGenerate>,
+    },
+    /// Answered: the coverage is being kept as a raster on the selection
+    /// worker, then applied.
+    Finishing,
 }
 
 /// What the drawer asks the user before a selection can run.
@@ -324,10 +337,11 @@ impl Selection {
         self.task.invalidate();
         if let Some(Pending {
             request,
-            call: Call {
-                sent: Some((ticket, _)),
-                ..
-            },
+            call:
+                Call {
+                    phase: Phase::Sent { ticket, .. },
+                    ..
+                },
             ..
         }) = self.pending.take()
         {
@@ -631,7 +645,7 @@ impl Editor {
                 generation,
                 cancel: cancel.clone(),
                 lifecycle,
-                sent: None,
+                phase: Phase::Preparing,
             },
         });
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
@@ -661,7 +675,10 @@ impl Editor {
         }
         let Some(Pending {
             request,
-            call: Call { sent: None, .. },
+            call: Call {
+                phase: Phase::Preparing,
+                ..
+            },
             ..
         }) = &self.selection.pending
         else {
@@ -688,7 +705,10 @@ impl Editor {
         {
             Ok(ticket) => {
                 if let Some(pending) = self.selection.pending.as_mut() {
-                    pending.call.sent = Some((ticket, asked));
+                    pending.call.phase = Phase::Sent {
+                        ticket,
+                        asked: Box::new(asked),
+                    };
                 }
             }
             Err(why) => self.selection_done(Done {
@@ -713,10 +733,12 @@ impl Editor {
             return;
         };
         let offer = &request.generator;
-        if offer.extension != extension || call.sent.as_ref().is_none_or(|(t, _)| *t != ticket) {
+        if offer.extension != extension
+            || !matches!(call.phase, Phase::Sent { ticket: t, .. } if t == ticket)
+        {
             return self.settle_deferred();
         }
-        let Some((_, asked)) = call.sent.take() else {
+        let Phase::Sent { asked, .. } = std::mem::replace(&mut call.phase, Phase::Finishing) else {
             return;
         };
         let (load, generation, cancel) = (call.load, call.generation, call.cancel.clone());
@@ -746,7 +768,7 @@ impl Editor {
             load,
             generation,
             cancel,
-            asked,
+            asked: *asked,
             answer,
             buffers,
             provenance,
@@ -773,7 +795,7 @@ impl Editor {
             request,
             call:
                 Call {
-                    sent: Some((ticket, _)),
+                    phase: Phase::Sent { ticket, .. },
                     load,
                     generation,
                     ..

@@ -701,7 +701,10 @@ fn answered(e: &Editor) -> bool {
     matches!(
         &e.selection.pending,
         Some(Pending {
-            call: Call { sent: None, .. },
+            call: Call {
+                phase: Phase::Finishing,
+                ..
+            },
             ..
         })
     )

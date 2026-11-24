@@ -172,9 +172,8 @@ struct Job {
     path: PathBuf,
     region: Option<[u32; 4]>,
     /// Develop's requests for this job: each gets the updates while it wants them.
+    /// Export's are counted in [`Queue::waiting`].
     develop: Vec<(Arc<CameraImage>, Arc<AtomicBool>, Sink)>,
-    /// Waiters (export) for this key.
-    waiters: usize,
 }
 
 /// How a job ended, for the waiters of its key.
@@ -197,7 +196,9 @@ struct Queue {
     /// Develop requests that joined the running job.
     joined: Vec<(Arc<CameraImage>, Arc<AtomicBool>, Sink)>,
     outcomes: HashMap<String, Outcome>,
-    /// Export waiters per key: a finished result is kept in memory only for them.
+    /// Export waiters per key, each counted while its [`Waiting`] lives: a queued
+    /// job runs for them (see [`exported`]), and a finished result is kept in
+    /// memory only for them.
     waiting: HashMap<String, usize>,
     /// The GPU produced a non-finite value: not used again in this session.
     gpu_off: bool,
@@ -532,7 +533,6 @@ impl Service {
                 path,
                 region,
                 develop: vec![(plain.clone(), wanted, sink.clone())],
-                waiters: 0,
             });
         }
         let running = queue.running.is_some();
@@ -562,11 +562,18 @@ impl Service {
                         queue.unload = false;
                         self.shared.changed.notify_all();
                     }
-                    // A Develop job nobody wants any more, and no export waits for, goes.
-                    queue.pending.retain_mut(|job| {
+                    // A job nobody wants any more goes: no Develop request wants it,
+                    // and no export waits for it (one cancelled has left).
+                    let Queue {
+                        pending,
+                        waiting,
+                        outcomes,
+                        ..
+                    } = &mut *queue;
+                    pending.retain_mut(|job| {
                         job.develop
                             .retain(|(_, wanted, _)| wanted.load(Ordering::Relaxed));
-                        !job.develop.is_empty() || job.waiters > 0
+                        !job.develop.is_empty() || exported(waiting, outcomes, &job.key)
                     });
                     if let Some(job) = queue.pending.pop_front() {
                         let cancel = Arc::new(AtomicBool::new(false));
@@ -809,7 +816,6 @@ impl Service {
                     }
                     if let Some(same) = queue.pending.iter_mut().find(|j| j.key == job.key) {
                         same.develop.extend(job.develop);
-                        same.waiters += job.waiters;
                         same.region = same.region.or(job.region);
                     } else {
                         queue.pending.push_back(job);
@@ -981,15 +987,10 @@ impl Service {
             path: path.to_path_buf(),
             region: None,
             develop: Vec::new(),
-            waiters: 1,
         };
         let running = queue.running.as_ref().is_some_and(|(k, _)| *k == key);
-        if !running {
-            if let Some(pending) = queue.pending.iter_mut().find(|j| j.key == key) {
-                pending.waiters += 1;
-            } else {
-                queue.pending.push_back(job(&key));
-            }
+        if !running && !queue.pending.iter().any(|j| j.key == key) {
+            queue.pending.push_back(job(&key));
         }
         drop(queue);
         self.shared.changed.notify_all();
@@ -1096,6 +1097,19 @@ impl Drop for Waiting<'_> {
             self.leave(&mut queue);
         }
     }
+}
+
+/// Whether an export still waits for `key`'s result: one waiting on the key itself,
+/// or on a key moved to it (the GPU's, retried on the CPU) and not yet following it,
+/// which it does at its next look.
+fn exported(
+    waiting: &HashMap<String, usize>,
+    outcomes: &HashMap<String, Outcome>,
+    key: &str,
+) -> bool {
+    waiting.iter().any(|(on, n)| {
+        *n > 0 && (on == key || matches!(outcomes.get(on), Some(Outcome::Moved(to)) if to == key))
+    })
 }
 
 fn ensure_running(queue: &Queue) -> Result<()> {
