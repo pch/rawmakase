@@ -1881,6 +1881,40 @@ fn thumbnail_requests_are_not_repeated_while_pending_or_failed() -> Result<()> {
     assert!(library.texture(&library.session.photos()[0]).is_some());
     Ok(())
 }
+/// A file saved again by another program (Edit In) keeps its thumbnail shown
+/// while the new one is made: the cell never goes blank waiting for a slow
+/// decode. It is asked for once, and not again once it has come.
+#[test]
+fn a_rewritten_files_thumbnail_stays_until_the_new_one_comes() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = tx;
+    let photo = library.session.photos()[0].clone();
+    library
+        .cache
+        .insert_thumb(&ctx, photo.path.clone(), &image::RgbImage::new(2, 2));
+    library.file_rewritten(&photo.path);
+    assert!(library.texture(&photo).is_some(), "the old one stays shown");
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1, "asked for again, once");
+    // The new one comes from the worker: shown, and not asked for again.
+    let (results, rx_results) = std::sync::mpsc::sync_channel(1);
+    library.cache.thumb_rx = rx_results;
+    results.send(super::previews::PreviewResult {
+        path: photo.path.clone(),
+        image: Some(image::RgbImage::new(3, 3)),
+        display: Default::default(),
+        cache_error: None,
+        skipped: false,
+    })?;
+    library.cache.poll(&ctx);
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    assert_eq!(rx.try_iter().count(), 0);
+    assert!(library.texture(&photo).is_some());
+    Ok(())
+}
 /// The views publish what they showed last frame before asking for this
 /// frame's thumbnails: one shown for the first time is made, not skipped by
 /// a worker that takes it before the next frame publishes it.

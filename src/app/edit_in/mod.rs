@@ -18,7 +18,9 @@
 //! comes to the front again each is checked: one saved meanwhile has its
 //! edit in the catalog bound to the new version (so the edit is not
 //! protected, nor a save refused, as for a photo replaced by another), its
-//! previews made again, and it is opened again when it is the photo shown.
+//! previews made again (those shown staying until the new ones come: another
+//! program's file can be slow to decode) and it is opened again when it is
+//! the photo shown.
 use crate::app::{Editor, task, worker::Event};
 use crate::catalog::{CatalogLocation, PhotoId};
 use crate::color::OutputSpace;

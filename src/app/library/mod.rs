@@ -1718,9 +1718,11 @@ impl Library {
         }
     }
     /// The file at `path` was saved again by another program: its photos'
-    /// thumbnails and previews are made again from it.
+    /// thumbnails and previews are made again from it, those shown staying
+    /// until the new ones come, as a file saved with another program's
+    /// compression can take a while to decode.
     pub(in crate::app) fn file_rewritten(&mut self, path: &std::path::Path) {
-        self.cache.forget_file(path);
+        self.cache.renew_file(path);
         let ids: Vec<PhotoId> = self
             .session
             .photos()
@@ -1729,7 +1731,7 @@ impl Library {
             .map(|p| p.id)
             .collect();
         for id in ids {
-            self.cache.forget(id);
+            self.cache.ask_again(id);
             self.screen.forget(id);
         }
     }

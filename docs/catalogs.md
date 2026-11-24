@@ -175,8 +175,8 @@ but not its develop settings, which are in its pixels. Your last export's settin
 are left as they were.
 
 When the editor saves the TIFF, RAWmakase notices as its window comes back to the
-front: the thumbnail and previews are made again, and the photo is opened again if
-it is the one shown. An edit made to the TIFF in RAWmakase stays with it.
+front: the thumbnail and previews are made again, the ones shown staying until the
+new ones are ready, and the photo is opened again if it is the one shown. An edit made to the TIFF in RAWmakase stays with it.
 
 ## Unused masks and patches
 

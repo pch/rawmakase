@@ -33,6 +33,9 @@ pub(super) struct PreviewTextures {
     pub(super) thumb_order: VecDeque<PathBuf>,
     pub(super) pending: HashSet<PathBuf>,
     pub(super) failed: HashSet<PathBuf>,
+    /// Files saved again since their thumbnail was made: it stays shown and
+    /// is made again the next time it is shown.
+    pub(super) renew: HashSet<PathBuf>,
     pub(super) thumb_tx: SyncSender<ThumbJob>,
     pub(super) thumb_rx: Receiver<PreviewResult>,
     /// Edited previews: rendered from each photo's edit on a second worker.
@@ -103,6 +106,7 @@ impl PreviewTextures {
             thumb_order: VecDeque::new(),
             pending: HashSet::new(),
             failed: HashSet::new(),
+            renew: HashSet::new(),
             thumb_tx,
             thumb_rx,
             edit_tx,
@@ -170,6 +174,9 @@ impl PreviewTextures {
                 ..
             } = result;
             self.pending.remove(&path);
+            if !skipped {
+                self.renew.remove(&path);
+            }
             // Converted for a monitor profile no longer used: asked for
             // again once shown, as one skipped is.
             let stale = display != self.display;
@@ -332,12 +339,11 @@ impl PreviewTextures {
     pub(super) fn ask_again(&mut self, id: PhotoId) {
         self.edited_requested.remove(&id);
     }
-    /// Forgets the thumbnail read from the file at `path`, which changed, so
-    /// it is read again the next time it is shown.
-    pub(super) fn forget_file(&mut self, path: &std::path::Path) {
-        self.thumbs.remove(path);
-        self.thumb_order.retain(|other| other != path);
+    /// The file at `path` was saved again: its thumbnail is made again the
+    /// next time it is shown, the one shown staying until the new one comes.
+    pub(super) fn renew_file(&mut self, path: &std::path::Path) {
         self.failed.remove(path);
+        self.renew.insert(path.to_path_buf());
     }
     /// Forgets a removed photo's previews, so a later photo given its id
     /// starts afresh.
@@ -379,7 +385,9 @@ impl PreviewTextures {
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());
-        if self.thumbs.contains_key(path) || self.failed.contains(path) {
+        if (self.thumbs.contains_key(path) && !self.renew.contains(path))
+            || self.failed.contains(path)
+        {
             return;
         }
         // The files shown this frame are published only at the next: a

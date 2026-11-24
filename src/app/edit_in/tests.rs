@@ -214,3 +214,63 @@ fn a_program_gone_is_said_and_nothing_rendered() -> anyhow::Result<()> {
     assert!(!e.exporting());
     Ok(())
 }
+
+/// An Edit In TIFF shows its thumbnail as soon as the grid draws it: it is
+/// asked for in the frame that adds it and made from the file just written.
+#[test]
+fn an_added_tiff_shows_its_thumbnail_at_once() -> anyhow::Result<()> {
+    use eframe::egui;
+    let (dir, mut e, ids) = editor_with_catalog(&["IMG_1.CR3"])?;
+    e.onboarding.visible = false;
+    e.edit_in.launched = Some(Vec::new());
+    let tiff = dir.path().canonicalize()?.join("photos/IMG_1-Edit.tif");
+    image::RgbImage::from_pixel(64, 48, image::Rgb([200, 120, 40])).save(&tiff)?;
+    let catalog = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .location()
+        .clone();
+    let ctx = e.context.clone();
+    let frame = |e: &mut Editor| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::Vec2::new(1200., 800.),
+                )),
+                ..Default::default()
+            },
+            |ui| e.draw(ui),
+        );
+        output.textures_delta.clear();
+    };
+    frame(&mut e);
+    e.edit_in_rendered(
+        Sending {
+            editor: dir.path().join("Editor.app"),
+            catalog: Some(catalog),
+            originals: vec![Some(ids[0])],
+        },
+        &[Outcome::Exported {
+            path: tiff.clone(),
+            notes: Vec::new(),
+        }],
+    );
+    let started = Instant::now();
+    let shown = loop {
+        frame(&mut e);
+        let photo = e.catalog_photo_at(&tiff);
+        if let Some(photo) = photo
+            && e.library.as_ref().unwrap().thumbnail(photo).is_some()
+        {
+            break started.elapsed();
+        }
+        assert!(started.elapsed() < Duration::from_secs(5), "no thumbnail");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(shown < Duration::from_secs(2), "{shown:?}");
+    Ok(())
+}
