@@ -244,13 +244,16 @@ impl Editor {
             label = format!("{label} · {said}");
         }
         let painter = ui.painter();
-        painter.text(
-            egui::pos2(rect.left(), rect.top() + 7.),
-            egui::Align2::LEFT_CENTER,
+        // Cut short before the Stop button: a destination's line can be long.
+        let mut job = egui::text::LayoutJob::simple_singleline(
             label,
             egui::FontId::proportional(text::SMALL),
             palette.tone(Tone::SOFT),
         );
+        job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 26.);
+        let galley = painter.layout_job(job);
+        let at = egui::pos2(rect.left(), rect.top() + 7. - galley.size().y / 2.);
+        painter.galley(at, galley, palette.tone(Tone::SOFT));
         let fraction = progress.and_then(|(done, _)| done).unwrap_or(0.) as f32;
         let bar = egui::Rect::from_min_size(
             egui::pos2(rect.left(), rect.top() + 17.),
