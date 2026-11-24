@@ -208,8 +208,10 @@ pub trait Source: Send {
 ///
 /// A delivery is `begin`, then one `file` for each file written, then
 /// `end`, all naming the same delivery id; requests come one at a time, in
-/// that order. The SDK checks each request (`validate`) before calling the
-/// destination, and refuses one that doesn't validate with
+/// that order. The SDK checks each request (`validate`), and that it follows
+/// its delivery (a file within `begin`'s count and only once, an `end` that
+/// counts the files received), before calling the destination, and refuses
+/// one that doesn't with
 /// [`ErrorCode::InvalidRequest`], as it does a request when serving an `api`
 /// below 4. The answer to `end` is checked too ([`ExportEnded::validate`]):
 /// one that doesn't validate goes to the app as
@@ -231,6 +233,12 @@ pub trait ExportDestination: Send {
     /// which keeps it within its deadline. One that sees
     /// [`Context::is_cancelled`] returns [`ErrorCode::Cancelled`].
     fn end(&mut self, cx: &Context, end: ExportEnd) -> Result<ExportEnded, RemoteError>;
+    /// Delivery `delivery` stopped before its end (Stop, or a request of it
+    /// that failed): no more of it comes. Stop what it still sends in the
+    /// background and forget it. Nothing by default.
+    fn stopped(&mut self, delivery: &str) {
+        let _ = delivery;
+    }
 }
 
 /// A whole delivery, as [`collected`] hands it over.
@@ -284,6 +292,9 @@ where
             .remove(&end.delivery)
             .ok_or_else(|| unknown_delivery(&end.delivery))?;
         (self.send)(cx, Delivery { begin, files, end })
+    }
+    fn stopped(&mut self, delivery: &str) {
+        self.open.remove(delivery);
     }
 }
 

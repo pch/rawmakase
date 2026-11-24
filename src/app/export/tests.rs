@@ -1755,9 +1755,71 @@ fn a_capture_time_is_sent_in_one_form_or_not_at_all() {
     }
 }
 
+/// Polls the extensions until delivery `delivery`'s `step` is answered;
+/// whether it went.
+fn answered(
+    e: &mut Editor,
+    delivery: &str,
+    step: crate::app::extensions::destinations::Step,
+) -> Result<(), rawmakase_extensions::protocol::RemoteError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let (outcomes, _) = e.extensions_poll(std::time::Instant::now());
+        let found = outcomes.iter().find_map(|outcome| match outcome {
+            crate::app::extensions::Outcome::Delivery {
+                delivery: d,
+                step: s,
+                result,
+            } if d == delivery && *s == step => Some(result.clone().map(drop)),
+            _ => None,
+        });
+        // The editor takes them as it would, driving the delivery on.
+        e.extension_outcomes(outcomes);
+        if let Some(result) = found {
+            return result;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no answer to {step:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_file_goes_to_the_destination_before_the_export_ends_and_is_held_until_then() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [
+        batch_photo(Values::default(), None, true),
+        batch_photo(Values::default(), None, true),
+    ];
+    let targets = [out.join("a.tif"), out.join("b.tif")];
+    let id = e.begin_delivery(&photos, &targets, &chosen).expect("begun");
+    answered(&mut e, &id, Step::Begin).unwrap();
+    // The first photo written: its file goes now, the batch still running.
+    std::fs::write(&targets[0], b"a").unwrap();
+    let written = Outcome::Exported {
+        path: targets[0].clone(),
+        notes: Vec::new(),
+        size: (4, 3),
+    };
+    e.delivery_photo(&id, 0, &written);
+    answered(&mut e, &id, Step::File(0)).unwrap();
+    // Its files and the one still planned are held from a later export.
+    assert_eq!(e.delivery_holds(&targets[1]), Some("Index File"));
+    e.delivery_exported(&id, "Exported 1 of 2".into(), false);
+    answered(&mut e, &id, Step::End).unwrap();
+}
+
 #[test]
 fn stop_on_the_extensions_page_ends_a_delivery_between_its_requests() {
-    use crate::app::extensions::destinations::Step;
+    use crate::app::extensions::destinations::{FileFacts, Step};
     use rawmakase_extensions::protocol::ErrorCode;
     use rawmakase_extensions::protocol::method::ExportBegin;
     let (dir, mut e, _, _) = editor().unwrap();
@@ -1769,36 +1831,31 @@ fn stop_on_the_extensions_page_ends_a_delivery_between_its_requests() {
         count: 1,
         options: serde_json::Map::new(),
     };
-    let to = e
+    let (to, begin) = e
         .extensions
-        .begin_delivery("dev.rawmakase.destinations/index", begin, None)
+        .prepare_delivery("dev.rawmakase.destinations/index", begin, None)
         .unwrap();
     assert_eq!(to.name, "Index File");
+    e.extensions.begin_delivery(&to, begin.clone()).unwrap();
+    answered(&mut e, "1", Step::Begin).unwrap();
+    // Begun and waiting for its export: nothing in flight, still under way.
     let id = "dev.rawmakase.destinations";
     assert!(e.extensions.working(id));
-    assert_eq!(
-        e.extensions.status(),
-        ["Example Destinations: Sending to Index File…"]
-    );
-    let outcomes = e.extensions.stop_work(id);
-    assert!(
-        matches!(
-            &outcomes[..],
-            [crate::app::extensions::Outcome::Delivery { step: Step::Begin, result: Err(err), .. }]
-                if err.code == ErrorCode::Cancelled
-        ),
-        "{outcomes:?}"
-    );
+    assert!(e.extensions.status().is_empty(), "the top bar shows it");
+    assert!(e.extensions.stop_work(id).is_empty());
     assert!(!e.extensions.working(id));
     // Nothing more goes once it is stopped.
     let file = dir.path().join("a.jpg");
     std::fs::write(&file, b"").unwrap();
-    let sent =
-        crate::app::extensions::destinations::FileFacts::default().file("1", 0, &file, (1, 1));
+    let sent = FileFacts::default().file("1", 0, &file, (1, 1));
     assert_eq!(
         e.extensions.send_file(&to, sent).unwrap_err().code,
         ErrorCode::Cancelled
     );
+    // The program was told and forgot it: the same delivery begins again,
+    // which it refuses for one it still holds.
+    e.extensions.begin_delivery(&to, begin).unwrap();
+    answered(&mut e, "1", Step::Begin).unwrap();
 }
 
 #[test]

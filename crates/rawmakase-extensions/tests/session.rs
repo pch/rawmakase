@@ -329,15 +329,15 @@ fn a_program_answers_cancels_reports_devices_and_times_out() {
     assert_eq!(error.code, ErrorCode::Deadline);
     assert!(start.elapsed() >= Duration::from_millis(400));
 
-    // A deadline moved before it passes holds: the request stays admitted
-    // past where it was.
+    // A stalling request's deadline is set from now: it stays admitted past
+    // where it was first due.
     let moved = run(&mut session, "hang", Value::Null, later(200));
-    assert!(session.extend(moved, later(5_000)));
+    assert!(session.stall(moved, Duration::from_secs(5)));
     std::thread::sleep(Duration::from_millis(400));
     let _ = session.poll(Instant::now());
     assert!(session.is_admitted(moved));
     assert!(session.cancel(moved));
-    assert!(!session.extend(moved, later(5_000)));
+    assert!(!session.stall(moved, Duration::from_secs(5)));
 
     // Stopping a program stuck in a handler ends it by the deadline.
     let start = Instant::now();

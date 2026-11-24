@@ -258,6 +258,9 @@ struct Pending {
     /// Past its deadline: cancelled, no longer admitted, failing at
     /// `deadline` (now the end of the grace period) or at the program's reply.
     expired: bool,
+    /// Its deadline moves this far past each progress it reports, as for a
+    /// request that may run long while it says how far it is.
+    stall: Option<std::time::Duration>,
     /// The buffers it carries, and their lease.
     buffers: Option<Buffers>,
 }
@@ -524,6 +527,7 @@ impl Session {
                 method: method.to_string(),
                 deadline,
                 expired: false,
+                stall: None,
                 buffers: None,
             },
         );
@@ -599,6 +603,7 @@ impl Session {
                 method: method.to_string(),
                 deadline,
                 expired: false,
+                stall: None,
                 buffers: Some(buffers),
             },
         );
@@ -668,13 +673,14 @@ impl Session {
             .map(|p| p.deadline)
     }
 
-    /// Moves an admitted request's deadline to `deadline`, later or sooner,
-    /// as for a request whose progress shows it still working. False when it
-    /// isn't admitted.
-    pub fn extend(&mut self, id: u64, deadline: Instant) -> bool {
+    /// Gives an admitted request a deadline `every` from now, moved `every`
+    /// past each progress it reports from then on, before its deadline is
+    /// checked. False when it isn't admitted.
+    pub fn stall(&mut self, id: u64, every: std::time::Duration) -> bool {
         match self.pending.get_mut(&id).filter(|p| !p.expired) {
             Some(pending) => {
-                pending.deadline = deadline;
+                pending.stall = Some(every);
+                pending.deadline = Instant::now() + every;
                 true
             }
             None => false,
@@ -942,7 +948,10 @@ impl Session {
             Message::Ok { id, v } => settle(id, Ok(v)),
             Message::Err { id, code, message } => settle(id, Err(RemoteError { code, message })),
             Message::Progress { id, done, text } => {
-                if self.is_admitted(id) {
+                if let Some(pending) = self.pending.get_mut(&id).filter(|p| !p.expired) {
+                    if let Some(every) = pending.stall {
+                        pending.deadline = Instant::now() + every;
+                    }
                     updates.push(Update::Progress { id, done, text });
                 }
             }
@@ -1381,6 +1390,7 @@ mod tests {
                 method: "mask.generate".into(),
                 deadline: Instant::now() + Duration::from_secs(60),
                 expired: false,
+                stall: None,
                 buffers: Some(buffers),
             },
         );

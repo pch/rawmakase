@@ -144,6 +144,11 @@ pub enum AppEvent {
     /// source off for it. Reports in it are refused from now on.
     #[serde(rename = "source-stopped")]
     SourceStopped(SourceStopped),
+    /// A delivery stopped before its `export.end` was answered (Stop, or a
+    /// request of it that failed): nothing more of it comes, and what it
+    /// still sends in the background should stop.
+    #[serde(rename = "export-stopped")]
+    ExportStopped(ExportStopped),
     /// The app is quitting: the channel closes next, and the program is ended
     /// if it hasn't exited by the quit deadline.
     #[serde(rename = "quitting")]
@@ -226,6 +231,7 @@ impl AppEvent {
         "catalog-closed",
         "source-started",
         "source-stopped",
+        "export-stopped",
         "quitting",
     ];
 }
@@ -1010,6 +1016,11 @@ pub enum FileRefusal {
 /// bytes.
 pub const MAX_DELIVERY_TEXT: usize = 1024;
 
+/// The longest text one [`FileResult`] carries in one field (its message,
+/// remote id or URL), in bytes: thousands of results then fit the one
+/// protocol line `export.end`'s answer is.
+pub const MAX_FILE_TEXT: usize = 256;
+
 /// `export.begin`'s parameters: a delivery that starts.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportBegin {
@@ -1158,6 +1169,15 @@ impl ExportFile {
     }
 }
 
+/// `export-stopped`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportStopped {
+    /// The delivery, as [`ExportBegin::delivery`] named it.
+    pub delivery: String,
+    /// The export destination's id within its extension.
+    pub destination: String,
+}
+
 /// `export.end`'s parameters: the export is over.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportEnd {
@@ -1172,11 +1192,13 @@ pub struct ExportEnd {
     pub cancelled: bool,
 }
 
-/// What a program answers `export.end` with: how each file went.
+/// What a program answers `export.end` with: how the files went. It is one
+/// protocol line, at most [`MAX_LINE`](crate::MAX_LINE) bytes in all.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportEnded {
-    /// One for each file of the delivery, by its index. A file left out
-    /// counts as not sent.
+    /// Results for the files that weren't sent, or that have something to
+    /// show (a remote id, a URL, a message), by index. A file left out was
+    /// sent.
     #[serde(default)]
     pub files: Vec<FileResult>,
     /// What it did, in the user's words, for the status line: one line.
@@ -1194,14 +1216,16 @@ pub struct FileResult {
     pub index: u32,
     /// Whether it went.
     pub result: Sent,
-    /// Why it wasn't sent, or what to say of it: one line.
+    /// Why it wasn't sent, or what to say of it: one line of at most
+    /// [`MAX_FILE_TEXT`] bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     /// The id the destination gave it (an upload's id), which the app shows
-    /// and keeps no record of.
+    /// and keeps no record of: at most [`MAX_FILE_TEXT`] bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_id: Option<String>,
-    /// Where it can be seen, which the app shows.
+    /// Where it can be seen, which the app shows: at most
+    /// [`MAX_FILE_TEXT`] bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 }
@@ -1219,22 +1243,27 @@ pub enum Sent {
 }
 
 impl ExportEnded {
-    /// Checks that every text is one line within [`MAX_DELIVERY_TEXT`]
-    /// bytes and that no file has two results.
+    /// Checks that its message and location are one line within
+    /// [`MAX_DELIVERY_TEXT`] bytes, each file's texts one line within
+    /// [`MAX_FILE_TEXT`], and that no file has two results.
     pub fn validate(&self) -> Result<(), RemoteError> {
-        let texts = [("message", &self.message), ("location", &self.location)]
+        let whole = [("message", &self.message), ("location", &self.location)]
             .into_iter()
-            .chain(self.files.iter().flat_map(|f| {
-                [
-                    ("message", &f.message),
-                    ("remote_id", &f.remote_id),
-                    ("url", &f.url),
-                ]
-            }));
-        for (name, value) in texts {
-            if value.as_deref().is_some_and(|v| !one_line(v)) {
+            .map(|(n, v)| (n, v, MAX_DELIVERY_TEXT));
+        let files = self.files.iter().flat_map(|f| {
+            [
+                ("message", &f.message, MAX_FILE_TEXT),
+                ("remote_id", &f.remote_id, MAX_FILE_TEXT),
+                ("url", &f.url, MAX_FILE_TEXT),
+            ]
+        });
+        for (name, value, most) in whole.chain(files) {
+            if value
+                .as_deref()
+                .is_some_and(|v| v.len() > most || !one_line(v))
+            {
                 return invalid(format!(
-                    "the {name} must be one line of at most {MAX_DELIVERY_TEXT} bytes"
+                    "the {name} must be one line of at most {most} bytes"
                 ));
             }
         }
@@ -1770,7 +1799,7 @@ mod tests {
         twice.files.push(twice.files[0].clone());
         assert!(twice.validate().is_err());
         let mut long = ended;
-        long.files[0].url = Some("x".repeat(MAX_DELIVERY_TEXT + 1));
+        long.files[0].url = Some("x".repeat(MAX_FILE_TEXT + 1));
         assert!(long.validate().is_err());
     }
 }

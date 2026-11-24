@@ -4,6 +4,12 @@
 //! received; `export.end`'s answer says how each file went. The requests go
 //! through the extension host (`extensions/destinations.rs`), and their
 //! outcomes come back here ([`Editor::delivery_answered`]).
+//!
+//! At most [`WINDOW`] files are in flight at a time. Deliveries to one
+//! extension go one after another: its program serves requests in turn, so a
+//! second one's `export.begin` would wait, and time out, behind the first's
+//! long `export.end`. A file a delivery holds is kept from being overwritten
+//! by a later export until the delivery is over ([`Editor::delivery_holds`]).
 use super::Exports;
 use crate::app::Editor;
 use crate::app::extensions::destinations::{Begun, FileFacts, Step};
@@ -15,11 +21,21 @@ use crate::export_settings::ExportSettings;
 use eframe::egui::{self, Color32, Sense, Vec2};
 use rawmakase_extensions::protocol::method::{ExportBegin, ExportEnded, ExportFile, Sent};
 use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
+
+/// How many of a delivery's files may be sent and not yet received.
+const WINDOW: usize = 8;
 
 /// A delivery from its beginning to its end's answer.
 pub(super) struct Delivery {
     to: Begun,
+    /// Its `export.begin`, until it is sent: it waits while another delivery
+    /// to the same extension is under way.
+    begin: Option<ExportBegin>,
+    /// The files it sends or will: where its batch planned them, and where
+    /// they were written.
+    paths: HashSet<PathBuf>,
     /// What each photo's `export.file` says besides its file, by its place.
     facts: Vec<FileFacts>,
     /// `export.begin` was answered: files can go.
@@ -46,13 +62,14 @@ impl Exports {
 }
 
 impl Editor {
-    /// Begins a delivery of `batch`'s files to Send To's destination, as
-    /// `settings` choose it, with the options chosen for it read now.
-    /// Returns its id, or `None` when there is no Send To or it couldn't
-    /// begin, which the top bar says.
+    /// Begins a delivery of `batch`'s files, planned at `targets`, to Send
+    /// To's destination, as `settings` choose it, with the options chosen for
+    /// it read now. Returns its id, or `None` when there is no Send To or it
+    /// couldn't begin, which the top bar says.
     pub(super) fn begin_delivery(
         &mut self,
         batch: &[BatchPhoto],
+        targets: &[PathBuf],
         settings: &ExportSettings,
     ) -> Option<String> {
         let key = settings.send_to.as_ref()?;
@@ -66,29 +83,74 @@ impl Editor {
             options: serde_json::Map::new(),
         };
         let chosen = settings.send_to_options.get(key);
-        match self.extensions.begin_delivery(key, begin, chosen) {
-            Ok(to) => {
-                let delivery = Delivery {
-                    to,
-                    facts: batch
-                        .iter()
-                        .map(|p| FileFacts::of(p, descriptive))
-                        .collect(),
-                    begun: false,
-                    waiting: Vec::new(),
-                    in_flight: 0,
-                    sent: BTreeMap::new(),
-                    exported: None,
-                    ending: false,
-                };
-                self.exports.deliveries.insert(id.clone(), delivery);
-                Some(id)
-            }
+        let (to, begin) = match self.extensions.prepare_delivery(key, begin, chosen) {
+            Ok(prepared) => prepared,
             Err(why) => {
                 self.messages.fail(format!("Not sent: {why}"));
-                None
+                return None;
             }
+        };
+        let delivery = Delivery {
+            to,
+            begin: Some(begin),
+            paths: targets.iter().cloned().collect(),
+            facts: batch
+                .iter()
+                .map(|p| FileFacts::of(p, descriptive))
+                .collect(),
+            begun: false,
+            waiting: Vec::new(),
+            in_flight: 0,
+            sent: BTreeMap::new(),
+            exported: None,
+            ending: false,
+        };
+        let extension = delivery.to.extension.clone();
+        self.exports.deliveries.insert(id.clone(), delivery);
+        self.start_delivery(&extension);
+        // Begun, or waiting its turn; gone only if it couldn't begin.
+        self.exports.deliveries.contains_key(&id).then_some(id)
+    }
+
+    /// Sends the `export.begin` of the next delivery to `extension` waiting
+    /// its turn, once none to it is under way.
+    fn start_delivery(&mut self, extension: &str) {
+        let to_it = |d: &&Delivery| d.to.extension == extension;
+        if self
+            .exports
+            .deliveries
+            .values()
+            .filter(to_it)
+            .any(|d| d.begin.is_none())
+        {
+            return;
         }
+        let Some(id) = self
+            .exports
+            .deliveries
+            .iter()
+            .filter(|(_, d)| to_it(d))
+            .map(|(id, _)| id.clone())
+            .min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
+        else {
+            return;
+        };
+        let d = self.exports.deliveries.get_mut(&id).expect("found above");
+        let begin = d.begin.take().expect("waiting");
+        let to = d.to.clone();
+        if let Err(why) = self.extensions.begin_delivery(&to, begin) {
+            self.delivery_failed(&id, &why);
+        }
+    }
+
+    /// Whether a delivery under way holds the file at `path`: a later export
+    /// mustn't write over it.
+    pub(super) fn delivery_holds(&self, path: &Path) -> Option<&str> {
+        self.exports
+            .deliveries
+            .values()
+            .find(|d| d.paths.contains(path))
+            .map(|d| d.to.name.as_str())
     }
 
     /// A photo of delivery `id`'s batch has its outcome: an exported file
@@ -103,6 +165,7 @@ impl Editor {
         let Some(facts) = d.facts.get(index) else {
             return;
         };
+        d.paths.insert(path.clone());
         d.waiting.push(facts.file(id, index, path, *size));
         self.advance_delivery(id);
     }
@@ -136,8 +199,16 @@ impl Editor {
                 self.advance_delivery(id);
             }
             (Step::End, Ok(ended)) => {
+                let ended = ended.unwrap_or_default();
+                // A result for a file it wasn't sent is off the contract.
+                if let Some(other) = ended.files.iter().find(|r| !d.sent.contains_key(&r.index)) {
+                    let why = format!("it answered for file {}, which it wasn't sent", other.index);
+                    return self
+                        .delivery_failed(id, &RemoteError::new(ErrorCode::InvalidRequest, why));
+                }
                 let d = self.exports.deliveries.remove(id).expect("looked up above");
-                self.delivered(&d, &ended.unwrap_or_default());
+                self.delivered(&d, &ended);
+                self.start_delivery(&d.to.extension);
             }
         }
     }
@@ -152,34 +223,34 @@ impl Editor {
         drop(self.extensions.stop_delivery(&d.to, id));
         self.messages
             .note(format!("Sending to {} stopped", d.to.name));
+        self.start_delivery(&d.to.extension);
     }
 
     /// Sends what delivery `id` can send now: the files written once it has
     /// begun, then its end once the batch is over and every file sent was
     /// received.
     fn advance_delivery(&mut self, id: &str) {
-        let Some(d) = self.exports.deliveries.get_mut(id) else {
+        let Some(mut d) = self.exports.deliveries.get_mut(id) else {
             return;
         };
         if !d.begun || d.ending {
             return;
         }
         let to = d.to.clone();
-        let files = std::mem::take(&mut d.waiting);
-        for file in files {
+        while d.in_flight < WINDOW && !d.waiting.is_empty() {
+            let file = d.waiting.remove(0);
             let (index, name) = (file.index, file.name.clone());
             if let Err(why) = self.extensions.send_file(&to, file) {
                 return self.delivery_failed(id, &why);
             }
-            let d = self.exports.deliveries.get_mut(id).expect("still open");
+            d = self.exports.deliveries.get_mut(id).expect("still open");
             d.in_flight += 1;
             d.sent.insert(index, name);
         }
-        let d = self.exports.deliveries.get_mut(id).expect("still open");
         let Some((_, cancelled)) = d.exported else {
             return;
         };
-        if d.in_flight > 0 {
+        if d.in_flight > 0 || !d.waiting.is_empty() {
             return;
         }
         d.ending = true;
@@ -196,6 +267,7 @@ impl Editor {
             return;
         };
         drop(self.extensions.stop_delivery(&d.to, id));
+        self.start_delivery(&d.to.extension);
         let name = &d.to.name;
         let exported = d.exported.as_ref().map(|(said, _)| said.as_str());
         let line = |what: String| match exported {
@@ -299,8 +371,8 @@ enum Level {
 /// The top bar's line for delivery `d`'s end, after what was exported:
 /// "Exported 12 of 12 · Sent 12 files to Web Gallery", or "Sent 10 of 12"
 /// with why the others weren't, and the destination's message, where to see
-/// the result, and each file's URL or remote id in the detail. A file the
-/// answer left out counts as not sent. None when no file was sent.
+/// the result, why a file was skipped and each file's URL or remote id in
+/// the detail. A file without a result was sent. None when no file was sent.
 fn delivered_line(d: &Delivery, ended: &ExportEnded) -> (Level, Option<String>, Option<String>) {
     let name = &d.to.name;
     let total = d.sent.len();
@@ -309,21 +381,31 @@ fn delivered_line(d: &Delivery, ended: &ExportEnded) -> (Level, Option<String>, 
     }
     let mut sent = 0;
     let mut problems = Vec::new();
-    let mut shown = Vec::new();
+    let mut said = Vec::new();
     for (index, file) in &d.sent {
-        let result = ended.files.iter().find(|r| r.index == *index);
-        match result {
-            Some(r) if r.result == Sent::Failed => problems.push(format!(
-                "{file}: {}",
-                r.message.as_deref().unwrap_or("not sent")
+        let Some(r) = ended.files.iter().find(|r| r.index == *index) else {
+            sent += 1;
+            continue;
+        };
+        let message = r.message.as_deref();
+        match r.result {
+            Sent::Failed => problems.push(format!("{file}: {}", message.unwrap_or("not sent"))),
+            Sent::Skipped => said.push(format!(
+                "{file}: skipped, {}",
+                message.unwrap_or("not sent")
             )),
-            Some(r) => {
-                sent += usize::from(r.result == Sent::Sent);
-                if let Some(at) = r.url.as_ref().or(r.remote_id.as_ref()) {
-                    shown.push(format!("{file}: {at}"));
+            Sent::Sent => {
+                sent += 1;
+                if let Some(at) = r
+                    .url
+                    .as_ref()
+                    .or(r.remote_id.as_ref())
+                    .map(String::as_str)
+                    .or(message)
+                {
+                    said.push(format!("{file}: {at}"));
                 }
             }
-            None => problems.push(format!("{file}: no result")),
         }
     }
     let files = plural(total, "file", "files");
@@ -333,7 +415,7 @@ fn delivered_line(d: &Delivery, ended: &ExportEnded) -> (Level, Option<String>, 
         format!("Sent {sent} of {files} to {name}")
     };
     let line = match &d.exported {
-        Some((said, _)) => format!("{said} · {what}"),
+        Some((exported, _)) => format!("{exported} · {what}"),
         None => what,
     };
     let detail: Vec<String> = [&ended.message, &ended.location]
@@ -341,7 +423,7 @@ fn delivered_line(d: &Delivery, ended: &ExportEnded) -> (Level, Option<String>, 
         .flatten()
         .cloned()
         .chain(problems.iter().cloned())
-        .chain(shown)
+        .chain(said)
         .collect();
     let level = if problems.is_empty() {
         Level::Done
@@ -367,6 +449,8 @@ mod tests {
                 destination: "web".into(),
                 name: "Web Gallery".into(),
             },
+            begin: None,
+            paths: HashSet::new(),
             facts: Vec::new(),
             begun: true,
             waiting: Vec::new(),
@@ -390,9 +474,9 @@ mod tests {
     #[test]
     fn a_deliverys_line_says_how_each_file_went() {
         let d = delivery(&[(0, "a.jpg"), (1, "b.jpg"), (2, "c.jpg")]);
+        // A file without a result was sent; a skipped one says why.
         let all = ExportEnded {
             files: vec![
-                result(2, Sent::Sent, None, None),
                 result(0, Sent::Sent, None, Some("https://example.com/a")),
                 result(1, Sent::Skipped, Some("already there"), None),
             ],
@@ -404,34 +488,29 @@ mod tests {
             (
                 Level::Done,
                 Some("Exported 3 of 3 · Sent 2 of 3 files to Web Gallery".into()),
-                Some("Published Wedding\nhttps://example.com\na.jpg: https://example.com/a".into())
+                Some(
+                    "Published Wedding\nhttps://example.com\na.jpg: https://example.com/a\nb.jpg: skipped, already there"
+                        .into()
+                )
             )
         );
-        // A failure is named with why, and a file the answer left out counts
-        // as not sent.
+        // A failure is named with why.
         let some = ExportEnded {
-            files: vec![
-                result(0, Sent::Sent, None, None),
-                result(1, Sent::Failed, Some("too large"), None),
-            ],
+            files: vec![result(1, Sent::Failed, Some("too large"), None)],
             ..Default::default()
         };
         assert_eq!(
             delivered_line(&d, &some),
             (
                 Level::Failure,
-                Some("Exported 3 of 3 · Sent 1 of 3 files to Web Gallery".into()),
-                Some("b.jpg: too large\nc.jpg: no result".into())
+                Some("Exported 3 of 3 · Sent 2 of 3 files to Web Gallery".into()),
+                Some("b.jpg: too large".into())
             )
         );
         // All sent, nothing more to say.
         let one = delivery(&[(0, "a.jpg")]);
-        let sent = ExportEnded {
-            files: vec![result(0, Sent::Sent, None, None)],
-            ..Default::default()
-        };
         assert_eq!(
-            delivered_line(&one, &sent),
+            delivered_line(&one, &ExportEnded::default()),
             (
                 Level::Done,
                 Some("Exported 3 of 3 · Sent 1 file to Web Gallery".into()),
@@ -439,6 +518,9 @@ mod tests {
             )
         );
         // Nothing sent, nothing said.
-        assert_eq!(delivered_line(&delivery(&[]), &sent).1, None);
+        assert_eq!(
+            delivered_line(&delivery(&[]), &ExportEnded::default()).1,
+            None
+        );
     }
 }

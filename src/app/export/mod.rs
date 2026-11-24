@@ -2,9 +2,9 @@
 //! rendering, file writing) in `crate::export`. Every export, of one photo or the
 //! whole selection, goes through the app's one export queue and runs while you keep
 //! editing; the top bar shows its progress, and what could not be exported stays
-//! there until it is dismissed. Once a batch is written, Send To sends its
-//! files to an extension's export destination (`export.deliver`), and the
-//! top bar says how that went after what was exported.
+//! there until it is dismissed. Send To sends each file to an extension's
+//! export destination as the batch writes it (`delivery`), and the top bar
+//! says how that went after what was exported.
 mod delivery;
 mod dialog;
 mod watermark_editor;
@@ -755,7 +755,24 @@ impl Editor {
     /// that exist first.
     fn plan_export(&mut self, mut pending: Pending, answer: Option<Existing>) {
         match batch::plan(&pending.batch, &pending.settings, answer) {
-            Ok(plan) => self.queue_batch(pending, plan, None),
+            Ok(plan) => {
+                // A file a delivery still sends keeps its bytes: this export
+                // names its own copies apart instead.
+                let held = plan
+                    .entries
+                    .iter()
+                    .find_map(|e| self.delivery_holds(&e.target))
+                    .map(str::to_string);
+                match held {
+                    Some(name) if answer != Some(Existing::Unique) => {
+                        self.messages.note(format!(
+                            "Files still being sent to {name} are kept: this export's got names of their own"
+                        ));
+                        self.plan_export(pending, Some(Existing::Unique));
+                    }
+                    _ => self.queue_batch(pending, plan, None),
+                }
+            }
             Err(Unplanned::NoFolder) => self.messages.warn("Choose a folder to export to"),
             Err(Unplanned::Settings(reason)) => {
                 self.messages.fail(format!("Export stopped: {reason}"))
@@ -778,7 +795,10 @@ impl Editor {
         let names = pending.batch.iter().map(|p| p.name.clone()).collect();
         let after = pending.settings.after_export;
         let delivery = match editing {
-            None => self.begin_delivery(&pending.batch, &pending.settings),
+            None => {
+                let targets: Vec<_> = plan.entries.iter().map(|e| e.target.clone()).collect();
+                self.begin_delivery(&pending.batch, &targets, &pending.settings)
+            }
             Some(_) => None,
         };
         let batch = batch::Batch {

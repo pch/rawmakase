@@ -9,9 +9,9 @@ use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_extension::protocol::method::{
     AppEvent, AppRequest, CatalogFacts, CommandRun, DeviceState, Empty, EmptyMask, ExportBegin,
-    ExportEnd, ExportEnded, ExportFile, FileResult, Hello, MaskGenerate, MaskGenerated, Operation,
-    RetouchGenerate, RetouchGenerated, Sent, SettingChanged, SettingsChange, SourceReport,
-    SourceStarted, SourceStopped,
+    ExportEnd, ExportEnded, ExportFile, ExportStopped, FileResult, Hello, MaskGenerate,
+    MaskGenerated, Operation, RetouchGenerate, RetouchGenerated, Sent, SettingChanged,
+    SettingsChange, SourceReport, SourceStarted, SourceStopped,
 };
 use rawmakase_extension::protocol::viewer::{Bounds, Click, MAX_CLICKS, ViewerInput};
 use rawmakase_extension::{
@@ -1090,7 +1090,13 @@ fn an_export_destination_gets_checked_deliveries_and_its_answer_is_checked() {
         let error = host.request(AppRequest::ExportFile(file)).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidRequest);
     }
-    let ended = host.request(AppRequest::ExportEnd(end)).unwrap();
+    // An end must count the files received: none here.
+    assert!(host.request(AppRequest::ExportEnd(end.clone())).is_err());
+    let (begin, _, _) = delivery();
+    host.request(AppRequest::ExportBegin(begin)).unwrap();
+    let ended = host
+        .request(AppRequest::ExportEnd(ExportEnd { files: 0, ..end }))
+        .unwrap();
     assert_eq!(ended["files"], json!([]));
     assert_eq!(received.recv().unwrap(), Vec::<String>::new());
     // A file or an end for a delivery that never began is refused.
@@ -1105,6 +1111,54 @@ fn an_export_destination_gets_checked_deliveries_and_its_answer_is_checked() {
     begin.options = json!({"heading": "bad"}).as_object().unwrap().clone();
     let error = deliver(&host, (begin, files, end)).unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidRequest);
+    host.finish().unwrap();
+}
+
+#[test]
+fn a_delivery_keeps_its_order_and_a_stopped_one_is_forgotten() {
+    let (seen, received) = mpsc::channel();
+    let host = MockHost::start_with_options(
+        Extension::new().export_destination(
+            "web",
+            collected(move |_: &Context, delivery: Delivery| {
+                seen.send(delivery.files.len()).unwrap();
+                Ok(ExportEnded::default())
+            }),
+        ),
+        ServeOptions { api: 4 },
+        |_, _| Ok(Value::Null),
+    );
+    host.hello().unwrap();
+    let (begin, files, end) = delivery();
+    host.request(AppRequest::ExportBegin(begin.clone()))
+        .unwrap();
+    // Begun twice, a file past the count or twice: refused.
+    assert!(
+        host.request(AppRequest::ExportBegin(begin.clone()))
+            .is_err()
+    );
+    let mut past = files[0].clone();
+    past.index = 2;
+    assert!(host.request(AppRequest::ExportFile(past)).is_err());
+    host.request(AppRequest::ExportFile(files[0].clone()))
+        .unwrap();
+    assert!(
+        host.request(AppRequest::ExportFile(files[0].clone()))
+            .is_err()
+    );
+    // Stopped: the delivery is forgotten, its later requests refused, and
+    // the same id can begin again.
+    host.event(AppEvent::ExportStopped(ExportStopped {
+        delivery: "7".into(),
+        destination: "web".into(),
+    }));
+    assert!(host.request(AppRequest::ExportEnd(end.clone())).is_err());
+    host.request(AppRequest::ExportBegin(begin)).unwrap();
+    for file in files {
+        host.request(AppRequest::ExportFile(file)).unwrap();
+    }
+    host.request(AppRequest::ExportEnd(end)).unwrap();
+    assert_eq!(received.recv().unwrap(), 2);
     host.finish().unwrap();
 }
 

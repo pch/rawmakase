@@ -467,9 +467,14 @@ Send an export's files to an [export destination](manifest.md#export-destination
 as the export writes them (`api = 4`). A delivery is one `export.begin`, one
 `export.file` for each file written, and one `export.end`, all naming the same
 `delivery` id and the destination. The app sends them in that order, one
-delivery's files only once its `export.begin` is answered and its
-`export.end` only once every file it sent is answered; the SDK hands them to
-the destination one at a time.
+delivery's files only once its `export.begin` is answered, at most 8 of them
+unanswered at a time, and its `export.end` only once every file it sent is
+answered. Deliveries to one extension go one after another: the next one's
+`export.begin` waits for the previous one to end. The SDK hands the requests
+to the destination one at a time, and refuses one that doesn't follow its
+delivery (a file past `count` or sent twice, an `export.end` whose `files`
+isn't the number received, a request of a delivery that never began or has
+stopped) with `invalid_request`.
 
 ```json
 {"delivery":"3","destination":"web","folder":"/Users/jane/Pictures/Wedding","count":12,
@@ -509,7 +514,10 @@ its file name; `width` and `height` are its pixels; `captured` is when the
 photo was taken by the camera's clock, without a time zone, left out when the
 catalog doesn't know it. The file is written whole when the request is sent;
 the app doesn't touch it afterwards, and nor should the program, which writes
-what it makes (a gallery's pages) beside it or elsewhere. The reply is `null`
+what it makes (a gallery's pages) beside it or elsewhere. Until the delivery is
+over, a later export doesn't write over it either: one set to overwrite a file
+a delivery holds names its own copies apart, as Use Unique Names does, and the
+top bar says so. The reply is `null`
 once the file is received: how it went is said in `export.end`'s answer, so a
 destination answers at once and uploads meanwhile.
 
@@ -548,14 +556,18 @@ reply says how each file went:
  "message":"Published Wedding","location":"https://jane.example/wedding"}
 ```
 
-`files` has one result for each file, by its `index`: `sent`, `skipped` (not
-sent on purpose) or `failed`, with an optional one-line `message`. A file left
-out counts as not sent. `remote_id` and `url`, optional, are what the
-destination gave the file; the app shows them and keeps no record of them
+`files` holds a result for each file that wasn't sent or has something to
+show, by its `index`: `sent`, `skipped` (not sent on purpose) or `failed`, with
+an optional one-line `message`. A file left out was sent, so a delivery of
+thousands of files answers with the few that need a word. A result for a file
+the delivery didn't send makes the whole answer invalid. `remote_id` and `url`,
+optional, are what the destination gave the file; the app shows them and keeps no record of them
 (keeping one is a [publish service](../extensions-plan.md)'s part, not an
 export destination's). `message`, optional, says what it did, and `location`,
-optional, is where the user sees the result: a path or a URL. Each text is one
-line of at most 1024 bytes and no file has two results; the SDK checks its
+optional, is where the user sees the result: a path or a URL. Each is one line
+of at most 1024 bytes, a file's `message`, `remote_id` and `url` at most 256
+(`MAX_FILE_TEXT`), no file has two results, and the whole answer is one
+protocol line of at most 1 MiB; the SDK checks its
 handler's answer, and the app refuses one that doesn't fit. The top bar says
 what the export did, then what was sent ("Exported 12 of 12 · Sent 11 of 12
 files to Web Gallery"), with the message, the location, why each file wasn't
@@ -565,13 +577,17 @@ files stay either way.
 **Deadlines.** `export.begin` and `export.file` have the usual request
 deadline. `export.end` has 2 minutes without news: each `progress` the program
 sends for it (`Context::progress` in the SDK) moves its deadline 2 minutes
-ahead, so a long upload that reports how far it is never runs out. The top
+ahead as the app reads it, so a long upload that reports how far it is never runs out. The top
 bar shows the latest progress under "Sending to Web Gallery" while the export
 is over and the delivery isn't, with a button that stops it.
 
 **Stop, cancel and exit.** Stop in the top bar, or on the extension's page in
 Preferences > Extensions, ends the delivery: a request in flight is cancelled
-(the program answers `cancelled` soon after) and nothing more is sent. So do
+(the program answers `cancelled` soon after), nothing more is sent, and the
+program gets the event `export-stopped` with the delivery and destination, so
+it stops what it still sends in the background (`ExportDestination::stopped`
+in the SDK; `collected` forgets the delivery). A request of a delivery the
+program took that fails (its deadline, say) stops it the same way. So do
 disabling the extension and quitting. Cancelling the export doesn't stop the
 delivery: its `export.end` comes with `cancelled`, after the files written
 before the cancel. A program that exits or crashes mid-delivery ends it; its
@@ -590,6 +606,7 @@ itself.
 | `catalog-closed` | none; tokens from it are refused from now on |
 | `source-started` | `{"source":id,"scope":n,"catalog":"Photos"}`: a source may report in scope `n`, adding to the catalog named ([below](#sourcereport-request)) |
 | `source-stopped` | `{"source":id,"scope":n}`: reports in scope `n` are refused from now on |
+| `export-stopped` | `{"delivery":id,"destination":id}`: a delivery stopped before its `export.end` was answered; nothing more of it comes ([above](#exportbegin-exportfile-and-exportend-requests)) |
 | `quitting` | none; the channel closes next |
 
 ## Program to app

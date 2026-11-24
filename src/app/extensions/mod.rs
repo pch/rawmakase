@@ -69,10 +69,11 @@
 //! quitting cancels the read and fails the command; its read's report then
 //! finds nothing and is dropped.
 //!
-//! An `[[export-destination]]` gets an export's files once the export has
-//! written them, as one `export.deliver` request (see `destinations.rs`),
-//! with a deadline of minutes; Stop on the extension's page cancels it, as it
-//! does a command.
+//! An `[[export-destination]]` gets an export's files as the export writes
+//! them, in a delivery of `export.begin`, `export.file` and `export.end`
+//! requests (see `destinations.rs`), kept open between them; Stop on the
+//! extension's page ends it, as it does a command, and tells the program
+//! (`export-stopped`).
 //!
 //! Every persisted change (enable, disable, a setting, an uninstall) goes
 //! through [`rawmakase_extensions::state::State::update`] first; when that
@@ -1840,6 +1841,13 @@ impl Host {
             None => run.session.request(&method, params, deadline),
         }
         .map_err(|err| err.to_string())?;
+        if let Pending::Delivery {
+            step: destinations::Step::End,
+            ..
+        } = pending
+        {
+            run.session.stall(request, destinations::END_STALL);
+        }
         run.requests.insert(request, pending);
         Ok(())
     }
@@ -2003,7 +2011,9 @@ impl Host {
             return Vec::new();
         };
         let e = &mut self.extensions[index];
-        e.delivering.clear();
+        for (delivery, open) in std::mem::take(&mut e.delivering) {
+            destinations::tell_stopped(e, &delivery, &open);
+        }
         let mut outcomes = Self::stop_reading(e, &ErrorCode::Cancelled);
         Self::cancel_where(e, &mut outcomes, |p| {
             matches!(p, Pending::Command { .. } | Pending::Delivery { .. })
@@ -2077,6 +2087,16 @@ impl Host {
             .ok_or_else(|| format!("No extension {id}"))?
             .can_run()
     }
+    /// Whether extension `id` has a command being read or in flight: a
+    /// `prompt` command's input waits for it.
+    pub(in crate::app) fn command_running(&self, id: &str) -> bool {
+        let Some(e) = self.get(id) else { return false };
+        !e.reading.is_empty()
+            || e.run
+                .as_ref()
+                .is_some_and(|r| r.pending().any(|p| matches!(p, Pending::Command { .. })))
+    }
+
     /// Whether extension `id` has a command or a delivery under way.
     pub(in crate::app) fn working(&self, id: &str) -> bool {
         let Some(e) = self.get(id) else { return false };
@@ -2545,7 +2565,9 @@ impl Host {
                 continue;
             }
             let due = run.session.next_deadline();
-            let idle = on_demand.then_some(e.last_active + IDLE_STOP);
+            // Only while it could be stopped: a busy one's passed idle
+            // deadline would otherwise wake every frame.
+            let idle = (on_demand && !e.busy()).then_some(e.last_active + IDLE_STOP);
             for at in [due, idle].into_iter().flatten() {
                 next = Some(next.map_or(at, |n: Instant| n.min(at)));
             }
@@ -2655,12 +2677,9 @@ impl Host {
                             step: destinations::Step::End,
                             ..
                         }) => {
+                            // The session moved its deadline as it read it.
                             if let Some(open) = e.delivering.get_mut(&delivery) {
                                 open.progress = Some((done, text));
-                            }
-                            if let Some(run) = e.run.as_mut() {
-                                run.session
-                                    .extend(id, Instant::now() + destinations::END_STALL);
                             }
                         }
                         _ => {}
@@ -2772,7 +2791,14 @@ impl Host {
                     Err(_) => {}
                 }
                 if result.is_err() || step == destinations::Step::End {
-                    e.delivering.remove(&delivery);
+                    let open = e.delivering.remove(&delivery);
+                    // A delivery it took and can't finish now: what it still
+                    // sends should stop.
+                    if let Some(open) =
+                        open.filter(|_| result.is_err() && step != destinations::Step::Begin)
+                    {
+                        destinations::tell_stopped(e, &delivery, &open);
+                    }
                 }
                 outcomes.push(Outcome::Delivery {
                     delivery,
@@ -3206,7 +3232,6 @@ impl Host {
             let running = e.run.as_ref().and_then(|run| {
                 run.pending().find_map(|p| match p {
                     Pending::Command { command, .. } => Some(command_title(&e.manifest, command)),
-                    Pending::Delivery { name, .. } => Some(format!("Sending to {name}")),
                     _ => None,
                 })
             });

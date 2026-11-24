@@ -17,7 +17,7 @@ use super::{Host, Pending};
 use crate::export::batch::BatchPhoto;
 use rawmakase_extensions::protocol::manifest::Setting;
 use rawmakase_extensions::protocol::method::{
-    AppRequest, CatalogFacts, ExportBegin, ExportEnd, ExportFile, LABELS,
+    AppRequest, CatalogFacts, ExportBegin, ExportEnd, ExportFile, ExportStopped, LABELS,
 };
 use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
 use serde_json::{Map, Value};
@@ -43,6 +43,8 @@ pub(in crate::app) enum Step {
 pub(super) struct Open {
     /// The program run it began on: a later run never gets its requests.
     pub(super) run: u64,
+    /// The destination's id within its extension.
+    pub(super) destination: String,
     /// What `export.end` last said of how far it is.
     pub(super) progress: Option<(Option<f64>, Option<String>)>,
 }
@@ -183,6 +185,22 @@ pub(in crate::app) fn capture_time(text: &str) -> Option<String> {
     })
 }
 
+/// Tells `e`'s program that `delivery`, open on it as `open`, stopped, so it
+/// stops what it still sends: only the run it began on, which is the one
+/// that knows it.
+pub(super) fn tell_stopped(e: &mut super::Extension, delivery: &str, open: &Open) {
+    let Some(run) = e.run.as_mut().filter(|r| r.number == open.run && r.ready()) else {
+        return;
+    };
+    let (name, params) =
+        rawmakase_extensions::protocol::method::AppEvent::ExportStopped(ExportStopped {
+            delivery: delivery.to_string(),
+            destination: open.destination.clone(),
+        })
+        .into_parts();
+    let _ = run.session.event(&name, params);
+}
+
 /// A delivery begun: where its later requests go.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) struct Begun {
@@ -216,18 +234,17 @@ impl Host {
             .collect()
     }
 
-    /// Begins `begin`'s delivery to the destination named `key`
-    /// (`<extension>/<destination>`), starting its program first when it
-    /// isn't running, with every option the destination declares now: the
-    /// value `chosen` holds where it fits, else the default
-    /// ([`option_values`]). Returns where its later requests go, or why it
-    /// wasn't begun.
-    pub(in crate::app) fn begin_delivery(
-        &mut self,
+    /// Prepares `begin`'s delivery to the destination named `key`
+    /// (`<extension>/<destination>`), with every option the destination
+    /// declares now: the value `chosen` holds where it fits, else the default
+    /// ([`option_values`]). Returns where its requests go and its
+    /// `export.begin`, for [`Host::begin_delivery`]; or why it can't go.
+    pub(in crate::app) fn prepare_delivery(
+        &self,
         key: &str,
         mut begin: ExportBegin,
         chosen: Option<&BTreeMap<String, Value>>,
-    ) -> Result<Begun, String> {
+    ) -> Result<(Begun, ExportBegin), String> {
         let (extension, destination) = key
             .rsplit_once('/')
             .ok_or_else(|| format!("Send To {key} names no export destination"))?;
@@ -244,33 +261,45 @@ impl Host {
         begin.options = option_values(&declared.options, chosen);
         begin.destination = destination.to_string();
         begin.validate().map_err(|e| format!("{name}: {e}"))?;
+        let to = Begun {
+            extension: extension.to_string(),
+            destination: destination.to_string(),
+            name,
+        };
+        Ok((to, begin))
+    }
+
+    /// Sends `to`'s `export.begin`, starting its program first when it isn't
+    /// running, and keeps the delivery open from then on.
+    pub(in crate::app) fn begin_delivery(
+        &mut self,
+        to: &Begun,
+        begin: ExportBegin,
+    ) -> Result<(), RemoteError> {
         let delivery = begin.delivery.clone();
         self.send(
-            extension,
+            &to.extension,
             AppRequest::ExportBegin(begin),
             Pending::Delivery {
-                name: name.clone(),
+                name: to.name.clone(),
                 delivery: delivery.clone(),
                 step: Step::Begin,
             },
             None,
         )
-        .map_err(|why| format!("{name}: {why}"))?;
-        let index = self.index(extension).expect("sent to it above");
+        .map_err(|why| RemoteError::new(ErrorCode::Exited, why))?;
+        let index = self.index(&to.extension).expect("sent to it above");
         let e = &mut self.extensions[index];
         let run = e.run.as_ref().map_or(0, |r| r.number);
         e.delivering.insert(
             delivery,
             Open {
                 run,
+                destination: to.destination.clone(),
                 progress: None,
             },
         );
-        Ok(Begun {
-            extension: extension.to_string(),
-            destination: destination.to_string(),
-            name,
-        })
+        Ok(())
     }
 
     /// Sends a file of `to`'s delivery: refused once the delivery is over
@@ -338,7 +367,9 @@ impl Host {
             return outcomes;
         };
         let e = &mut self.extensions[index];
-        e.delivering.remove(delivery);
+        if let Some(open) = e.delivering.remove(delivery) {
+            tell_stopped(e, delivery, &open);
+        }
         Self::cancel_where(
             e,
             &mut outcomes,

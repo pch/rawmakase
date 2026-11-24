@@ -48,7 +48,17 @@ pub struct Extension {
     scopes: BTreeMap<String, u64>,
     retouch_generators: BTreeMap<String, Box<dyn RetouchGenerator>>,
     export_destinations: BTreeMap<String, Box<dyn ExportDestination>>,
+    /// Deliveries begun and not ended or stopped, by id.
+    deliveries: BTreeMap<String, Open>,
     on_event: Option<EventHandler>,
+}
+
+/// A delivery a destination took: what its later requests must fit.
+struct Open {
+    destination: String,
+    count: u32,
+    /// The places of the files received.
+    files: std::collections::BTreeSet<u32>,
 }
 
 /// How [`Extension::serve_with_options`] serves.
@@ -361,6 +371,12 @@ impl Extension {
                         settings.insert(change.id.clone(), change.value.clone());
                     }
                     self.source_event(&event, host);
+                    if let AppEvent::ExportStopped(stopped) = &event
+                        && self.deliveries.remove(&stopped.delivery).is_some()
+                        && let Some(d) = self.export_destinations.get_mut(&stopped.destination)
+                    {
+                        d.stopped(&stopped.delivery);
+                    }
                     if let Some(handler) = &mut self.on_event {
                         handler(&event, host);
                     }
@@ -640,19 +656,60 @@ impl Extension {
             AppRequest::ExportBegin(begin) => {
                 export_api(api)?;
                 begin.validate()?;
-                self.destination(&begin.destination)?
-                    .begin(cx, begin)
-                    .map(|()| Value::Null)
+                if self.deliveries.contains_key(&begin.delivery) {
+                    return Err(out_of_order(format!(
+                        "delivery {} began twice",
+                        begin.delivery
+                    )));
+                }
+                let open = Open {
+                    destination: begin.destination.clone(),
+                    count: begin.count,
+                    files: Default::default(),
+                };
+                let id = begin.delivery.clone();
+                self.destination(&begin.destination)?.begin(cx, begin)?;
+                self.deliveries.insert(id, open);
+                Ok(Value::Null)
             }
             AppRequest::ExportFile(file) => {
                 export_api(api)?;
                 file.validate()?;
-                self.destination(&file.destination)?
-                    .file(cx, file)
-                    .map(|()| Value::Null)
+                let open = self
+                    .deliveries
+                    .get(&file.delivery)
+                    .filter(|o| o.destination == file.destination)
+                    .ok_or_else(|| {
+                        out_of_order(format!("no delivery {} is open", file.delivery))
+                    })?;
+                if file.index >= open.count || open.files.contains(&file.index) {
+                    return Err(out_of_order(format!(
+                        "file {} of delivery {} is out of its count or came twice",
+                        file.index, file.delivery
+                    )));
+                }
+                let (id, index) = (file.delivery.clone(), file.index);
+                self.destination(&file.destination)?.file(cx, file)?;
+                if let Some(open) = self.deliveries.get_mut(&id) {
+                    open.files.insert(index);
+                }
+                Ok(Value::Null)
             }
             AppRequest::ExportEnd(end) => {
                 export_api(api)?;
+                let open = self
+                    .deliveries
+                    .remove(&end.delivery)
+                    .filter(|o| o.destination == end.destination)
+                    .ok_or_else(|| out_of_order(format!("no delivery {} is open", end.delivery)))?;
+                if usize::try_from(end.files).ok() != Some(open.files.len()) {
+                    return Err(out_of_order(format!(
+                        "delivery {} ended with {} files, and {} came",
+                        end.delivery,
+                        end.files,
+                        open.files.len()
+                    )));
+                }
                 let ended = self.destination(&end.destination)?.end(cx, end)?;
                 ended.validate()?;
                 Ok(serde_json::to_value(ended).expect("a result is JSON"))
@@ -663,6 +720,11 @@ impl Extension {
 
 /// Maps a request's buffer as its access says: an input to read, an output
 /// to write.
+/// A delivery's request that doesn't follow its `begin`.
+fn out_of_order(why: String) -> RemoteError {
+    RemoteError::new(ErrorCode::InvalidRequest, why)
+}
+
 /// Refuses a delivery's request when serving an `api` without export
 /// destinations.
 fn export_api(api: u32) -> Result<(), RemoteError> {

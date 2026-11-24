@@ -215,12 +215,16 @@ impl Editor {
                 self.messages.warn(e.to_string());
             }
             Some(true) => {
-                self.take_send_to_drafts(true);
+                if let Some(key) = self.exports.draft.send_to.clone() {
+                    self.take_send_to_drafts(&key, true);
+                }
+                self.exports.option_form = Default::default();
                 self.exports.dialog = false;
                 self.export(self.exports.draft.clone());
             }
             Some(false) => {
-                self.take_send_to_drafts(false);
+                // Nothing typed outlives a cancelled dialog.
+                self.exports.option_form = Default::default();
                 self.exports.dialog = false;
                 self.exports.read.cancel();
             }
@@ -659,14 +663,21 @@ impl Editor {
             );
         });
         // Only with an extension's export destination to offer, or one chosen.
+        let before = s.send_to.clone();
         if !destinations.is_empty() || s.send_to.is_some() {
             send_to_row(ui, &mut s.send_to, &destinations);
         }
+        let left = before.filter(|b| s.send_to.as_ref() != Some(b));
         let chosen = s.send_to.as_ref().and_then(|key| {
             destinations
                 .into_iter()
                 .find(|d| d.key == *key && d.unavailable.is_none())
         });
+        // What was typed for the destination left keeps, as a field losing
+        // focus would: its field is no longer drawn to lose it.
+        if let Some(left) = left {
+            self.take_send_to_drafts(&left, true);
+        }
         if let Some(destination) = chosen {
             self.send_to_options(ui, &destination);
         }
@@ -712,11 +723,8 @@ impl Editor {
     /// The text being typed into the chosen destination's options, taken
     /// into the draft before it exports, as a field losing focus would; or
     /// dropped when the dialog is cancelled.
-    fn take_send_to_drafts(&mut self, keep: bool) {
-        let Some(key) = self.exports.draft.send_to.clone() else {
-            return;
-        };
-        let drafts = self.exports.option_form.take_drafts(&key);
+    fn take_send_to_drafts(&mut self, key: &str, keep: bool) {
+        let drafts = self.exports.option_form.take_drafts(key);
         if !keep {
             return;
         }
@@ -730,7 +738,7 @@ impl Editor {
         };
         for (id, text) in drafts {
             if let Some(option) = destination.options.iter().find(|o| o.id == id) {
-                choose_option(&mut self.exports.draft, &key, option, text.into());
+                choose_option(&mut self.exports.draft, key, option, text.into());
             }
         }
     }
