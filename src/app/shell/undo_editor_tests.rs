@@ -340,6 +340,7 @@ fn a_copy_removed_when_the_catalog_cannot_be_read_again_still_leaves_undo() -> a
         .db_for_tests()
         .execute_batch("ALTER TABLE collections RENAME TO collections_gone")?;
     editor.remove_virtual_copy(copy);
+    assert!(!editor.undo_log.can_undo(), "the copy's rating leaves Undo");
     let catalog = editor.library.as_ref().unwrap().session.catalog();
     assert!(
         catalog.photos()?.iter().all(|p| p.id != copy),
@@ -381,6 +382,7 @@ fn undo_of_a_removed_copy_never_writes_the_next_copy() -> anyhow::Result<()> {
     )?;
     editor.sync_undo();
     editor.remove_virtual_copy(copy);
+    assert!(!editor.undo_log.can_undo(), "the copy's rating leaves Undo");
     // The next copy, of B rated 2, never takes the removed copy's id.
     let again = editor
         .library
