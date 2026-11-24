@@ -2192,8 +2192,12 @@ impl Editor {
                 {
                     self.automation.cancel_outputs();
                     self.cancel_merge_hdr();
-                    // The steps not written yet stay on the open photo alone.
-                    self.abandon_auto_sync();
+                    // Only when it is Auto Sync that closing goes without: the
+                    // steps not written yet then stay on the open photo alone.
+                    // Behind other work, they are still written before closing.
+                    if waits_for.as_deref() == Some(AUTO_SYNC) {
+                        self.abandon_auto_sync();
+                    }
                     self.close_anyway = true;
                     self.close_confirm = false;
                     self.close_after_work = false;
