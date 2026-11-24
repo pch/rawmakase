@@ -287,7 +287,7 @@ impl Host {
         else {
             return;
         };
-        run.queued.retain(|q| q.pending != Pending::Mask { ticket });
+        run.retain_queued(|q| q.pending != Pending::Mask { ticket });
         let sent = run
             .requests
             .iter()
@@ -312,12 +312,7 @@ impl Host {
     pub(in crate::app) fn mask_in_flight(&self, extension: &str, ticket: u64) -> bool {
         self.get(extension)
             .and_then(|e| e.run.as_ref())
-            .is_some_and(|run| {
-                run.requests
-                    .values()
-                    .chain(run.queued.iter().map(|q| &q.pending))
-                    .any(|p| *p == Pending::Mask { ticket })
-            })
+            .is_some_and(|run| run.pending().any(|p| *p == Pending::Mask { ticket }))
     }
 
     /// Sends `mask.setup` for `generator` of `extension`: the Download of the
@@ -367,7 +362,7 @@ impl Host {
         let pending = Pending::MaskSetup {
             generator: generator.to_string(),
         };
-        run.queued.retain(|q| q.pending != pending);
+        run.retain_queued(|q| q.pending != pending);
         let sent = run
             .requests
             .iter()

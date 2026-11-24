@@ -210,8 +210,7 @@ impl Host {
         else {
             return;
         };
-        run.queued
-            .retain(|q| q.pending != Pending::Retouch { ticket });
+        run.retain_queued(|q| q.pending != Pending::Retouch { ticket });
         let sent = run
             .requests
             .iter()
@@ -228,12 +227,7 @@ impl Host {
     pub(in crate::app) fn retouch_in_flight(&self, extension: &str, ticket: u64) -> bool {
         self.get(extension)
             .and_then(|e| e.run.as_ref())
-            .is_some_and(|run| {
-                run.requests
-                    .values()
-                    .chain(run.queued.iter().map(|q| &q.pending))
-                    .any(|p| *p == Pending::Retouch { ticket })
-            })
+            .is_some_and(|run| run.pending().any(|p| *p == Pending::Retouch { ticket }))
     }
 
     /// The retouch requests sent so far, for tests.
