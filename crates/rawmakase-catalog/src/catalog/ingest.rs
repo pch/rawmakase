@@ -1109,6 +1109,7 @@ impl PhotoWriter {
             sql!("INSERT INTO photos(id,folder,filename,original_path,format) VALUES(?,?,?,?,?)"),
             &[&id, &folder, &filename, &file.to_string_lossy(), &format],
         )?;
+        super::photo_uuids::give(w, id)?;
         w.execute(
             sql!("INSERT INTO photo_imports(photo, batch) VALUES(?, ?)"),
             &[&id, &batch],

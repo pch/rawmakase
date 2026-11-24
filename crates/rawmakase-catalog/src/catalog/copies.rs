@@ -48,6 +48,8 @@ impl Catalog {
                 ),
                 &[&copy, &name, &master, &id],
             )?;
+            // Its own, never its master's.
+            super::photo_uuids::give(w, copy)?;
             super::edit_rows::copy_edit(w, id, copy)?;
             w.execute(
                 sql!(
@@ -83,7 +85,9 @@ impl Catalog {
             .context("Unknown photo")
     }
     /// Lightroom's Set Copy as Master: the copy becomes the master, and the
-    /// former master and the other copies become its copies.
+    /// former master and the other copies become its copies. What belongs to
+    /// the file moves to the new master; each photo's UUID stays with its
+    /// row, as its edit does.
     pub fn set_copy_as_master(&mut self, id: PhotoId) -> Result<()> {
         let master = self
             .master_of(id)?

@@ -52,6 +52,7 @@ mod mask_assets;
 mod models;
 mod naming;
 mod photo_ids;
+mod photo_uuids;
 mod recipe_assets;
 mod rule_inputs;
 mod sequences;
@@ -62,7 +63,7 @@ mod sidecar;
 mod snapshots;
 mod stacks;
 mod value;
-pub use crate::ids::{CollectionId, FolderId, PhotoId, RootId, StackId};
+pub use crate::ids::{CollectionId, FolderId, PhotoId, PhotoUuid, RootId, StackId};
 pub use crate::xmp::descriptive::Read as FileMetadata;
 #[doc(hidden)]
 pub use checksums::ReadChecksum;
@@ -122,8 +123,9 @@ impl Catalog {
     /// release can't read is left as it was. A catalog of an earlier format is
     /// upgraded first, after a verified backup beside it
     /// ([`Catalog::upgraded`]); when that fails, it is left unchanged and not
-    /// opened. An open writes only what is missing for this computer, and a
-    /// catalog that can't be readied isn't opened.
+    /// opened. An open writes only what is missing: this computer's folder
+    /// locations, and the UUIDs of photos an older release added (see
+    /// [`Catalog::photo_uuid`]). A catalog that can't be readied isn't opened.
     pub fn open_as(
         location: impl Into<CatalogLocation>,
         computer: &locations::Computer,
@@ -154,13 +156,15 @@ impl Catalog {
     pub fn location(&self) -> &CatalogLocation {
         &self.location
     }
-    /// Readies an open catalog for this computer. Usually there is nothing
-    /// to do, and nothing is written.
+    /// Readies an open catalog for this computer and gives photos older
+    /// releases added their UUIDs. Usually there is nothing to do, and
+    /// nothing is written.
     fn prepare(&mut self) -> Result<()> {
         // The schema is idempotent: a catalog from an earlier release gains the
         // tables added since.
         self.db.apply_schema()?;
-        locations::prepare(&mut self.db, &self.computer)
+        locations::prepare(&mut self.db, &self.computer)?;
+        photo_uuids::prepare(&mut self.db)
     }
     pub fn photos(&self) -> Result<Vec<Photo>> {
         row! {
@@ -381,6 +385,8 @@ mod mask_assets_tests;
 mod open_tests;
 #[cfg(test)]
 mod photo_ids_tests;
+#[cfg(test)]
+mod photo_uuids_tests;
 #[cfg(test)]
 mod portability_tests;
 #[cfg(test)]

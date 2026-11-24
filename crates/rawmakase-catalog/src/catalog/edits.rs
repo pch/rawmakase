@@ -103,6 +103,22 @@ impl Catalog {
         checked.iter().for_each(|change| change.committed());
         Ok(())
     }
+    /// Photo `id`'s file was saved again by another program (Edit In's
+    /// external editor): its saved edit, bound to the version `was` names, is
+    /// bound to the version `now` names, so it is neither protected nor
+    /// refused as an edit of another photo. An edit saved for another photo
+    /// stays bound to it. Whether an edit was bound again.
+    pub fn follow_rewritten_file(
+        &mut self,
+        id: PhotoId,
+        was: &Identity,
+        now: &Identity,
+    ) -> Result<bool> {
+        let refreshed = self
+            .db
+            .write(|w| super::edit_rows::refresh_identity(w, id, was, now))?;
+        Ok(refreshed == super::edit_rows::Refresh::Done)
+    }
     /// The photo's spots and masks, saved apart from its recipe.
     fn local_edits(&self, id: PhotoId) -> Result<crate::model::recipe::LocalEdits> {
         local_edits(local_text(&self.db, id)?.as_deref())

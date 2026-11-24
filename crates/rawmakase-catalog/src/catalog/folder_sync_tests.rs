@@ -1,5 +1,6 @@
 use super::digest::{
-    BACKGROUND_TABLES, PHOTO_TABLES, USER_COLUMNS, every_family, family, placement, user_state,
+    BACKGROUND_TABLES, FILLED_IN_ON_OPEN, PHOTO_TABLES, USER_COLUMNS, every_family, family,
+    placement, user_state,
 };
 use crate::catalog::Catalog;
 use anyhow::Result;
@@ -98,7 +99,7 @@ fn user_state_covers_the_photo_columns() {
         .collect();
     read.sort();
     assert_eq!(read, covered);
-    for table in BACKGROUND_TABLES {
+    for table in BACKGROUND_TABLES.into_iter().chain([FILLED_IN_ON_OPEN]) {
         assert!(PHOTO_TABLES.iter().any(|(t, ..)| *t == table));
     }
 }
@@ -1010,4 +1011,33 @@ mod scenarios {
         assert!(f.cat.previous_import()?.is_empty());
         Ok(())
     }
+}
+
+#[test]
+fn a_user_state_digest_is_what_releases_before_photo_uuids_journalled() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let cat = Catalog::create(&dir.path().join("Photos.rawmakase"))?;
+    cat.db_for_tests().execute_batch(
+        "INSERT INTO roots(id, original_path) VALUES (1, '/photos/');
+         INSERT INTO folders(id, root, relative_path) VALUES (1, 1, '');
+         INSERT INTO photos(id, folder, filename, original_path, rating)
+             VALUES (1, 1, 'a.ARW', '/photos/a.ARW', 3);
+         INSERT INTO photos(id, folder, filename, original_path, master_id, copy_name)
+             VALUES (2, 1, 'a.ARW', '/photos/a.ARW', 1, 'Copy 1');",
+    )?;
+    // What 0.7.2 computes for this family and keeps in a file operation's
+    // journal: recovery compares it with the digest this release computes.
+    let journalled = "f93b9a1d76de78323eb32a1eb3bafc98ec3c685a3a55465f3012dbc9341a5f67";
+    let hex = |cat: &Catalog| -> Result<String> {
+        let digest = user_state(&cat.db, crate::catalog::PhotoId(1))?.unwrap();
+        Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+    };
+    assert_eq!(hex(&cat)?, journalled, "without UUIDs yet");
+    cat.db_for_tests().execute_batch(
+        "INSERT INTO photo_uuids(photo, uuid) VALUES
+             (1, '3f2504e0-4f89-41d3-9a0c-0305e82c3301'),
+             (2, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');",
+    )?;
+    assert_eq!(hex(&cat)?, journalled, "once an open gave them theirs");
+    Ok(())
 }

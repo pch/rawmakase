@@ -18,16 +18,18 @@ pub(in crate::app) enum Tab {
     General,
     Catalog,
     Profiles,
+    ExternalEditing,
     Performance,
     Display,
     Shortcuts,
     Extensions,
 }
 impl Tab {
-    const ALL: [Tab; 7] = [
+    const ALL: [Tab; 8] = [
         Tab::General,
         Tab::Catalog,
         Tab::Profiles,
+        Tab::ExternalEditing,
         Tab::Performance,
         Tab::Display,
         Tab::Shortcuts,
@@ -40,6 +42,7 @@ impl Tab {
             Tab::Profiles => "Profiles & Presets",
             Tab::Performance => "Performance",
             Tab::Display => "Display",
+            Tab::ExternalEditing => "External Editing",
             Tab::Shortcuts => "Shortcuts",
             Tab::Extensions => "Extensions",
         }
@@ -51,6 +54,7 @@ impl Tab {
             Tab::Profiles => Icon::Presets,
             Tab::Performance => Icon::Performance,
             Tab::Display => Icon::Monitor,
+            Tab::ExternalEditing => Icon::ExternalEditing,
             Tab::Shortcuts => Icon::Keyboard,
             Tab::Extensions => Icon::Extensions,
         }
@@ -100,6 +104,14 @@ pub(in crate::app) struct Preferences {
     pub(in crate::app) locations: Option<crate::app::catalog::folder_locations::LocationsView>,
     /// The Shortcuts page's search and the key it waits for.
     shortcuts: shortcuts::Page,
+}
+
+#[cfg(test)]
+impl Preferences {
+    /// The page shown.
+    pub(in crate::app) fn tab(&self) -> Tab {
+        self.tab
+    }
 }
 
 const WIDTH: f32 = 860.;
@@ -311,6 +323,13 @@ impl Editor {
                             .show(&mut content, |ui| cards(ui, |ui| self.performance_page(ui)));
                     }
                     Tab::Display => cards(&mut content, |ui| self.display_page(ui)),
+                    Tab::ExternalEditing => {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink(false)
+                            .show(&mut content, |ui| {
+                                cards(ui, |ui| self.external_editing_page(ui))
+                            });
+                    }
                     Tab::Shortcuts => self.shortcuts_page(&mut content),
                     Tab::Extensions => {
                         egui::ScrollArea::vertical()
@@ -1716,6 +1735,7 @@ mod tests {
             ("preferences-catalog", Tab::Catalog),
             ("preferences-performance", Tab::Performance),
             ("preferences-display", Tab::Display),
+            ("preferences-external-editing-empty", Tab::ExternalEditing),
             ("preferences-profiles", Tab::Profiles),
             // Searched for Space, whose fixed rows sit in three groups.
             ("preferences-shortcuts-space", Tab::Shortcuts),
@@ -1847,6 +1867,7 @@ mod third_party_tests {
     }
 }
 
+mod external_editing;
 pub(in crate::app) mod monitor;
 pub(in crate::app) mod raw_defaults;
 pub(crate) mod session;

@@ -211,6 +211,18 @@ impl CatalogSession {
         self.changed();
         self.catalog.change_edits(changes)
     }
+    /// Binds photo `id`'s edit, made for the version `was` names, to the
+    /// version `now` names, which another program saved
+    /// ([`Catalog::follow_rewritten_file`]). Changes no list.
+    pub(crate) fn follow_rewritten_file(
+        &mut self,
+        id: PhotoId,
+        was: &crate::storage::Identity,
+        now: &crate::storage::Identity,
+    ) -> Result<bool> {
+        self.changed();
+        self.catalog.follow_rewritten_file(id, was, now)
+    }
     /// Notes photo `id`'s original as the file `now` names, marking its
     /// editable preview out of date when that is another photo
     /// ([`Catalog::note_original`]). Changes no list.

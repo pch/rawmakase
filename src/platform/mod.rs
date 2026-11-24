@@ -7,6 +7,7 @@ pub(crate) mod memory;
 /// The macOS menu; its items' fixed keys are reserved on every platform.
 pub(crate) mod menu;
 pub(crate) mod network;
+pub(crate) mod open_with;
 pub(crate) mod preview_reads;
 pub(crate) mod quit;
 pub(crate) mod reveal;

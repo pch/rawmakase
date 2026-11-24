@@ -155,6 +155,23 @@ fn remove_from_collection_is_offered_only_when_the_source_takes_photos_out() {
 /// right-click, which a shot can't make, so it is drawn here.
 #[test]
 fn shots_of_the_photo_menu() {
+    shoot_photo_menu("photo_menu.png", &[], None);
+}
+
+/// The photo menu's Edit In, open, with two external editors and with none.
+#[test]
+fn shots_of_the_photo_menus_edit_in() {
+    let editors = [
+        "Adobe Photoshop 2026".to_string(),
+        "Affinity Photo 2".to_string(),
+    ];
+    shoot_photo_menu("photo_menu_edit_in.png", &editors, Some("Edit In"));
+    shoot_photo_menu("photo_menu_edit_in_empty.png", &[], Some("Edit In"));
+}
+
+/// Draws the photo menu with `editors`, `submenu` open, into `name`.
+fn shoot_photo_menu(name: &str, editors: &[String], submenu: Option<&str>) {
+    use egui_kittest::kittest::Queryable;
     let Some(dir) = std::env::var_os("RAWMAKASE_UI_SHOTS").map(std::path::PathBuf::from) else {
         return;
     };
@@ -166,7 +183,7 @@ fn shots_of_the_photo_menu() {
     let cell = Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(60., 20.));
     let mut fonts = false;
     let mut harness = egui_kittest::Harness::builder()
-        .with_size(Vec2::new(300., 820.))
+        .with_size(Vec2::new(800., 880.))
         .with_pixels_per_point(2.)
         .wgpu()
         .build_ui(|ui| {
@@ -191,7 +208,10 @@ fn shots_of_the_photo_menu() {
                 MenuTarget::Photo,
                 Module::Library,
                 true,
-                MenuCollections::default(),
+                MenuCollections {
+                    editors,
+                    ..Default::default()
+                },
             );
         });
     harness.run_steps(2);
@@ -206,7 +226,11 @@ fn shots_of_the_photo_menu() {
         });
     }
     harness.run_steps(4);
+    if let Some(submenu) = submenu {
+        harness.get_by_label(submenu).hover();
+        harness.run_steps(4);
+    }
     let image = harness.render().expect("wgpu could not draw the shot");
     std::fs::create_dir_all(&dir).expect("the shots folder");
-    image.save(dir.join("photo_menu.png")).expect("the shot");
+    image.save(dir.join(name)).expect("the shot");
 }

@@ -5,7 +5,7 @@
 //! integers only as integers, reals from integers too, any nonzero integer
 //! as `true`, and narrower integers through checked conversions.
 use super::db::Row;
-use crate::ids::{CollectionId, FolderId, PhotoId, RootId, StackId};
+use crate::ids::{CollectionId, FolderId, PhotoId, PhotoUuid, RootId, StackId};
 use std::fmt;
 
 /// One stored value, borrowed: SQL's five storage classes. Text is bytes,
@@ -43,6 +43,8 @@ pub(in crate::catalog) enum ValueError {
     OutOfRange(i64),
     /// Text that isn't UTF-8.
     InvalidText,
+    /// Text that isn't a photo's UUID.
+    InvalidUuid,
 }
 
 impl fmt::Display for ValueError {
@@ -53,6 +55,7 @@ impl fmt::Display for ValueError {
             }
             Self::OutOfRange(value) => write!(f, "integer {value} out of range"),
             Self::InvalidText => f.write_str("text is not UTF-8"),
+            Self::InvalidUuid => f.write_str("text is not a photo's UUID"),
         }
     }
 }
@@ -251,6 +254,19 @@ macro_rules! row_id {
 }
 
 row_id!(CollectionId, FolderId, PhotoId, RootId, StackId);
+
+/// A photo's UUID is stored as its text.
+impl ToValue for PhotoUuid {
+    fn to_value(&self) -> ValueRef<'_> {
+        self.as_str().to_value()
+    }
+}
+
+impl FromValue for PhotoUuid {
+    fn from_value(value: ValueRef<'_>) -> Result<Self, ValueError> {
+        PhotoUuid::parse(&String::from_value(value)?).ok_or(ValueError::InvalidUuid)
+    }
+}
 
 /// A row the catalog can read: usually a named struct, or a single value
 /// from a one-column query.

@@ -149,6 +149,7 @@ fn shortcuts_sit_between_display_and_extensions() {
             "General",
             "Catalog",
             "Profiles & Presets",
+            "External Editing",
             "Performance",
             "Display",
             "Shortcuts",

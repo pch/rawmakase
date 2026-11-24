@@ -193,6 +193,7 @@ impl Library {
                                         collections: collection_tree.clone(),
                                         in_collections: self.photo_collections(p.id),
                                         remove_from,
+                                        editors: self.external_editors.clone(),
                                     };
                                     let (response, edit) =
                                         photo_cell(ui, &p, self.texture(&p), shown, width);
@@ -397,6 +398,17 @@ impl Library {
                     vec![photo.id]
                 };
                 self.ask(super::outbox::Request::ExportPhotos(ids, previous));
+            }
+            PhotoAction::EditIn(which) => {
+                let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
+                    self.selected_ids()
+                } else {
+                    vec![photo.id]
+                };
+                self.ask(super::outbox::Request::EditIn(ids, which));
+            }
+            PhotoAction::ConfigureEditors => {
+                self.ask(super::outbox::Request::ConfigureEditors);
             }
             PhotoAction::ExportCatalog => {
                 let ids = if whole_selection && self.selection.selected.contains(&photo.id) {

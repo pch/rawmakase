@@ -202,7 +202,8 @@ fn verify_snapshot(snapshot: &Path) -> Result<()> {
 
 /// Copies photos, folders, history, collections, keywords, info and
 /// descriptive metadata from the Lightroom catalog attached as `lr`, in the
-/// caller's transaction. Fails if any image was left out.
+/// caller's transaction, and gives each photo its UUID. Fails if any image
+/// was left out.
 fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
     for statement in [
         sqlite_sql!(
@@ -358,5 +359,7 @@ fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
         imported == expected,
         "Catalog has orphaned image records ({imported}/{expected}); import rolled back"
     );
-    Ok(())
+    // Random, as every photo's: Lightroom's own `id_global` is not taken.
+    // Here rather than on the next open, so the catalog published is whole.
+    super::photo_uuids::give_missing(lr.write())
 }

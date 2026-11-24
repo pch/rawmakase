@@ -16,6 +16,8 @@ pub(in crate::app) enum FileDialog {
     ImportFolder(ImportKind),
     /// Where decoded images are cached.
     DecodeCacheFolder,
+    /// A program for Edit In: an application on macOS, a program elsewhere.
+    ExternalEditor,
 }
 
 #[derive(Clone)]
@@ -78,6 +80,7 @@ impl Editor {
                     return;
                 }
                 let selected = match kind {
+                    FileDialog::ExternalEditor => external_editor_dialog().pick_file(),
                     FileDialog::MonitorProfile => rfd::FileDialog::new()
                         .add_filter("ICC profile", &["icc", "icm"])
                         .pick_file(),
@@ -98,6 +101,7 @@ impl Editor {
                 };
                 let event = selected
                     .map(|p| match kind {
+                        FileDialog::ExternalEditor => Event::ExternalEditor(p),
                         FileDialog::MonitorProfile => Event::Monitor(p),
                         FileDialog::CameraProfile
                         | FileDialog::Luts(_)
@@ -115,5 +119,20 @@ impl Editor {
                 let _ = tx.send(Event::DialogClosed);
             },
         );
+    }
+}
+
+/// Add Editor…'s chooser: on macOS an application bundle from Applications,
+/// on Windows a program file, elsewhere any file.
+fn external_editor_dialog() -> rfd::FileDialog {
+    let dialog = rfd::FileDialog::new().set_title("Choose an External Editor");
+    if cfg!(target_os = "macos") {
+        dialog
+            .add_filter("Application", &["app"])
+            .set_directory("/Applications")
+    } else if cfg!(windows) {
+        dialog.add_filter("Program", &["exe"])
+    } else {
+        dialog
     }
 }

@@ -442,3 +442,15 @@ CREATE TABLE IF NOT EXISTS stack_photos (
     position INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS stack_photos_stack ON stack_photos(stack);
+
+-- A photo's own id, for extensions and other catalogs (`PhotoUuid`): a
+-- random UUID made once for it (a virtual copy gets its own), lowercase and
+-- hyphenated, never changed or given to another photo, where a release that
+-- ignores `photo_id_high` may give a removed photo's `photos.id` to another. It stays with its row, as the
+-- edit does: Set Copy as Master moves none. Copies of a catalog file share
+-- them. Photos a release before it adds have none until the next open
+-- gives them theirs; the row goes with its photo in every release.
+CREATE TABLE IF NOT EXISTS photo_uuids (
+    photo INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    uuid TEXT NOT NULL UNIQUE
+);

@@ -254,6 +254,21 @@ impl Editor {
                             menu_separator(ui);
                             let (export, previous) = crate::app::library::EXPORT_SHORTCUTS;
                             let photo = self.document.full().is_some();
+                            use crate::app::library::PhotoAction;
+                            let names = self.edit_in.names();
+                            match crate::app::library::edit_in_submenu(ui, photo, &names) {
+                                Some(PhotoAction::EditIn(which)) => {
+                                    self.edit_in_chosen(which);
+                                    ui.close();
+                                }
+                                Some(PhotoAction::ConfigureEditors) => {
+                                    self.open_preferences(
+                                        crate::app::preferences::Tab::ExternalEditing,
+                                    );
+                                    ui.close();
+                                }
+                                _ => {}
+                            }
                             if menu_item(ui, "Export…", export, photo, false) {
                                 self.open_export_dialog();
                                 ui.close();

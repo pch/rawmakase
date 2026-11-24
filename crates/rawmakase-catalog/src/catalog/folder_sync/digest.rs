@@ -15,7 +15,7 @@ use std::collections::HashMap;
 /// photo's rows and every row keyed by its photo, written out whole so the
 /// portable-SQL check reads them.
 /// `family_tables_cover_the_schema` checks it against `schema.sql`.
-pub(super) const PHOTO_TABLES: [(&str, Sql, Sql); 18] = [
+pub(super) const PHOTO_TABLES: [(&str, Sql, Sql); 19] = [
     (
         "photo_keywords",
         sql!("SELECT * FROM photo_keywords WHERE photo=?"),
@@ -106,6 +106,11 @@ pub(super) const PHOTO_TABLES: [(&str, Sql, Sql); 18] = [
         sql!("SELECT * FROM stack_photos WHERE photo=?"),
         sql!("SELECT photo, * FROM stack_photos"),
     ),
+    (
+        "photo_uuids",
+        sql!("SELECT * FROM photo_uuids WHERE photo=?"),
+        sql!("SELECT photo, * FROM photo_uuids"),
+    ),
 ];
 
 /// SHA-256 of a family's photos and their rows.
@@ -172,6 +177,11 @@ impl PhotoRows {
         sha.update(&self.photo);
         self.tables.resize(PHOTO_TABLES.len(), Vec::new());
         for ((name, ..), mut rows) in PHOTO_TABLES.iter().zip(self.tables) {
+            // Not even its name when it has no rows, as [`user_state`] gives
+            // it: the digest stays the one releases before it journalled.
+            if *name == FILLED_IN_ON_OPEN && rows.is_empty() {
+                continue;
+            }
             rows.sort();
             sha.update(name.as_bytes());
             sha.update((rows.len() as u64).to_le_bytes());
@@ -205,6 +215,14 @@ pub(in crate::catalog) const BACKGROUND_TABLES: [&str; 5] = [
     "photo_sequences",
     "photo_import_facts",
 ];
+
+/// A photo's UUID, which [`user_state`] leaves out too: the first open in a
+/// release that has them fills it in for every photo, and must not make an
+/// operation an earlier release journalled look changed in the catalog. Its
+/// digest leaves out the table's name too, so it is the one those releases
+/// computed. A photo replaced by another under its id is told by its
+/// `photos` row.
+pub(in crate::catalog) const FILLED_IN_ON_OPEN: &str = "photo_uuids";
 
 /// The `photos` columns [`user_state`] covers: all but where the photo is
 /// (`folder`, `filename`, which [`placement`] covers) and `captured`, the
@@ -264,8 +282,9 @@ pub(in crate::catalog) fn placement(
 }
 
 /// What the user made of the family of `master`: [`family`]'s rows without
-/// where the photos are and without what only background reads write
-/// ([`BACKGROUND_TABLES`], `photos.captured`), so edits, History, metadata,
+/// where the photos are, without what only background reads write
+/// ([`BACKGROUND_TABLES`], `photos.captured`) and without their UUIDs
+/// ([`FILLED_IN_ON_OPEN`]), so edits, History, metadata,
 /// keywords and collections changed by another connection or release are
 /// seen while a queued background result changes nothing. `None` when
 /// `master` is no photo.
@@ -291,7 +310,7 @@ pub(in crate::catalog) fn user_state(
             tables: Vec::new(),
         };
         for (name, one, _) in &PHOTO_TABLES {
-            if BACKGROUND_TABLES.contains(name) {
+            if BACKGROUND_TABLES.contains(name) || *name == FILLED_IN_ON_OPEN {
                 rows.tables.push(Vec::new());
                 continue;
             }

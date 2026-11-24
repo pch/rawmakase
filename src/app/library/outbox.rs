@@ -37,6 +37,10 @@ pub(in crate::app) enum Request {
     /// Export… (or Export with Previous, when `true`) chosen in a photo's menu,
     /// for these photos.
     ExportPhotos(Vec<PhotoId>, bool),
+    /// Edit In with the external editor at this place, for these photos.
+    EditIn(Vec<PhotoId>, usize),
+    /// Edit In › Configure External Editors….
+    ConfigureEditors,
     /// Read Metadata from Files for these photos, once confirmed.
     Read(Vec<PhotoId>),
     /// Merge to HDR… of these photos, a bracket, once its window says how.
@@ -63,6 +67,7 @@ impl Request {
             Self::Read(ids) => Self::Read(keep(ids)?),
             Self::ExportPhotos(ids, previous) => Self::ExportPhotos(keep(ids)?, previous),
             Self::MergeHdr(ids) => Self::MergeHdr(keep(ids)?),
+            Self::EditIn(ids, which) => Self::EditIn(keep(ids)?, which),
             Self::Export(CatalogExportRequest {
                 name,
                 scope: crate::catalog::ExportScope::Photos(ids),
