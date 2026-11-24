@@ -4,11 +4,12 @@ use std::path::Path;
 use std::process::Command;
 
 /// The command that opens `file` in `program`: on macOS an application
-/// bundle, opened through `open -a` so a running app takes the file; elsewhere
-/// the executable itself, given the file.
+/// bundle, opened through the system's `open -a` (by its path, not whatever
+/// `open` comes first on the search path) so a running app takes the file;
+/// elsewhere the executable itself, given the file.
 pub(crate) fn command(program: &Path, file: &Path) -> Command {
     if cfg!(target_os = "macos") {
-        let mut command = Command::new("open");
+        let mut command = Command::new("/usr/bin/open");
         command.arg("-a").arg(program).arg(file);
         command
     } else {
@@ -18,13 +19,26 @@ pub(crate) fn command(program: &Path, file: &Path) -> Command {
     }
 }
 
-/// Opens `file` in `program`, without waiting for it. An error when the
-/// program is gone or can't be started.
+/// Opens `file` in `program`. An error when the program is gone or can't be
+/// started, or on macOS when `open` says it could not open the file, which it
+/// does within moments: this waits for it, so it runs off the UI thread. An
+/// editor started directly runs until it is closed: a thread of its own
+/// waits for it then, so it leaves no zombie process behind.
 pub(crate) fn open_with(program: &Path, file: &Path) -> Result<()> {
     ensure!(program.exists(), "{} is no longer there", program.display());
-    command(program, file)
-        .spawn()
-        .with_context(|| format!("{} could not be started", program.display()))?;
+    let started = || format!("{} could not be started", program.display());
+    if cfg!(target_os = "macos") {
+        let output = command(program, file).output().with_context(started)?;
+        let said = String::from_utf8_lossy(&output.stderr);
+        ensure!(output.status.success(), "{}", said.trim());
+    } else {
+        let mut child = command(program, file)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .with_context(started)?;
+        std::thread::spawn(move || child.wait());
+    }
     Ok(())
 }
 
@@ -57,7 +71,7 @@ mod tests {
         let command = command(program, file);
         let args: Vec<&OsStr> = command.get_args().collect();
         if cfg!(target_os = "macos") {
-            assert_eq!(command.get_program(), "open");
+            assert_eq!(command.get_program(), "/usr/bin/open");
             assert_eq!(
                 args,
                 [OsStr::new("-a"), program.as_os_str(), file.as_os_str()]
@@ -73,6 +87,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let error = open_with(&dir.path().join("Gone.app"), Path::new("a.tif")).unwrap_err();
         assert!(error.to_string().contains("no longer there"), "{error}");
+    }
+
+    /// `open` saying it could not open the file is an error, not a launch: it
+    /// checks the file before starting anything.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn opens_refusal_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = open_with(
+            Path::new("/System/Applications/TextEdit.app"),
+            &dir.path().join("missing.tif"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("does not exist"), "{error}");
     }
 
     #[test]

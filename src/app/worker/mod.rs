@@ -71,6 +71,10 @@ pub(crate) enum Event {
     MergeHdr(Box<crate::app::merge_hdr::Done>),
     /// Edit In's import of a TIFF reported back.
     EditIn(Box<crate::app::edit_in::Added>),
+    /// Edit In's look at the files sent to an editor came back.
+    EditInLooked(Box<crate::app::edit_in::Looked>),
+    /// Edit In's editor was started, or could not be.
+    EditInLaunched(Box<crate::app::edit_in::Launched>),
     /// A verified camera profile was installed into the library, or why not.
     ProfileDownloaded {
         id: u64,

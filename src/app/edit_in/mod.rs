@@ -58,6 +58,8 @@ pub(in crate::app) struct EditIn {
     sent: Vec<Sent>,
     /// When the files sent out were last looked at.
     checked: Option<std::time::Instant>,
+    /// A look at them is under way.
+    looking: bool,
     /// The question for photos the editor can open as they are.
     pub(in crate::app) asking: Option<Asking>,
     /// Stands in for starting a program, for a test: what was opened in what.
@@ -87,6 +89,8 @@ pub(in crate::app) enum How {
 /// `ids` the editor can open as they are; the others are RAWs, always
 /// rendered.
 pub(in crate::app) struct Asking {
+    /// The catalog the photos are of: their ids name other photos in another.
+    pub(in crate::app) catalog: CatalogLocation,
     pub(in crate::app) ids: Vec<PhotoId>,
     pub(in crate::app) plain: Vec<(PhotoId, PathBuf)>,
     pub(in crate::app) editor: PathBuf,
@@ -101,43 +105,82 @@ pub(in crate::app) struct Sending {
     pub(in crate::app) editor: PathBuf,
     /// The catalog the photos are in, if any.
     pub(in crate::app) catalog: Option<CatalogLocation>,
-    /// Each photo of the batch, in its order: the original its file is stacked with.
-    pub(in crate::app) originals: Vec<Option<PhotoId>>,
+    /// Each photo of the batch, in its order: the original its file is
+    /// stacked with, and that original's file then.
+    pub(in crate::app) originals: Vec<Option<(PhotoId, PathBuf)>>,
 }
 
-/// A TIFF written, on its way to the catalog and its program.
+/// A file on its way to the catalog and its program: a TIFF written, or for
+/// Edit a Copy the photo's file, copied by the import worker.
 struct Rendered {
+    /// The TIFF written, or the file to copy.
     path: PathBuf,
-    /// For Edit a Copy, the file copied to `path` as it is, by the import
-    /// worker.
-    copy_of: Option<PathBuf>,
+    /// `path` is the photo's file, copied as it is beside it.
+    copy: bool,
     editor: PathBuf,
     catalog: Option<CatalogLocation>,
-    original: Option<PhotoId>,
+    /// The photo it is stacked with, and that photo's file when it was chosen:
+    /// a photo removed meanwhile can give its id to another.
+    original: Option<(PhotoId, PathBuf)>,
 }
 
-/// A file handed to a program, as it was then or last checked.
+/// A file handed to a program, as it was then or as last taken up.
 #[derive(Clone, Debug)]
 pub(in crate::app) struct Sent {
     pub(in crate::app) path: PathBuf,
     pub(in crate::app) identity: Identity,
+    /// The catalog it was sent from, and its photo there: a save is followed
+    /// only while that catalog is open and the photo is still this file.
+    pub(in crate::app) catalog: Option<CatalogLocation>,
+    pub(in crate::app) photo: Option<PhotoId>,
     /// A change not taken up yet: the file's size and modification time, and
     /// when they were first seen so.
     pub(in crate::app) seen: Option<(crate::storage::Stamp, std::time::Instant)>,
+    /// Taking up the last change failed and said so; said again only once
+    /// it has worked.
+    failing: bool,
 }
 
 /// How often the files sent out are looked at, while there are any: a stat
-/// each.
+/// each, on a worker.
 const WATCH: std::time::Duration = std::time::Duration::from_millis(150);
 /// How long a changed file must stay as it is before it is read, so one the
 /// editor is still writing is not.
 pub(in crate::app) const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
 
-/// What the import worker sends back: whether the catalog added the file
-/// (false when it had it already), or why not.
+/// What the import worker sends back: the file added (for a copy, where it
+/// was published) and whether the catalog added it (false when it had it
+/// already), or why not.
 pub(crate) struct Added {
     generation: u64,
-    result: Result<bool, String>,
+    result: Result<(PathBuf, bool), String>,
+}
+
+/// What a look at a file sent out found.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::app) enum Look {
+    /// It can't be read: moved or deleted.
+    Gone,
+    /// As it was taken up last.
+    Same,
+    /// Changed, with this size and modification time, and not settled yet.
+    Changing(crate::storage::Stamp),
+    /// Changed and settled: the version it is now.
+    Settled(Identity),
+}
+
+/// What the look worker sends back: each file looked at, what it found and
+/// when the look started.
+pub(crate) struct Looked {
+    looks: Vec<(PathBuf, Look)>,
+    at: std::time::Instant,
+}
+
+/// What the launching worker sends back for `file`.
+pub(crate) struct Launched {
+    file: PathBuf,
+    program: String,
+    result: Result<(), String>,
 }
 
 impl EditIn {
@@ -154,6 +197,7 @@ impl EditIn {
             generation: 0,
             sent: Vec::new(),
             checked: None,
+            looking: false,
             asking: None,
             #[cfg(test)]
             launched: None,
@@ -202,44 +246,32 @@ pub(in crate::app) fn settings(space: OutputSpace) -> ExportSettings {
     }
 }
 
-/// The files of `sent` saved again since they were sent or last taken up,
-/// each with the version it was and the one it is now; `sent` keeps the new
-/// ones. A change counts once it has settled, `now`: the same size and
+/// Looks at the file at `path`, taken up last as `baseline`, whose change was
+/// `seen` so far, at `now`: settled once it has kept one size and
 /// modification time for [`SETTLE`], so a file still being written is not
-/// read. A file that can't be read (moved, deleted) is forgotten.
-pub(in crate::app) fn rewritten(
-    sent: &mut Vec<Sent>,
+/// read. Reads its first bytes only then.
+pub(in crate::app) fn look(
+    path: &Path,
+    baseline: crate::storage::Stamp,
+    seen: Option<(crate::storage::Stamp, std::time::Instant)>,
     now: std::time::Instant,
-) -> Vec<(PathBuf, Identity, Identity)> {
-    let mut changed = Vec::new();
-    sent.retain_mut(|file| {
-        let Ok(stamp) = crate::storage::Stamp::read(&file.path) else {
-            return false;
-        };
-        if stamp == file.identity.stamp() {
-            file.seen = None;
-            return true;
-        }
-        match file.seen {
-            Some((seen, since)) if seen == stamp => {
-                if now.duration_since(since) < SETTLE {
-                    return true;
-                }
-            }
-            _ => {
-                file.seen = Some((stamp, now));
-                return true;
+) -> Look {
+    let Ok(stamp) = crate::storage::Stamp::read(path) else {
+        return Look::Gone;
+    };
+    if stamp == baseline {
+        return Look::Same;
+    }
+    match seen {
+        Some((seen, since)) if seen == stamp && now.duration_since(since) >= SETTLE => {
+            match Identity::read(path) {
+                Ok(identity) if identity.stamp() == stamp => Look::Settled(identity),
+                Ok(identity) => Look::Changing(identity.stamp()),
+                Err(_) => Look::Gone,
             }
         }
-        let Ok(now) = Identity::read(&file.path) else {
-            return false;
-        };
-        file.seen = None;
-        let was = std::mem::replace(&mut file.identity, now.clone());
-        changed.push((file.path.clone(), was, now));
-        true
-    });
-    changed
+        _ => Look::Changing(stamp),
+    }
 }
 
 impl Editor {
@@ -277,6 +309,7 @@ impl Editor {
             .iter()
             .any(|(id, _)| catalog.has_edit(*id).unwrap_or(false));
         self.edit_in.asking = Some(Asking {
+            catalog: catalog.location().clone(),
             ids,
             plain,
             editor,
@@ -284,42 +317,60 @@ impl Editor {
             adjusted,
         });
     }
+    /// Whether `asking` is still about the catalog open.
+    pub(in crate::app) fn asking_here(&self, asking: &Asking) -> bool {
+        self.library
+            .as_ref()
+            .is_some_and(|l| *l.session.catalog().location() == asking.catalog)
+    }
     /// Edit In as `asking` was answered: RAWs (and the rest, with How::Adjusted)
-    /// rendered, the others opened or copied as they are.
+    /// rendered, the others opened or copied as they are. Photos no longer in
+    /// the catalog, or at another file now, are left out.
     pub(in crate::app) fn edit_in_as(&mut self, asking: Asking) {
+        if !self.asking_here(&asking) {
+            self.messages
+                .warn("Edit In cancelled: another catalog is open now");
+            return;
+        }
         let Asking {
+            catalog,
             ids,
             plain,
             editor,
             how,
             ..
         } = asking;
+        let library = self.library.as_ref().expect("checked above");
+        let plain: Vec<(PhotoId, PathBuf)> = plain
+            .into_iter()
+            .filter(|(id, path)| library.photo(*id).is_some_and(|p| p.path == *path))
+            .collect();
         let rendered: Vec<PhotoId> = ids
             .into_iter()
-            .filter(|id| how == How::Adjusted || !plain.iter().any(|(p, _)| p == id))
+            .filter(|id| {
+                library
+                    .photo(*id)
+                    .is_some_and(|p| how == How::Adjusted || crate::storage::is_raw(&p.path))
+            })
             .collect();
         if !rendered.is_empty() {
             self.render_for_editing(rendered, editor.clone());
         }
-        let catalog = self
-            .library
-            .as_ref()
-            .map(|l| l.session.catalog().location().clone());
         match how {
             How::Adjusted => {}
             How::Original => {
-                for (_, path) in &plain {
-                    self.launch_editor(&editor, path);
+                for (id, path) in &plain {
+                    self.launch_editor(&editor, path, Some(&catalog), Some(*id));
                 }
             }
             How::Copy => {
                 for (id, path) in plain {
                     self.edit_in.waiting.push_back(Rendered {
-                        path: copy_name(&path),
-                        copy_of: Some(path),
+                        path: path.clone(),
+                        copy: true,
                         editor: editor.clone(),
-                        catalog: catalog.clone(),
-                        original: Some(id),
+                        catalog: Some(catalog.clone()),
+                        original: Some((id, path)),
                     });
                 }
                 self.add_edits();
@@ -360,19 +411,19 @@ impl Editor {
             if let crate::export::batch::Outcome::Exported { path, .. } = outcome {
                 self.edit_in.waiting.push_back(Rendered {
                     path: path.clone(),
-                    copy_of: None,
+                    copy: false,
                     editor: editing.editor.clone(),
                     catalog: editing.catalog.clone(),
-                    original: *original,
+                    original: original.clone(),
                 });
             }
         }
         self.add_edits();
     }
 
-    /// Adds the next TIFF waiting to the catalog once nothing else holds it;
-    /// called each frame meanwhile. One with no catalog to go to opens in its
-    /// program at once.
+    /// Adds the next file waiting to the catalog once nothing else holds it;
+    /// called each frame meanwhile. A TIFF with no catalog to go to opens in
+    /// its program at once.
     pub(in crate::app) fn add_edits(&mut self) {
         while self.edit_in.adding.is_none() {
             let Some(next) = self.edit_in.waiting.front() else {
@@ -385,12 +436,12 @@ impl Editor {
             let to = next.catalog.clone().filter(|_| next.original.is_some());
             let Some(location) = to else {
                 let next = self.edit_in.waiting.pop_front().expect("checked above");
-                self.launch_editor(&next.editor, &next.path);
+                self.launch_editor(&next.editor, &next.path, None, None);
                 continue;
             };
             if open.as_ref() != Some(&location) {
                 let next = self.edit_in.waiting.pop_front().expect("checked above");
-                if next.copy_of.is_some() {
+                if next.copy {
                     self.messages.warn(format!(
                         "{} was not copied: another catalog is open now",
                         file_name(&next.path)
@@ -402,7 +453,7 @@ impl Editor {
                     file_name(&next.path),
                     location.name()
                 ));
-                self.launch_editor(&next.editor, &next.path);
+                self.launch_editor(&next.editor, &next.path, None, None);
                 continue;
             }
             // Excludes Add Folder, Synchronize, batch edits, file operations,
@@ -413,15 +464,13 @@ impl Editor {
             let next = self.edit_in.waiting.pop_front().expect("checked above");
             self.edit_in.generation += 1;
             let generation = self.edit_in.generation;
-            let path = next.path.clone();
-            let copy_of = next.copy_of.clone();
+            let (path, copy) = (next.path.clone(), next.copy);
             self.edit_in.adding = Some((generation, next));
             task::spawn(
                 self.tx.clone(),
                 self.context.clone(),
                 move |tx| {
-                    let result =
-                        import(&location, &path, copy_of.as_deref()).map_err(|e| format!("{e:#}"));
+                    let result = import(&location, &path, copy).map_err(|e| format!("{e:#}"));
                     let _ = tx.send(Event::EditIn(Box::new(Added { generation, result })));
                 },
                 move |tx, why| {
@@ -435,8 +484,9 @@ impl Editor {
         }
     }
 
-    /// A TIFF's import reported back: the catalog is free again, the Library
-    /// shows the TIFF stacked on its original, and its program starts.
+    /// A file's import reported back: the catalog is free again, the Library
+    /// shows the file stacked on its original, and its program starts with
+    /// the file the job published, and no other.
     pub(in crate::app) fn edit_added(&mut self, added: Added) {
         let ours = self
             .edit_in
@@ -448,28 +498,46 @@ impl Editor {
         }
         self.activity.finish_dialog();
         let (_, rendered) = self.edit_in.adding.take().expect("checked above");
-        let name = file_name(&rendered.path);
-        match added.result {
-            Err(why) => self.messages.warn(format!(
-                "Edit In: {name} was not added to the catalog: {why}"
-            )),
-            Ok(true) => {
-                if self.commit_library_drafts()
-                    && let Some(library) = &mut self.library
-                {
-                    match library.reread_after_added() {
-                        Ok(()) => library.start_background_reads(),
-                        Err(e) => self.messages.fail(format!(
-                            "Edit In: {name} added, but the catalog could not be read again: {e:#}"
-                        )),
-                    }
+        let (path, added) = match added.result {
+            Ok(done) => done,
+            Err(why) => {
+                let name = file_name(&rendered.path);
+                if rendered.copy {
+                    self.messages
+                        .warn(format!("Edit In: {name} was not copied: {why}"));
+                } else {
+                    self.messages.warn(format!(
+                        "Edit In: {name} was not added to the catalog: {why}"
+                    ));
+                    // The TIFF is Edit In's own, written by its export.
+                    self.launch_editor(&rendered.editor, &rendered.path, None, None);
                 }
+                self.add_edits();
+                return;
             }
-            Ok(false) => {}
+        };
+        let name = file_name(&path);
+        if added
+            && self.commit_library_drafts()
+            && let Some(library) = &mut self.library
+        {
+            match library.reread_after_added() {
+                Ok(()) => library.start_background_reads(),
+                Err(e) => self.messages.fail(format!(
+                    "Edit In: {name} added, but the catalog could not be read again: {e:#}"
+                )),
+            }
         }
-        let photo = self.catalog_photo_at(&rendered.path);
-        if let (Some(photo), Some(original), Some(library)) =
-            (photo, rendered.original, &mut self.library)
+        let photo = self.catalog_photo_at(&path);
+        // Stacked only with the photo chosen, still at the file it had.
+        let original = rendered.original.filter(|(id, file)| {
+            self.library
+                .as_ref()
+                .and_then(|l| l.photo(*id))
+                .is_some_and(|p| p.path == *file)
+        });
+        if let (Some(photo), Some((original, _)), Some(library)) =
+            (photo, original, &mut self.library)
         {
             if let Err(e) =
                 library.stack_merge(photo, vec![original], "Stacked the edit with its original")
@@ -479,131 +547,287 @@ impl Editor {
             }
             self.messages.absorb(&mut library.messages);
         }
-        // A copy that could not be made has nothing to open.
-        if rendered.path.exists() {
-            self.launch_editor(&rendered.editor, &rendered.path);
-        }
+        let catalog = rendered.catalog.clone();
+        self.launch_editor(&rendered.editor, &path, catalog.as_ref(), photo);
         self.add_edits();
     }
 
-    /// Opens `file` in `editor`, and remembers it to follow its saves
-    /// ([`Self::watch_sent`]).
-    fn launch_editor(&mut self, editor: &Path, file: &Path) {
-        #[cfg(test)]
-        let launched = match &mut self.edit_in.launched {
-            Some(launched) => {
-                launched.push((editor.to_path_buf(), file.to_path_buf()));
-                Ok(())
-            }
-            None => crate::platform::open_with::open_with(editor, file),
-        };
-        #[cfg(not(test))]
-        let launched = crate::platform::open_with::open_with(editor, file);
+    /// Opens `file` in `editor` on a worker of its own, and follows its saves
+    /// ([`Self::watch_sent`]) from the version it is now, read before the
+    /// editor can change it: photo `photo` of `catalog`, if it is one.
+    fn launch_editor(
+        &mut self,
+        editor: &Path,
+        file: &Path,
+        catalog: Option<&CatalogLocation>,
+        photo: Option<PhotoId>,
+    ) {
         let program = crate::platform::open_with::program_name(editor);
-        match launched {
-            Ok(()) => {
-                if let Ok(identity) = Identity::read(file) {
-                    self.edit_in.sent.retain(|s| s.path != file);
-                    self.edit_in.sent.push(Sent {
-                        path: file.to_path_buf(),
-                        identity,
-                        seen: None,
-                    });
-                }
-                self.messages
-                    .done(format!("Opened {} in {program}", file_name(file)));
+        match Identity::read(file) {
+            Ok(identity) => {
+                self.edit_in.sent.retain(|s| s.path != file);
+                self.edit_in.sent.push(Sent {
+                    path: file.to_path_buf(),
+                    identity,
+                    catalog: catalog.cloned(),
+                    photo,
+                    seen: None,
+                    failing: false,
+                });
             }
-            Err(e) => self.messages.warn(format!(
-                "{} was saved, but not opened in {program}: {e:#}",
-                file_name(file)
-            )),
+            Err(e) => {
+                self.messages.warn(format!(
+                    "{} was not opened in {program}: {e:#}",
+                    file_name(file)
+                ));
+                return;
+            }
+        }
+        #[cfg(test)]
+        if let Some(launched) = &mut self.edit_in.launched {
+            launched.push((editor.to_path_buf(), file.to_path_buf()));
+            self.messages
+                .done(format!("Opened {} in {program}", file_name(file)));
+            return;
+        }
+        let (editor, file) = (editor.to_path_buf(), file.to_path_buf());
+        let failed_file = file.clone();
+        let failed_program = program.clone();
+        task::spawn(
+            self.tx.clone(),
+            self.context.clone(),
+            move |tx| {
+                let result = crate::platform::open_with::open_with(&editor, &file)
+                    .map_err(|e| format!("{e:#}"));
+                let _ = tx.send(Event::EditInLaunched(Box::new(Launched {
+                    file,
+                    program,
+                    result,
+                })));
+            },
+            move |tx, why| {
+                let _ = tx.send(Event::EditInLaunched(Box::new(Launched {
+                    file: failed_file,
+                    program: failed_program,
+                    result: Err(why),
+                })));
+            },
+        );
+    }
+
+    /// The program for a file was started, or could not be: one that wasn't
+    /// is no longer followed.
+    pub(in crate::app) fn editor_launched(&mut self, launched: Launched) {
+        let name = file_name(&launched.file);
+        match launched.result {
+            Ok(()) => self
+                .messages
+                .done(format!("Opened {name} in {}", launched.program)),
+            Err(why) => {
+                self.edit_in.sent.retain(|s| s.path != launched.file);
+                self.messages.warn(format!(
+                    "{name} was saved, but not opened in {}: {why}",
+                    launched.program
+                ));
+            }
         }
     }
 
-    /// Looks at the files sent out about seven times a second while there are any,
-    /// whether the window is in front or not: a save the editor made is
-    /// taken up once it has settled. Called each pass, also while the window
-    /// is behind another, and keeps the passes coming while it waits.
+    /// Looks at the files sent out about seven times a second while there are
+    /// any, whether the window is in front or not, on a worker so a slow
+    /// drive never holds up the window: a save the editor made is taken up
+    /// once it has settled. Files sent from a catalog no longer open stop
+    /// being followed. Called each pass, also while the window is behind
+    /// another, and keeps the passes coming while it waits.
     pub(in crate::app) fn watch_sent(&mut self, ctx: &eframe::egui::Context) {
+        let open = self
+            .library
+            .as_ref()
+            .map(|l| l.session.catalog().location().clone());
+        self.edit_in
+            .sent
+            .retain(|s| s.catalog.is_none() || s.catalog == open);
         if self.edit_in.sent.is_empty() {
             self.edit_in.checked = None;
             return;
         }
         let now = std::time::Instant::now();
         let due = self.edit_in.checked.is_none_or(|at| now - at >= WATCH);
-        if due {
+        if due && !self.edit_in.looking {
             self.edit_in.checked = Some(now);
-            self.edited_elsewhere();
+            self.edit_in.looking = true;
+            let files: Vec<_> = self
+                .edit_in
+                .sent
+                .iter()
+                .map(|s| (s.path.clone(), s.identity.stamp(), s.seen))
+                .collect();
+            task::spawn(
+                self.tx.clone(),
+                self.context.clone(),
+                move |tx| {
+                    let looks = files
+                        .into_iter()
+                        .map(|(path, baseline, seen)| {
+                            let found = look(&path, baseline, seen, now);
+                            (path, found)
+                        })
+                        .collect();
+                    let _ = tx.send(Event::EditInLooked(Box::new(Looked { looks, at: now })));
+                },
+                move |tx, _| {
+                    let _ = tx.send(Event::EditInLooked(Box::new(Looked {
+                        looks: Vec::new(),
+                        at: now,
+                    })));
+                },
+            );
         }
         ctx.request_repaint_after(WATCH);
     }
 
-    /// The files sent out that another program saved since: their edits
-    /// follow them, their previews are made again, and the one shown opens
-    /// again.
-    pub(in crate::app) fn edited_elsewhere(&mut self) {
-        for (path, was, now) in rewritten(&mut self.edit_in.sent, std::time::Instant::now()) {
-            let Some(library) = &mut self.library else {
+    /// A look at the files sent out came back: each change seen is kept until
+    /// it settles; a settled one is taken up ([`Self::follow_save`]) and
+    /// becomes the file's new version only once that worked, else it is
+    /// tried again after [`SETTLE`].
+    pub(in crate::app) fn sent_looked(&mut self, looked: Looked) {
+        self.edit_in.looking = false;
+        for (path, found) in looked.looks {
+            let Some(index) = self.edit_in.sent.iter().position(|s| s.path == path) else {
                 continue;
             };
-            let ids: Vec<PhotoId> = library
+            match found {
+                Look::Gone => {
+                    self.edit_in.sent.remove(index);
+                }
+                Look::Same => self.edit_in.sent[index].seen = None,
+                Look::Changing(stamp) => {
+                    let sent = &mut self.edit_in.sent[index];
+                    if sent.seen.is_none_or(|(seen, _)| seen != stamp) {
+                        sent.seen = Some((stamp, looked.at));
+                    }
+                }
+                Look::Settled(now) => {
+                    let sent = self.edit_in.sent[index].clone();
+                    let followed = self.follow_save(&sent, &now);
+                    let sent = &mut self.edit_in.sent[index];
+                    match followed {
+                        Ok(()) => {
+                            sent.identity = now;
+                            sent.seen = None;
+                            sent.failing = false;
+                        }
+                        Err(why) => {
+                            sent.seen = Some((now.stamp(), std::time::Instant::now()));
+                            if !std::mem::replace(&mut sent.failing, true) {
+                                self.messages.warn(format!(
+                                    "{} was saved again, but is not updated yet: {why}",
+                                    file_name(&sent.path)
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Takes up `now`, a version of `sent`'s file another program saved:
+    /// while its catalog is open, nothing else holds the catalog and its
+    /// photo is still this file, the photo's edit (made for the version
+    /// before) follows it, its previews are made again and, shown in Develop
+    /// or the Loupe, it opens again. Why not, otherwise, to try again later.
+    fn follow_save(&mut self, sent: &Sent, now: &Identity) -> Result<(), String> {
+        if self.activity.is_busy() {
+            return Err("the catalog is busy".into());
+        }
+        let was = &sent.identity;
+        let path = &sent.path;
+        let mut ids = Vec::new();
+        if let (Some(catalog), Some(photo)) = (&sent.catalog, sent.photo) {
+            let Some(library) = &mut self.library else {
+                return Err("its catalog is closed".into());
+            };
+            if library.session.catalog().location() != catalog {
+                return Err("its catalog is closed".into());
+            }
+            if library.photo(photo).is_none_or(|p| p.path != *path) {
+                return Err("its photo is no longer in the catalog".into());
+            }
+            ids = library
                 .session
                 .photos()
                 .iter()
-                .filter(|p| p.path == path)
+                .filter(|p| p.path == *path)
                 .map(|p| p.id)
                 .collect();
             for id in &ids {
-                if let Err(e) = library.session.follow_rewritten_file(*id, &was, &now) {
-                    self.messages.fail(format!(
-                        "{}'s edit could not follow the file saved again: {e:#}",
-                        file_name(&path)
-                    ));
-                }
+                library
+                    .session
+                    .follow_rewritten_file(*id, was, now)
+                    .map_err(|e| format!("its edit could not follow it: {e:#}"))?;
             }
-            library.file_rewritten(&path);
+            library.file_rewritten(path);
             self.refresh_previews(&ids);
-            let open = self.document.catalog_photo.filter(|id| ids.contains(id));
-            if let Some(id) = open {
-                // The edit open was made for the version before; it is now
-                // this one's, as the catalog's is.
-                if self
-                    .document
-                    .file
-                    .as_ref()
-                    .is_some_and(|f| f.same_photo(&was))
-                {
-                    self.document.file = Some(now);
-                }
-                self.load_raw(path.clone(), Some(id));
-            }
-            self.messages.note(format!(
-                "{} was saved again, and is updated",
-                file_name(&path)
-            ));
         }
+        let shown = self.document.path.as_deref() == Some(path.as_path())
+            && match self.document.catalog_photo {
+                Some(id) => ids.contains(&id),
+                None => sent.photo.is_none(),
+            };
+        if shown {
+            // The edit open was made for the version before; it is now this
+            // one's, as the catalog's is.
+            if self
+                .document
+                .file
+                .as_ref()
+                .is_some_and(|f| f.same_photo(was))
+            {
+                self.document.file = Some(now.clone());
+            }
+            if !self.load_raw(path.clone(), self.document.catalog_photo) {
+                return Err("the photo open could not be opened again".into());
+            }
+        }
+        self.messages.note(format!(
+            "{} was saved again, and is updated",
+            file_name(path)
+        ));
+        Ok(())
     }
 }
 
 /// Adds the file at `path` to the catalog at `location`, with what new photos
-/// start with, first copying `copy_of` there as it is when given, never over
-/// another file: false when the catalog had it already.
-fn import(location: &CatalogLocation, path: &Path, copy_of: Option<&Path>) -> anyhow::Result<bool> {
+/// start with; for a `copy`, `path` is the photo's file, copied first beside
+/// it as it is under the next free `-Edit` name, staged and published without
+/// ever replacing a file, the name taken by a file that appears meanwhile
+/// moved on. The file added, and false when the catalog had it already.
+fn import(location: &CatalogLocation, path: &Path, copy: bool) -> anyhow::Result<(PathBuf, bool)> {
     use anyhow::Context;
-    if let Some(from) = copy_of {
-        let mut to = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .with_context(|| format!("{} could not be created", path.display()))?;
-        std::io::copy(&mut std::fs::File::open(from)?, &mut to)
-            .with_context(|| format!("{} could not be copied", from.display()))?;
-    }
+    let path = if copy {
+        let folder = crate::storage::parent_dir(path);
+        let mut staged = crate::storage::staging_file(folder)
+            .with_context(|| format!("a copy could not be made in {}", folder.display()))?;
+        std::io::copy(&mut std::fs::File::open(path)?, staged.as_file_mut())
+            .with_context(|| format!("{} could not be copied", path.display()))?;
+        staged.as_file().sync_all()?;
+        loop {
+            let target = copy_name(path);
+            match crate::storage::persist_noclobber(staged, &target) {
+                Ok(_) => break target,
+                Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => staged = e.file,
+                Err(e) => return Err(e.error.into()),
+            }
+        }
+    } else {
+        path.to_path_buf()
+    };
     let mut catalog = crate::catalog::Catalog::open(location)?;
     let added = catalog
         .import_files(
-            crate::storage::parent_dir(path),
-            std::slice::from_ref(&path.to_path_buf()),
+            crate::storage::parent_dir(&path),
+            std::slice::from_ref(&path),
             &crate::catalog_session::new_photo_defaults(),
             || true,
         )?
@@ -619,7 +843,8 @@ fn import(location: &CatalogLocation, path: &Path, copy_of: Option<&Path>) -> an
             FileRefusal::Ambiguous => "more than one folder of the catalog is where it is",
         });
     }
-    Ok(!added.added.is_empty())
+    let added = !added.added.is_empty();
+    Ok((path, added))
 }
 
 /// Where Edit a Copy copies `source`: beside it, `<name>-Edit` with its own

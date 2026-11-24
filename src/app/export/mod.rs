@@ -792,7 +792,11 @@ impl Editor {
                 return;
             }
         };
-        editing.originals = scope.photos.iter().map(|p| p.id).collect();
+        editing.originals = scope
+            .photos
+            .iter()
+            .map(|p| p.id.map(|id| (id, p.source.clone())))
+            .collect();
         match batch::plan(&batch, &settings, Some(Existing::Unique)) {
             Ok(plan) => {
                 let pending = Pending {

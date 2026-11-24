@@ -14,6 +14,12 @@ impl Editor {
         let Some(mut asking) = self.edit_in.asking.take() else {
             return;
         };
+        // Its photos are another catalog's ids once another is open.
+        if !self.asking_here(&asking) {
+            self.messages
+                .warn("Edit In cancelled: another catalog is open now");
+            return;
+        }
         let palette = crate::app::ui::theme::palette(ctx);
         let program = crate::platform::open_with::program_name(&asking.editor);
         let title = match asking.ids.len() {

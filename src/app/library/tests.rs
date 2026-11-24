@@ -1915,6 +1915,50 @@ fn a_rewritten_files_thumbnail_stays_until_the_new_one_comes() -> Result<()> {
     assert!(library.texture(&photo).is_some());
     Ok(())
 }
+/// A thumbnail asked for before the file was saved again, still out when it
+/// was, is of the version before: what it brings is dropped, and the new one
+/// asked for.
+#[test]
+fn a_thumbnail_asked_for_before_a_save_is_dropped() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = tx;
+    let photo = library.session.photos()[0].clone();
+    library
+        .cache
+        .insert_thumb(&ctx, photo.path.clone(), &image::RgbImage::new(2, 2));
+    let old = library.texture(&photo).unwrap().id();
+    // A request out (the cache's, for another monitor profile, say) when the save comes.
+    library.cache.pending.insert(photo.path.clone());
+    library.file_rewritten(&photo.path);
+    let (results, rx_results) = std::sync::mpsc::sync_channel(2);
+    library.cache.thumb_rx = rx_results;
+    let result = |size| super::previews::PreviewResult {
+        path: photo.path.clone(),
+        image: Some(image::RgbImage::new(size, size)),
+        display: Default::default(),
+        cache_error: None,
+        skipped: false,
+    };
+    results.send(result(3))?;
+    library.cache.poll(&ctx);
+    assert_eq!(
+        library.texture(&photo).unwrap().id(),
+        old,
+        "the old one kept"
+    );
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1, "asked for again");
+    results.send(result(4))?;
+    library.cache.poll(&ctx);
+    assert_ne!(
+        library.texture(&photo).unwrap().id(),
+        old,
+        "the new one shown"
+    );
+    Ok(())
+}
 /// The views publish what they showed last frame before asking for this
 /// frame's thumbnails: one shown for the first time is made, not skipped by
 /// a worker that takes it before the next frame publishes it.

@@ -194,8 +194,10 @@ window is in front or not (on a second screen, say). When the editor has saved o
 and the file has not changed for a third of a second, its thumbnail and previews
 are made again, the ones shown staying until the new ones are ready, and the photo
 is opened again if it is the one shown: about a second after the save for a
-100 MB TIFF. An edit made to the file in RAWmakase stays
-with it.
+100 MB TIFF. An edit made to the file in RAWmakase stays with it, as do changes
+not saved yet in Develop. Saves are followed only while the catalog the file was
+sent from is open and its photo is still that file; while the catalog is busy (an
+import, a folder change), they are taken up once it is free.
 
 ## Unused masks and patches
 
