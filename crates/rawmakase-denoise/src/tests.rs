@@ -315,6 +315,78 @@ fn a_gpu_failure_after_good_tiles_reruns_on_the_cpu_under_the_cpus_key() {
     assert_eq!(f.behaviour.runs.load(Ordering::SeqCst), runs);
 }
 
+/// An export alone on a GPU job that fails follows it to the CPU: the moved job
+/// runs for it though no export waits on the CPU's key yet.
+#[test]
+fn an_export_follows_its_job_to_the_cpu() {
+    let f = fixture(
+        Provider::CoreML,
+        Behaviour {
+            gpu_poison_after: Some(1),
+            ..Default::default()
+        },
+    );
+    let photo = f.photo("a.raw");
+    export(&f.service, &photo, &f.plain(), Cancel::NEVER).unwrap();
+    assert_eq!(
+        *f.behaviour.loads.lock().unwrap(),
+        [Provider::CoreML, Provider::Cpu]
+    );
+    assert!(
+        f.service
+            .cache()
+            .contains(&key(&photo, Provider::Cpu).unwrap())
+    );
+}
+
+/// An export waiting on a queued GPU job, which another job's GPU failure moves to
+/// the CPU, still gets its result (kept for it, or queued again when it follows:
+/// [`exported_counts_waiters_on_a_key_moved_here`] tells the two apart).
+#[test]
+fn an_export_on_a_queued_job_moved_to_the_cpu_gets_its_result() {
+    let f = fixture(
+        Provider::CoreML,
+        Behaviour {
+            gpu_poison_after: Some(1),
+            ..Default::default()
+        },
+    );
+    let plain = f.plain();
+    let gate = f.behaviour.gate.lock().unwrap();
+    let (first, _a) = f.request(&f.photo("a.raw"), &plain, None);
+    std::thread::sleep(Duration::from_millis(50));
+    let b = f.photo("b.raw");
+    let export = {
+        let (service, photo, plain) = (f.service.clone(), b.clone(), plain);
+        std::thread::spawn(move || export(&service, &photo, &plain, Cancel::NEVER))
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    drop(gate);
+    assert!(matches!(until_final(&first).last(), Some(State::Ready(_))));
+    export.join().unwrap().unwrap();
+    assert!(f.service.cache().contains(&key(&b, Provider::Cpu).unwrap()));
+    assert!(
+        !f.service
+            .cache()
+            .contains(&key(&b, Provider::CoreML).unwrap())
+    );
+}
+
+/// A job runs for an export waiting on its key, or on a key moved to it whose
+/// waiter has not followed yet; once every export has left, for none.
+#[test]
+fn exported_counts_waiters_on_a_key_moved_here() {
+    let (gpu, cpu) = ("b-gpu".to_string(), "b-cpu".to_string());
+    let mut waiting = HashMap::from([(gpu.clone(), 1)]);
+    let outcomes = HashMap::from([(gpu.clone(), Outcome::Moved(cpu.clone()))]);
+    assert!(exported(&waiting, &outcomes, &cpu));
+    assert!(!exported(&waiting, &HashMap::new(), &cpu));
+    waiting.insert(gpu, 0);
+    assert!(!exported(&waiting, &outcomes, &cpu));
+    waiting.insert(cpu.clone(), 1);
+    assert!(exported(&waiting, &outcomes, &cpu));
+}
+
 #[test]
 fn failures_and_panics_are_reported_and_the_worker_carries_on() {
     let f = fixture(
@@ -452,6 +524,30 @@ fn a_cancelled_export_stops_waiting() {
     std::thread::sleep(Duration::from_millis(100));
     cancel.store(true, Ordering::Relaxed);
     assert!(export.join().unwrap().is_err());
+}
+
+/// An export cancelled while its job waits behind another takes the job with it:
+/// nobody wants that result, and it would hold the worker for a whole run.
+#[test]
+fn a_queued_job_whose_export_was_cancelled_is_dropped() {
+    let f = fixture(Provider::Cpu, Behaviour::default());
+    let plain = f.plain();
+    let gate = f.behaviour.gate.lock().unwrap();
+    let (first, _a) = f.request(&f.photo("a.raw"), &plain, None);
+    std::thread::sleep(Duration::from_millis(50));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let export = {
+        let (service, photo, plain, cancel) =
+            (f.service.clone(), f.photo("b.raw"), plain, cancel.clone());
+        std::thread::spawn(move || export(&service, &photo, &plain, Cancel::new(&cancel)))
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    cancel.store(true, Ordering::Relaxed);
+    assert!(export.join().unwrap().is_err());
+    drop(gate);
+    assert!(matches!(until_final(&first).last(), Some(State::Ready(_))));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(f.behaviour.runs.load(Ordering::SeqCst), tiles());
 }
 
 /// Removing the model: the running job is cancelled, the worker drops its sessions,
@@ -826,7 +922,6 @@ fn queued_jobs_fail_when_the_worker_dies_and_the_next_request_restarts_it() {
                     let _ = tx.lock().unwrap().send(u.state);
                 }),
             )],
-            waiters: 0,
         });
         queue.unload = true;
     }
@@ -881,7 +976,6 @@ fn a_request_while_the_dying_worker_reports_its_failures_starts_a_new_worker() {
                     }
                 }),
             )],
-            waiters: 0,
         });
         queue.unload = true;
     }
