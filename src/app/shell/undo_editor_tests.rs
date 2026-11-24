@@ -398,6 +398,24 @@ fn undo_of_a_removed_copy_never_writes_the_next_copy() -> anyhow::Result<()> {
 }
 
 #[test]
+fn a_removed_copys_undone_steps_leave_redo() -> anyhow::Result<()> {
+    let (_dir, _ctx, mut editor, [a, _]) = two_photo_editor()?;
+    let library = editor.library.as_mut().unwrap();
+    let copy = library.create_virtual_copy(a)?.value;
+    library.edit_metadata(
+        copy,
+        crate::app::library::photo_metadata::Edit::Rating(5),
+        false,
+    )?;
+    editor.sync_undo();
+    editor.undo();
+    assert!(editor.undo_log.can_redo());
+    editor.remove_virtual_copy(copy);
+    assert!(!editor.undo_log.can_redo(), "the copy's rating leaves Redo");
+    Ok(())
+}
+
+#[test]
 fn a_change_to_several_photos_keeps_undoing_those_left_after_one_is_removed() -> anyhow::Result<()>
 {
     let (_dir, _ctx, mut editor, [a, b]) = two_photo_editor()?;
