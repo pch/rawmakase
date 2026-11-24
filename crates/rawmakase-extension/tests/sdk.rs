@@ -1090,10 +1090,9 @@ fn an_export_destination_gets_checked_deliveries_and_its_answer_is_checked() {
         let error = host.request(AppRequest::ExportFile(file)).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidRequest);
     }
-    // An end must count the files received: none here.
+    // An end must count the files received: none here. The delivery stays
+    // open, as the app stops it next.
     assert!(host.request(AppRequest::ExportEnd(end.clone())).is_err());
-    let (begin, _, _) = delivery();
-    host.request(AppRequest::ExportBegin(begin)).unwrap();
     let ended = host
         .request(AppRequest::ExportEnd(ExportEnd { files: 0, ..end }))
         .unwrap();

@@ -699,7 +699,7 @@ impl Extension {
                 export_api(api)?;
                 let open = self
                     .deliveries
-                    .remove(&end.delivery)
+                    .get(&end.delivery)
                     .filter(|o| o.destination == end.destination)
                     .ok_or_else(|| out_of_order(format!("no delivery {} is open", end.delivery)))?;
                 if usize::try_from(end.files).ok() != Some(open.files.len()) {
@@ -710,8 +710,12 @@ impl Extension {
                         open.files.len()
                     )));
                 }
+                // Kept until it ends well: a failed or cancelled end is
+                // followed by `export-stopped`, which reaches `stopped`.
+                let id = end.delivery.clone();
                 let ended = self.destination(&end.destination)?.end(cx, end)?;
                 ended.validate()?;
+                self.deliveries.remove(&id);
                 Ok(serde_json::to_value(ended).expect("a result is JSON"))
             }
         }

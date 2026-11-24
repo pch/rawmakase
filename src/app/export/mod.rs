@@ -761,14 +761,17 @@ impl Editor {
                 let held = plan
                     .entries
                     .iter()
+                    .filter(|e| e.write != batch::Write::Skip)
                     .find_map(|e| self.delivery_holds(&e.target))
                     .map(str::to_string);
                 match held {
-                    Some(name) if answer != Some(Existing::Unique) => {
+                    Some(name) if pending.settings.existing != Existing::Unique => {
                         self.messages.note(format!(
                             "Files still being sent to {name} are kept: this export's got names of their own"
                         ));
-                        self.plan_export(pending, Some(Existing::Unique));
+                        // This batch only: the settings saved keep their choice.
+                        pending.settings.existing = Existing::Unique;
+                        self.plan_export(pending, None);
                     }
                     _ => self.queue_batch(pending, plan, None),
                 }

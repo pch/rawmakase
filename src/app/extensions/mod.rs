@@ -1830,8 +1830,11 @@ impl Host {
                 Pending::Mask { .. } => mask_generator::GENERATE_DEADLINE,
                 Pending::Retouch { .. } => retouch_generator::GENERATE_DEADLINE,
                 Pending::MaskSetup { .. } => mask_generator::SETUP_DEADLINE,
+                // A stopped delivery's handler may still be finishing in the
+                // program, which serves requests in turn: the next one's
+                // beginning waits behind it.
                 Pending::Delivery {
-                    step: destinations::Step::End,
+                    step: destinations::Step::End | destinations::Step::Begin,
                     ..
                 } => destinations::END_STALL,
                 _ => self.request_deadline,
@@ -2794,9 +2797,10 @@ impl Host {
                     let open = e.delivering.remove(&delivery);
                     // A delivery it took and can't finish now: what it still
                     // sends should stop.
-                    if let Some(open) =
-                        open.filter(|_| result.is_err() && step != destinations::Step::Begin)
-                    {
+                    // A beginning past its deadline may still have been taken.
+                    let taken = step != destinations::Step::Begin
+                        || matches!(&result, Err(e) if e.code == ErrorCode::Deadline);
+                    if let Some(open) = open.filter(|_| result.is_err() && taken) {
                         destinations::tell_stopped(e, &delivery, &open);
                     }
                 }

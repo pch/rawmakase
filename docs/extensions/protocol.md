@@ -516,8 +516,10 @@ catalog doesn't know it. The file is written whole when the request is sent;
 the app doesn't touch it afterwards, and nor should the program, which writes
 what it makes (a gallery's pages) beside it or elsewhere. Until the delivery is
 over, a later export doesn't write over it either: one set to overwrite a file
-a delivery holds names its own copies apart, as Use Unique Names does, and the
-top bar says so. The reply is `null`
+a delivery holds (its folder's links resolved) names its own copies apart, as
+Use Unique Names does, and the top bar says so. An export planned before the
+delivery's file got its final name (a `-2` taken while it ran) isn't checked
+again when it writes. The reply is `null`
 once the file is received: how it went is said in `export.end`'s answer, so a
 destination answers at once and uploads meanwhile.
 
@@ -574,8 +576,9 @@ files to Web Gallery"), with the message, the location, why each file wasn't
 sent and each file's URL or remote id when the line is opened. The exported
 files stay either way.
 
-**Deadlines.** `export.begin` and `export.file` have the usual request
-deadline. `export.end` has 2 minutes without news: each `progress` the program
+**Deadlines.** `export.file` has the usual request deadline. `export.begin`
+has 2 minutes, as it may wait behind a stopped delivery's handler still
+finishing in the program. `export.end` has 2 minutes without news: each `progress` the program
 sends for it (`Context::progress` in the SDK) moves its deadline 2 minutes
 ahead as the app reads it, so a long upload that reports how far it is never runs out. The top
 bar shows the latest progress under "Sending to Web Gallery" while the export
@@ -587,7 +590,11 @@ Preferences > Extensions, ends the delivery: a request in flight is cancelled
 program gets the event `export-stopped` with the delivery and destination, so
 it stops what it still sends in the background (`ExportDestination::stopped`
 in the SDK; `collected` forgets the delivery). A request of a delivery the
-program took that fails (its deadline, say) stops it the same way. So do
+program took that fails (its deadline, say; an `export.begin` past its
+deadline too, which the program may still have taken) stops it the same way,
+and an `export.end` that fails or is cancelled leaves the delivery open in the
+SDK until that `export-stopped` comes. Disabling the extension and quitting
+send no `export-stopped`: the program gets `quitting`, or is stopped. So do
 disabling the extension and quitting. Cancelling the export doesn't stop the
 delivery: its `export.end` comes with `cancelled`, after the files written
 before the cancel. A program that exits or crashes mid-delivery ends it; its

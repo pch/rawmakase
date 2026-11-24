@@ -839,6 +839,9 @@ impl Editor {
                         self.extensions.retry(id);
                     }
                     if running && ui.button("Stop").clicked() {
+                        // The editor's deliveries go first, so the outcomes of
+                        // their cancelled requests start none in their place.
+                        self.stop_deliveries_to(id);
                         let outcomes = self.extensions.stop_work(id);
                         self.extension_outcomes(outcomes);
                     }

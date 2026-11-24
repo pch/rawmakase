@@ -1813,6 +1813,28 @@ fn a_file_goes_to_the_destination_before_the_export_ends_and_is_held_until_then(
     answered(&mut e, &id, Step::File(0)).unwrap();
     // Its files and the one still planned are held from a later export.
     assert_eq!(e.delivery_holds(&targets[1]), Some("Index File"));
+    // An export set to overwrite a held file names its copy apart, though its
+    // settings say Overwrite.
+    let mut over = settings(&out);
+    over.existing = Existing::Overwrite;
+    over.rename = false;
+    let queued = e.exports.queued.len();
+    e.plan_export(
+        Pending {
+            batch: vec![photos[0].clone()],
+            settings: over,
+            watermark: None,
+            left_out: Vec::new(),
+            conflicts: Vec::new(),
+        },
+        None,
+    );
+    assert!(
+        e.messages.line().contains("are kept"),
+        "{}",
+        e.messages.line()
+    );
+    assert_eq!(e.exports.queued.len(), queued + 1);
     e.delivery_exported(&id, "Exported 1 of 2".into(), false);
     answered(&mut e, &id, Step::End).unwrap();
 }

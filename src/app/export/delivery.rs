@@ -93,7 +93,7 @@ impl Editor {
         let delivery = Delivery {
             to,
             begin: Some(begin),
-            paths: targets.iter().cloned().collect(),
+            paths: targets.iter().map(|t| same_file(t)).collect(),
             facts: batch
                 .iter()
                 .map(|p| FileFacts::of(p, descriptive))
@@ -146,11 +146,30 @@ impl Editor {
     /// Whether a delivery under way holds the file at `path`: a later export
     /// mustn't write over it.
     pub(super) fn delivery_holds(&self, path: &Path) -> Option<&str> {
+        let path = same_file(path);
         self.exports
             .deliveries
             .values()
-            .find(|d| d.paths.contains(path))
+            .find(|d| d.paths.contains(&path))
             .map(|d| d.to.name.as_str())
+    }
+
+    /// Stop on extension `extension`'s page: its deliveries, under way and
+    /// waiting their turn, end here too, and none starts in their place.
+    pub(in crate::app) fn stop_deliveries_to(&mut self, extension: &str) {
+        let ids: Vec<String> = self
+            .exports
+            .deliveries
+            .iter()
+            .filter(|(_, d)| d.to.extension == extension)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            if let Some(d) = self.exports.deliveries.remove(&id) {
+                self.messages
+                    .note(format!("Sending to {} stopped", d.to.name));
+            }
+        }
     }
 
     /// A photo of delivery `id`'s batch has its outcome: an exported file
@@ -165,7 +184,7 @@ impl Editor {
         let Some(facts) = d.facts.get(index) else {
             return;
         };
-        d.paths.insert(path.clone());
+        d.paths.insert(same_file(path));
         d.waiting.push(facts.file(id, index, path, *size));
         self.advance_delivery(id);
     }
@@ -359,6 +378,18 @@ impl Editor {
         if stop.clicked() {
             self.stop_delivery(&id);
         }
+    }
+}
+
+/// `path` with its folder's links resolved, so one file reached through a
+/// linked folder is the same file; as it is when the folder can't be read.
+fn same_file(path: &Path) -> PathBuf {
+    match (
+        path.parent().and_then(|p| p.canonicalize().ok()),
+        path.file_name(),
+    ) {
+        (Some(folder), Some(name)) => folder.join(name),
+        _ => path.to_path_buf(),
     }
 }
 
