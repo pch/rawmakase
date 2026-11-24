@@ -118,7 +118,7 @@
     },
     "ExportDestination": {
       "additionalProperties": false,
-      "description": "An `[[export-destination]]`: once an export has written its files, the\napp sends them to the program (`export.deliver`), which sends them on: an\nupload, a web gallery, a printer. The Export dialog offers it under Send\nTo.",
+      "description": "An `[[export-destination]]`: as an export writes its files, the app\nsends them to the program (`export.begin`, `export.file`, `export.end`),\nwhich sends them on: an upload, a web gallery, a printer. The Export\ndialog offers it under Send To.",
       "properties": {
         "id": {
           "description": "Unique among the extension's export destinations.",

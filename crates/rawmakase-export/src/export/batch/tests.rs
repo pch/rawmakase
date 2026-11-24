@@ -16,7 +16,7 @@ fn photo(source: &Path) -> BatchPhoto {
         values: Default::default(),
         naming: Default::default(),
         place: None,
-        flag: Some(0),
+        catalog: Some(Default::default()),
     }
 }
 /// Export settings into `folder`, as small TIFFs.
@@ -214,7 +214,7 @@ impl Fixture {
             .zip(&self.photos)
             .map(|((record, naming), (_, path))| {
                 let name = path.file_name().unwrap().to_string_lossy().into();
-                BatchPhoto::from_record(record, path.clone(), name, naming)
+                BatchPhoto::from_record(record, None, path.clone(), name, naming)
             })
             .collect())
     }
@@ -546,6 +546,38 @@ fn the_queue_runs_one_batch_at_a_time_and_a_waiting_one_can_be_removed() -> Resu
             .iter()
             .all(|(_, o)| matches!(o[0], Outcome::Exported { .. }))
     );
+    Ok(())
+}
+
+#[test]
+fn the_queue_tells_each_photo_as_its_file_is_in_place_before_the_batch_ends() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng"])?;
+    let photos = f.batch_photos()?;
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let each = heard.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ended = heard.clone();
+    let queue = crate::export::queue::Queue::with_each(
+        lanes(2),
+        move |ticket, index, outcome| {
+            // The file is there when the photo is told.
+            let Outcome::Exported { path, .. } = outcome else {
+                panic!("{outcome:?}");
+            };
+            assert!(path.is_file());
+            each.lock().unwrap().push((ticket, index));
+        },
+        move |ticket, outcomes| {
+            let _ = tx.send((ticket, outcomes, ended.lock().unwrap().len()));
+        },
+        || {},
+    );
+    let ticket = queue.submit(f.batch(photos, settings(&f.out())));
+    let (finished, outcomes, told) = rx.recv_timeout(std::time::Duration::from_secs(120))?;
+    assert_eq!((finished, outcomes.len(), told), (ticket, 2, 2));
+    let mut heard = heard.lock().unwrap().clone();
+    heard.sort_unstable();
+    assert_eq!(heard, [(ticket, 0), (ticket, 1)]);
     Ok(())
 }
 

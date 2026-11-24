@@ -2,6 +2,7 @@
 use super::{Editor, Status};
 use crate::app::export::naming::menu::Choice;
 use crate::app::export::naming::presets::Preset;
+use crate::app::extensions::FormOf;
 use crate::app::ui::design::{Tone, button, radius, size, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{confirm_modal, form_row, modal_frame, pretty_path, primary_button};
@@ -696,13 +697,13 @@ impl Editor {
             let label = option.name.clone().unwrap_or_else(|| option.id.clone());
             let mut set = None;
             form_row(ui, &label, |ui| {
-                set = self.setting_control(ui, key, option, &value);
+                set = self.setting_control(ui, FormOf::Export, key, option, &value);
             });
             if let Some(help) = &option.help {
                 form_row(ui, "", |ui| crate::app::extensions::setting_help(ui, help));
             }
             if let Some(value) = set {
-                self.extension_page.forget_draft(key, &option.id);
+                self.exports.option_form.forget_draft(key, &option.id);
                 choose_option(&mut self.exports.draft, key, option, value);
             }
         }
@@ -715,7 +716,7 @@ impl Editor {
         let Some(key) = self.exports.draft.send_to.clone() else {
             return;
         };
-        let drafts = self.extension_page.take_drafts(&key);
+        let drafts = self.exports.option_form.take_drafts(&key);
         if !keep {
             return;
         }
@@ -797,7 +798,6 @@ impl Editor {
     }
 }
 
-/// A Lightroom section band.
 /// Send To: Nowhere, or an export destination of an enabled extension. One
 /// that can't take the files now is listed, disabled, with why; chosen, it
 /// is named with why beside it, and the export runs without it.
@@ -869,6 +869,7 @@ pub(super) fn choose_option(
     }
 }
 
+/// A Lightroom section band.
 fn section(ui: &mut egui::Ui, title: &str) {
     let palette = theme::palette(ui.ctx());
     ui.add_space(space::S);

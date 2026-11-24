@@ -534,6 +534,16 @@ impl Extension {
         }
     }
 
+    /// The export destination `id`, or why there is none.
+    fn destination(&mut self, id: &str) -> Result<&mut Box<dyn ExportDestination>, RemoteError> {
+        self.export_destinations.get_mut(id).ok_or_else(|| {
+            RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!("this program implements no export destination {id}"),
+            )
+        })
+    }
+
     fn dispatch(
         &mut self,
         cx: &Context,
@@ -627,23 +637,25 @@ impl Extension {
                 drop((image, coverage, result, handles));
                 answer.map(|done| serde_json::to_value(done).expect("a result is JSON"))
             }
-            AppRequest::ExportDeliver(deliver) => {
-                if api < EXPORT_DESTINATION_API {
-                    return Err(RemoteError::new(
-                        ErrorCode::InvalidRequest,
-                        format!(
-                            "export.deliver needs api {EXPORT_DESTINATION_API}, and this program serves {api}"
-                        ),
-                    ));
-                }
-                deliver.validate()?;
-                let Some(destination) = self.export_destinations.get_mut(&deliver.destination)
-                else {
-                    return Err(unknown("export destination", &deliver.destination));
-                };
-                let delivered = destination.deliver(cx, deliver)?;
-                delivered.validate()?;
-                Ok(serde_json::to_value(delivered).expect("a result is JSON"))
+            AppRequest::ExportBegin(begin) => {
+                export_api(api)?;
+                begin.validate()?;
+                self.destination(&begin.destination)?
+                    .begin(cx, begin)
+                    .map(|()| Value::Null)
+            }
+            AppRequest::ExportFile(file) => {
+                export_api(api)?;
+                file.validate()?;
+                self.destination(&file.destination)?
+                    .file(cx, file)
+                    .map(|()| Value::Null)
+            }
+            AppRequest::ExportEnd(end) => {
+                export_api(api)?;
+                let ended = self.destination(&end.destination)?.end(cx, end)?;
+                ended.validate()?;
+                Ok(serde_json::to_value(ended).expect("a result is JSON"))
             }
         }
     }
@@ -651,6 +663,20 @@ impl Extension {
 
 /// Maps a request's buffer as its access says: an input to read, an output
 /// to write.
+/// Refuses a delivery's request when serving an `api` without export
+/// destinations.
+fn export_api(api: u32) -> Result<(), RemoteError> {
+    if api < EXPORT_DESTINATION_API {
+        return Err(RemoteError::new(
+            ErrorCode::InvalidRequest,
+            format!(
+                "export destinations need api {EXPORT_DESTINATION_API}, and this program serves {api}"
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn map(
     buffer: &rawmakase_extension_protocol::buffer::Buffer,
     name: &str,

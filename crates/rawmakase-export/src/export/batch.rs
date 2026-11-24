@@ -42,9 +42,18 @@ pub struct BatchPhoto {
     /// sequence numbers: a photo left out keeps its number. `None` numbers it by
     /// its place in the batch.
     pub place: Option<(usize, usize)>,
-    /// Its flag in the catalog: 1 picked, -1 rejected, 0 neither; `None`
-    /// for a photo outside the catalog, whose rating and label are none too.
-    pub flag: Option<i32>,
+    /// What the catalog knows of it beyond `values`; `None` for a photo
+    /// outside the catalog, whose `values` are empty.
+    pub catalog: Option<CatalogFacts>,
+}
+
+/// What the catalog knows of a batch photo beyond its [`Values`] (its
+/// title, caption, keywords, rating and label).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CatalogFacts {
+    /// Its UUID: `None` until the catalog's next open for a photo an older
+    /// release added while this one had it open.
+    pub uuid: Option<rawmakase_model::ids::PhotoUuid>,
 }
 
 /// The edit a photo is exported with.
@@ -64,9 +73,11 @@ pub enum Edit {
 }
 
 impl BatchPhoto {
-    /// A photo of the batch from its catalog record, named from `naming`.
+    /// A photo of the batch from its catalog record and UUID, named from
+    /// `naming`.
     pub fn from_record(
         record: PhotoRecord,
+        uuid: Option<rawmakase_model::ids::PhotoUuid>,
         source: PathBuf,
         name: String,
         naming: NameFields,
@@ -76,7 +87,7 @@ impl BatchPhoto {
             name,
             naming,
             place: None,
-            flag: Some(record.flag),
+            catalog: Some(CatalogFacts { uuid }),
             edit: Edit::Catalog(record.edit),
             values: Values {
                 descriptive: record.descriptive,
@@ -410,6 +421,20 @@ pub fn run(
     cancel: Cancel<'_>,
     progress: impl Fn(Progress) + Sync,
 ) -> Vec<Outcome> {
+    run_each(batch, lanes, cancel, progress, |_, _| {})
+}
+
+/// [`run`], also telling `each` every photo's outcome as soon as it has one,
+/// with the photo's index: an exported file is in place by then. Photos run
+/// side by side, so they come in the order they finish, from the lanes'
+/// threads, and every one comes before `run_each` returns.
+pub fn run_each(
+    batch: &Batch,
+    lanes: Lanes,
+    cancel: Cancel<'_>,
+    progress: impl Fn(Progress) + Sync,
+    each: impl Fn(usize, &Outcome) + Sync,
+) -> Vec<Outcome> {
     let total = batch.photos.len();
     // A preset's image or font, read once: every photo gets the same watermark,
     // however long the batch runs. The Simple Copyright Watermark takes each
@@ -451,6 +476,7 @@ pub fn run(
                     None => photo(),
                 }
             };
+            each(index, &outcome);
             outcomes.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(outcome);
         }
     };

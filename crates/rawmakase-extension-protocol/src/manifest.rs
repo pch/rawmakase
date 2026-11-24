@@ -568,10 +568,10 @@ impl Source {
     }
 }
 
-/// An `[[export-destination]]`: once an export has written its files, the
-/// app sends them to the program (`export.deliver`), which sends them on: an
-/// upload, a web gallery, a printer. The Export dialog offers it under Send
-/// To.
+/// An `[[export-destination]]`: as an export writes its files, the app
+/// sends them to the program (`export.begin`, `export.file`, `export.end`),
+/// which sends them on: an upload, a web gallery, a printer. The Export
+/// dialog offers it under Send To.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExportDestination {

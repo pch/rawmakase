@@ -495,6 +495,11 @@ impl Editor {
                 Event::EditInChanged(paths) => self.sent_changed(paths),
                 Event::EditInUnwatched(paths) => self.sent_unwatched(paths),
                 Event::EditInLaunched(launched) => self.editor_launched(*launched),
+                Event::PhotoExported {
+                    ticket,
+                    index,
+                    outcome,
+                } => self.photo_exported(ticket, index, &outcome),
                 Event::BatchExported { ticket, outcomes } => self.batch_exported(ticket, outcomes),
                 _ => {}
             }

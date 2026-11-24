@@ -180,9 +180,9 @@ impl Editor {
     /// sent once, and wait behind whatever runs in the program as any command
     /// does.
     fn command_input_busy(&self) -> bool {
-        self.command_input.as_ref().is_some_and(|c| {
-            c.kind == Input::Prompt && self.extensions.command_running(&c.extension)
-        })
+        self.command_input
+            .as_ref()
+            .is_some_and(|c| c.kind == Input::Prompt && self.extensions.working(&c.extension))
     }
 
     /// A click on the photo at `at` (image frame, 0 to 1); an Alt-click has

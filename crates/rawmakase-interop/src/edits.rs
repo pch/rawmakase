@@ -73,8 +73,6 @@ pub struct PhotoRecord {
     pub keywords: Vec<crate::metadata::Keyword>,
     pub rating: i32,
     pub label: String,
-    /// Its flag: 1 picked, -1 rejected, 0 neither.
-    pub flag: i32,
     /// The capture time the catalog sorts by ("2026-05-04 10:21:33.000"), empty
     /// when unknown.
     pub captured: String,

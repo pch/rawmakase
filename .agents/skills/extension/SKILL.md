@@ -74,10 +74,13 @@ people hit:
   outline in white or `currentColor`, which is the tool's rail button.
   `cargo rawmakase package` refuses one RAWmakase can't draw.
 - **Export destinations** (a web gallery, an upload) need `api = 4` and a
-  program; they get one `export.deliver` per export, once its files are
-  written, and implement `ExportDestination`. Per-export choices (a
+  program; they get `export.begin`, an `export.file` for each file as it is
+  written (answer on receipt), and `export.end` (answer with a result per
+  file), and implement `ExportDestination`, or wrap a closure in
+  `collected` to get the whole delivery at its end. Keep a photo by its
+  `photo_uuid`, never by an integer photo id. Per-export choices (a
   gallery's title) are `[[export-destination.option]]`s, in a
-  `[[setting]]`'s shape, read with `ExportDeliver::option_str` and friends.
+  `[[setting]]`'s shape, read with `ExportBegin::option_str` and friends.
 - **Sources** (watched folders, tethering) need `api = 3` and
   `[program] start = "with-app"`. A source is off until the user turns it on
   for a catalog on the extension's page, so a freshly installed one reports

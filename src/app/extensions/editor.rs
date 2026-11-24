@@ -186,11 +186,11 @@ impl Editor {
                     result,
                     buffers,
                 } => self.retouch_answered(&extension, ticket, result, buffers),
-                Outcome::Delivered {
-                    name,
-                    exported,
+                Outcome::Delivery {
+                    delivery,
+                    step,
                     result,
-                } => self.delivered(&name, &exported, result),
+                } => self.delivery_answered(&delivery, step, result),
             }
         }
         self.check_mask_requests();

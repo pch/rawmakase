@@ -1063,6 +1063,7 @@ impl Editor {
                     }
                     let start = ui.cursor().left();
                     self.export_progress(ui);
+                    self.delivery_progress(ui);
                     self.preview_build_progress(ui);
                     self.editable_build_progress(ui);
                     self.folder_sync_progress(ui);

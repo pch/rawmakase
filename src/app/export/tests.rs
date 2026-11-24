@@ -1522,7 +1522,7 @@ fn said(e: &mut Editor, ctx: &egui::Context, start: &str) -> String {
 }
 
 #[test]
-fn send_to_sends_the_written_files_and_says_what_was_exported_then_sent() -> anyhow::Result<()> {
+fn send_to_sends_each_file_as_it_is_written_and_says_how_each_went() -> anyhow::Result<()> {
     let (dir, mut e, ids, ctx) = editor()?;
     load_destinations(&mut e, dir.path());
     let offered: Vec<_> = e
@@ -1548,8 +1548,19 @@ fn send_to_sends_the_written_files_and_says_what_was_exported_then_sent() -> any
             ),
         ]
     );
+    // A virtual copy of the first photo, with a UUID of its own.
+    let library = e.library.as_mut().unwrap();
+    let copy = library.create_virtual_copy(ids[0])?.value;
+    let uuids = library
+        .session
+        .catalog()
+        .photo_uuids(&[ids[0], copy])?
+        .into_iter()
+        .map(|u| u.expect("a UUID").to_string())
+        .collect::<Vec<_>>();
+    assert_ne!(uuids[0], uuids[1]);
     let out = dir.path().join("out");
-    let scope = e.export_scope_of(vec![ids[0], ids[2]]).expect("photos");
+    let scope = e.export_scope_of(vec![ids[0], copy]).expect("photos");
     let mut chosen = settings(&out);
     chosen.send_to = Some("dev.rawmakase.destinations/index".into());
     // The heading typed under Send To goes with the files.
@@ -1557,37 +1568,69 @@ fn send_to_sends_the_written_files_and_says_what_was_exported_then_sent() -> any
         "dev.rawmakase.destinations/index".into(),
         [("heading".to_string(), serde_json::json!("Our Wedding"))].into(),
     );
-    export(&mut e, scope.clone(), chosen.clone())?;
+    export(&mut e, scope, chosen.clone())?;
     wait(&mut e, &ctx);
     let line = said(&mut e, &ctx, "Exported 2 of 2 · Sent");
-    assert_eq!(line, "Exported 2 of 2 · Sent 2 to Index File");
-    // The destination's message and where its result is, when opened.
+    assert_eq!(line, "Exported 2 of 2 · Sent 2 files to Index File");
+    // The destination's message, where its result is, and what it gave
+    // each file, when opened.
     let index = out.join(rawmakase_example::destinations::INDEX);
     let detail = e.messages.entry_detail(&line).expect("the result");
-    assert_eq!(detail, format!("Indexed out\n{}", index.display()));
-    // In export order, each with its size as written.
+    let lines: Vec<&str> = detail.lines().collect();
+    assert_eq!(
+        lines[..2],
+        ["Indexed Our Wedding", &index.display().to_string()]
+    );
+    assert_eq!(lines.len(), 4, "{detail}");
+    // In export order, each with its size as written and its own UUID.
     let text = std::fs::read_to_string(&index)?;
-    let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines[0], "Our Wedding");
-    let (w, h) = image::image_dimensions(out.join("c.tif"))?;
-    assert!(lines[1].starts_with("a.tif "), "{text}");
-    assert!(lines[1].ends_with(" unlabelled"), "{text}");
-    assert!(lines[2].starts_with(&format!("c.tif {w} x {h} ")), "{text}");
+    let rows: Vec<&str> = text.lines().collect();
+    assert_eq!(rows[0], "Our Wedding");
+    assert!(
+        rows[1].ends_with(&format!(" unlabelled {}", uuids[0])),
+        "{text}"
+    );
+    assert!(
+        rows[2].ends_with(&format!(" unlabelled {}", uuids[1])),
+        "{text}"
+    );
+    let (w, h) = image::image_dimensions(out.join(rows[1].split(' ').next().unwrap()))?;
+    assert!(rows[1].contains(&format!(" {w} x {h} ")), "{text}");
 
-    // A destination that fails leaves the export as it was, and says so.
-    chosen.send_to = Some("dev.rawmakase.destinations/closed".into());
+    // A file the destination fails is named with why; the others went.
+    e.library
+        .as_mut()
+        .unwrap()
+        .session
+        .catalog_mut_for_tests()
+        .set_metadata(copy, 0, 0, "Red")?;
     chosen.existing = Existing::Unique;
+    let scope = e.export_scope_of(vec![ids[0], copy]).expect("photos");
+    export(&mut e, scope.clone(), chosen.clone())?;
+    wait(&mut e, &ctx);
+    let line = said(&mut e, &ctx, "Exported 2 of 2 · Sent 1 of");
+    assert_eq!(line, "Exported 2 of 2 · Sent 1 of 2 files to Index File");
+    let detail = e.messages.entry_detail(&line).expect("why");
+    assert!(detail.contains(": red photos aren't indexed"), "{detail}");
+
+    // A destination that refuses leaves the export as it was, and says so.
+    chosen.send_to = Some("dev.rawmakase.destinations/closed".into());
     export(&mut e, scope, chosen)?;
     wait(&mut e, &ctx);
-    let line = said(&mut e, &ctx, "Exported 2 of 2 · Closed Lab");
-    assert_eq!(
-        line,
-        "Exported 2 of 2 · Closed Lab failed: the lab is closed today"
-    );
-    assert_eq!(
-        listing(&out),
-        ["a-2.tif", "a.tif", "c-2.tif", "c.tif", "index.txt"]
-    );
+    said(&mut e, &ctx, "Exported 2 of 2");
+    let refused = "Not sent to Closed Lab: the lab is closed today";
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !e.messages.has_entry_with(refused) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{}",
+            e.messages.line()
+        );
+        let (outcomes, _) = e.extensions_poll(std::time::Instant::now());
+        e.extension_outcomes(outcomes);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(listing(&out).len(), 7);
     Ok(())
 }
 
@@ -1601,148 +1644,105 @@ fn send_to_a_destination_that_is_not_installed_still_exports() -> anyhow::Result
     export(&mut e, scope, chosen)?;
     wait(&mut e, &ctx);
     assert_eq!(listing(&out), ["c.tif"]);
-    assert_eq!(
-        e.messages.line(),
-        "Exported c.tif · Not sent: dev.jane.gallery isn't installed"
+    assert!(
+        e.messages
+            .has_entry("Not sent: dev.jane.gallery isn't installed")
     );
+    assert_eq!(e.messages.line(), "Exported c.tif");
     Ok(())
 }
 
-/// A finished batch's outcomes, with the capture times its names were made
-/// from.
-fn queued_with(captured: Vec<Option<String>>) -> Queued {
-    Queued {
-        names: (0..captured.len()).map(|i| format!("{i}.dng")).collect(),
-        left_out: Vec::new(),
-        after: crate::export_settings::AfterExport::Nothing,
-        editing: None,
-        send_to: Some("dev.jane.gallery/web".into()),
-        send_to_options: None,
-        facts: captured
-            .into_iter()
-            .map(|captured| {
-                Facts::of(&BatchPhoto {
-                    source: "a.dng".into(),
-                    name: "a.dng".into(),
-                    edit: Edit::Catalog(Default::default()),
-                    values: Values::default(),
-                    naming: NameFields {
-                        captured,
-                        ..Default::default()
-                    },
-                    place: None,
-                    flag: None,
-                })
-            })
-            .collect(),
+/// A batch photo with `values`, in the catalog with `uuid` unless
+/// `outside`.
+fn batch_photo(values: Values, uuid: Option<&str>, outside: bool) -> BatchPhoto {
+    BatchPhoto {
+        source: "a.dng".into(),
+        name: "a.dng".into(),
+        edit: Edit::Catalog(Default::default()),
+        values,
+        naming: NameFields {
+            captured: Some("2026:05:04 10:21:33".into()),
+            ..Default::default()
+        },
+        place: None,
+        catalog: (!outside).then(|| crate::export::batch::CatalogFacts {
+            uuid: uuid.map(|u| crate::catalog::PhotoUuid::parse(u).unwrap()),
+        }),
     }
 }
 
 #[test]
-fn a_delivery_names_the_files_exported_in_order_in_their_deepest_common_folder() {
-    let root = std::path::Path::new(if cfg!(windows) { "C:\\shoot" } else { "/shoot" });
-    let exported = |path: std::path::PathBuf| Outcome::Exported {
-        path,
-        notes: Vec::new(),
-        size: (300, 200),
-    };
-    let queued = queued_with(vec![
-        Some("2026:05:04 10:21:33".into()),
-        None,
-        Some("2026-05-04 10:21:35.000".into()),
-    ]);
-    let outcomes = [
-        exported(root.join("day 1/out/a.jpg")),
-        Outcome::Failed("unreadable".into()),
-        exported(root.join("day 2/out/c.jpg")),
-    ];
-    let deliver = delivery(&queued, &outcomes).expect("files to send");
-    assert_eq!(deliver.folder, root);
-    assert_eq!(deliver.label, "shoot");
-    let names: Vec<_> = deliver.files.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(names, ["a.jpg", "c.jpg"]);
-    assert_eq!(
-        deliver.files[0].captured.as_deref(),
-        Some("2026-05-04T10:21:33")
-    );
-    assert_eq!(
-        deliver.files[1].captured.as_deref(),
-        Some("2026-05-04T10:21:35")
-    );
-    assert_eq!(
-        (deliver.files[1].width, deliver.files[1].height),
-        (Some(300), Some(200))
-    );
-    // One folder: its own name is the label.
-    let one = delivery(&queued, &outcomes[..1]).unwrap();
-    assert_eq!(
-        (one.folder.as_path(), one.label.as_str()),
-        (root.join("day 1/out").as_path(), "out")
-    );
-    // Nothing exported, nothing sent.
-    assert!(delivery(&queued, &[Outcome::Cancelled]).is_none());
-}
-
-#[test]
-fn a_delivery_tells_each_photos_label_rating_and_flag_in_export_order() {
-    let root = std::path::Path::new(if cfg!(windows) { "C:\\out" } else { "/out" });
-    let photo = |label: &str, rating: i32, flag: Option<i32>| BatchPhoto {
-        source: "a.dng".into(),
-        name: "a.dng".into(),
-        edit: Edit::Catalog(Default::default()),
-        values: Values {
-            label: label.into(),
-            rating,
+fn a_file_carries_its_photos_uuid_and_catalog_facts_or_neither() {
+    use crate::app::extensions::destinations::FileFacts;
+    use crate::metadata::{LangAlt, Value};
+    let path = std::path::Path::new(if cfg!(windows) {
+        "C:\\out\\a.jpg"
+    } else {
+        "/out/a.jpg"
+    });
+    let values = Values {
+        descriptive: crate::metadata::Descriptive {
+            title: Some(Value::Set(LangAlt::new("Vows"))),
+            caption: Some(Value::Cleared),
             ..Default::default()
         },
-        naming: NameFields::default(),
-        place: None,
-        flag,
+        keywords: vec![crate::xmp::write::KeywordPath {
+            path: vec!["People".into(), "Anna".into()],
+            exported: vec![false, true],
+        }],
+        rating: 4,
+        label: "Yellow".into(),
     };
-    let mut queued = queued_with(vec![None; 4]);
-    queued.facts = [
-        photo("Yellow", 4, Some(1)),
-        photo("", 0, Some(-1)),
-        // A label of another name, as Lightroom's custom label sets keep.
-        photo("Approved", 2, Some(0)),
-        // Outside the catalog: nothing of the catalog's.
-        photo("", 0, None),
-    ]
-    .iter()
-    .map(Facts::of)
-    .collect();
-    let outcomes: Vec<_> = ["a", "b", "c", "d"]
-        .iter()
-        .map(|n| Outcome::Exported {
-            path: root.join(format!("{n}.jpg")),
-            notes: Vec::new(),
-            size: (10, 10),
-        })
-        .collect();
-    let deliver = delivery(&queued, &outcomes).unwrap();
-    let marks: Vec<_> = deliver
-        .files
-        .iter()
-        .map(|f| (f.label.as_deref(), f.rating, f.flag.as_deref()))
-        .collect();
-    assert_eq!(
-        marks,
-        [
-            (Some("yellow"), Some(4), Some("pick")),
-            (None, Some(0), Some("reject")),
-            (None, Some(2), None),
-            (None, None, None),
-        ]
+    let uuid = "0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f";
+    let file = FileFacts::of(&batch_photo(values.clone(), Some(uuid), false), true).file(
+        "3",
+        1,
+        path,
+        (300, 200),
     );
-    let deliver = ExportDeliver {
-        destination: "web".into(),
-        ..deliver
-    };
-    deliver.validate().unwrap();
+    file.validate().unwrap();
+    assert_eq!(
+        (file.delivery.as_str(), file.index, file.name.as_str()),
+        ("3", 1, "a.jpg")
+    );
+    assert_eq!(file.photo_uuid.as_deref(), Some(uuid));
+    assert_eq!(file.captured.as_deref(), Some("2026-05-04T10:21:33"));
+    let catalog = file.catalog.unwrap();
+    assert_eq!(catalog.title.as_deref(), Some("Vows"));
+    assert_eq!(catalog.caption, None);
+    assert_eq!(catalog.keywords, ["Anna"]);
+    assert_eq!(
+        (catalog.label.as_deref(), catalog.rating),
+        (Some("yellow"), 4)
+    );
+    // Metadata without the descriptive fields, as Copyright Only: the label
+    // and rating stay.
+    let bare = FileFacts::of(&batch_photo(values.clone(), Some(uuid), false), false)
+        .file("3", 1, path, (300, 200))
+        .catalog
+        .unwrap();
+    assert_eq!(
+        (bare.title, bare.keywords.len(), bare.label.as_deref()),
+        (None, 0, Some("yellow"))
+    );
+    // No UUID yet: the field is left out, and the rest goes.
+    let file = FileFacts::of(&batch_photo(values.clone(), None, false), true).file(
+        "3",
+        1,
+        path,
+        (300, 200),
+    );
+    let json = serde_json::to_value(&file).unwrap();
+    assert!(json.get("photo_uuid").is_none() && json.get("catalog").is_some());
+    // Outside the catalog: neither.
+    let file = FileFacts::of(&batch_photo(values, None, true), true).file("3", 1, path, (300, 200));
+    assert_eq!((file.photo_uuid, file.catalog), (None, None));
+    assert_eq!(file.captured.as_deref(), Some("2026-05-04T10:21:33"));
 }
 
 #[test]
 fn a_capture_time_is_sent_in_one_form_or_not_at_all() {
+    use crate::app::extensions::destinations::capture_time;
     for (kept, sent) in [
         ("2026-05-04 10:21:33.000", Some("2026-05-04T10:21:33")),
         ("2026:05:04 10:21:33", Some("2026-05-04T10:21:33")),
@@ -1756,90 +1756,48 @@ fn a_capture_time_is_sent_in_one_form_or_not_at_all() {
 }
 
 #[test]
-fn a_deliverys_line_says_what_was_exported_then_what_was_sent() {
-    use crate::app::shell::messages::Level;
-    let exported = "Exported 12 of 12";
-    let sent = Ok(Delivered {
-        sent: 12,
-        message: Some("Published Wedding".into()),
-        location: Some("https://example.com/wedding".into()),
-    });
-    assert_eq!(
-        delivered_line("Web Gallery", exported, &sent),
-        (
-            Level::Done,
-            "Exported 12 of 12 · Sent 12 to Web Gallery".into(),
-            Some("Published Wedding\nhttps://example.com/wedding".into())
-        )
-    );
-    let plain = Ok(Delivered {
-        sent: 3,
-        ..Default::default()
-    });
-    assert_eq!(delivered_line("Web Gallery", exported, &plain).2, None);
-    let failed = Err(RemoteError::new(ErrorCode::Unavailable, "offline"));
-    assert_eq!(
-        delivered_line("Web Gallery", exported, &failed),
-        (
-            Level::Failure,
-            "Exported 12 of 12 · Web Gallery failed: offline".into(),
-            None
-        )
-    );
-    let stopped = Err(RemoteError::new(ErrorCode::Cancelled, "stopped"));
-    assert_eq!(
-        delivered_line("Web Gallery", exported, &stopped).1,
-        "Exported 12 of 12 · Sending to Web Gallery stopped"
-    );
-}
-
-#[test]
-fn stop_on_the_extensions_page_cancels_a_delivery() {
+fn stop_on_the_extensions_page_ends_a_delivery_between_its_requests() {
+    use crate::app::extensions::destinations::Step;
+    use rawmakase_extensions::protocol::ErrorCode;
+    use rawmakase_extensions::protocol::method::ExportBegin;
     let (dir, mut e, _, _) = editor().unwrap();
     load_destinations(&mut e, dir.path());
-    let file = dir.path().join("a.jpg");
-    let deliver = ExportDeliver {
+    let begin = ExportBegin {
+        delivery: "1".into(),
         destination: String::new(),
+        folder: Some(dir.path().to_path_buf()),
+        count: 1,
         options: serde_json::Map::new(),
-        folder: dir.path().to_path_buf(),
-        label: "out".into(),
-        files: vec![ExportedFile {
-            name: "a.jpg".into(),
-            path: file,
-            width: None,
-            height: None,
-            captured: None,
-            label: None,
-            rating: None,
-            flag: None,
-        }],
     };
-    let key = "dev.rawmakase.destinations/index";
-    let name = e
+    let to = e
         .extensions
-        .deliver(key, deliver, None, "Exported a.jpg".into())
+        .begin_delivery("dev.rawmakase.destinations/index", begin, None)
         .unwrap();
-    assert_eq!(name, "Index File");
+    assert_eq!(to.name, "Index File");
     let id = "dev.rawmakase.destinations";
-    assert!(e.extensions.command_running(id));
+    assert!(e.extensions.working(id));
     assert_eq!(
         e.extensions.status(),
         ["Example Destinations: Sending to Index File…"]
     );
-    let outcomes = e.extensions.cancel_commands(id);
+    let outcomes = e.extensions.stop_work(id);
     assert!(
         matches!(
             &outcomes[..],
-            [crate::app::extensions::Outcome::Delivered { result: Err(err), .. }]
+            [crate::app::extensions::Outcome::Delivery { step: Step::Begin, result: Err(err), .. }]
                 if err.code == ErrorCode::Cancelled
         ),
         "{outcomes:?}"
     );
-    assert!(!e.extensions.command_running(id));
-    e.extension_outcomes(outcomes);
+    assert!(!e.extensions.working(id));
+    // Nothing more goes once it is stopped.
+    let file = dir.path().join("a.jpg");
+    std::fs::write(&file, b"").unwrap();
+    let sent =
+        crate::app::extensions::destinations::FileFacts::default().file("1", 0, &file, (1, 1));
     assert_eq!(
-        e.messages.line(),
-        "Exported a.jpg · Sending to Index File stopped"
+        e.extensions.send_file(&to, sent).unwrap_err().code,
+        ErrorCode::Cancelled
     );
 }
 

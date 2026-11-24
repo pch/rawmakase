@@ -323,13 +323,13 @@ drawer, as a generator's `description` is.
 ## `[[export-destination]]`
 
 From `api = 4`; a manifest with an earlier `api` that declares one is
-refused, and the app never sends `export.deliver` to a program serving an
-earlier one. An export destination sends an export's files on once they are
-written: an upload, a web gallery, a printer. The Export dialog offers it
-under Post-Processing's Send To; when the export has written its files, the
-app sends them to the program in one request
-([`export.deliver`](protocol.md#exportdeliver-request)). Rendering, encoding
-and writing the files stay the app's; sending them is the program's.
+refused, and the app never sends a delivery to a program serving an earlier
+one. An export destination sends an export's files on as they are written: an
+upload, a web gallery, a printer. The Export dialog offers it under
+Post-Processing's Send To; the app sends the program each file as the export
+writes it, between a beginning and an end
+([`export.begin`, `export.file` and `export.end`](protocol.md#exportbegin-exportfile-and-exportend-requests)). Rendering,
+encoding and writing the files stay the app's; sending them is the program's.
 
 ```toml
 [program]
@@ -370,7 +370,7 @@ visible-when = { setting = "layout", equals = "Grid" }
 **Options** (`[[export-destination.option]]`, each under the destination
 before it) are drawn under Send To in the Export dialog once the destination
 is chosen, in the manifest's order, and sent with the files
-([`export.deliver`](protocol.md#exportdeliver-request)'s `options`). They take
+([`export.begin`](protocol.md#exportbegin-exportfile-and-exportend-requests)'s `options`). They take
 a [`[[setting]]`](#setting)'s keys and rules (`id`, `name`, `help`,
 `control`, `default`, `unit`, `visible-when`, which names another option of
 the same destination), with the controls `"text"`, `"toggle"`,

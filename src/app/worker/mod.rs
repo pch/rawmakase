@@ -324,6 +324,13 @@ pub(crate) enum Event {
     /// The renderer recovered from a failure and no longer uses the textures its
     /// previews were presented into: stop drawing them, then drop this to free them.
     RendererReset(RetiredTextures),
+    /// A photo of an export batch has its outcome, its file in place if it
+    /// was exported; before its batch's `BatchExported`.
+    PhotoExported {
+        ticket: u64,
+        index: usize,
+        outcome: crate::export::batch::Outcome,
+    },
     /// A batch of the export queue finished: each photo's outcome, in order.
     BatchExported {
         ticket: u64,

@@ -18,7 +18,6 @@ impl Catalog {
             struct Rated {
                 rating: i32,
                 label: String,
-                flag: i32,
                 captured: String,
             }
         }
@@ -26,7 +25,7 @@ impl Catalog {
             ids.iter()
                 .map(|&id| {
                     let rated: Rated = snapshot.read_one(
-                        sql!("SELECT rating,label,flag,captured FROM photos WHERE id=?"),
+                        sql!("SELECT rating,label,captured FROM photos WHERE id=?"),
                         &[&id],
                     )?;
                     Ok(PhotoRecord {
@@ -35,7 +34,6 @@ impl Catalog {
                         keywords: super::descriptive::keywords(snapshot, id)?,
                         rating: rated.rating,
                         label: rated.label,
-                        flag: rated.flag,
                         captured: rated.captured,
                     })
                 })

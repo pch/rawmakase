@@ -8,14 +8,15 @@ use rawmakase_extension::protocol::buffer::{
 use rawmakase_extension::protocol::controls::{Control, ControlKind};
 use rawmakase_extension::protocol::message::NeedsSetup;
 use rawmakase_extension::protocol::method::{
-    AppEvent, AppRequest, CommandRun, Delivered, DeviceState, Empty, EmptyMask, ExportDeliver,
-    ExportedFile, Hello, MaskGenerate, MaskGenerated, Operation, RetouchGenerate, RetouchGenerated,
-    SettingChanged, SettingsChange, SourceReport, SourceStarted, SourceStopped,
+    AppEvent, AppRequest, CatalogFacts, CommandRun, DeviceState, Empty, EmptyMask, ExportBegin,
+    ExportEnd, ExportEnded, ExportFile, FileResult, Hello, MaskGenerate, MaskGenerated, Operation,
+    RetouchGenerate, RetouchGenerated, Sent, SettingChanged, SettingsChange, SourceReport,
+    SourceStarted, SourceStopped,
 };
 use rawmakase_extension::protocol::viewer::{Bounds, Click, MAX_CLICKS, ViewerInput};
 use rawmakase_extension::{
-    Context, ControlAdapter, ErrorCode, Extension, Host, MaskAsk, MaskGenerator, Panel,
-    RemoteError, RetouchAsk, RetouchGenerator, ServeOptions, Source,
+    Context, ControlAdapter, Delivery, ErrorCode, Extension, Host, MaskAsk, MaskGenerator, Panel,
+    RemoteError, RetouchAsk, RetouchGenerator, ServeOptions, Source, collected,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -968,85 +969,141 @@ fn a_program_serving_api_2_refuses_a_retouch_request() {
     host.finish().unwrap();
 }
 
-/// A delivery of two files in `/out`, as the app sends one.
-fn delivery() -> ExportDeliver {
+/// A delivery's three requests, of two files in `/out`, as the app sends
+/// them: the second without a UUID, as a photo an older release added.
+fn delivery() -> (ExportBegin, Vec<ExportFile>, ExportEnd) {
     let folder = std::path::PathBuf::from(if cfg!(windows) { "C:\\out" } else { "/out" });
-    let file = |name: &str| ExportedFile {
+    let file = |index: u32, name: &str, uuid: Option<&str>| ExportFile {
+        delivery: "7".into(),
+        destination: "web".into(),
+        index,
         path: folder.join(name),
         name: name.into(),
         width: Some(300),
         height: Some(200),
         captured: None,
-        label: Some("yellow".into()),
-        rating: Some(5),
-        flag: Some("pick".into()),
+        photo_uuid: uuid.map(str::to_string),
+        catalog: Some(CatalogFacts {
+            label: Some("yellow".into()),
+            rating: 5,
+            ..Default::default()
+        }),
     };
-    ExportDeliver {
-        destination: "web".into(),
-        label: "out".into(),
-        files: vec![file("a.jpg"), file("b.jpg")],
-        folder,
-        options: json!({"heading": "Wedding"}).as_object().unwrap().clone(),
+    (
+        ExportBegin {
+            delivery: "7".into(),
+            destination: "web".into(),
+            folder: Some(folder.clone()),
+            count: 2,
+            options: json!({"heading": "Wedding"}).as_object().unwrap().clone(),
+        },
+        vec![
+            file(1, "b.jpg", None),
+            file(0, "a.jpg", Some("0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f")),
+        ],
+        ExportEnd {
+            delivery: "7".into(),
+            destination: "web".into(),
+            files: 2,
+            cancelled: false,
+        },
+    )
+}
+
+/// Sends a whole delivery, returning `export.end`'s answer.
+fn deliver(
+    host: &MockHost,
+    (begin, files, end): (ExportBegin, Vec<ExportFile>, ExportEnd),
+) -> Result<ExportEnded, RemoteError> {
+    host.request(AppRequest::ExportBegin(begin))?;
+    for file in files {
+        host.request(AppRequest::ExportFile(file))?;
     }
+    let answer = host.request(AppRequest::ExportEnd(end))?;
+    Ok(serde_json::from_value(answer).unwrap())
 }
 
 #[test]
 fn an_export_destination_gets_checked_deliveries_and_its_answer_is_checked() {
     let (seen, received) = mpsc::channel();
     let host = MockHost::start_with_options(
-        Extension::new().export_destination("web", move |cx: &Context, deliver: ExportDeliver| {
-            cx.progress(Some(0.5), Some("Uploading"));
-            let names: Vec<String> = deliver
-                .files
-                .iter()
-                .map(|f| format!("{} {}", f.name, f.label.as_deref().unwrap_or("-")))
-                .collect();
-            seen.send(names).unwrap();
-            Ok(Delivered {
-                sent: deliver.files.len() as u32,
-                message: Some(format!(
-                    "Published {} as {}",
-                    deliver.label,
-                    deliver.option_str("heading").unwrap_or("untitled")
-                )),
-                // A newline makes the answer invalid; `bad` asks for it.
-                location: Some(if deliver.label == "bad" {
-                    "https://x\ny".into()
-                } else {
-                    "https://example.com/out".into()
-                }),
-            })
-        }),
+        Extension::new().export_destination(
+            "web",
+            collected(move |cx: &Context, delivery: Delivery| {
+                cx.progress(Some(0.5), Some("Uploading"));
+                let names: Vec<String> = delivery
+                    .files
+                    .iter()
+                    .map(|f| format!("{} {}", f.name, f.photo_uuid.as_deref().unwrap_or("-")))
+                    .collect();
+                seen.send(names).unwrap();
+                let heading = delivery.begin.option_str("heading").unwrap_or("untitled");
+                Ok(ExportEnded {
+                    files: delivery
+                        .files
+                        .iter()
+                        .map(|f| FileResult {
+                            index: f.index,
+                            result: Sent::Sent,
+                            message: None,
+                            remote_id: Some(f.name.clone()),
+                            // A newline makes the answer invalid; `bad` asks
+                            // for it.
+                            url: Some(if heading == "bad" {
+                                "https://x\ny".into()
+                            } else {
+                                format!("https://example.com/{}", f.name)
+                            }),
+                        })
+                        .collect(),
+                    message: Some(format!("Published {heading}")),
+                    location: Some("https://example.com/out".into()),
+                })
+            }),
+        ),
         ServeOptions { api: 4 },
         |_, _| Ok(Value::Null),
     );
     assert_eq!(host.hello().unwrap().implements, ["export-destination/web"]);
-    let answer = host.request(AppRequest::ExportDeliver(delivery())).unwrap();
-    let delivered: Delivered = serde_json::from_value(answer).unwrap();
-    assert_eq!(delivered.sent, 2);
+    let ended = deliver(&host, delivery()).unwrap();
+    assert_eq!(ended.files.len(), 2);
+    assert_eq!(ended.message.as_deref(), Some("Published Wedding"));
+    // The files as they came, the one without a UUID without it.
     assert_eq!(
-        delivered.message.as_deref(),
-        Some("Published out as Wedding")
+        received.recv().unwrap(),
+        ["b.jpg -", "a.jpg 0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f"]
     );
-    assert_eq!(received.recv().unwrap(), ["a.jpg yellow", "b.jpg yellow"]);
     // Off the contract, the handler is never called.
-    let mut other = delivery();
-    other.destination = "print".into();
-    let mut outside = delivery();
-    outside.files[1].path = "/elsewhere/b.jpg".into();
-    let mut orange = delivery();
-    orange.files[0].label = Some("orange".into());
-    for request in [other, outside, orange] {
-        let error = host
-            .request(AppRequest::ExportDeliver(request))
-            .unwrap_err();
+    let (mut begin, mut files, end) = delivery();
+    begin.destination = "print".into();
+    assert_eq!(
+        host.request(AppRequest::ExportBegin(begin))
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidRequest
+    );
+    let (begin, _, _) = delivery();
+    host.request(AppRequest::ExportBegin(begin)).unwrap();
+    files[0].catalog.as_mut().unwrap().label = Some("orange".into());
+    files[1].path = "b.jpg".into();
+    for file in files {
+        let error = host.request(AppRequest::ExportFile(file)).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidRequest);
     }
-    assert!(received.try_recv().is_err());
+    let ended = host.request(AppRequest::ExportEnd(end)).unwrap();
+    assert_eq!(ended["files"], json!([]));
+    assert_eq!(received.recv().unwrap(), Vec::<String>::new());
+    // A file or an end for a delivery that never began is refused.
+    let (_, files, end) = delivery();
+    let error = host
+        .request(AppRequest::ExportFile(files[0].clone()))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(host.request(AppRequest::ExportEnd(end)).is_err());
     // An answer off the contract goes to the app as an error.
-    let mut bad = delivery();
-    bad.label = "bad".into();
-    let error = host.request(AppRequest::ExportDeliver(bad)).unwrap_err();
+    let (mut begin, files, end) = delivery();
+    begin.options = json!({"heading": "bad"}).as_object().unwrap().clone();
+    let error = deliver(&host, (begin, files, end)).unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidRequest);
     host.finish().unwrap();
 }
@@ -1054,17 +1111,23 @@ fn an_export_destination_gets_checked_deliveries_and_its_answer_is_checked() {
 #[test]
 fn a_program_serving_api_3_refuses_a_delivery() {
     let host = MockHost::start_with_options(
-        Extension::new().export_destination("web", |_: &Context, _: ExportDeliver| {
-            Ok(Delivered::default())
-        }),
+        Extension::new().export_destination(
+            "web",
+            collected(|_: &Context, _: Delivery| Ok(ExportEnded::default())),
+        ),
         ServeOptions { api: 3 },
         |_, _| Ok(Value::Null),
     );
     host.hello().unwrap();
-    let error = host
-        .request(AppRequest::ExportDeliver(delivery()))
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::InvalidRequest);
-    assert!(error.message.contains("api 4"), "{error}");
+    let (begin, files, end) = delivery();
+    for request in [
+        AppRequest::ExportBegin(begin),
+        AppRequest::ExportFile(files[0].clone()),
+        AppRequest::ExportEnd(end),
+    ] {
+        let error = host.request(request).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+        assert!(error.message.contains("api 4"), "{error}");
+    }
     host.finish().unwrap();
 }

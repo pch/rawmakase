@@ -134,11 +134,13 @@ stays when the extension is gone.
 ## Export destinations
 
 An `[[export-destination]]` ([manifest](manifest.md#export-destination))
-sends an export's files on once they are written: a web gallery, an upload, a
+sends an export's files on as they are written: a web gallery, an upload, a
 printer. The export stays the app's: it renders, encodes and writes every
-file in place as it always does, and only then sends the files it wrote to
-the program ([`export.deliver`](protocol.md#exportdeliver-request)), which
-works on them while the app goes on.
+file in place as it always does, and sends each file to the program once it
+is in place, between a beginning and an end
+([`export.begin`, `export.file` and `export.end`](protocol.md#exportbegin-exportfile-and-exportend-requests)). The program
+works on them while the app goes on: an uploader starts on the first file, a
+gallery waits for the end.
 
 - **Send To.** The Export dialog's Post-Processing has a **Send To** menu
   once an enabled extension offers a destination: **Nowhere**, the default,
@@ -149,19 +151,31 @@ works on them while the app goes on.
   why, and the export runs without it.
 - **Options.** A destination's options (a gallery's title, its layout) are
   drawn under Send To once it is chosen, as its extension's settings are
-  drawn on its page, and go with the files. The export settings keep what
+  drawn on its page, and go with the delivery, read once when the export is
+  queued. The Export dialog keeps what is being typed into them apart from
+  the extension's page. The export settings keep what
   was changed from each option's default, for each destination, as
   `"send_to_options": {"<extension>/<destination>": {"<option>": value}}`;
   a value the destination's options no longer take is its default again.
+- **What each photo carries.** Each file goes with its photo's
+  `photo_uuid`, the id a destination keeps to recognise the photo in a later
+  export (a virtual copy has its own), and with what the catalog says of it:
+  its label and rating, and its title, caption and keywords when the
+  export's Metadata includes them. A photo exported from outside the catalog
+  has neither. A destination gets them only once the user picks it under Send
+  To; the UUID lets a service link the same photo across exports.
 - **What is said.** The top bar says what the export did, as without a
-  destination, and the status line says what is being sent. Once the program
-  answers, the top bar says both: "Exported 12 of 12 · Sent 12 to Web
-  Gallery", its message and where to see the result when opened; or
-  "Exported 12 of 12 · Web Gallery failed: …". A destination that couldn't be
-  reached at all is said the same way ("· Not sent: …"). The files exported
-  stay either way.
-- **Stopping.** A delivery may take minutes; the app gives it 15. Stop on the
-  extension's page cancels it, as disabling the extension and quitting do.
+  destination, then, once the program has answered for every file, what was
+  sent: "Exported 12 of 12 · Sent 11 of 12 files to Web Gallery", with its
+  message, where to see the result, why each file wasn't sent and each
+  file's URL when opened. A destination that refuses the delivery is said at
+  once ("Not sent to Web Gallery: …"). The files exported stay either way.
+- **Progress and stopping.** While the export is over and the sending isn't,
+  the top bar shows "Sending to Web Gallery" with what the program last said
+  of how far it is, and a button that stops it. There is no limit on the
+  number of files or on the whole delivery's time: the end has 2 minutes
+  without news, each progress report moving it on. Stop on the extension's
+  page stops it too, as disabling the extension and quitting do.
 
 ## Externally launched adapters
 

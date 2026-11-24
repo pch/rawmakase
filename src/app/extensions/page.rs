@@ -104,16 +104,53 @@ pub(in crate::app) struct Page {
     /// Load from Folder… and the folder watch are offered.
     developer: bool,
     watched: Option<Instant>,
-    /// Text settings being typed, by extension and setting; and the Export
-    /// dialog's destination options, by `<extension>/<destination>` and
-    /// option.
-    drafts: HashMap<(String, String), String>,
-    /// Number and Angle settings being dragged, by extension and setting
-    /// ([`number_control`]).
-    numbers: HashMap<(String, String), f64>,
+    /// Its extensions' settings being typed or dragged.
+    form: SettingForm,
     /// Secret settings being typed, by extension and setting: never filled
     /// from what is kept, and forgotten once saved.
     secrets: HashMap<(String, String), String>,
+}
+
+/// What a form of `[[setting]]` controls holds while a value is typed or
+/// dragged, before it is committed: each window drawing such a form keeps
+/// its own ([`Editor::setting_control`]).
+#[derive(Debug, Default)]
+pub(in crate::app) struct SettingForm {
+    /// Text being typed, by owner (an extension, or an export destination
+    /// as `<extension>/<destination>`) and setting.
+    drafts: HashMap<(String, String), String>,
+    /// Number and Angle values being dragged, by owner and setting
+    /// ([`number_control`]).
+    numbers: HashMap<(String, String), f64>,
+}
+
+impl SettingForm {
+    /// Takes the text being typed into `owner`'s fields, by setting.
+    pub(in crate::app) fn take_drafts(&mut self, owner: &str) -> Vec<(String, String)> {
+        let keys: Vec<_> = self
+            .drafts
+            .keys()
+            .filter(|(o, _)| o == owner)
+            .cloned()
+            .collect();
+        keys.into_iter()
+            .filter_map(|key| self.drafts.remove(&key).map(|text| (key.1, text)))
+            .collect()
+    }
+    /// Forgets the text typed into `owner`'s field `id`, once its value is
+    /// kept.
+    pub(in crate::app) fn forget_draft(&mut self, owner: &str, id: &str) {
+        self.drafts.remove(&(owner.to_string(), id.to_string()));
+    }
+}
+
+/// Which window's [`SettingForm`] a control is drawn in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::app) enum FormOf {
+    /// An extension's own page.
+    Page,
+    /// The Export dialog's destination options.
+    Export,
 }
 
 /// The parts of an extension's own page, each a tab. A part the extension
@@ -194,24 +231,6 @@ impl Page {
     pub(in crate::app) fn back(&mut self) {
         self.open = None;
     }
-    /// Takes the text being typed into `owner`'s fields: an export
-    /// destination's options (`<extension>/<destination>`), by option.
-    pub(in crate::app) fn take_drafts(&mut self, owner: &str) -> Vec<(String, String)> {
-        let keys: Vec<_> = self
-            .drafts
-            .keys()
-            .filter(|(o, _)| o == owner)
-            .cloned()
-            .collect();
-        keys.into_iter()
-            .filter_map(|key| self.drafts.remove(&key).map(|text| (key.1, text)))
-            .collect()
-    }
-    /// Forgets the text typed into `owner`'s field `id`, once its value is
-    /// kept.
-    pub(in crate::app) fn forget_draft(&mut self, owner: &str, id: &str) {
-        self.drafts.remove(&(owner.to_string(), id.to_string()));
-    }
     /// The extension whose own page shows, if one does.
     pub(in crate::app) fn opened(&self) -> Option<&str> {
         self.open.as_deref()
@@ -258,10 +277,9 @@ impl Editor {
         // when its page does.
         let drafts: Vec<_> = self
             .extension_page
+            .form
             .drafts
             .iter()
-            // An export destination's options are the Export dialog's.
-            .filter(|((owner, _), _)| !owner.contains('/'))
             .map(|(key, text)| (key.clone(), text.clone()))
             .collect();
         for ((extension, setting), text) in drafts {
@@ -277,7 +295,10 @@ impl Editor {
             };
             match result {
                 Ok(()) => {
-                    self.extension_page.drafts.remove(&(extension, setting));
+                    self.extension_page
+                        .form
+                        .drafts
+                        .remove(&(extension, setting));
                 }
                 Err(why) => self.messages.fail(why),
             }
@@ -772,7 +793,7 @@ impl Editor {
         let problem = e.problem.clone();
         let palette = theme::palette(ui.ctx());
         let update = self.extension_page.updates.iter().position(|u| u.id == id);
-        let running = self.extensions.command_running(id);
+        let running = self.extensions.working(id);
 
         let why = status.explain(e, access);
         flush(ui, |ui| {
@@ -818,7 +839,7 @@ impl Editor {
                         self.extensions.retry(id);
                     }
                     if running && ui.button("Stop").clicked() {
-                        let outcomes = self.extensions.cancel_commands(id);
+                        let outcomes = self.extensions.stop_work(id);
                         self.extension_outcomes(outcomes);
                     }
                 });
@@ -921,7 +942,7 @@ impl Editor {
                 let label = s.name.clone().unwrap_or_else(|| s.id.clone());
                 let mut set = None;
                 form_row(ui, &label, |ui| {
-                    set = self.setting_control(ui, id, s, &value);
+                    set = self.setting_control(ui, FormOf::Page, id, s, &value);
                 });
                 if let Some(help) = &s.help {
                     form_row(ui, "", |ui| setting_help(ui, help));
@@ -930,6 +951,7 @@ impl Editor {
                     match self.extensions.set_setting(id, &s.id, value) {
                         Ok(()) => {
                             self.extension_page
+                                .form
                                 .drafts
                                 .remove(&(id.to_string(), s.id.clone()));
                         }
@@ -1108,18 +1130,27 @@ impl Editor {
         }
     }
 
-    /// A setting's control, drawn from its `[[setting]]`; the new value once
-    /// committed.
+    /// The form state of the window `form` draws in.
+    fn setting_form(&mut self, form: FormOf) -> &mut SettingForm {
+        match form {
+            FormOf::Page => &mut self.extension_page.form,
+            FormOf::Export => self.exports.option_form(),
+        }
+    }
+
+    /// A setting's control, drawn from its `[[setting]]` in `form`'s window;
+    /// the new value once committed.
     pub(in crate::app) fn setting_control(
         &mut self,
         ui: &mut egui::Ui,
+        form: FormOf,
         id: &str,
         s: &rawmakase_extensions::protocol::manifest::Setting,
         value: &Value,
     ) -> Option<Value> {
         match &s.control {
             SettingControl::Slider([min, max]) => number_control(
-                &mut self.extension_page.numbers,
+                &mut self.setting_form(form).numbers,
                 (id.to_string(), s.id.clone()),
                 value.as_f64().unwrap_or(*min),
                 |v| {
@@ -1134,13 +1165,13 @@ impl Editor {
                 },
             ),
             SettingControl::Number([min, max]) => number_control(
-                &mut self.extension_page.numbers,
+                &mut self.setting_form(form).numbers,
                 (id.to_string(), s.id.clone()),
                 value.as_f64().unwrap_or(*min),
                 |v| ui.add(egui::DragValue::new(v).range(*min..=*max)),
             ),
             SettingControl::Angle => number_control(
-                &mut self.extension_page.numbers,
+                &mut self.setting_form(form).numbers,
                 (id.to_string(), s.id.clone()),
                 value.as_f64().unwrap_or(0.),
                 |v| ui.add(egui::DragValue::new(v).suffix("°")),
@@ -1183,20 +1214,22 @@ impl Editor {
             SettingControl::Text => {
                 let key = (id.to_string(), s.id.clone());
                 let mut text = self
-                    .extension_page
+                    .setting_form(form)
                     .drafts
                     .get(&key)
                     .cloned()
                     .unwrap_or_else(|| value.as_str().unwrap_or("").to_string());
                 let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(260.));
                 if r.changed() {
-                    self.extension_page.drafts.insert(key.clone(), text.clone());
+                    self.setting_form(form)
+                        .drafts
+                        .insert(key.clone(), text.clone());
                 }
                 // The draft stays until the caller saves it, so a save that
                 // fails leaves what was typed.
                 if r.lost_focus() {
                     if value.as_str() == Some(&text) {
-                        self.extension_page.drafts.remove(&key);
+                        self.setting_form(form).drafts.remove(&key);
                         return None;
                     }
                     return Some(Value::from(text));

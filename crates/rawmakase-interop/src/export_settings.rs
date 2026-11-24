@@ -1003,13 +1003,27 @@ impl ExportSettings {
     /// Where `source` exports to at its place in the export, and what its name
     /// has to say.
     pub fn target_for(&self, source: &Path, at: &NameContext) -> Option<(PathBuf, Vec<String>)> {
+        let folder = self.folder_for(source)?;
+        let (file, note) = self.file_name_for(source, at);
+        Some((folder.join(file), note))
+    }
+    /// The one folder every file exports to, its subfolder included; `None`
+    /// beside the originals, which may be in several folders, and until a
+    /// specific folder is picked.
+    pub fn export_folder(&self) -> Option<PathBuf> {
+        match self.destination {
+            Destination::SameFolder => None,
+            _ => self.folder_for(Path::new("")),
+        }
+    }
+    /// Where `source` exports to, its subfolder included.
+    fn folder_for(&self, source: &Path) -> Option<PathBuf> {
         let mut folder = self.base_folder(source)?;
         let name = self.subfolder_name.trim();
         if self.subfolder && !name.is_empty() {
             folder.push(name);
         }
-        let (file, note) = self.file_name_for(source, at);
-        Some((folder.join(file), note))
+        Some(folder)
     }
     /// The HDR encoding these settings export, if any. It is refused in a format that
     /// can't hold it ([`Format::check_hdr`]).
@@ -1191,8 +1205,13 @@ mod tests {
             s.target(source),
             Some(PathBuf::from("/photos/2026/Exported/DSC0001-web.TIF"))
         );
+        // Beside the originals there is no one export folder.
+        assert_eq!(s.export_folder(), None);
         s.destination = Destination::Folder;
         assert_eq!(s.target(source), None);
+        assert_eq!(s.export_folder(), None);
+        s.folder = Some("/exports".into());
+        assert_eq!(s.export_folder(), Some(PathBuf::from("/exports/Exported")));
     }
     #[test]
     fn a_format_from_a_later_release_keeps_the_other_settings() {

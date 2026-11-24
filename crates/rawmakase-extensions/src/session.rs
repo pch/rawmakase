@@ -668,6 +668,19 @@ impl Session {
             .map(|p| p.deadline)
     }
 
+    /// Moves an admitted request's deadline to `deadline`, later or sooner,
+    /// as for a request whose progress shows it still working. False when it
+    /// isn't admitted.
+    pub fn extend(&mut self, id: u64, deadline: Instant) -> bool {
+        match self.pending.get_mut(&id).filter(|p| !p.expired) {
+            Some(pending) => {
+                pending.deadline = deadline;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The app requests in flight.
     pub fn in_flight(&self) -> usize {
         self.pending.len()

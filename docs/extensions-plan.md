@@ -986,14 +986,16 @@ contract here; galleries and uploads are left to others
 | | Decision |
 | --- | --- |
 | D35 | `[[export-destination]]` is read from `api = 4` (API 4 is API 3 plus export destinations), has an `id` and a `name`, and needs a program, which may start on demand or with the app |
-| D36 | One `export.deliver` per export, sent once the batch has published every file it could, never one per file: a gallery needs the whole set. It names the files exported, in order, with their size, capture time and catalog label, rating and flag, their deepest common folder and that folder's name as a label; at most 1000 files |
+| D36 | A delivery is streamed: `export.begin` when the export is queued, with the folder the settings chose (none beside the originals) and the planned count; `export.file` for each file as soon as it is in place, answered on receipt; `export.end` once the export is over, cancelled or not, answered with a result for each file. An uploader can start on the first file while a gallery waits for the end; there is no limit on the number of files, and failures are told file by file |
+| D36a | Each file carries `photo_uuid` (the catalog's UUID, a virtual copy's own; left out when there is none) as the id a destination keeps, and the catalog's label, rating, title, caption and keywords, the last three only when the export's Metadata includes them. Integer photo ids stay request ids within a session |
+| D36b | An export destination sends and forgets: the app keeps no record of what it sent where. `export.end`'s results may carry a `remote_id` and a `url`, which the app only shows; records are `publish-service`'s |
 | D37 | The export settings keep the choice as `send_to` (`<extension>/<destination>`), left out when none, so older releases read the settings; a destination that is gone or disabled is shown with why and the export runs without it |
-| D38 | The top bar says what was exported first, then, in a second line once the program answers, what was sent or why not; the destination's message and location go in that line's detail |
-| D39 | A delivery has 15 minutes; Stop on the extension's page, disabling it and quitting cancel it. The app never sends one again by itself |
-| D40 | A destination declares per-export options as `[[export-destination.option]]`, in a `[[setting]]`'s shape limited to `text`, `toggle`, `number`, `choice` and `segmented`; the Export dialog draws them under Send To with the settings' widgets, the export settings keep the values changed from the defaults by destination (`send_to_options`), and `export.deliver` carries every option's value |
+| D38 | The top bar says what was exported first, then, in a second line once `export.end` is answered, how many files were sent; the destination's message and location, why each file wasn't sent and each file's URL or remote id go in that line's detail |
+| D39 | `export.end` has 2 minutes without news, each `progress` moving its deadline on; the top bar shows that progress with a Stop. Stop there or on the extension's page, disabling it and quitting end a delivery; an open delivery keeps an `on-demand` program from being stopped as idle, and one whose program ended sends nothing to it started again. The app never sends a delivery again by itself |
+| D40 | A destination declares per-export options as `[[export-destination.option]]`, in a `[[setting]]`'s shape limited to `text`, `toggle`, `number`, `choice` and `segmented`; the Export dialog draws them under Send To with the settings' widgets, the export settings keep the values changed from the defaults by destination (`send_to_options`), and `export.begin` carries every option's value, read when the export is queued |
 
-Not part of the contract yet: showing a delivery's `progress`, and opening its
-`location` from the top bar.
+Not part of the contract yet: opening a delivery's `location` from the top
+bar.
 
 ### Designed, not scheduled
 
