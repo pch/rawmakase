@@ -1,7 +1,8 @@
 //! Shadows and Highlights in the scene tone stage: an edge-aware local tone operator
 //! fitted to Camera Raw on scene values, before the white point and the profile's tone
-//! curve (docs/scene-tone-stage.md). The base level is a guided filter of log2 scene
-//! luminance, with a radius of 3.2% of the long edge and ε = 0.5 (log2 units squared).
+//! curve (docs/scene-tone-stage.md). The base level is a local Laplacian filter of log2
+//! scene luminance ([`LAPLACIAN_SIGMA`]). Clarity's detail reads a guided filter of it,
+//! with a radius of 3.2% of the long edge and ε = 0.5 (log2 units squared).
 //! The measured tables in `local_tone_data.rs` give the log2 gain for each base level
 //! relative to an image key. Positive Shadows also reads a regional level, a much wider
 //! edge-aware blur ([`REGION_SCALE`], [`REGION_RANGE`]): its gain is a table of the base
@@ -27,6 +28,18 @@ pub(crate) const FLOOR: f32 = 6.103_515_6e-5;
 /// spatial σ of this fraction of the long edge and a range σ of `REGION_RANGE` stops.
 const REGION_SCALE: f32 = 0.25;
 const REGION_RANGE: f32 = 4.;
+/// The base level Shadows and Highlights read is a local Laplacian filter of the map's
+/// log2 luminance (Paris, Hasinoff and Kautz 2011, in the sampled form of Aubry et al.
+/// 2014): the filter's response to the gain curve `G(l) = l`, so that for a curve that
+/// is straight over a neighbourhood's levels the filter's output is the pixel plus the
+/// curve at this level. About a reference level `g` a sample `i` is remapped to
+/// `w·g + (1 − w)·i` with `w` a Gaussian of `i − g`, this many stops wide: detail within
+/// it keeps its contrast, and a difference beyond it follows the curve as an edge does.
+/// Camera Raw's renders show that split at every scale (docs/records/parity-gaps.md,
+/// 2026-11-20).
+pub(crate) const LAPLACIAN_SIGMA: f32 = 1.5;
+/// Spacing, in stops, of the reference levels the filter is sampled at.
+const LAPLACIAN_STEP: f32 = 0.5;
 
 impl Family {
     /// Row `row` continues past `hi` with the slope of its last 7 columns, per stop.
@@ -94,13 +107,16 @@ impl Family {
 pub(crate) struct LocalToneMap {
     pub(crate) width: usize,
     pub(crate) height: usize,
-    /// What the map takes from the photo: the guided-filter coefficients (base =
-    /// a · log2(Y) + b) and the regional level.
+    /// What the map takes from the photo: its log2 luminance, the base level and the
+    /// regional level.
     base: std::sync::Arc<MapBase>,
     /// Source image size, to convert sample coordinates.
     pub(crate) scale: [f32; 2],
     pub(crate) shadows: Option<Curve>,
     pub(crate) highlights: Option<Curve>,
+    /// Combined global pixel-level contrast curve (`G_pix(l)`) evaluated at the pixel's
+    /// own log2 luminance, additive to the base curves (`shadows` + `highlights`).
+    pub(crate) pix: Option<Curve>,
     /// Whether positive Shadows may read the regional level (the slider or masks).
     regional: bool,
     /// Positive Shadows' tables at the slider: of the base level less the regional
@@ -118,6 +134,9 @@ pub(crate) struct LocalToneMap {
     /// Highlights +100, for masks that evaluate them at their own slider values. Built
     /// when either slider or a mask may need them.
     pub(crate) rule: [Option<Curve>; 4],
+    /// Full-strength pixel-level contrast curves (`G_pix(l)`) in [`RuleCurve::ALL`]'s
+    /// order, for masks that evaluate Shadows or Highlights at their own slider values.
+    pub(crate) rule_pix: [Option<Curve>; 4],
     /// How Shadows and Highlights act together on this photo (`local_tone_rule::Pair`),
     /// when both sliders are set or masks may set them; `shadows` and `highlights`
     /// already carry it for the recipe's own values.
@@ -213,7 +232,8 @@ impl Sliders {
     }
 }
 /// What a map takes from the photo whatever the slider values: the measurement copy's
-/// scene luminance and its log, the guided filter's coefficients and the keys, and
+/// scene luminance and its log, the base level, the guided filter's coefficients
+/// (Clarity's detail) and the keys, and
 /// (made the first time a map reads them) positive Shadows' key offset and regional
 /// level and Clarity's detail. It depends only on the copy and its scene luminance, so
 /// renders that change only the sliders keep it (`scene_tone::Measured::map_base`).
@@ -224,10 +244,16 @@ pub(crate) struct MapBase {
     logs: Vec<f32>,
     a: Vec<f32>,
     b: Vec<f32>,
-    /// Mean of log2 luminance over a few map pixels (`TAIL_RADIUS`), then the largest of
-    /// those means over the same reach, so the first pixels inside a large bright
-    /// area read its inside rather than the dark outside.
+    /// The local Laplacian base level of each map pixel ([`laplacian_base`]).
+    laplacian: Vec<f32>,
+    /// Largest of the local mean over `TAIL_RADIUS`, so the first pixels inside a large
+    /// bright area read its inside rather than the dark outside.
     fine: Vec<f32>,
+    /// Active default-crop rectangle `[x0, y0, x1, y1]` on this map, when the camera's
+    /// default crop is narrower than the decoded sensor (`ImageFrame::inset`). Clamped
+    /// out-of-crop border cells stay in the map grids for alignment and halo-free blurs,
+    /// while `RuleStats` tallies only the active crop.
+    crop: Option<[usize; 4]>,
     shadow_key: f32,
     highlight_key: f32,
     clarity_key: f32,
@@ -251,7 +277,12 @@ impl MapBase {
         scene: impl Fn([f32; 3]) -> f32 + Sync,
     ) -> Self {
         let lum: Vec<f32> = small.pixels.par_iter().map(|p| scene(*p)).collect();
-        Self::new(lum, [small.width, small.height])
+        Self::new(lum, [small.width, small.height]).with_crop(active_crop_rect(small))
+    }
+    /// Sets the active default-crop rectangle used when tallying `RuleStats`.
+    pub(crate) fn with_crop(mut self, crop: Option<[usize; 4]>) -> Self {
+        self.crop = crop;
+        self
     }
     /// From scene luminance at `size` pixels.
     pub(crate) fn new(lum: Vec<f32>, size: [u32; 2]) -> Self {
@@ -279,6 +310,7 @@ impl MapBase {
         let b: Vec<f32> = m.iter().zip(&a).map(|(m, a)| m - a * m).collect();
         let fine = dilate(&blur(&logs, w, h, TAIL_RADIUS), w, h, TAIL_RADIUS);
         let (a, b) = rayon::join(|| mean(&a), || mean(&b));
+        let laplacian = laplacian_base(&logs, w, h);
         let average = logs.iter().map(|l| l.exp2() as f64).sum::<f64>() / logs.len() as f64;
         let highlight_key = 0.5 * percentile(0.75) + 0.5 * percentile(0.01);
         // Clarity's weights were fitted relative to the photo's brightest levels.
@@ -290,7 +322,9 @@ impl MapBase {
             logs,
             a,
             b,
+            laplacian,
             fine,
+            crop: None,
             shadow_key: (average as f32).log2(),
             highlight_key,
             clarity_key,
@@ -303,13 +337,24 @@ impl MapBase {
     /// The histogram statistics the global rule reads (of the base level).
     fn rule(&self) -> &super::local_tone_rule::RuleStats {
         self.rule.get_or_init(|| {
-            let base: Vec<f32> = self
-                .logs
-                .iter()
-                .zip(self.a.iter().zip(&self.b))
-                .map(|(l, (a, b))| a * l + b)
-                .collect();
-            super::local_tone_rule::RuleStats::new(&self.logs, &base, self.width, self.height)
+            if let Some([x0, y0, x1, y1]) = self.crop {
+                let (cw, ch) = (x1 - x0, y1 - y0);
+                let mut logs = Vec::with_capacity(cw * ch);
+                let mut lap = Vec::with_capacity(cw * ch);
+                for y in y0..y1 {
+                    let row = y * self.width;
+                    logs.extend_from_slice(&self.logs[row + x0..row + x1]);
+                    lap.extend_from_slice(&self.laplacian[row + x0..row + x1]);
+                }
+                super::local_tone_rule::RuleStats::new(&logs, &lap, cw, ch)
+            } else {
+                super::local_tone_rule::RuleStats::new(
+                    &self.logs,
+                    &self.laplacian,
+                    self.width,
+                    self.height,
+                )
+            }
         })
     }
     /// The copy's scene luminance.
@@ -354,8 +399,8 @@ impl MapBase {
         })
     }
 }
-/// A map's grids as the GPU reads them (`develop.wgsl`'s `grid`): the guided filter's
-/// a, then b, then the fine mean, then (when positive Shadows reads it) the regional level. They depend
+/// A map's grids as the GPU reads them (`develop.wgsl`'s `grid`): the map's log2
+/// luminance, then its local Laplacian base level, then the fine mean, then (when positive Shadows reads it) the regional level. They depend
 /// only on the map's base, which renders share while the sliders move, so the device
 /// keeps them per base instead of receiving them with every render.
 #[derive(Clone)]
@@ -370,7 +415,7 @@ impl MapGrid {
     }
     /// Cells per grid.
     pub(crate) fn cells(&self) -> usize {
-        self.base.a.len()
+        self.base.logs.len()
     }
     /// Offset of the fine mean.
     pub(crate) fn fine_at(&self) -> usize {
@@ -380,11 +425,11 @@ impl MapGrid {
     pub(crate) fn region_at(&self) -> Option<usize> {
         self.region.then(|| 3 * self.cells())
     }
-    /// The values, in order.
+    /// The values, in order: `logs`, `laplacian`, `fine`, and optional `region`.
     pub(crate) fn values(&self) -> Vec<f32> {
         let mut v = Vec::with_capacity(4 * self.cells());
-        v.extend(&self.base.a);
-        v.extend(&self.base.b);
+        v.extend(&self.base.logs);
+        v.extend(&self.base.laplacian);
         v.extend(&self.base.fine);
         if self.region {
             v.extend(self.base.region());
@@ -392,9 +437,155 @@ impl MapGrid {
         v
     }
 }
+/// Default-crop rectangle `[x0, y0, x1, y1]` in pixel indices of `im`, computed with
+/// exact integer scaling from `im.metadata` (matching `ImageFrame::with_size`'s centered
+/// fallback). When `inner` is true, rounds inward (`ceil`/`floor`) so reduced decodes
+/// never include partially optical-black edge cells; when false, rounds outward
+/// (`floor`/`ceil`) so sub-cell sensor margins on reduced measurement maps do not drop
+/// active scene cells. Returns `None` when the crop covers the full image or is invalid.
+fn crop_rect(im: &crate::camera_data::CameraImage, inner: bool) -> Option<[usize; 4]> {
+    let m = &im.metadata;
+    if im.width == 0 || im.height == 0 || m.width == 0 || m.height == 0 {
+        return None;
+    }
+    let axis = |raw: u32, off: u32, len: u32, dst: u32| -> (usize, usize) {
+        let (raw, dst) = (raw as u64, dst as u64);
+        let cw = if len > 0 && len <= raw as u32 {
+            len as u64
+        } else {
+            return (0, dst as usize);
+        };
+        if cw == raw {
+            return (0, dst as usize);
+        }
+        let (num_lo, num_hi, den) = if off.saturating_add(len) <= raw as u32 {
+            (off as u64, off as u64 + cw, raw)
+        } else {
+            (raw - cw, raw + cw, 2 * raw)
+        };
+        let (lo, hi) = if inner {
+            ((num_lo * dst).div_ceil(den), (num_hi * dst) / den)
+        } else {
+            ((num_lo * dst) / den, (num_hi * dst).div_ceil(den))
+        };
+        (lo.min(dst) as usize, hi.min(dst) as usize)
+    };
+    let (x0, x1) = axis(m.width, m.crop_left, m.crop_width, im.width);
+    let (y0, y1) = axis(m.height, m.crop_top, m.crop_height, im.height);
+    if x1 <= x0
+        || y1 <= y0
+        || (x0 == 0 && y0 == 0 && x1 == im.width as usize && y1 == im.height as usize)
+    {
+        None
+    } else {
+        Some([x0, y0, x1, y1])
+    }
+}
+/// Active default-crop rectangle `[x0, y0, x1, y1]` in pixel indices of `im` (outer
+/// rounding), when the camera's default crop is strictly smaller than `im`.
+pub(crate) fn active_crop_rect(im: &crate::camera_data::CameraImage) -> Option<[usize; 4]> {
+    crop_rect(im, false)
+}
+/// Strictly interior default-crop rectangle `[x0, y0, x1, y1]` in pixel indices of `im`
+/// (inner rounding), for clamping optical-black sensor margins before box reduction.
+pub(crate) fn inner_crop_rect(im: &crate::camera_data::CameraImage) -> Option<[usize; 4]> {
+    crop_rect(im, true)
+}
+/// The local Laplacian base level of `logs` (`w` × `h` log2 luminance): see
+/// [`LAPLACIAN_SIGMA`]. Each coefficient of the output's Laplacian pyramid is that of
+/// the map remapped about the Gaussian pyramid's value there, interpolated between the
+/// reference levels the remapping is sampled at; the coarsest level is the map's own.
+fn laplacian_base(logs: &[f32], w: usize, h: usize) -> Vec<f32> {
+    use super::laplacian::Plane;
+    use rawmakase_cancel::Cancel;
+    let levels = (w.min(h).max(4).ilog2() as usize).saturating_sub(1).max(1);
+    let pyramid = |data: Vec<f32>| {
+        let mut p = vec![Plane { w, h, data }];
+        for _ in 0..levels {
+            let next = p[p.len() - 1].down(Cancel::NEVER);
+            p.push(next);
+        }
+        p
+    };
+    let (lo, hi) = logs
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), v| {
+            (lo.min(v), hi.max(v))
+        });
+    if !lo.is_finite() || !hi.is_finite() || hi <= lo {
+        return logs.to_vec();
+    }
+    let gauss = pyramid(logs.to_vec());
+    let first = (lo / LAPLACIAN_STEP).floor() * LAPLACIAN_STEP;
+    let count = (((hi - first) / LAPLACIAN_STEP).ceil().clamp(0., 256.) as usize).saturating_add(1);
+    let zero = || -> Vec<Vec<f32>> {
+        gauss[..levels]
+            .iter()
+            .map(|g| vec![0.; g.data.len()])
+            .collect()
+    };
+    let detail = (0..count)
+        .into_par_iter()
+        .map(|j| {
+            let k = first + j as f32 * LAPLACIAN_STEP;
+            let mut out = zero();
+            let near = |v: &f32| (v - k).abs() < LAPLACIAN_STEP;
+            if !gauss[..levels].iter().any(|g| g.data.iter().any(near)) {
+                return out;
+            }
+            let remapped = pyramid(
+                logs.iter()
+                    .map(|l| {
+                        let d = (l - k) / LAPLACIAN_SIGMA;
+                        l + (-0.5 * d * d).exp() * (k - l)
+                    })
+                    .collect(),
+            );
+            for (l, out) in out.iter_mut().enumerate() {
+                let g = &gauss[l];
+                let up = remapped[l + 1].up(g.w, g.h, Cancel::NEVER);
+                for (i, o) in out.iter_mut().enumerate() {
+                    let weight = (1. - (g.data[i] - k).abs() / LAPLACIAN_STEP).max(0.);
+                    if weight > 0. {
+                        *o = weight * (remapped[l].data[i] - up.data[i]);
+                    }
+                }
+            }
+            out
+        })
+        .reduce(zero, |mut a, b| {
+            for (a, b) in a.iter_mut().zip(&b) {
+                for (a, b) in a.iter_mut().zip(b) {
+                    *a += b;
+                }
+            }
+            a
+        });
+    let mut out = Plane {
+        w: gauss[levels].w,
+        h: gauss[levels].h,
+        data: gauss[levels].data.clone(),
+    };
+    for l in (0..levels).rev() {
+        out = out.up(gauss[l].w, gauss[l].h, Cancel::NEVER);
+        for (o, d) in out.data.iter_mut().zip(&detail[l]) {
+            *o += d;
+        }
+    }
+    out.data
+}
 /// log2 of a scene luminance, as the map reads it.
 pub(crate) fn level(y: f32) -> f32 {
-    y.max(FLOOR).log2()
+    const CEIL: f32 = 1e12;
+    if y.is_finite() {
+        y.clamp(FLOOR, CEIL).log2()
+    } else if y.is_infinite() && y.is_sign_positive() {
+        CEIL.log2()
+    } else {
+        FLOOR.log2()
+    }
 }
 impl LocalToneMap {
     /// Whether a map (of the photo's measurement copy, `MapBase`) is built for
@@ -458,29 +649,59 @@ impl LocalToneMap {
             });
         // Shadows and Highlights follow the photo's global rule (`local_tone_rule`);
         // the two-scale lift and the regional level are not read.
-        let rule = if sliders.shadows != 0. || sliders.highlights != 0. || local {
+        let (rule, rule_pix) = if sliders.shadows != 0. || sliders.highlights != 0. || local {
             let stats = base.rule();
-            RuleCurve::ALL.map(|kind| Some(stats.curve(kind)))
+            let rule = RuleCurve::ALL.map(|kind| Some(stats.curve(kind)));
+            let rule_pix = std::array::from_fn(|k| {
+                rule[k]
+                    .as_ref()
+                    .and_then(|base_curve| stats.curve_pix(RuleCurve::ALL[k], base_curve))
+            });
+            (rule, rule_pix)
         } else {
-            [None, None, None, None]
+            ([None, None, None, None], [None, None, None, None])
         };
-        let scaled = |up: RuleCurve, down: RuleCurve, slider: f32| {
+        let scaled = |curves: &[Option<Curve>; 4], up: RuleCurve, down: RuleCurve, slider: f32| {
             let kind = if slider > 0. { up } else { down };
-            rule[kind as usize]
+            curves[kind as usize]
                 .as_ref()
                 .filter(|_| slider != 0.)
                 .map(|unit| super::local_tone_rule::at(unit, slider))
         };
         let shadows = scaled(
+            &rule,
             RuleCurve::ShadowsUp,
             RuleCurve::ShadowsDown,
             sliders.shadows,
         );
         let highlights = scaled(
+            &rule,
             RuleCurve::HighlightsUp,
             RuleCurve::HighlightsDown,
             sliders.highlights,
         );
+        let shadows_pix = scaled(
+            &rule_pix,
+            RuleCurve::ShadowsUp,
+            RuleCurve::ShadowsDown,
+            sliders.shadows,
+        );
+        let highlights_pix = scaled(
+            &rule_pix,
+            RuleCurve::HighlightsUp,
+            RuleCurve::HighlightsDown,
+            sliders.highlights,
+        );
+        let pix = match (shadows_pix, highlights_pix) {
+            (Some(mut s), Some(h)) => {
+                for (a, b) in s.table.iter_mut().zip(&h.table) {
+                    *a += b;
+                }
+                Some(s)
+            }
+            (Some(c), None) | (None, Some(c)) => Some(c),
+            (None, None) => None,
+        };
         // Both together: each curve gives up a fraction of its shape for a uniform gain
         // at its extreme. An HDR master keeps the sum, which is what its renders were
         // judged with.
@@ -512,6 +733,7 @@ impl LocalToneMap {
             scale: [w as f32 / source[0] as f32, h as f32 / source[1] as f32],
             shadows,
             highlights,
+            pix,
             regional: false,
             lift: None,
             keys,
@@ -523,37 +745,35 @@ impl LocalToneMap {
                     None => d.clone(),
                 }),
             rule,
+            rule_pix,
             pair,
         }
     }
-    /// Luminance gain for a pixel of scene luminance `lum` at camera-image sample
-    /// position `x`, `y`. `clarity_lum` is the same pixel before mask color and
-    /// Exposure, matching the measurement copy that supplied Clarity's blur.
-    pub(crate) fn gain(&self, x: f32, y: f32, lum: f32, clarity_lum: f32) -> f32 {
+    /// Luminance gain for a pixel at camera-image sample position `x`, `y`. `lum` is the
+    /// pixel's scene luminance before mask color and Exposure, matching the measurement
+    /// copy that supplied the map's base and Clarity's blur.
+    pub(crate) fn gain(&self, x: f32, y: f32, lum: f32) -> f32 {
         let base = self.base(x, y, lum);
         let tb = self.tail_base(x, y, base);
         let mut ev = self.shadows.as_ref().map_or(0., |c| c.eval(base))
             + self.highlights.as_ref().map_or(0., |c| c.eval_t(base, tb));
+        if let Some(p) = &self.pix {
+            ev += p.eval(level(lum));
+        }
         if let (Some([detail, region]), Some(k)) = (&self.lift, self.region()) {
             let k = self.bilinear(x, y, k);
             ev += detail.eval(base - k) + region.eval(k);
         }
-        (ev + self.clarity(x, y, clarity_lum)).exp2()
+        (ev + self.clarity(x, y, lum)).exp2()
     }
     /// As [`Self::gain`], with Shadows, Highlights and Clarity at the given slider
     /// values (a mask's added to the recipe's).
-    pub(crate) fn gain_with(
-        &self,
-        x: f32,
-        y: f32,
-        lum: f32,
-        clarity_lum: f32,
-        sliders: [f32; 3],
-    ) -> f32 {
+    pub(crate) fn gain_with(&self, x: f32, y: f32, lum: f32, sliders: [f32; 3]) -> f32 {
+        let own = level(lum);
         let base = self.base(x, y, lum);
         let clarity = match &self.clarity_detail {
-            Some(d) => d.at(self.clarity_sample(x, y), sliders[2], level(clarity_lum)),
-            None => self.clarity(x, y, clarity_lum),
+            Some(d) => d.at(self.clarity_sample(x, y), sliders[2], own),
+            None => self.clarity(x, y, lum),
         };
         let lift = self.region().map_or(0., |k| {
             let k = self.bilinear(x, y, k);
@@ -578,7 +798,10 @@ impl LocalToneMap {
                         Some(b) => gain + b[which][0] * (b[which][1] - gain),
                         None => gain,
                     };
-                    gain * slider.abs().min(1.)
+                    let pix = self.rule_pix[kind as usize]
+                        .as_ref()
+                        .map_or(0., |p| p.eval(own));
+                    (gain + pix) * slider.abs().min(1.)
                 })
         };
         let shadows = ruled(RuleCurve::ShadowsUp, RuleCurve::ShadowsDown, sliders[0], 0)
@@ -617,8 +840,13 @@ impl LocalToneMap {
     fn tail_base(&self, x: f32, y: f32, base: f32) -> f32 {
         base.min(self.bilinear(x, y, &self.base.fine) + TAIL_MARGIN)
     }
+    /// The base level of a pixel: the map's local Laplacian level there, as far as the
+    /// pixel sits at the map's own level, and the pixel's own level as it departs from
+    /// it. That is the filter's remapping once more, for the detail finer than the map.
     fn base(&self, x: f32, y: f32, lum: f32) -> f32 {
-        self.bilinear(x, y, &self.base.a) * level(lum) + self.bilinear(x, y, &self.base.b)
+        let l = level(lum);
+        let d = (l - self.bilinear(x, y, &self.base.logs)) / LAPLACIAN_SIGMA;
+        l + (-0.5 * d * d).exp() * (self.bilinear(x, y, &self.base.laplacian) - l)
     }
     /// The measured Clarity's log2 gain at sample position `x`, `y`.
     fn clarity(&self, x: f32, y: f32, lum: f32) -> f32 {
@@ -874,8 +1102,8 @@ mod tests {
         );
         let out = |x: usize| {
             let y = lum[120 * w + x];
-            let global = m.gain(x as f32, 120., y, y);
-            let masked = m.gain_with(x as f32, 120., y, y, [0., -1., 0.]);
+            let global = m.gain(x as f32, 120., y);
+            let masked = m.gain_with(x as f32, 120., y, [0., -1., 0.]);
             assert!((global - masked).abs() < 1e-5);
             y * global
         };
@@ -1009,7 +1237,7 @@ mod tests {
                 },
                 false,
             );
-            m.gain(128., 128., 1., 1.).log2()
+            m.gain(128., 128., 1.).log2()
         };
         let (flat, striped) = (pull(false), pull(true));
         assert!(flat < -1.5, "flat {flat}");
@@ -1052,7 +1280,7 @@ mod tests {
         let (sdr, hdr) = (map(false), map(true));
         let at = |m: &LocalToneMap, x: usize, y: usize| {
             let l = lum[y * w + x];
-            m.gain(x as f32, y as f32, l, l).log2()
+            m.gain(x as f32, y as f32, l).log2()
         };
         // Far from the block (more than the near distance plus its softening).
         assert_eq!(at(&hdr, 230, 64), at(&sdr, 230, 64));
@@ -1088,7 +1316,7 @@ mod tests {
             },
             false,
         );
-        let at = |x: f32| m.gain(x, 128., 1., 1.).log2();
+        let at = |x: f32| m.gain(x, 128., 1.).log2();
         let inside = at(128.);
         for x in [88., 89., 90.] {
             assert!(at(x) < inside + 1., "x {x}: {}, inside {inside}", at(x));
@@ -1124,10 +1352,7 @@ mod tests {
         // (`local_tone_rule`), the large one and the small one alike at the same level.
         let lum = scene(&[[20, 30, 100, 100], [190, 75, 8, 8]]);
         let m = map(&lum, 1., false);
-        let at = |x: usize, y: usize| {
-            m.gain(x as f32, y as f32, lum[y * 240 + x], lum[y * 240 + x])
-                .log2()
-        };
+        let at = |x: usize, y: usize| m.gain(x as f32, y as f32, lum[y * 240 + x]).log2();
         let (large, small) = (at(70, 80), at(194, 79));
         assert!(large > 0.5 && small > 0.2, "large {large}, small {small}");
         // The surround is hardly changed.
@@ -1144,8 +1369,8 @@ mod tests {
             for (x, y) in [(70, 80), (194, 79), (200, 20), (5, 155)] {
                 let l = lum[y * 240 + x];
                 let (x, y) = (x as f32, y as f32);
-                let a = global.gain(x, y, l, l);
-                let b = masked.gain_with(x, y, l, l, [s, 0., 0.]);
+                let a = global.gain(x, y, l);
+                let b = masked.gain_with(x, y, l, [s, 0., 0.]);
                 assert!((a - b).abs() < 1e-4 * a, "s {s}: {a} against {b}");
             }
         }
@@ -1253,8 +1478,8 @@ mod tests {
             for (x, y) in [(70, 80), (194, 79), (200, 20), (10, 150)] {
                 let l = lum[y * 240 + x];
                 let (x, y) = (x as f32, y as f32);
-                let want = global.gain(x, y, l, l).log2();
-                let got = masks.gain_with(x, y, l, l, [s, h, 0.]).log2();
+                let want = global.gain(x, y, l).log2();
+                let got = masks.gain_with(x, y, l, [s, h, 0.]).log2();
                 assert!(
                     (got - want).abs() < 2e-5,
                     "{s}, {h} at {x}, {y}: {got} against {want}"
@@ -1273,5 +1498,23 @@ mod tests {
         for (got, unit) in shadows.table.iter().zip(&unit(RuleCurve::ShadowsUp).table) {
             assert_eq!(*got, unit * 0.8);
         }
+    }
+
+    #[test]
+    fn non_finite_luminance_does_not_overflow_laplacian_base() {
+        let base = MapBase::new(vec![0.1, 0.2, f32::INFINITY, f32::NAN], [2, 2]);
+        assert!(base.logs.iter().all(|v| v.is_finite()));
+        assert!(base.laplacian.iter().all(|v| v.is_finite()));
+        let map = LocalToneMap::from_base(
+            &std::sync::Arc::new(base),
+            [2, 2],
+            Sliders {
+                shadows: 1.,
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        assert!(map.gain(0., 0., 0.1).is_finite());
     }
 }
