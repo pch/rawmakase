@@ -354,14 +354,14 @@ fn a_copy_removed_when_the_catalog_cannot_be_read_again_still_leaves_undo() -> a
         .catalog()
         .db_for_tests()
         .execute_batch("ALTER TABLE collections_gone RENAME TO collections")?;
-    // The next copy, of B rated 2, is given the removed copy's id.
+    // The next copy, of B rated 2, is given an id of its own.
     let again = editor
         .library
         .as_mut()
         .unwrap()
         .create_virtual_copy(b)?
         .value;
-    assert_eq!(again, copy);
+    assert_ne!(again, copy);
     assert_eq!(rating(&editor, again), 2);
     editor.undo();
     assert_eq!(rating(&editor, again), 2);
@@ -370,7 +370,7 @@ fn a_copy_removed_when_the_catalog_cannot_be_read_again_still_leaves_undo() -> a
 }
 
 #[test]
-fn undo_never_writes_a_removed_copys_id_given_to_a_new_copy() -> anyhow::Result<()> {
+fn undo_of_a_removed_copy_never_writes_the_next_copy() -> anyhow::Result<()> {
     let (_dir, _ctx, mut editor, [a, b]) = two_photo_editor()?;
     let library = editor.library.as_mut().unwrap();
     let copy = library.create_virtual_copy(a)?.value;
@@ -381,14 +381,14 @@ fn undo_never_writes_a_removed_copys_id_given_to_a_new_copy() -> anyhow::Result<
     )?;
     editor.sync_undo();
     editor.remove_virtual_copy(copy);
-    // The catalog gives the removed copy's id to the next copy, of B, rated 2.
+    // The next copy, of B rated 2, never takes the removed copy's id.
     let again = editor
         .library
         .as_mut()
         .unwrap()
         .create_virtual_copy(b)?
         .value;
-    assert_eq!(again, copy);
+    assert_ne!(again, copy);
     assert_eq!(rating(&editor, again), 2);
     editor.undo();
     assert_eq!(rating(&editor, again), 2);
@@ -407,7 +407,7 @@ fn a_change_to_several_photos_keeps_undoing_those_left_after_one_is_removed() ->
         false,
     )?;
     editor.sync_undo();
-    // Undone, then the copy goes, and its id comes back for a copy of B.
+    // Undone, then the copy goes, and a copy of B is made under a new id.
     editor.undo();
     assert_eq!(rating(&editor, a), 0);
     editor.remove_virtual_copy(copy);
@@ -417,7 +417,7 @@ fn a_change_to_several_photos_keeps_undoing_those_left_after_one_is_removed() ->
         .unwrap()
         .create_virtual_copy(b)?
         .value;
-    assert_eq!(again, copy);
+    assert_ne!(again, copy);
     // Redo rates A again and leaves the new copy as it was made.
     editor.redo();
     assert_eq!(rating(&editor, a), 4);
