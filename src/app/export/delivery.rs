@@ -8,8 +8,9 @@
 //! At most [`WINDOW`] files are in flight at a time. Deliveries to one
 //! extension go one after another: its program serves requests in turn, so a
 //! second one's `export.begin` would wait, and time out, behind the first's
-//! long `export.end`. A file a delivery holds is kept from being overwritten
-//! by a later export until the delivery is over ([`Editor::delivery_holds`]).
+//! long `export.end`. While a delivery is under way, a later export into a
+//! folder it writes to doesn't overwrite anything there
+//! ([`Editor::delivery_holds`]).
 use super::Exports;
 use crate::app::Editor;
 use crate::app::extensions::destinations::{Begun, FileFacts, Step};
@@ -26,33 +27,6 @@ use std::path::{Path, PathBuf};
 
 /// How many of a delivery's files may be sent and not yet received.
 const WINDOW: usize = 8;
-
-/// What the export thread notes as it writes a delivery's file, before the
-/// editor hears of it: those files are held from the moment they exist.
-#[derive(Debug, Default)]
-pub(super) struct Writes {
-    /// The batches a delivery sends, by ticket.
-    sending: HashSet<u64>,
-    /// Their files written and not yet taken in by the editor.
-    written: HashSet<PathBuf>,
-}
-
-impl Writes {
-    /// Batch `ticket`'s files go to a delivery.
-    pub(super) fn sending(writes: &std::sync::Mutex<Self>, ticket: u64) {
-        if let Ok(mut w) = writes.lock() {
-            w.sending.insert(ticket);
-        }
-    }
-    /// Batch `ticket` wrote `path`: held if a delivery sends it.
-    pub(super) fn note(writes: &std::sync::Mutex<Self>, ticket: u64, path: &Path) {
-        if let Ok(mut w) = writes.lock()
-            && w.sending.contains(&ticket)
-        {
-            w.written.insert(same_file(path));
-        }
-    }
-}
 
 /// A delivery from its beginning to its end's answer.
 pub(super) struct Delivery {
@@ -170,19 +144,16 @@ impl Editor {
         }
     }
 
-    /// Whether a delivery under way holds the file at `path`: a later export
-    /// mustn't write over it.
+    /// Whether a delivery under way writes to the folder of `path`, and so
+    /// may hold a file there a later export would replace: its own files,
+    /// and any name it takes while its export runs (a `-2`). Returns the
+    /// destination's name.
     pub(super) fn delivery_holds(&self, path: &Path) -> Option<&str> {
-        let path = same_file(path);
-        let written = self
-            .exports
-            .delivery_writes
-            .lock()
-            .is_ok_and(|w| w.written.contains(&path));
+        let folder = same_file(path).parent()?.to_path_buf();
         self.exports
             .deliveries
             .values()
-            .find(|d| written || d.paths.contains(&path))
+            .find(|d| d.paths.iter().any(|p| p.parent() == Some(folder.as_path())))
             .map(|d| d.to.name.as_str())
     }
 
@@ -210,10 +181,6 @@ impl Editor {
         let Outcome::Exported { path, size, .. } = outcome else {
             return;
         };
-        // Taken in: the delivery holds it from here.
-        if let Ok(mut w) = self.exports.delivery_writes.lock() {
-            w.written.remove(&same_file(path));
-        }
         let Some(d) = self.exports.deliveries.get_mut(id) else {
             return;
         };
@@ -223,13 +190,6 @@ impl Editor {
         d.paths.insert(same_file(path));
         d.waiting.push(facts.file(id, index, path, *size));
         self.advance_delivery(id);
-    }
-
-    /// Batch `ticket`, whose files a delivery sends, is over.
-    pub(super) fn delivery_batch_over(&mut self, ticket: u64) {
-        if let Ok(mut w) = self.exports.delivery_writes.lock() {
-            w.sending.remove(&ticket);
-        }
     }
 
     /// Delivery `id`'s batch is over: `exported` is what its report said.
@@ -285,7 +245,10 @@ impl Editor {
         };
         // Its requests in flight settle as cancelled; the delivery is gone,
         // so they say nothing more.
-        drop(self.extensions.stop_delivery(&d.to, id));
+        // Its own requests settle as cancelled and find it gone; another's,
+        // if its program had to be stopped, are said.
+        let outcomes = self.extensions.stop_delivery(&d.to, id);
+        self.extension_outcomes(outcomes);
         self.messages
             .note(format!("Sending to {} stopped", d.to.name));
         self.start_delivery(&d.to.extension);
@@ -331,7 +294,10 @@ impl Editor {
         let Some(d) = self.exports.deliveries.remove(id) else {
             return;
         };
-        drop(self.extensions.stop_delivery(&d.to, id));
+        // Its own requests settle as cancelled and find it gone; another's,
+        // if its program had to be stopped, are said.
+        let outcomes = self.extensions.stop_delivery(&d.to, id);
+        self.extension_outcomes(outcomes);
         self.start_delivery(&d.to.extension);
         let name = &d.to.name;
         let exported = d.exported.as_ref().map(|(said, _)| said.as_str());

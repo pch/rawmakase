@@ -713,12 +713,22 @@ impl Extension {
                 // Kept until it ends well: a failed or cancelled end is
                 // followed by `export-stopped`, which reaches `stopped`.
                 let id = end.delivery.clone();
+                let received = open.files.clone();
                 let ended = self.destination(&end.destination)?.end(cx, end)?;
                 ended.validate()?;
+                // An answer the app would refuse fails here, with the delivery
+                // still known for the `export-stopped` that follows.
+                if let Some(other) = ended.files.iter().find(|r| !received.contains(&r.index)) {
+                    return Err(out_of_order(format!(
+                        "the answer names file {}, which the delivery wasn't sent",
+                        other.index
+                    )));
+                }
                 let answer = serde_json::to_value(ended).expect("a result is JSON");
-                // One that won't fit its reply line fails here, with the
-                // delivery still known for the `export-stopped` that follows.
-                if answer.to_string().len() > rawmakase_extension_protocol::MAX_LINE - 1024 {
+                // The reply's envelope, `{"t":"ok","id":…,"v":…}` and its line
+                // end, takes at most this much beside the answer.
+                const ENVELOPE: usize = 48;
+                if answer.to_string().len() > rawmakase_extension_protocol::MAX_LINE - ENVELOPE {
                     return Err(RemoteError::new(
                         ErrorCode::TooLarge,
                         "the answer is longer than a protocol line",

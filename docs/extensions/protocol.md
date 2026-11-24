@@ -515,11 +515,10 @@ photo was taken by the camera's clock, without a time zone, left out when the
 catalog doesn't know it. The file is written whole when the request is sent;
 the app doesn't touch it afterwards, and nor should the program, which writes
 what it makes (a gallery's pages) beside it or elsewhere. Until the delivery is
-over, a later export doesn't write over it either: one set to overwrite a file
-a delivery holds (its folder's links resolved) names its own copies apart, as
-Use Unique Names does, and the top bar says so. A file is held from the moment the export writes it. An
-export planned before the delivery's file got its final name (a `-2` taken
-while it ran) isn't checked again when it writes. The reply is `null`
+over, a later export doesn't write over it either: an export into a folder a
+delivery under way writes to names its own copies apart wherever it would
+replace a file, as Use Unique Names does, and the top bar says so. That covers
+the names a delivery's export takes while it runs (a `-2`) too. The reply is `null`
 once the file is received: how it went is said in `export.end`'s answer, so a
 destination answers at once and uploads meanwhile.
 
@@ -600,8 +599,7 @@ fill the program's queue; a program that doesn't read even that is stopped, as
 it would never stop what it sends. Disabling the extension, a crash, a reload
 and quitting send no `export-stopped`: the program gets `quitting`, or is
 stopped, and every delivery open on it ends in the app, between its requests
-too. So do
-disabling the extension and quitting. Cancelling the export doesn't stop the
+too. Cancelling the export doesn't stop the
 delivery: its `export.end` comes with `cancelled`, after the files written
 before the cancel. A program that exits or crashes mid-delivery ends it; its
 later requests aren't sent to the program started again, and the top bar says

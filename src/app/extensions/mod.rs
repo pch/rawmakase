@@ -619,6 +619,9 @@ type Found = (Manifest, Origin, PathBuf, Option<PathBuf>, Option<String>);
 pub(in crate::app) struct Host {
     /// None in a test editor's inert host: nothing is read or started.
     store: Option<Store>,
+    /// Deliveries ended by an extension that is gone (replaced, removed,
+    /// uninstalled), for [`Host::take_lost_deliveries`].
+    lost: Vec<(String, ErrorCode)>,
     app: semver::Version,
     wake: Option<session::Wake>,
     extensions: Vec<Extension>,
@@ -701,6 +704,7 @@ impl Host {
             wake: None,
             extensions: Vec::new(),
             next_number: 1,
+            lost: Vec::new(),
             next_ticket: 1,
             polls: 0,
             closed: false,
@@ -1114,6 +1118,7 @@ impl Host {
                     let lifecycle = self.lifecycles.entry(id).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
+                        self.lost.append(&mut old.lost);
                     }
                     changed = true;
                     let mtimes = mtimes(&dir, program.as_deref());
@@ -1151,6 +1156,7 @@ impl Host {
         // What is left was removed meanwhile.
         for mut gone in std::mem::take(&mut self.extensions) {
             Self::end(&mut gone, ErrorCode::Cancelled);
+            self.lost.append(&mut gone.lost);
             changed = true;
         }
         kept.sort_by_key(|e| e.name().to_lowercase());
@@ -1547,6 +1553,12 @@ impl Host {
     fn end(e: &mut Extension, code: ErrorCode) -> Vec<Outcome> {
         e.lifecycle.fetch_add(1, Ordering::SeqCst);
         let mut outcomes = Self::stop_reading(e, &code);
+        // Every delivery open on it ends, whether or not a request of it is
+        // in flight: a caller may drop the outcomes below, and the editor
+        // ignores a second end of one.
+        for delivery in std::mem::take(&mut e.delivering).into_keys() {
+            e.lost.push((delivery, code.clone()));
+        }
         if let Some(mut run) = e.run.take() {
             let mut ids: Vec<u64> = run.requests.keys().copied().collect();
             ids.sort_unstable();
@@ -1563,11 +1575,6 @@ impl Host {
             }
             drop(run);
         }
-        // Those with a request in flight were told above; the others wait for
-        // their export, and would never hear.
-        for (delivery, _) in std::mem::take(&mut e.delivering) {
-            e.lost.push((delivery, code.clone()));
-        }
         e.status = None;
         e.panels.clear();
         outcomes
@@ -1577,9 +1584,11 @@ impl Host {
     /// disabling, a reload), each as its failed end: whatever path ended the
     /// program, the editor ends them here.
     pub(in crate::app) fn take_lost_deliveries(&mut self) -> Vec<Outcome> {
+        let gone = std::mem::take(&mut self.lost);
         self.extensions
             .iter_mut()
             .flat_map(|e| std::mem::take(&mut e.lost))
+            .chain(gone)
             .map(|(delivery, code)| Outcome::Delivery {
                 delivery,
                 step: destinations::Step::End,
@@ -2287,6 +2296,7 @@ impl Host {
         }
         let mut e = self.extensions.remove(index);
         let outcomes = Self::end(&mut e, ErrorCode::Cancelled);
+        self.lost.append(&mut e.lost);
         self.revision += 1;
         // Another source of the same id (the bundled one under an installed
         // version) shows again.

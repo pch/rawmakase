@@ -153,10 +153,6 @@ pub(in crate::app) struct Exports {
     deliveries: std::collections::BTreeMap<String, delivery::Delivery>,
     /// How many deliveries have begun, for the next one's id.
     deliveries_begun: u64,
-    /// The batches whose files a delivery sends, by ticket, and the files
-    /// they have written that the editor hasn't taken in yet: the export
-    /// thread notes them as it writes them, so they are held from that moment.
-    delivery_writes: Arc<Mutex<delivery::Writes>>,
     /// Send To's options being typed or dragged.
     option_form: crate::app::extensions::SettingForm,
     /// The Watermark Editor, over the dialog.
@@ -760,8 +756,8 @@ impl Editor {
     fn plan_export(&mut self, mut pending: Pending, answer: Option<Existing>) {
         match batch::plan(&pending.batch, &pending.settings, answer) {
             Ok(plan) => {
-                // A file a delivery still sends keeps its bytes: this export
-                // names its own copies apart instead.
+                // Files a delivery still sends keep their bytes: an export
+                // into a folder it writes to names its own copies apart.
                 let held = plan
                     .entries
                     .iter()
@@ -819,9 +815,6 @@ impl Editor {
             ai: self.ai_service(),
         };
         let ticket = self.export_queue().submit(batch);
-        if delivery.is_some() {
-            delivery::Writes::sending(&self.exports.delivery_writes, ticket);
-        }
         self.exports.queued.insert(
             ticket,
             Queued {
@@ -889,13 +882,9 @@ impl Editor {
         self.exports.queue.get_or_insert_with(|| {
             let logical = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
             let (each_tx, each_ctx) = (tx.clone(), ctx.clone());
-            let writes = self.exports.delivery_writes.clone();
             Queue::with_each(
                 batch::Lanes::for_machine(logical, crate::platform::memory::total()),
                 move |ticket, index, outcome| {
-                    if let batch::Outcome::Exported { path, .. } = outcome {
-                        delivery::Writes::note(&writes, ticket, path);
-                    }
                     let outcome = outcome.clone();
                     let _ = each_tx.send(Event::PhotoExported {
                         ticket,
@@ -940,9 +929,6 @@ impl Editor {
         let Some(queued) = self.exports.queued.remove(&ticket) else {
             return;
         };
-        if queued.delivery.is_some() {
-            self.delivery_batch_over(ticket);
-        }
         let (summary, exported) = summarize(&queued, &outcomes);
         if let Some(editing) = queued.editing {
             // Edit In's own messages say how it went; what could not be

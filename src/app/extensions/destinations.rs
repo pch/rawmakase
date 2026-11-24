@@ -203,10 +203,12 @@ pub(super) fn tell_stopped(
         })
         .into_parts();
     match run.session.urgent_event(&name, params) {
-        Ok(()) => Vec::new(),
         // It no longer reads even the room kept for answers: it would never
         // stop what it sends, so it is stopped instead.
-        Err(_) => Host::end(e, ErrorCode::Exited),
+        Err(err) if err.code == ErrorCode::ChannelFull => Host::end(e, ErrorCode::Exited),
+        // A program already gone is ended, and counted, by its session's
+        // close.
+        _ => Vec::new(),
     }
 }
 
