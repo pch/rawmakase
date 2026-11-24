@@ -20,6 +20,10 @@ const SLOW: std::time::Duration = std::time::Duration::from_secs(5);
 /// The files followed, each with its size and modification time as last
 /// taken up.
 type Followed = Arc<Mutex<HashMap<PathBuf, Stamp>>>;
+/// The followed files the system names otherwise, each by the path its
+/// events give (the folder's real path: macOS reports a folder reached
+/// through a symbolic link by where the link leads), to the path followed.
+type Aliases = Arc<Mutex<HashMap<PathBuf, PathBuf>>>;
 
 #[derive(Default)]
 pub(in crate::app) struct Watch {
@@ -58,6 +62,7 @@ impl Watch {
             let (send, receive) = mpsc::channel();
             self.thread = Some(watching(
                 self.files.clone(),
+                Aliases::default(),
                 receive,
                 tx.clone(),
                 ctx.clone(),
@@ -82,14 +87,20 @@ impl Watch {
 /// sender is dropped.
 fn watching(
     files: Followed,
+    aliases: Aliases,
     wanted: mpsc::Receiver<HashSet<PathBuf>>,
     tx: mpsc::Sender<Event>,
     ctx: egui::Context,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         use notify::Watcher;
-        let mut watcher =
-            notify::recommended_watcher(handler(files.clone(), tx.clone(), ctx.clone())).ok();
+        let mut watcher = notify::recommended_watcher(handler(
+            files.clone(),
+            aliases.clone(),
+            tx.clone(),
+            ctx.clone(),
+        ))
+        .ok();
         let mut folders: HashSet<PathBuf> = HashSet::new();
         // The folders on drives that may send no events.
         let mut slow: HashSet<PathBuf> = HashSet::new();
@@ -123,6 +134,19 @@ fn watching(
                     }
                     folders = now;
                     folders.retain(|folder| !refused.contains(folder));
+                    // Resolved with no lock held: the window locks the
+                    // files to follow others, and a folder on a hung share
+                    // can take long to resolve.
+                    let paths: Vec<PathBuf> = files
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .keys()
+                        .cloned()
+                        .collect();
+                    let resolved = spelled_otherwise(&paths);
+                    *aliases
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = resolved;
                     slow = folders
                         .iter()
                         .filter(|folder| needs_looking(folder))
@@ -178,6 +202,7 @@ fn needs_looking(folder: &std::path::Path) -> bool {
 /// for other files in the folders, and reads, wake nothing.
 fn handler(
     files: Followed,
+    aliases: Aliases,
     tx: mpsc::Sender<Event>,
     ctx: egui::Context,
 ) -> impl notify::EventHandler {
@@ -191,16 +216,44 @@ fn handler(
         let followed = files
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let aliases = aliases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let changed: Vec<PathBuf> = event
             .paths
             .into_iter()
-            .filter(|path| followed.contains_key(path))
+            // A file followed as the system spells it is itself.
+            .filter_map(|path| {
+                if followed.contains_key(&path) {
+                    Some(path)
+                } else {
+                    aliases.get(&path).cloned()
+                }
+            })
             .collect();
-        drop(followed);
+        drop((followed, aliases));
         if !changed.is_empty() && tx.send(Event::EditInChanged(changed)).is_ok() {
             ctx.request_repaint();
         }
     }
+}
+
+/// The files of `followed` whose folder's real path is spelled otherwise,
+/// by their path in it. Each folder is resolved once; one that can't be is
+/// left as it is spelled.
+fn spelled_otherwise(followed: &[PathBuf]) -> HashMap<PathBuf, PathBuf> {
+    let mut real: HashMap<&std::path::Path, Option<PathBuf>> = HashMap::new();
+    followed
+        .iter()
+        .filter_map(|path| {
+            let folder = path.parent()?;
+            let resolved = real
+                .entry(folder)
+                .or_insert_with(|| folder.canonicalize().ok().filter(|r| r != folder))
+                .as_ref()?;
+            Some((resolved.join(path.file_name()?), path.clone()))
+        })
+        .collect()
 }
 
 /// The files of `followed` whose size or modification time isn't as last

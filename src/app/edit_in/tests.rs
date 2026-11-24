@@ -497,6 +497,40 @@ fn a_save_is_told_by_the_watch() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A save to a file whose folder the catalog reaches through a symbolic
+/// link is told too: macOS names the folder by where the link leads.
+#[cfg(unix)]
+#[test]
+fn a_save_through_a_linked_folder_is_told_by_the_watch() -> anyhow::Result<()> {
+    let (dir, mut e, _) = editor_with_catalog(&[])?;
+    let real = dir.path().canonicalize()?.join("real");
+    std::fs::create_dir(&real)?;
+    let link = dir.path().canonicalize()?.join("link");
+    std::os::unix::fs::symlink(&real, &link)?;
+    let file = link.join("a-Edit.tif");
+    std::fs::write(&file, b"rendered")?;
+    e.edit_in.launched = Some(Vec::new());
+    e.launch_editor(dir.path(), &file, None, None);
+    let ctx = e.context.clone();
+    e.watch_sent(&ctx);
+    std::thread::sleep(Duration::from_millis(1000));
+    std::fs::write(&file, b"saved again by the editor")?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !e.edit_in.sent[0].pending && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+        e.events(&ctx);
+    }
+    assert!(
+        e.edit_in.sent[0].pending,
+        "told of the save through the link"
+    );
+    assert_eq!(
+        e.edit_in.sent[0].path, file,
+        "followed as the catalog names it"
+    );
+    Ok(())
+}
+
 /// The slow look tells of a change once, not at every look after.
 #[test]
 fn the_slow_look_tells_of_a_change_once() -> anyhow::Result<()> {
