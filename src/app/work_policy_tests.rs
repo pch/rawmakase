@@ -186,6 +186,7 @@ fn quitting_stops_the_workers_in_order() {
             Controls,
             Extensions,
             FolderSync,
+            EditInWatch,
             LibraryPreviews,
         ]
     );

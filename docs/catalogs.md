@@ -153,6 +153,61 @@ Older releases still open the catalog: they read and write a single mapping for 
 
 Keep only one computer using a catalog at a time: close it on one before opening it on another. SQLite over a network share isn't safe for two computers writing at once.
 
+## Editing in another program
+
+Edit In opens a photo in another editor, as Lightroom's Edit in Photoshop does.
+Add the programs in **Preferences > External Editing** with **Add Editor…** (an
+application on a Mac, a program file on Windows and Linux); the first one in the
+list opens with **Cmd+E** (Ctrl+E on Windows and Linux), and **Move Up** changes
+which one that is. Nothing is looked for on the computer: only the programs added
+there are offered.
+
+Right-click a photo in the grid or the filmstrip and choose **Edit In**, or use
+Develop's Photo menu, Photo › Edit in External Editor on a Mac, or Cmd+E. Edit In
+takes the photos Export would: the selection in the Library, in Develop the
+filmstrip's selection when the open photo is in it, else the open photo. For each
+RAW photo RAWmakase saves a 16-bit TIFF with its edit beside the original, named
+`DSC_0001-Edit.tif` (`-Edit-2` and so on when that name is taken), in the color
+space chosen on the same page (ProPhoto RGB unless you choose Adobe RGB or sRGB).
+The TIFF is added to the catalog on top of a stack with its original (Undo takes
+the stack back) and opened in the editor. As in Lightroom, it takes the
+original's place: selected instead of it, and open in Develop when the original
+was, so the photo shown is the one being edited. The TIFF carries the photo's metadata
+but not its develop settings, which are in its pixels. Your last export's settings
+are left as they were.
+
+A JPEG, PNG or TIFF (any photo that isn't a RAW, an Edit In TIFF included) can be
+opened as it is, so RAWmakase asks first, as Lightroom does, once for all of them:
+
+- **Edit Original** (the default): the file itself opens in the editor. Nothing is
+  copied or added, so editing an Edit In TIFF again makes no new file.
+- **Edit a Copy**: the file is copied as it is beside the original
+  (`IMG_0001-Edit.jpg`, `-Edit-2` and so on), added on top of a stack with it and
+  opened.
+- **Edit a Copy with RAWmakase Adjustments**: a 16-bit TIFF with the edit, as for
+  a RAW.
+
+With the first two, adjustments made in RAWmakase are not in what the editor
+shows; the window says so when the photo has some. RAW photos chosen with them
+are always edited as a TIFF with their adjustments.
+
+While files are open in an editor, RAWmakase follows them, whether its window is
+in front or not (on a second screen, say): the system tells it when something in
+their folders changes, and on drives that don't say (a network share changed from
+another computer) it looks at them itself every 5 seconds. Nothing runs while the
+files rest. When the editor has saved one and the file has not changed for a third
+of a second, its thumbnail and previews are made again, the ones shown staying
+until the new ones are ready, and the photo is opened again if it is the one
+shown: under a second after the save for a 100 MB TIFF. An edit made to the file
+in RAWmakase stays with it, as do changes not saved yet in Develop. An editor that
+saves by deleting the file and writing it again is followed through the moment
+it is missing. While the catalog is busy (an import, a folder change), a save is
+tried again each second for half a minute, then at the next save.
+
+A file is followed until RAWmakase quits, another catalog opens, its photo leaves
+the catalog or no longer is that file, a save to it can never be taken up for one
+of those reasons, or its folder can't be watched (said in the top bar).
+
 ## Unused masks and patches
 
 Mask rasters and AI Remove patches are stored once each, by content, in the `bitmaps` table, and a patch is a few MB. When a spot is deleted, a selection or a generation is replaced, or a photo is removed, its rasters stay for a while. Opening the catalog for use (the app or the command line) a week or more after it last did (`rasters_checked_at` in `meta`) looks through every edit, Lightroom setting, spot or mask, History state, snapshot and virtual copy, a few rows at a time, and in one transaction deletes the rasters none of them named at this look or the one before (`rasters_unnamed` in `meta` lists the ones unnamed last time), so a raster goes one to two weeks after the last thing naming it. The time is read and recorded under the write lock, so two windows opening the catalog at once look once; a last look recorded after the current time (the clock set back) or unreadable starts the week again, deleting nothing. The wait is for what no row records, such as another window's Undo back to a deleted spot. A raster is kept if its id appears anywhere in those, whatever release wrote them (an id of a shape this release doesn't know, as it is); every raster is kept when a History can't be read, and the catalog is left alone when it has a table a later release added. Looking through means inflating every History (about half a second for a hundred well-edited photos), which is why it isn't done on every open. When that leaves 32 MiB or a quarter of the file free, the file is compacted ("Making the catalog smaller…"), with `compact_pending` retrying a compaction that failed. A raster is stored in the transaction of the edit that names it, so one a save is storing is never deleted; one another window deletes while this one still holds its pixels is stored again by the next save that names it, and one whose pixels are gone from both leaves that save refused as naming a missing raster. The format doesn't change, and an older release reads a catalog with fewer rasters as it read it before.

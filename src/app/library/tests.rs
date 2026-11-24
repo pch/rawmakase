@@ -593,6 +593,7 @@ fn photo_cells_preserve_texture_proportions_at_different_grid_widths() {
                     collections: Default::default(),
                     in_collections: Vec::new(),
                     remove_from: None,
+                    editors: std::sync::Arc::from(Vec::new()),
                 };
                 photo_cell(ui, &photo, Some(&texture), shown, width);
             });
@@ -1878,6 +1879,84 @@ fn thumbnail_requests_are_not_repeated_while_pending_or_failed() -> Result<()> {
     library.cache.request_thumbnail(&path, &ctx);
     assert_eq!(rx.try_iter().count(), 0);
     assert!(library.texture(&library.session.photos()[0]).is_some());
+    Ok(())
+}
+/// A file saved again by another program (Edit In) keeps its thumbnail shown
+/// while the new one is made: the cell never goes blank waiting for a slow
+/// decode. It is asked for once, and not again once it has come.
+#[test]
+fn a_rewritten_files_thumbnail_stays_until_the_new_one_comes() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = tx;
+    let photo = library.session.photos()[0].clone();
+    library
+        .cache
+        .insert_thumb(&ctx, photo.path.clone(), &image::RgbImage::new(2, 2));
+    library.file_rewritten(&photo.path);
+    assert!(library.texture(&photo).is_some(), "the old one stays shown");
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1, "asked for again, once");
+    // The new one comes from the worker: shown, and not asked for again.
+    let (results, rx_results) = std::sync::mpsc::sync_channel(1);
+    library.cache.thumb_rx = rx_results;
+    results.send(super::previews::PreviewResult {
+        path: photo.path.clone(),
+        image: Some(image::RgbImage::new(3, 3)),
+        display: Default::default(),
+        cache_error: None,
+        skipped: false,
+    })?;
+    library.cache.poll(&ctx);
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    assert_eq!(rx.try_iter().count(), 0);
+    assert!(library.texture(&photo).is_some());
+    Ok(())
+}
+/// A thumbnail asked for before the file was saved again, still out when it
+/// was, is of the version before: what it brings is dropped, and the new one
+/// asked for.
+#[test]
+fn a_thumbnail_asked_for_before_a_save_is_dropped() -> Result<()> {
+    let (_directory, mut library) = library_of(&["a.RAF"])?;
+    let ctx = library.ctx.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = tx;
+    let photo = library.session.photos()[0].clone();
+    library
+        .cache
+        .insert_thumb(&ctx, photo.path.clone(), &image::RgbImage::new(2, 2));
+    let old = library.texture(&photo).unwrap().id();
+    // A request out (the cache's, for another monitor profile, say) when the save comes.
+    library.cache.pending.insert(photo.path.clone());
+    library.file_rewritten(&photo.path);
+    let (results, rx_results) = std::sync::mpsc::sync_channel(2);
+    library.cache.thumb_rx = rx_results;
+    let result = |size| super::previews::PreviewResult {
+        path: photo.path.clone(),
+        image: Some(image::RgbImage::new(size, size)),
+        display: Default::default(),
+        cache_error: None,
+        skipped: false,
+    };
+    results.send(result(3))?;
+    library.cache.poll(&ctx);
+    assert_eq!(
+        library.texture(&photo).unwrap().id(),
+        old,
+        "the old one kept"
+    );
+    library.cache.request_thumbnail(&photo.path, &ctx);
+    assert_eq!(rx.try_iter().count(), 1, "asked for again");
+    results.send(result(4))?;
+    library.cache.poll(&ctx);
+    assert_ne!(
+        library.texture(&photo).unwrap().id(),
+        old,
+        "the new one shown"
+    );
     Ok(())
 }
 /// The views publish what they showed last frame before asking for this
@@ -6088,5 +6167,63 @@ fn the_loupe_keeps_its_photo_said_removed_but_still_in_the_catalog() -> Result<(
     library.reread_after(&[b], &[])?;
     assert!(library.loupe_open());
     assert_eq!(library.selected(), Some(b));
+    Ok(())
+}
+
+/// A neighbour the Loupe prepared ahead and had not taken yet when its file
+/// was saved again is of the version before: dropped, and the new version
+/// shown when it is chosen.
+#[test]
+fn a_neighbour_prepared_before_a_save_is_not_shown() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let folder = directory.path().canonicalize()?.join("photos");
+    std::fs::create_dir(&folder)?;
+    image::RgbImage::from_pixel(300, 200, image::Rgb([200, 120, 40])).save(folder.join("a.jpg"))?;
+    image::RgbImage::from_pixel(300, 200, image::Rgb([40, 120, 200])).save(folder.join("b.jpg"))?;
+    let path = directory.path().join("library.rawmakase");
+    Catalog::create(&path)?.add_folder(&folder)?;
+    let ctx = egui::Context::default();
+    let mut library = Library::load(&path, ctx.clone())?;
+    library.wait_for_availability();
+    let id = |library: &Library, name: &str| {
+        library
+            .session
+            .photos()
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let (a, b) = (id(&library, "a.jpg"), id(&library, "b.jpg"));
+    library.select(Some(a));
+    library.open_loupe();
+    let frame = |library: &mut Library| {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200., 800.),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            library.grid(ui, &mut Default::default(), true, None, Default::default());
+        });
+        output.textures_delta.clear();
+    };
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    // b is prepared ahead; its result comes in, not taken by a frame yet.
+    frame(&mut library);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    // b saved again, upright now.
+    let b_path = folder.join("b.jpg");
+    image::RgbImage::from_pixel(200, 300, image::Rgb([40, 120, 200])).save(&b_path)?;
+    library.file_rewritten(&b_path);
+    library.select(Some(b));
+    frame(&mut library);
+    library.loupe.wait(&ctx);
+    frame(&mut library);
+    let [w, h] = library.loupe.texture_size().expect("shown");
+    assert!(h > w, "the version saved, upright: {w} × {h}");
     Ok(())
 }

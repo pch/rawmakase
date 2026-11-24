@@ -76,6 +76,32 @@ impl Library {
             self.show(id);
         }
     }
+    /// Puts `edit`, made from `original` (Edit In's copy, stacked on top of
+    /// it), in its place in the selection: selected if it was, active if it
+    /// was, shown when filters hide it.
+    pub(in crate::app) fn select_edit(&mut self, original: PhotoId, edit: PhotoId) {
+        if !self.selection.selected.remove(&original) {
+            return;
+        }
+        self.selection.selected.insert(edit);
+        if self.selection.active == Some(original) {
+            self.selection.active = Some(edit);
+        }
+        if self.selection.anchor == Some(original) {
+            self.selection.anchor = Some(edit);
+        }
+        let shown = self
+            .visible
+            .iter()
+            .any(|i| self.session.photos()[*i].id == edit);
+        if !shown && self.selection.active == Some(edit) {
+            // Shown as the active photo, the selection kept: the photos a
+            // later copy takes the place of must still be in it.
+            let kept = self.selection.clone();
+            self.show(edit);
+            self.selection = kept;
+        }
+    }
     /// Makes `id` active, keeping the selection when it is part of it.
     pub(crate) fn make_active(&mut self, id: PhotoId) {
         if self.selection.selected.contains(&id) {

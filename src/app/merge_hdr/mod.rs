@@ -747,7 +747,7 @@ impl Editor {
         if running.stack
             && let Some(library) = &mut self.library
         {
-            match library.stack_merge(photo, running.photos) {
+            match library.stack_merge(photo, running.photos, "Stacked the merge with its photos") {
                 Ok(true) => {}
                 Ok(false) => self.messages.warn(format!(
                     "Merge to HDR: {} wasn't stacked: none of its photos is in its folder",

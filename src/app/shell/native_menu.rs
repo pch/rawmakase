@@ -17,6 +17,7 @@ pub(in crate::app) fn command_of(action: Action) -> Option<&'static str> {
         Action::Preferences => "preferences",
         Action::ImportPhotos => "import_photos",
         Action::Export => "export_dialog",
+        Action::EditIn => "edit_in",
         Action::Library => "library",
         Action::Develop => "develop",
         Action::Sidebar => "panels:left",
@@ -29,10 +30,11 @@ pub(in crate::app) fn command_of(action: Action) -> Option<&'static str> {
 }
 
 /// Every menu item whose key follows the key map.
-pub(in crate::app) const KEYED: [Action; 10] = [
+pub(in crate::app) const KEYED: [Action; 11] = [
     Action::Preferences,
     Action::ImportPhotos,
     Action::Export,
+    Action::EditIn,
     Action::Library,
     Action::Develop,
     Action::Sidebar,
@@ -135,6 +137,7 @@ impl Editor {
             }
             Action::AddFolder | Action::ImportPhotos => free && library,
             Action::Export => workspace && selected,
+            Action::EditIn => workspace && selected,
             Action::Develop => workspace && selected,
             Action::SelectAll => workspace,
             // As the thumbnail menu's: a selection, never a photo alone.
@@ -223,6 +226,7 @@ impl Editor {
             Action::AddFolder => self.catalog_dialog(CatalogDialog::Folder(FolderAction::Add), ctx),
             Action::ImportPhotos => self.request_import(),
             Action::Export => self.open_export_dialog(),
+            Action::EditIn => self.edit_in_chosen(0),
             Action::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
@@ -651,6 +655,7 @@ mod tests {
             (Action::AddFolder, "o", true),
             (Action::ImportPhotos, "i", true),
             (Action::Export, "e", true),
+            (Action::EditIn, "e", false),
             (Action::Close, "w", false),
             (Action::Undo, "z", false),
             (Action::Redo, "z", true),

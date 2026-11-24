@@ -16,6 +16,8 @@ pub(crate) enum Action {
     Copy,
     Paste,
     SelectAll,
+    /// Photo › Edit in External Editor: the first of Preferences' editors.
+    EditIn,
     /// Photo › Photo Merge › HDR…
     MergeHdr,
     /// Photo › Stacking › Auto-Stack by Capture Time…
@@ -47,7 +49,7 @@ pub(crate) struct KeyEquivalent {
 
 impl Action {
     /// Every item, in the menus' order.
-    pub(crate) const ALL: [Self; 24] = [
+    pub(crate) const ALL: [Self; 25] = [
         Self::Preferences,
         Self::NewCatalog,
         Self::OpenCatalog,
@@ -61,6 +63,7 @@ impl Action {
         Self::Copy,
         Self::Paste,
         Self::SelectAll,
+        Self::EditIn,
         Self::MergeHdr,
         Self::AutoStack,
         Self::Library,
@@ -83,8 +86,8 @@ impl Action {
     }
 
     /// The key equivalent the item had before its keys followed the key map:
-    /// the fixed ones, and Preferences, Import Photos, Export and Keyboard
-    /// Shortcuts'.
+    /// the fixed ones, and Preferences, Import Photos, Export, Edit In and
+    /// Keyboard Shortcuts'.
     pub(crate) fn native_key_equivalent(self) -> Option<KeyEquivalent> {
         let (key, shift) = match self {
             Self::Preferences => (",", false),
@@ -92,6 +95,7 @@ impl Action {
             Self::AddFolder => ("o", true),
             Self::ImportPhotos => ("i", true),
             Self::Export => ("e", true),
+            Self::EditIn => ("e", false),
             Self::Close => ("w", false),
             Self::Undo => ("z", false),
             Self::Redo => ("z", true),

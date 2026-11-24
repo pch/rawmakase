@@ -354,3 +354,41 @@ fn a_save_for_a_file_replaced_since_is_refused() -> Result<()> {
     assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe.exposure, 1.);
     Ok(())
 }
+
+/// A file another program saved again (Edit In) keeps its edit once followed:
+/// before, opening it protects the edit and a save made for the new version
+/// is refused; after, the edit loads and saves for the new version.
+#[test]
+fn an_edit_follows_its_file_rewritten_by_another_program() -> Result<()> {
+    let (_dir, mut cat, file, id) = edited()?;
+    let was = crate::storage::Identity::read(&file)?;
+    let mut bytes = std::fs::read(&file)?;
+    bytes[100] ^= 0xff;
+    bytes.extend_from_slice(b"saved again");
+    std::fs::write(&file, bytes)?;
+    let now = crate::storage::Identity::read(&file)?;
+    assert!(!was.same_photo(&now));
+    assert!(cat.load_edit(id, &file).is_err());
+    let recipe = Recipe {
+        exposure: 1.,
+        ..Default::default()
+    };
+    let save = |cat: &mut Catalog| {
+        cat.save_edit(
+            id,
+            &file,
+            &now,
+            &recipe,
+            &ExportOptions::default(),
+            HistoryUpdate::Keep,
+        )
+    };
+    assert!(save(&mut cat).is_err());
+    // Another version than the one the edit was saved for leaves it bound.
+    assert!(!cat.follow_rewritten_file(id, &now, &now)?);
+    assert!(cat.follow_rewritten_file(id, &was, &now)?);
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe.exposure, 0.5);
+    save(&mut cat)?;
+    assert_eq!(cat.load_edit(id, &file)?.unwrap().recipe.exposure, 1.);
+    Ok(())
+}

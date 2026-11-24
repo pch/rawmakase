@@ -458,6 +458,7 @@ impl Library {
                 tree: &collections,
                 photo: &self.photo_collections(photo.id),
                 remove_from: self.collection_removal(),
+                editors: &self.external_editors,
             },
         )
         .or(badge_clicked.then_some(cell::PhotoAction::StackBadge));

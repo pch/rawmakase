@@ -69,6 +69,17 @@ pub(crate) enum Event {
     Extensions(Box<crate::app::extensions::Done>),
     /// Merge to HDR's merge, or its import, reported back.
     MergeHdr(Box<crate::app::merge_hdr::Done>),
+    /// Edit In's import of a TIFF reported back.
+    EditIn(Box<crate::app::edit_in::Added>),
+    /// Files sent to an editor may have changed: the system said so, or the
+    /// slow look found it.
+    EditInChanged(Vec<PathBuf>),
+    /// Files sent to an editor whose folder can't be watched.
+    EditInUnwatched(Vec<PathBuf>),
+    /// Edit In's look at the files sent to an editor came back.
+    EditInLooked(Box<crate::app::edit_in::Looked>),
+    /// Edit In's editor was started, or could not be.
+    EditInLaunched(Box<crate::app::edit_in::Launched>),
     /// A verified camera profile was installed into the library, or why not.
     ProfileDownloaded {
         id: u64,
@@ -184,6 +195,8 @@ pub(crate) enum Event {
     Monitor(PathBuf),
     /// The folder chosen for decoded images.
     DecodeCacheFolder(PathBuf),
+    /// The program chosen with Preferences' Add Editor….
+    ExternalEditor(PathBuf),
     /// Files and folders chosen to import profiles or presets from.
     Import(crate::app::presets::bulk_import::ImportKind, Vec<PathBuf>),
     Imported(Box<crate::app::presets::bulk_import::Summary>),

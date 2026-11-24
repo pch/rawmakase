@@ -89,6 +89,11 @@ pub(super) struct Loupe {
     unreported: Option<String>,
     /// The monitor profile the preview and the zoomed region are converted to.
     display: DisplayProfile,
+    /// The file shown was saved again: made again, the one shown staying.
+    stale: bool,
+    /// Counts what voids the neighbours prepared ahead (a save, a reset), so
+    /// one prepared before is dropped when it comes.
+    ahead_generation: u64,
 }
 impl Loupe {
     pub(super) fn new(ctx: &egui::Context) -> Self {
@@ -147,6 +152,8 @@ impl Loupe {
             state: State::Loading,
             unreported: None,
             display: DisplayProfile::default(),
+            stale: false,
+            ahead_generation: 0,
         }
     }
     /// A new request: the earlier one's result, and its failure not yet
@@ -159,7 +166,7 @@ impl Loupe {
     /// from its stored preview with that identity when `stored` says so.
     fn request(&mut self, ctx: &egui::Context, photo: &Photo, edge: u32, stored: Option<String>) {
         let wanted = key(photo, edge, &self.display);
-        let asked = self.requested.as_ref() == Some(&wanted);
+        let asked = self.requested.as_ref() == Some(&wanted) && !std::mem::take(&mut self.stale);
         if asked && self.state == State::Ready {
             return;
         }
@@ -210,7 +217,7 @@ impl Loupe {
         self.ahead_cancel = Default::default();
         self.ahead_requested = Some(wanted.clone());
         self.ahead.submit(Job {
-            ticket: 0,
+            ticket: self.ahead_generation,
             ahead: Some(wanted.clone()),
             path: photo.path.clone(),
             edge: wanted.2,
@@ -228,6 +235,21 @@ impl Loupe {
             egui::TextureOptions::LINEAR,
         ));
         self.state = State::Ready;
+    }
+    /// The file at `path` was saved again: the preview of it shown is made
+    /// again, the one shown staying until then; one prepared ahead and the
+    /// zoomed region, decoded from the version before, go.
+    pub(super) fn renew(&mut self, path: &std::path::Path) {
+        self.prefetched.retain(|(key, _)| key.1 != path);
+        // A neighbour on its way, or come and not taken yet, may be of the
+        // version before: dropped, and prepared again.
+        self.ahead_cancel.store(true, Ordering::Relaxed);
+        self.ahead_requested = None;
+        self.ahead_generation += 1;
+        if self.requested.as_ref().is_some_and(|key| key.1 == path) {
+            self.stale = true;
+            self.regions.release();
+        }
     }
     /// Converts to `display` from now on: what was converted for another
     /// goes, and the photo shown is asked for again.
@@ -249,6 +271,7 @@ impl Loupe {
         self.cancel.store(true, Ordering::Relaxed);
         self.ahead_cancel.store(true, Ordering::Relaxed);
         self.ahead_requested = None;
+        self.ahead_generation += 1;
         self.prefetched.clear();
         self.regions.release();
         self.requested = None;
@@ -266,6 +289,9 @@ impl Loupe {
         self.regions.poll(ctx);
         while let Ok(done) = self.results.try_recv() {
             if let Some(key) = done.ahead {
+                if done.ticket != self.ahead_generation {
+                    continue;
+                }
                 if let Ok(image) = done.result {
                     self.prefetched.push_back((key, image));
                     let bytes = |p: &std::collections::VecDeque<(Key, Prepared)>| {
@@ -360,6 +386,11 @@ fn key(photo: &Photo, edge: u32, display: &DisplayProfile) -> Key {
 }
 
 impl Library {
+    /// The size of the Loupe's own preview, for a test.
+    #[cfg(test)]
+    pub(in crate::app) fn loupe_texture_size_for_tests(&self) -> Option<[usize; 2]> {
+        self.loupe.texture_size()
+    }
     pub(crate) fn loupe_open(&self) -> bool {
         self.loupe.open
     }
