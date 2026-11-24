@@ -37,16 +37,16 @@ impl Catalog {
             .context("Unknown photo")?;
         let name = self.unused_copy_name(master)?;
         self.db.write(|w| {
-            let copy: PhotoId = w.insert_returning_id(
+            let copy = super::photo_ids::allocate(w)?;
+            w.execute(
                 sql!(
-                    "INSERT INTO photos(folder,filename,original_path,captured,rating,flag,label,format,
+                    "INSERT INTO photos(id,folder,filename,original_path,captured,rating,flag,label,format,
                         copy_name,master_id,orientation,lightroom_develop)
-                     SELECT folder,filename,original_path,captured,rating,flag,label,format,
+                     SELECT ?,folder,filename,original_path,captured,rating,flag,label,format,
                         ?,?,orientation,lightroom_develop
-                     FROM photos WHERE id=?
-                     RETURNING id"
+                     FROM photos WHERE id=?"
                 ),
-                &[&name, &master, &id],
+                &[&copy, &name, &master, &id],
             )?;
             // Its own, never its master's.
             super::photo_uuids::give(w, copy)?;
@@ -188,8 +188,10 @@ impl Catalog {
     }
 }
 /// Deletes photo `id` from the catalog with its edit, history, snapshots and
-/// metadata, and its place in collections. Its file is untouched.
+/// metadata, and its place in collections. Its file is untouched. Its id is
+/// never given to another photo.
 pub(super) fn delete_photo(w: &mut Write<'_>, id: PhotoId) -> Result<()> {
+    super::photo_ids::reserve(w)?;
     super::edit_rows::delete_edits(w, id)?;
     for delete in [
         sql!("DELETE FROM lightroom_history WHERE photo=?"),

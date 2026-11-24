@@ -265,7 +265,8 @@ CREATE TABLE IF NOT EXISTS meta (
 -- Descriptive metadata set in RAWmakase or imported, per photo: a virtual copy
 -- keeps its own rows, never its master's. A field with no row is the file's
 -- own. Rows go with their photo, also when a release that does not know these
--- tables removes it, so a later photo reusing the id inherits nothing.
+-- tables removes it, so a photo an older release gives the id to inherits
+-- nothing (this release never gives a photo's id out again: `photo_id_high`).
 
 -- Whether a field (title, caption, creator, copyright) is set or cleared.
 CREATE TABLE IF NOT EXISTS photo_fields (
@@ -444,8 +445,8 @@ CREATE INDEX IF NOT EXISTS stack_photos_stack ON stack_photos(stack);
 
 -- A photo's own id, for extensions and other catalogs (`PhotoUuid`): a
 -- random UUID made once for it (a virtual copy gets its own), lowercase and
--- hyphenated, never changed or given to another photo, where `photos.id`
--- may be reused once its photo is removed. It stays with its row, as the
+-- hyphenated, never changed or given to another photo, where a release that
+-- ignores `photo_id_high` may give a removed photo's `photos.id` to another. It stays with its row, as the
 -- edit does: Set Copy as Master moves none. Copies of a catalog file share
 -- them. Photos a release before it adds have none until the next open
 -- gives them theirs; the row goes with its photo in every release.

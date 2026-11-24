@@ -120,7 +120,7 @@ fn set_copy_as_master_leaves_each_uuid_with_its_photo() -> Result<()> {
 
 #[test]
 fn a_photo_reusing_a_removed_photos_id_gets_a_new_uuid() -> Result<()> {
-    let (dir, _path, mut cat) = catalog()?;
+    let (dir, path, mut cat) = catalog()?;
     // Added last, so it has the highest id.
     let later = dir.path().join("later");
     std::fs::create_dir(&later)?;
@@ -133,12 +133,17 @@ fn a_photo_reusing_a_removed_photos_id_gets_a_new_uuid() -> Result<()> {
     let removed = uuid(&cat, b);
     cat.remove_folders(&[folder])?;
     assert_eq!(cat.photo_by_uuid(&removed)?, None);
-    let other = dir.path().join("other");
-    std::fs::create_dir(&other)?;
-    std::fs::write(other.join("c.ARW"), "synthetic c")?;
-    cat.add_folder(&other)?;
+    // An older release, which ignores `photo_id_high`, gives the id again.
+    drop(cat);
+    let db = Connection::open(&path)?;
+    db.execute(
+        "INSERT INTO photos(id, folder, filename, original_path)
+         SELECT ?1, folder, 'c.ARW', 'c.ARW' FROM photos LIMIT 1",
+        [b.0],
+    )?;
+    drop(db);
+    let cat = Catalog::open(&path)?;
     let c = photo(&cat, "c.ARW");
-    // SQLite gives the highest id again once its photo is gone.
     assert_eq!(c, b);
     assert_ne!(uuid(&cat, c), removed);
     assert_eq!(cat.photo_by_uuid(&removed)?, None);

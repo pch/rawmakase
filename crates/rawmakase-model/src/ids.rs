@@ -45,8 +45,8 @@ row_id!(
 
 /// A photo's own id, for extensions and other catalogs: a UUID the catalog
 /// made once for one photo or virtual copy (`photo_uuids.uuid`), never changed
-/// or given to another photo, where [`PhotoId`]s are reused. Copies of a
-/// catalog file share them.
+/// or given to another photo, where an older release may give a removed
+/// photo's [`PhotoId`] to another. Copies of a catalog file share them.
 ///
 /// Only the catalog makes and stores one; outside it a value comes from the
 /// catalog or from [`PhotoUuid::parse`], as when an extension sends one back.

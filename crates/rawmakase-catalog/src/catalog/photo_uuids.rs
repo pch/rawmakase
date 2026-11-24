@@ -1,7 +1,7 @@
 //! Each photo's own UUID ([`PhotoUuid`]), in `photo_uuids`: made once for a
 //! photo or virtual copy, never changed or given to another, for what an
-//! extension keeps or gets back after a session, where [`PhotoId`]s may be
-//! reused.
+//! extension keeps or gets back after a session, where a release before
+//! `photo_id_high` may give a removed photo's [`PhotoId`] to another.
 //!
 //! Only this crate stores one. Each insert into `photos` gives its photo
 //! one in the same transaction ([`give`]); photos a release before it adds

@@ -648,8 +648,9 @@ fn a_token_is_refused_whole_once_its_catalog_is_closed_switched_or_read_again() 
         propose_refused(e, proposal(&token, a, 1.0)).code,
         ErrorCode::StaleTarget
     );
-    // The photos removed and added again, as the same ids may be: the catalog
-    // is read again, and the token's generation is gone.
+    // The photos removed and added again (under new ids, though an older
+    // release may give the same ones back): the catalog is read again, and the
+    // token's generation is gone.
     e.library = first;
     let token = e.read_photos(&[a]).unwrap().token;
     let library = e.library.as_mut().unwrap();
@@ -662,7 +663,20 @@ fn a_token_is_refused_whole_once_its_catalog_is_closed_switched_or_read_again() 
         propose_refused(e, proposal(&token, a, 1.0)).code,
         ErrorCode::StaleTarget
     );
-    assert_eq!(exposure(e, &f.photos[0]), None);
+    let again = e
+        .library
+        .as_ref()
+        .unwrap()
+        .session
+        .catalog()
+        .photos()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.path == f.photos[0].1)
+        .unwrap()
+        .id;
+    assert_ne!(again, a);
+    assert_eq!(exposure(e, &(again, f.photos[0].1.clone())), None);
 }
 
 #[test]

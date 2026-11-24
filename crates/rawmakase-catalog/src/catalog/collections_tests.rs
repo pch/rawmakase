@@ -448,9 +448,13 @@ fn a_photo_forgotten_from_removed_collections_is_not_restored() -> Result<()> {
     c.restore_collections(&gone)?;
     assert_eq!(members(&c, japan)?, [(ids[1], Some("1".into()))]);
     c.remove_collections(&[japan])?;
-    // Its id given to another photo: Undo's log forgets it first.
-    let reused = c.create_virtual_copy(ids[2])?;
-    assert_eq!(reused, copy, "SQLite gives the highest id out again");
+    // Its id given to another photo by a release that reuses ids: Undo's log
+    // forgets it first.
+    c.db_for_tests().execute(
+        "INSERT INTO photos(id, folder, filename, original_path, master_id)
+         SELECT ?1, folder, filename, original_path, id FROM photos WHERE id=?2",
+        [copy.0, ids[2].0],
+    )?;
     gone.forget_photo(copy);
     assert!(gone.members().all(|(_, p)| p != copy));
     c.restore_collections(&gone)?;

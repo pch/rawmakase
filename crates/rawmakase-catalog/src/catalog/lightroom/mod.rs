@@ -226,6 +226,8 @@ fn copy_tables(lr: &mut LightroomWrite<'_>) -> Result<()> {
     ] {
         lr.execute_sqlite(statement, &[])?;
     }
+    // Lightroom's ids are kept; new photos take ids above them.
+    super::photo_ids::reserve(lr.write())?;
     // The name a master's file had when Lightroom imported it, for Import
     // Photos' suspected duplicates and the Original filename token. Its EXIF
     // capture time is read from the file in the background; Lightroom keeps
