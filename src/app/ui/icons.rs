@@ -49,6 +49,7 @@ fastframe_icons::icons! {
         Catalog => "library-big",
         Performance => "gauge",
         Extensions => "puzzle",
+        ExternalEditing => "external-link",
         Monitor => lucide "monitor",
         Close => lucide "x",
         Check => lucide "check",

@@ -81,6 +81,8 @@ struct Queued {
     left_out: Vec<(String, String)>,
     /// What happens once it is written.
     after: crate::export_settings::AfterExport,
+    /// Edit In's batch: its files go on to the catalog and the editor.
+    editing: Option<crate::app::edit_in::Sending>,
 }
 
 /// What finished exports could not do, kept until it is dismissed.
@@ -723,29 +725,7 @@ impl Editor {
     /// that exist first.
     fn plan_export(&mut self, mut pending: Pending, answer: Option<Existing>) {
         match batch::plan(&pending.batch, &pending.settings, answer) {
-            Ok(plan) => {
-                let names = pending.batch.iter().map(|p| p.name.clone()).collect();
-                let after = pending.settings.after_export;
-                let batch = batch::Batch {
-                    photos: pending.batch,
-                    plan,
-                    settings: pending.settings,
-                    defaults: self.raw_defaults.clone(),
-                    watermark: pending.watermark,
-                    demosaic: self.session.demosaic,
-                    cache: self.decode_cache.clone(),
-                    ai: self.ai_service(),
-                };
-                let ticket = self.export_queue().submit(batch);
-                self.exports.queued.insert(
-                    ticket,
-                    Queued {
-                        names,
-                        left_out: pending.left_out,
-                        after,
-                    },
-                );
-            }
+            Ok(plan) => self.queue_batch(pending, plan, None),
             Err(Unplanned::NoFolder) => self.messages.warn("Choose a folder to export to"),
             Err(Unplanned::Settings(reason)) => {
                 self.messages.fail(format!("Export stopped: {reason}"))
@@ -754,6 +734,82 @@ impl Editor {
                 pending.conflicts = conflicts;
                 self.exports.pending = Some(pending);
             }
+        }
+    }
+
+    /// Queues `pending`'s batch as `plan` places its files; `editing` for
+    /// Edit In's.
+    fn queue_batch(
+        &mut self,
+        pending: Pending,
+        plan: batch::Plan,
+        editing: Option<crate::app::edit_in::Sending>,
+    ) {
+        let names = pending.batch.iter().map(|p| p.name.clone()).collect();
+        let after = pending.settings.after_export;
+        let batch = batch::Batch {
+            photos: pending.batch,
+            plan,
+            settings: pending.settings,
+            defaults: self.raw_defaults.clone(),
+            watermark: pending.watermark,
+            demosaic: self.session.demosaic,
+            cache: self.decode_cache.clone(),
+            ai: self.ai_service(),
+        };
+        let ticket = self.export_queue().submit(batch);
+        self.exports.queued.insert(
+            ticket,
+            Queued {
+                names,
+                left_out: pending.left_out,
+                after,
+                editing,
+            },
+        );
+    }
+
+    /// Edit In: renders the photos of `ids`, chosen as Export chooses them,
+    /// with `settings` and never asking about existing files, for `editing`
+    /// to take on once they are written. The last export's settings are left
+    /// as they were.
+    pub(in crate::app) fn export_for_editing(
+        &mut self,
+        ids: Vec<PhotoId>,
+        settings: ExportSettings,
+        mut editing: crate::app::edit_in::Sending,
+    ) {
+        let Some(scope) = self.export_scope_of(ids) else {
+            return;
+        };
+        let unsaved = scope.photos.iter().any(|p| p.open) && !self.flush();
+        let batch = match self.batch_photos(&scope, unsaved) {
+            Ok(batch) => batch,
+            Err(e) => {
+                self.messages.fail(format!(
+                    "Edit In stopped: the catalog could not be read: {e:#}"
+                ));
+                return;
+            }
+        };
+        editing.originals = scope.photos.iter().map(|p| p.id).collect();
+        match batch::plan(&batch, &settings, Some(Existing::Unique)) {
+            Ok(plan) => {
+                let pending = Pending {
+                    batch,
+                    settings,
+                    watermark: None,
+                    left_out: scope.left_out,
+                    conflicts: Vec::new(),
+                };
+                self.queue_batch(pending, plan, Some(editing));
+            }
+            Err(Unplanned::Settings(reason)) => {
+                self.messages.fail(format!("Edit In stopped: {reason}"))
+            }
+            Err(Unplanned::NoFolder | Unplanned::Conflicts(_)) => self
+                .messages
+                .fail("Edit In stopped: the files could not be placed beside their photos"),
         }
     }
 
@@ -802,6 +858,16 @@ impl Editor {
             return;
         };
         let (summary, exported) = summarize(&queued, &outcomes);
+        if let Some(editing) = queued.editing {
+            // Edit In's own messages say how it went; what could not be
+            // written stays in the top bar as an export's does.
+            if !summary.problems.is_empty() {
+                self.messages
+                    .fail_with_detail(summary.line(), summary.details());
+            }
+            self.edit_in_rendered(editing, &outcomes);
+            return;
+        }
         // One photo exported with nothing to say is named in the top bar.
         let single = (summary.total == 1 && summary.noted == 0)
             .then(|| exported.first().cloned())

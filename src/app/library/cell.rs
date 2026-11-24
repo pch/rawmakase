@@ -66,6 +66,8 @@ pub(super) struct Shown {
     pub in_collections: Vec<(crate::catalog::CollectionId, String)>,
     /// The source's Remove from Collection entry, if it takes photos out.
     pub remove_from: Option<&'static str>,
+    /// The external editors' names, for Edit In.
+    pub editors: std::sync::Arc<[String]>,
 }
 pub(super) fn photo_cell(
     ui: &mut egui::Ui,
@@ -88,6 +90,7 @@ pub(super) fn photo_cell(
         collections,
         in_collections,
         remove_from,
+        editors,
     } = shown;
     let stack = photo.stack.filter(|_| stacks);
     use crate::app::library::photo_metadata::label_color;
@@ -299,6 +302,7 @@ pub(super) fn photo_cell(
             tree: &collections,
             photo: &in_collections,
             remove_from,
+            editors: &editors,
         },
     );
     let action = action
@@ -547,6 +551,10 @@ pub(in crate::app) enum PhotoAction {
     },
     /// Export as Catalog…: the photos into a new catalog of their own.
     ExportCatalog,
+    /// Edit In with the external editor at this place in Preferences' list.
+    EditIn(usize),
+    /// Edit In › Configure External Editors…: Preferences on that page.
+    ConfigureEditors,
     /// Library › Previews: Build Standard-Sized Previews.
     BuildPreviews(crate::catalog::preview_cache::PreviewKind),
     /// Library › Previews: Discard 1:1 Previews, or Standard and 1:1.
@@ -575,6 +583,13 @@ pub(in crate::app) const EXPORT_SHORTCUTS: (&str, &str) = if cfg!(target_os = "m
     ("⇧⌘E", "⌥⇧⌘E")
 } else {
     ("Ctrl+Shift+E", "Ctrl+Alt+Shift+E")
+};
+/// Edit In's shortcut for the first external editor, as Lightroom's Edit in
+/// Photoshop.
+pub(in crate::app) const EDIT_IN_SHORTCUT: &str = if cfg!(target_os = "macos") {
+    "⌘E"
+} else {
+    "Ctrl+E"
 };
 /// Remove from Collection's shortcut: Delete, which does the same in a
 /// collection.
@@ -711,7 +726,7 @@ fn collection_menu(
     }
     chosen
 }
-/// What the thumbnail menu offers of collections.
+/// What the thumbnail menu offers of collections, and of external editors.
 #[derive(Clone, Copy, Default)]
 pub(in crate::app) struct MenuCollections<'a> {
     /// The Collections panel's tree, for Add to Collection.
@@ -722,6 +737,29 @@ pub(in crate::app) struct MenuCollections<'a> {
     /// shown is a collection photos can be taken out of: see
     /// [`super::Library::collection_removal`].
     pub remove_from: Option<&'static str>,
+    /// The external editors' names, for Edit In.
+    pub editors: &'a [String],
+}
+/// Edit In's entries: each external editor, the first with its shortcut,
+/// then Configure External Editors….
+pub(in crate::app) fn edit_in_menu(ui: &mut egui::Ui, editors: &[String]) -> Option<PhotoAction> {
+    use crate::app::ui::widgets::{menu_item, menu_separator};
+    crate::app::ui::widgets::menu_width(ui, 230.);
+    ui.spacing_mut().item_spacing.y = 0.;
+    let mut action = None;
+    for (i, name) in editors.iter().enumerate() {
+        let shortcut = if i == 0 { EDIT_IN_SHORTCUT } else { "" };
+        if menu_item(ui, &format!("Edit in {name}"), shortcut, true, false) {
+            action = Some(PhotoAction::EditIn(i));
+        }
+    }
+    if !editors.is_empty() {
+        menu_separator(ui);
+    }
+    if menu_item(ui, "Configure External Editors…", "", true, false) {
+        action = Some(PhotoAction::ConfigureEditors);
+    }
+    action
 }
 /// Go to Collection's list: the photo's collections, by name.
 fn go_to_menu(
@@ -754,7 +792,8 @@ pub(in crate::app) struct Presence {
 /// Lightroom. Find on Disk… is offered for a photo not `available` when the
 /// menu acts on it alone (`target`). Stacking is offered where the source
 /// shows stacks (`stacks`), or for a photo in none. Photo Merge › HDR… takes
-/// a selection, never a photo alone.
+/// a selection, never a photo alone. Edit In lists the external `editors`,
+/// as Lightroom's menu starts with it.
 pub(in crate::app) fn photo_menu(
     response: &egui::Response,
     photo: &Photo,
@@ -768,6 +807,7 @@ pub(in crate::app) fn photo_menu(
         tree: collections,
         photo: in_collections,
         remove_from,
+        editors,
     } = collections;
     use crate::app::library::photo_metadata::{Edit, LABELS};
     use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
@@ -794,6 +834,14 @@ pub(in crate::app) fn photo_menu(
             }
             menu_separator(ui);
         }
+        submenu_style(ui);
+        ui.menu_button("Edit In", |ui| {
+            if let Some(chosen) = edit_in_menu(ui, editors) {
+                action = Some(chosen);
+                ui.close();
+            }
+        });
+        menu_separator(ui);
         // Offline with an up-to-date copy recorded, it opens from that; opening
         // checks the copy and says why, if it can't.
         let open_refusal = refusal.filter(|r| !(*r == super::Refusal::Offline && copy));

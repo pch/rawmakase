@@ -282,7 +282,7 @@ static STACKS: [Row; 4] = [
         "Move to the top of the stack",
     ),
 ];
-static GENERAL: [Row; 15] = [
+static GENERAL: [Row; 16] = [
     row(&[Keys(&b::LIBRARY)], "Library"),
     row(&[Keys(&b::DEVELOP)], "Develop"),
     row(&[Keys(&b::PANELS_SIDES)], "Hide / show the side panels"),
@@ -320,6 +320,7 @@ static GENERAL: [Row; 15] = [
         "Fold / open Presets and History",
     ),
     row(&[Keys(&b::VIRTUAL_COPY)], "Create virtual copy"),
+    row(&[Keys(&b::EDIT_IN)], "Edit in the first external editor"),
     row(
         &[Keys(&b::IMPORT_PHOTOS)],
         "Import photos from a card or folder",

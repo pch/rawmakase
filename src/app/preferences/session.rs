@@ -241,6 +241,23 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub one_to_one_discard_days: Option<u32>,
+    /// Preferences > External Editing: the programs Edit In opens photos in,
+    /// in the order the user put them; the first is Cmd+E's.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub external_editors: Vec<PathBuf>,
+    /// Preferences > External Editing: the color space of Edit In's TIFFs, by
+    /// [`crate::color::OutputSpace::name`]; none, or a name this
+    /// version does not know, is ProPhoto RGB.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub edit_in_color_space: Option<String>,
     /// Fields this release does not know, written by a later or an earlier one: kept
     /// as they were read and written back, so going back to that release keeps them.
     #[serde(flatten)]
@@ -977,3 +994,33 @@ mod compatibility_tests {
 #[cfg(test)]
 #[path = "session_editor_tests.rs"]
 mod editor_tests;
+
+#[cfg(test)]
+mod external_editing_tests {
+    use super::Session;
+
+    /// The external editors and the TIFF's color space survive a save; a
+    /// session without them, or with a malformed list, reads as none and
+    /// ProPhoto RGB, keeping its other preferences.
+    #[test]
+    fn external_editors_round_trip_and_old_sessions_read_none() {
+        let session = Session {
+            external_editors: vec!["/Applications/A.app".into(), "/usr/bin/gimp".into()],
+            edit_in_color_space: Some("adobe-rgb".into()),
+            ..Default::default()
+        };
+        let text = serde_json::to_string(&session).unwrap();
+        let read: Session = serde_json::from_str(&text).unwrap();
+        assert_eq!(read.external_editors, session.external_editors);
+        assert_eq!(read.edit_in_color_space.as_deref(), Some("adobe-rgb"));
+
+        let old: Session = serde_json::from_str(r#"{"auto_advance":true}"#).unwrap();
+        assert!(old.external_editors.is_empty() && old.edit_in_color_space.is_none());
+        let empty = serde_json::to_value(&old).unwrap();
+        assert!(empty.get("external_editors").is_none());
+
+        let malformed: Session =
+            serde_json::from_str(r#"{"external_editors":7,"auto_advance":true}"#).unwrap();
+        assert!(malformed.external_editors.is_empty() && malformed.auto_advance);
+    }
+}

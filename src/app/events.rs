@@ -90,6 +90,10 @@ impl Editor {
                     self.activity.finish_dialog();
                     self.move_decode_cache(Some(folder));
                 }
+                Event::ExternalEditor(program) => {
+                    self.activity.finish_dialog();
+                    self.add_external_editor(program);
+                }
                 Event::PresetLoad(p) => {
                     self.activity.finish_dialog();
                     let loaded = crate::presets::load_preset(&p).and_then(|preset| {
@@ -480,6 +484,7 @@ impl Editor {
                 }
                 Event::Extensions(done) => self.extension_done(*done),
                 Event::MergeHdr(done) => self.merge_hdr_done(*done),
+                Event::EditIn(added) => self.edit_added(*added),
                 Event::BatchExported { ticket, outcomes } => self.batch_exported(ticket, outcomes),
                 _ => {}
             }

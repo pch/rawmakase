@@ -69,7 +69,9 @@ impl Place {
         self.selection.forget_photo(id);
     }
 }
-pub(in crate::app) use cell::{EXPORT_SHORTCUTS, copy_suffix};
+pub(in crate::app) use cell::{
+    EDIT_IN_SHORTCUT, EXPORT_SHORTCUTS, PhotoAction, copy_suffix, edit_in_menu,
+};
 pub(crate) use collection_edit::CollectionTreeCommand;
 pub(in crate::app) use collection_edit::NewCollection;
 pub(in crate::app) use collections::ListedCollection;
@@ -202,6 +204,8 @@ pub(crate) struct Library {
     pub session: CatalogSession,
     /// The active photo and the photos selected with it.
     selection: selection::Selection,
+    /// The external editors' names, for the photo menu's Edit In.
+    pub(in crate::app) external_editors: std::sync::Arc<[String]>,
     /// Grid columns last frame, for Up and Down.
     grid_columns: usize,
     /// Whole grid rows the view showed last frame, for Page Up and Page Down.
@@ -370,6 +374,7 @@ impl Library {
         let mut s = Self {
             session,
             selection: Default::default(),
+            external_editors: std::sync::Arc::from(Vec::new()),
             grid_columns: 1,
             grid_page_rows: 1,
             scroll_to_active: false,
@@ -1709,6 +1714,22 @@ impl Library {
             .collect();
         for id in ids {
             self.cache.ask_again(id);
+            self.screen.forget(id);
+        }
+    }
+    /// The file at `path` was saved again by another program: its photos'
+    /// thumbnails and previews are made again from it.
+    pub(in crate::app) fn file_rewritten(&mut self, path: &std::path::Path) {
+        self.cache.forget_file(path);
+        let ids: Vec<PhotoId> = self
+            .session
+            .photos()
+            .iter()
+            .filter(|p| p.path == path)
+            .map(|p| p.id)
+            .collect();
+        for id in ids {
+            self.cache.forget(id);
             self.screen.forget(id);
         }
     }

@@ -146,6 +146,8 @@ pub(crate) struct Editor {
     file_ops: file_ops::FileOps,
     /// Merge to HDR's window, its merge and the DNG on its way into the catalog.
     merge_hdr: merge_hdr::MergeHdr,
+    /// Edit In: the external editors, and the files on their way to them.
+    edit_in: edit_in::EditIn,
     /// The RAW the Loupe last started loading, so one that fails is not
     /// loaded again every frame.
     loupe_tried: Option<PhotoId>,
@@ -470,6 +472,10 @@ impl Editor {
             folder_sync: Default::default(),
             file_ops: Default::default(),
             merge_hdr: Default::default(),
+            edit_in: edit_in::EditIn::new(
+                session.external_editors.clone(),
+                session.edit_in_color_space.as_deref(),
+            ),
             loupe_tried: None,
             raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
                 session.raw_defaults.clone(),
@@ -539,6 +545,8 @@ impl Editor {
                 one_to_one_discard_days: Some(
                     self.preview_builds.discard_one_to_one_after.unwrap_or(0),
                 ),
+                external_editors: self.edit_in.editors().to_vec(),
+                edit_in_color_space: Some(self.edit_in.space_name()),
                 ..Default::default()
             },
             self.session_path(),
@@ -664,7 +672,9 @@ impl eframe::App for Editor {
             move || ctx.request_repaint()
         });
         let display_changes_announced = crate::platform::display::changes_announced();
-        self.headroom.focus(ui.ctx().input(|i| i.focused));
+        let focused = ui.ctx().input(|i| i.focused);
+        self.headroom.focus(focused);
+        self.edit_in_focus(focused);
         self.view.hdr_display =
             crate::app::shell::display::HdrDisplay::of(frame, &mut self.headroom);
         self.render_state = frame.wgpu_render_state().cloned();
@@ -1091,6 +1101,7 @@ pub use crate::app::presets::bulk_import::import_profiles;
 mod accessibility_audit_tests;
 pub(crate) mod catalog;
 pub(crate) mod develop;
+mod edit_in;
 mod export;
 mod extensions;
 mod file_ops;

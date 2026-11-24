@@ -52,6 +52,7 @@ impl Editor {
                     | Request::Read(_)
                     | Request::MergeHdr(_)
                     | Request::ExportPhotos(..)
+                    | Request::ConfigureEditors
                     | Request::File(_)
             );
             if dialog && self.workspace_modal() {
@@ -82,6 +83,10 @@ impl Editor {
                 Request::Read(ids) => self.modal = Some(crate::app::Modal::ReadMetadata(ids)),
                 Request::ExportPhotos(ids, previous) => self.export_photos(ids, previous),
                 Request::MergeHdr(ids) => self.open_merge_hdr(ids),
+                Request::EditIn(ids, which) => self.edit_in(ids, which),
+                Request::ConfigureEditors => {
+                    self.open_preferences(crate::app::preferences::Tab::ExternalEditing)
+                }
                 Request::File(FileRequest::Remove(ids)) => self.request_photo_removal(ids),
                 Request::File(FileRequest::Delete(ids)) => self.request_photo_delete(ids, false),
                 Request::File(FileRequest::Trash(ids)) => self.request_photo_trash(ids),
@@ -310,6 +315,9 @@ impl Editor {
         // (a test's) still takes requests and results here.
         self.background(&ctx);
         self.take_library_messages();
+        if let Some(library) = &mut self.library {
+            library.external_editors = self.edit_in.names();
+        }
         let work = self.running_work();
         self.messages.set_work(&ctx, work);
         self.poll_updates(&ctx);
@@ -444,6 +452,8 @@ impl Editor {
         self.library_requests(&ctx);
         // A merged DNG waiting for the catalog, retried until nothing holds it.
         self.add_merged();
+        // Edit In's TIFFs too.
+        self.add_edits();
         self.poll_folder_sync();
         self.poll_file_recovery();
         if let Some(library) = &mut self.library
@@ -642,6 +652,11 @@ impl Editor {
             // Lightroom's Import Photos and Video, in Library and Develop.
             if self.keys(ctx).take(&bindings::IMPORT_PHOTOS).is_some() && self.library.is_some() {
                 self.request_import();
+            }
+            // Lightroom's Edit in Photoshop: the first external editor, in
+            // Library and Develop.
+            if self.keys(ctx).take(&bindings::EDIT_IN).is_some() {
+                self.edit_in_chosen(0);
             }
             // Photo › Photo Merge › HDR…, in Library and Develop.
             if self.keys(ctx).take(&bindings::MERGE_HDR).is_some()

@@ -332,6 +332,13 @@ impl PreviewTextures {
     pub(super) fn ask_again(&mut self, id: PhotoId) {
         self.edited_requested.remove(&id);
     }
+    /// Forgets the thumbnail read from the file at `path`, which changed, so
+    /// it is read again the next time it is shown.
+    pub(super) fn forget_file(&mut self, path: &std::path::Path) {
+        self.thumbs.remove(path);
+        self.thumb_order.retain(|other| other != path);
+        self.failed.remove(path);
+    }
     /// Forgets a removed photo's previews, so a later photo given its id
     /// starts afresh.
     pub(super) fn forget(&mut self, id: PhotoId) {

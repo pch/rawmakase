@@ -88,6 +88,11 @@ impl Menu {
                     (Action::SelectAll, "Select All"),
                 ],
             ),
+            (
+                "Photo",
+                None,
+                &[(Action::EditIn, "Edit in External Editor")],
+            ),
             ("Photo", Some("Photo Merge"), &[(Action::MergeHdr, "HDR…")]),
             (
                 "Photo",

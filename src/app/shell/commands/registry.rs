@@ -150,6 +150,7 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("stack:toggle", "Collapse / expand the stack"),
     command("stack:to_top", "Move to the top of the stack"),
     command("merge_hdr", "Merge the selected photos to HDR"),
+    command("edit_in", "Edit in the first external editor"),
     fixed("select_all", "Select all"),
     command("select_none", "Select none"),
     command("deselect_active", "Deselect the active photo"),
@@ -557,6 +558,8 @@ pub(in crate::app) mod bindings {
         IMPORT_PHOTOS = b("import_photos", Everywhere, &[d(&[Key::I], CMD_SHIFT).once_per_press()]);
         // Lightroom's Ctrl+H is Hide on a Mac: no key by default.
         MERGE_HDR = b("merge_hdr", Everywhere, &[]);
+        // Lightroom's Edit in Photoshop.
+        EDIT_IN = b("edit_in", Everywhere, &[d(&[Key::E], CMD).once_per_press()]);
         CHROME = b("chrome", Everywhere, &[d(&[Key::F], NONE).once_per_press()]).once();
         DEVELOP = b("develop", Everywhere, &[d(&[Key::D], NONE)]);
 
