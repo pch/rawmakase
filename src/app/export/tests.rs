@@ -1789,7 +1789,7 @@ fn answered(
 #[test]
 fn a_file_goes_to_the_destination_before_the_export_ends_and_is_held_until_then() {
     use crate::app::extensions::destinations::Step;
-    let (dir, mut e, _, _) = editor().unwrap();
+    let (dir, mut e, ids, ctx) = editor().unwrap();
     load_destinations(&mut e, dir.path());
     let out = dir.path().join("out");
     std::fs::create_dir(&out).unwrap();
@@ -1813,30 +1813,52 @@ fn a_file_goes_to_the_destination_before_the_export_ends_and_is_held_until_then(
     answered(&mut e, &id, Step::File(0)).unwrap();
     // Its files and the one still planned are held from a later export.
     assert_eq!(e.delivery_holds(&targets[1]), Some("Index File"));
-    // An export set to overwrite a held file names its copy apart, though its
-    // settings say Overwrite.
+    // A real export set to overwrite the held file names its copy apart,
+    // though its settings say Overwrite, and the held bytes stay.
     let mut over = settings(&out);
     over.existing = Existing::Overwrite;
-    over.rename = false;
-    let queued = e.exports.queued.len();
-    e.plan_export(
-        Pending {
-            batch: vec![photos[0].clone()],
-            settings: over,
-            watermark: None,
-            left_out: Vec::new(),
-            conflicts: Vec::new(),
-        },
-        None,
-    );
+    let scope = e.export_scope_of(vec![ids[0]]).expect("a photo");
+    export(&mut e, scope, over).unwrap();
     assert!(
         e.messages.line().contains("are kept"),
         "{}",
         e.messages.line()
     );
-    assert_eq!(e.exports.queued.len(), queued + 1);
+    wait(&mut e, &ctx);
+    assert_eq!(std::fs::read(&targets[0]).unwrap(), b"a");
+    assert!(out.join("a-2.tif").is_file(), "{:?}", listing(&out));
     e.delivery_exported(&id, "Exported 1 of 2".into(), false);
     answered(&mut e, &id, Step::End).unwrap();
+}
+
+#[test]
+fn a_delivery_between_its_requests_ends_when_its_extension_is_disabled() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, ctx) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    let target = out.join("a.tif");
+    let id = e
+        .begin_delivery(&photos, std::slice::from_ref(&target), &chosen)
+        .expect("begun");
+    answered(&mut e, &id, Step::Begin).unwrap();
+    // Waiting for its export, nothing in flight: disabling ends it all the
+    // same, and its file is no longer held.
+    drop(
+        e.extensions
+            .set_enabled("dev.rawmakase.destinations", false),
+    );
+    e.extensions_frame(&ctx);
+    assert!(e.delivery_holds(&target).is_none());
+    assert!(
+        e.messages.line().contains("Index File"),
+        "{}",
+        e.messages.line()
+    );
 }
 
 #[test]

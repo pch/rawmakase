@@ -473,6 +473,12 @@ fn a_program_that_stops_reading_fills_its_queue_without_blocking() {
     let (n, error) = full.expect("the queue never filled");
     assert_eq!(error.code, ErrorCode::ChannelFull);
     assert!(n >= 4, "filled after {n}");
+    // An urgent event still goes, in the room kept for answers.
+    assert!(
+        session
+            .urgent_event("export-stopped", json!({"delivery": "1"}))
+            .is_ok()
+    );
     // Already past the deadline: the stop ends the program at once.
     let start = Instant::now();
     let stopping = session

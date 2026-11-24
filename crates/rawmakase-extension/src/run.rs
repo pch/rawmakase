@@ -715,8 +715,17 @@ impl Extension {
                 let id = end.delivery.clone();
                 let ended = self.destination(&end.destination)?.end(cx, end)?;
                 ended.validate()?;
+                let answer = serde_json::to_value(ended).expect("a result is JSON");
+                // One that won't fit its reply line fails here, with the
+                // delivery still known for the `export-stopped` that follows.
+                if answer.to_string().len() > rawmakase_extension_protocol::MAX_LINE - 1024 {
+                    return Err(RemoteError::new(
+                        ErrorCode::TooLarge,
+                        "the answer is longer than a protocol line",
+                    ));
+                }
                 self.deliveries.remove(&id);
-                Ok(serde_json::to_value(ended).expect("a result is JSON"))
+                Ok(answer)
             }
         }
     }

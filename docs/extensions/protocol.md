@@ -517,9 +517,9 @@ the app doesn't touch it afterwards, and nor should the program, which writes
 what it makes (a gallery's pages) beside it or elsewhere. Until the delivery is
 over, a later export doesn't write over it either: one set to overwrite a file
 a delivery holds (its folder's links resolved) names its own copies apart, as
-Use Unique Names does, and the top bar says so. An export planned before the
-delivery's file got its final name (a `-2` taken while it ran) isn't checked
-again when it writes. The reply is `null`
+Use Unique Names does, and the top bar says so. A file is held from the moment the export writes it. An
+export planned before the delivery's file got its final name (a `-2` taken
+while it ran) isn't checked again when it writes. The reply is `null`
 once the file is received: how it went is said in `export.end`'s answer, so a
 destination answers at once and uploads meanwhile.
 
@@ -593,8 +593,14 @@ in the SDK; `collected` forgets the delivery). A request of a delivery the
 program took that fails (its deadline, say; an `export.begin` past its
 deadline too, which the program may still have taken) stops it the same way,
 and an `export.end` that fails or is cancelled leaves the delivery open in the
-SDK until that `export-stopped` comes. Disabling the extension and quitting
-send no `export-stopped`: the program gets `quitting`, or is stopped. So do
+SDK until that `export-stopped` comes, as does an answer the app refuses (one
+naming a file it wasn't sent) or one too long for a protocol line.
+`export-stopped` takes the room kept for answers when the app's own messages
+fill the program's queue; a program that doesn't read even that is stopped, as
+it would never stop what it sends. Disabling the extension, a crash, a reload
+and quitting send no `export-stopped`: the program gets `quitting`, or is
+stopped, and every delivery open on it ends in the app, between its requests
+too. So do
 disabling the extension and quitting. Cancelling the export doesn't stop the
 delivery: its `export.end` comes with `cancelled`, after the files written
 before the cancel. A program that exits or crashes mid-delivery ends it; its

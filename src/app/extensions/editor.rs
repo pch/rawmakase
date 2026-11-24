@@ -103,6 +103,8 @@ impl Editor {
     /// One frame's work of the extension host: what programs sent, their
     /// requests answered, and the editor's changes told to them.
     pub(in crate::app) fn extensions_frame(&mut self, ctx: &eframe::egui::Context) {
+        let lost = self.extensions.take_lost_deliveries();
+        self.extension_outcomes(lost);
         if !self.extensions.active() {
             return;
         }

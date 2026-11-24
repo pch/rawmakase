@@ -27,6 +27,33 @@ use std::path::{Path, PathBuf};
 /// How many of a delivery's files may be sent and not yet received.
 const WINDOW: usize = 8;
 
+/// What the export thread notes as it writes a delivery's file, before the
+/// editor hears of it: those files are held from the moment they exist.
+#[derive(Debug, Default)]
+pub(super) struct Writes {
+    /// The batches a delivery sends, by ticket.
+    sending: HashSet<u64>,
+    /// Their files written and not yet taken in by the editor.
+    written: HashSet<PathBuf>,
+}
+
+impl Writes {
+    /// Batch `ticket`'s files go to a delivery.
+    pub(super) fn sending(writes: &std::sync::Mutex<Self>, ticket: u64) {
+        if let Ok(mut w) = writes.lock() {
+            w.sending.insert(ticket);
+        }
+    }
+    /// Batch `ticket` wrote `path`: held if a delivery sends it.
+    pub(super) fn note(writes: &std::sync::Mutex<Self>, ticket: u64, path: &Path) {
+        if let Ok(mut w) = writes.lock()
+            && w.sending.contains(&ticket)
+        {
+            w.written.insert(same_file(path));
+        }
+    }
+}
+
 /// A delivery from its beginning to its end's answer.
 pub(super) struct Delivery {
     to: Begun,
@@ -147,10 +174,15 @@ impl Editor {
     /// mustn't write over it.
     pub(super) fn delivery_holds(&self, path: &Path) -> Option<&str> {
         let path = same_file(path);
+        let written = self
+            .exports
+            .delivery_writes
+            .lock()
+            .is_ok_and(|w| w.written.contains(&path));
         self.exports
             .deliveries
             .values()
-            .find(|d| d.paths.contains(&path))
+            .find(|d| written || d.paths.contains(&path))
             .map(|d| d.to.name.as_str())
     }
 
@@ -178,6 +210,10 @@ impl Editor {
         let Outcome::Exported { path, size, .. } = outcome else {
             return;
         };
+        // Taken in: the delivery holds it from here.
+        if let Ok(mut w) = self.exports.delivery_writes.lock() {
+            w.written.remove(&same_file(path));
+        }
         let Some(d) = self.exports.deliveries.get_mut(id) else {
             return;
         };
@@ -187,6 +223,13 @@ impl Editor {
         d.paths.insert(same_file(path));
         d.waiting.push(facts.file(id, index, path, *size));
         self.advance_delivery(id);
+    }
+
+    /// Batch `ticket`, whose files a delivery sends, is over.
+    pub(super) fn delivery_batch_over(&mut self, ticket: u64) {
+        if let Ok(mut w) = self.exports.delivery_writes.lock() {
+            w.sending.remove(&ticket);
+        }
     }
 
     /// Delivery `id`'s batch is over: `exported` is what its report said.
@@ -222,6 +265,9 @@ impl Editor {
                 // A result for a file it wasn't sent is off the contract.
                 if let Some(other) = ended.files.iter().find(|r| !d.sent.contains_key(&r.index)) {
                     let why = format!("it answered for file {}, which it wasn't sent", other.index);
+                    let to = d.to.clone();
+                    let told = self.extensions.refuse_end(&to, id);
+                    self.extension_outcomes(told);
                     return self
                         .delivery_failed(id, &RemoteError::new(ErrorCode::InvalidRequest, why));
                 }

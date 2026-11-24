@@ -188,9 +188,13 @@ pub(in crate::app) fn capture_time(text: &str) -> Option<String> {
 /// Tells `e`'s program that `delivery`, open on it as `open`, stopped, so it
 /// stops what it still sends: only the run it began on, which is the one
 /// that knows it.
-pub(super) fn tell_stopped(e: &mut super::Extension, delivery: &str, open: &Open) {
+pub(super) fn tell_stopped(
+    e: &mut super::Extension,
+    delivery: &str,
+    open: &Open,
+) -> Vec<super::Outcome> {
     let Some(run) = e.run.as_mut().filter(|r| r.number == open.run && r.ready()) else {
-        return;
+        return Vec::new();
     };
     let (name, params) =
         rawmakase_extensions::protocol::method::AppEvent::ExportStopped(ExportStopped {
@@ -198,7 +202,12 @@ pub(super) fn tell_stopped(e: &mut super::Extension, delivery: &str, open: &Open
             destination: open.destination.clone(),
         })
         .into_parts();
-    let _ = run.session.event(&name, params);
+    match run.session.urgent_event(&name, params) {
+        Ok(()) => Vec::new(),
+        // It no longer reads even the room kept for answers: it would never
+        // stop what it sends, so it is stopped instead.
+        Err(_) => Host::end(e, ErrorCode::Exited),
+    }
 }
 
 /// A delivery begun: where its later requests go.
@@ -368,7 +377,7 @@ impl Host {
         };
         let e = &mut self.extensions[index];
         if let Some(open) = e.delivering.remove(delivery) {
-            tell_stopped(e, delivery, &open);
+            outcomes.extend(tell_stopped(e, delivery, &open));
         }
         Self::cancel_where(
             e,
@@ -376,6 +385,24 @@ impl Host {
             |p| matches!(p, Pending::Delivery { delivery: d, .. } if d == delivery),
         );
         outcomes
+    }
+
+    /// Tells `to`'s program that delivery `delivery`, whose end it answered,
+    /// stopped after all: the app refused the answer.
+    pub(in crate::app) fn refuse_end(&mut self, to: &Begun, delivery: &str) -> Vec<super::Outcome> {
+        let Some(index) = self.index(&to.extension) else {
+            return Vec::new();
+        };
+        let e = &mut self.extensions[index];
+        let Some(run) = e.run.as_ref().map(|r| r.number) else {
+            return Vec::new();
+        };
+        let open = Open {
+            run,
+            destination: to.destination.clone(),
+            progress: None,
+        };
+        tell_stopped(e, delivery, &open)
     }
 
     /// What `to`'s delivery `delivery` last said of how far its end is: how

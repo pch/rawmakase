@@ -428,6 +428,9 @@ pub(in crate::app) struct Extension {
     reading: Vec<TargetRead>,
     /// Its deliveries begun and not over, by delivery id.
     delivering: BTreeMap<String, destinations::Open>,
+    /// Deliveries its program's end cut off with no request of theirs in
+    /// flight, with why, for the editor to end ([`Host::take_lost_deliveries`]).
+    lost: Vec<(String, ErrorCode)>,
     /// When it was last busy (a request sent, or still being worked on at a
     /// poll): an `on-demand` program is stopped [`IDLE_STOP`] after this.
     last_active: Instant,
@@ -1137,6 +1140,7 @@ impl Host {
                         mask_progress: None,
                         reading: Vec::new(),
                         delivering: BTreeMap::new(),
+                        lost: Vec::new(),
                         last_active: Instant::now(),
                         mtimes,
                     }
@@ -1559,9 +1563,29 @@ impl Host {
             }
             drop(run);
         }
+        // Those with a request in flight were told above; the others wait for
+        // their export, and would never hear.
+        for (delivery, _) in std::mem::take(&mut e.delivering) {
+            e.lost.push((delivery, code.clone()));
+        }
         e.status = None;
         e.panels.clear();
         outcomes
+    }
+
+    /// Deliveries a program's end cut off between their requests (a crash,
+    /// disabling, a reload), each as its failed end: whatever path ended the
+    /// program, the editor ends them here.
+    pub(in crate::app) fn take_lost_deliveries(&mut self) -> Vec<Outcome> {
+        self.extensions
+            .iter_mut()
+            .flat_map(|e| std::mem::take(&mut e.lost))
+            .map(|(delivery, code)| Outcome::Delivery {
+                delivery,
+                step: destinations::Step::End,
+                result: Err(RemoteError::new(code, "its program ended")),
+            })
+            .collect()
     }
 
     /// What the editor is told of `e`'s request `pending` stopped with `code`
@@ -2014,10 +2038,11 @@ impl Host {
             return Vec::new();
         };
         let e = &mut self.extensions[index];
+        let mut outcomes = Vec::new();
         for (delivery, open) in std::mem::take(&mut e.delivering) {
-            destinations::tell_stopped(e, &delivery, &open);
+            outcomes.extend(destinations::tell_stopped(e, &delivery, &open));
         }
-        let mut outcomes = Self::stop_reading(e, &ErrorCode::Cancelled);
+        outcomes.extend(Self::stop_reading(e, &ErrorCode::Cancelled));
         Self::cancel_where(e, &mut outcomes, |p| {
             matches!(p, Pending::Command { .. } | Pending::Delivery { .. })
         });
@@ -2801,7 +2826,7 @@ impl Host {
                     let taken = step != destinations::Step::Begin
                         || matches!(&result, Err(e) if e.code == ErrorCode::Deadline);
                     if let Some(open) = open.filter(|_| result.is_err() && taken) {
-                        destinations::tell_stopped(e, &delivery, &open);
+                        outcomes.extend(destinations::tell_stopped(e, &delivery, &open));
                     }
                 }
                 outcomes.push(Outcome::Delivery {

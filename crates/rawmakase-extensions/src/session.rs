@@ -632,6 +632,21 @@ impl Session {
         self.send(&Message::event(name, params))
     }
 
+    /// Sends an event that must not be lost behind the app's own backlog
+    /// (a delivery stopped): it takes the room kept for the reader's
+    /// answers when the app's share is full. An error means the program has
+    /// stopped reading altogether.
+    pub fn urgent_event(&self, name: &str, params: Value) -> Result<(), RemoteError> {
+        let mut line = Message::event(name, params).encode().map_err(|_| {
+            RemoteError::new(
+                ErrorCode::TooLarge,
+                "the message is longer than a protocol line",
+            )
+        })?;
+        line.push(b'\n');
+        self.outgoing.send(line, false, None)
+    }
+
     /// Answers one of the program's requests.
     pub fn reply(&self, id: u64, result: Result<Value, RemoteError>) -> Result<(), RemoteError> {
         self.send(&Message::reply(id, result))
