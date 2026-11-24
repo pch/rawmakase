@@ -744,17 +744,14 @@ pub(in crate::app) fn edit_in_submenu(
     enabled: bool,
     editors: &[String],
 ) -> Option<PhotoAction> {
-    let mut chosen = None;
-    crate::app::ui::widgets::submenu_style(ui);
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.menu_button("Edit In", |ui| {
-            chosen = edit_in_menu(ui, editors);
-            if chosen.is_some() {
-                ui.close();
-            }
-        })
-    });
-    chosen
+    crate::app::ui::widgets::submenu(ui, "Edit In", enabled, |ui| {
+        let chosen = edit_in_menu(ui, editors);
+        if chosen.is_some() {
+            ui.close();
+        }
+        chosen
+    })
+    .flatten()
 }
 /// Edit In's entries: each external editor, the first with its shortcut,
 /// then Configure External Editors….

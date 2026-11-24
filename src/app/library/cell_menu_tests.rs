@@ -183,7 +183,7 @@ fn shoot_photo_menu(name: &str, editors: &[String], submenu: Option<&str>) {
     let cell = Rect::from_min_size(Pos2::new(8., 8.), Vec2::new(60., 20.));
     let mut fonts = false;
     let mut harness = egui_kittest::Harness::builder()
-        .with_size(Vec2::new(560., 880.))
+        .with_size(Vec2::new(800., 880.))
         .with_pixels_per_point(2.)
         .wgpu()
         .build_ui(|ui| {
@@ -227,8 +227,7 @@ fn shoot_photo_menu(name: &str, editors: &[String], submenu: Option<&str>) {
     }
     harness.run_steps(4);
     if let Some(submenu) = submenu {
-        // A submenu's button reads its name and its arrow.
-        harness.get_by_label(&format!("{submenu} ⏵")).hover();
+        harness.get_by_label(submenu).hover();
         harness.run_steps(4);
     }
     let image = harness.render().expect("wgpu could not draw the shot");
