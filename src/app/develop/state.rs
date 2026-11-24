@@ -325,6 +325,8 @@ pub(in crate::app) struct PreviewState {
     /// The quarter turns and flips `texture` was rendered with, when known: until
     /// a render for a turned photo lands, the old one is drawn turned with it.
     pub(in crate::app) orientation: Option<Orientation>,
+    /// The same for `region`, which lands without a new `texture` at 100%.
+    pub(in crate::app) region_orientation: Option<Orientation>,
     /// Before's render, while it shows beside the edit.
     pub(in crate::app) before: crate::app::develop::before_after::BeforePreview,
     /// The magnifier's render, while it is shown.
@@ -359,6 +361,7 @@ impl Default for PreviewState {
             region_frame: [1, 1],
             crop: None,
             orientation: None,
+            region_orientation: None,
             before: Default::default(),
             magnifier: Default::default(),
             stand_in: None,
@@ -765,6 +768,7 @@ impl PreviewState {
         self.mode = TextureMode::Whole;
         self.crop = None;
         self.orientation = None;
+        self.region_orientation = None;
         self.before.clear();
         self.magnifier.clear();
         // The pixels the readout and loupes read belong to the photo left.

@@ -970,3 +970,85 @@ fn a_turned_photo_shows_its_last_render_turned_until_the_new_one_lands() {
         .expect("a corner at the top left");
     assert_eq!(top_left.uv, egui::Pos2::new(0., 1.));
 }
+
+/// At 100% a render after a turn lands as a region alone, with the whole-photo
+/// render still the one from before the turn: the region shows, rendered as the
+/// photo now is, over the turned whole render.
+#[test]
+fn a_region_rendered_after_a_turn_shows_at_once() {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    let rendered = |id, width: usize, height: usize| Event::Rendered {
+        id,
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: width as u32,
+                height: height as u32,
+                pixels: vec![[0.5; 3]; width * height],
+            },
+            display_rgb: vec![128; width * height * 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Fit,
+        status: String::new(),
+    };
+    e.view.viewport = Vec2::new(400., 400.);
+    e.schedule();
+    e.tx.send(rendered(e.preview.task.id(), 32, 24)).unwrap();
+    e.events(&ctx);
+    // 100% in a view smaller than the photo: renders are regions.
+    let frame = |e: &mut Editor| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(16., 16.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                e.viewport_ui(ui);
+            },
+        );
+        output.textures_delta.clear();
+        output
+    };
+    e.set_zoom(1.);
+    frame(&mut e);
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    assert!(
+        matches!(
+            e.preview.pending.mode,
+            crate::app::develop::state::TextureMode::Region(_)
+        ),
+        "a region is asked for"
+    );
+    e.tx.send(rendered(e.preview.task.id(), 16, 16)).unwrap();
+    e.events(&ctx);
+    let region = e.preview.region.as_ref().expect("the region landed").id();
+    let output = frame(&mut e);
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape, egui::epaint::Shape::Mesh(m) if m.texture_id == region)),
+        "the region rendered after the turn is drawn"
+    );
+}

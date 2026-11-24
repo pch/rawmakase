@@ -442,12 +442,17 @@ impl Editor {
         };
         // A turn changes the shown aspect before the render for it lands: the old
         // render is drawn turned with it, its crop turned as `turn` turns it, and
-        // a 100% region of it waits for its own.
+        // a 100% region rendered before the turn waits for one rendered after it.
+        let shown = Orientation::of(&self.effective_recipe());
         let turns = (!self.preview.embedded)
             .then_some(self.preview.orientation)
             .flatten()
-            .and_then(|then| then.turns_to(Orientation::of(&self.effective_recipe())))
+            .and_then(|then| then.turns_to(shown))
             .unwrap_or(0);
+        let region_turned = self
+            .preview
+            .region_orientation
+            .is_some_and(|then| then != shown);
         let mut gpu_whole = false;
         if self.preview.texture.is_some() {
             let hdr = gpu_hdr(&texture);
@@ -486,7 +491,7 @@ impl Editor {
             }
         }
         let mut gpu_region = false;
-        if let (Some(region), Some(at), 0) = (&region_texture, region_rect, turns) {
+        if let (Some(region), Some(at), false) = (&region_texture, region_rect, region_turned) {
             let hdr = gpu_hdr(region);
             gpu_region = hdr.is_some();
             for id in std::iter::once(region.id()).chain(hdr.map(|h| h.id)) {

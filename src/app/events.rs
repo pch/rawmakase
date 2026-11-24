@@ -386,11 +386,14 @@ impl Editor {
                     // Pixels asked for by a hover or loupe that has since ended are
                     // not kept.
                     self.preview.keep_samples(region, samples);
-                    if !region {
-                        self.preview.orientation = request
-                            .recipe
-                            .as_ref()
-                            .map(crate::app::develop::state::Orientation::of);
+                    let orientation = request
+                        .recipe
+                        .as_ref()
+                        .map(crate::app::develop::state::Orientation::of);
+                    if region {
+                        self.preview.region_orientation = orientation;
+                    } else {
+                        self.preview.orientation = orientation;
                     }
                     self.preview.samples_recipe = request.recipe;
                     self.preview.mode = request.mode;
