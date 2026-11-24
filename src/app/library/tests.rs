@@ -2639,7 +2639,7 @@ fn the_filmstrip_keeps_its_place_across_views() -> Result<()> {
                         .exact_size(super::filmstrip::HEIGHT)
                         .show(ui, |ui| {
                             strip.set(Some(ui.make_persistent_id(egui::IdSalt::new("filmstrip"))));
-                            library.filmstrip(ui, current, module);
+                            library.filmstrip(ui, current, module, None);
                         });
                 },
             );
@@ -2709,7 +2709,7 @@ fn a_mouse_wheel_over_the_filmstrip_scrolls_it_sideways() -> Result<()> {
                         .exact_size(super::filmstrip::HEIGHT)
                         .show(ui, |ui| {
                             strip.set(Some(ui.make_persistent_id(egui::IdSalt::new("filmstrip"))));
-                            library.filmstrip(ui, None, Module::Develop);
+                            library.filmstrip(ui, None, Module::Develop, None);
                         });
                 },
             );
@@ -2733,7 +2733,7 @@ fn the_filmstrip_follows_a_change_made_after_it_was_drawn() -> Result<()> {
     let draw = |library: &mut Library| {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let active = library.selected();
-            library.filmstrip_panel(ui, active, Module::Library);
+            library.filmstrip_panel(ui, active, Module::Library, None);
         });
         output.textures_delta.clear();
     };
@@ -3246,7 +3246,7 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
             |ui| {
                 // The filmstrip below, as the workspace draws it.
                 let active = library.selected();
-                library.filmstrip_panel(ui, active, Module::Library);
+                library.filmstrip_panel(ui, active, Module::Library, None);
                 library.grid(ui, zoom, true, None, Default::default());
             },
         );
@@ -4633,7 +4633,7 @@ fn the_filmstrip_cells_keep_their_size_when_the_selection_opens_a_photo() -> Res
             },
             |ui| {
                 let active = library.selected();
-                library.filmstrip_panel(ui, active, Module::Library);
+                library.filmstrip_panel(ui, active, Module::Library, None);
             },
         );
         output.textures_delta.clear();
@@ -5728,7 +5728,7 @@ fn a_filmstrip_badge_collapses_an_open_stack_shown_whole() -> Result<()> {
                 ..Default::default()
             },
             |ui| {
-                library.filmstrip_panel(ui, Some(a), Module::Library);
+                library.filmstrip_panel(ui, Some(a), Module::Library, None);
             },
         );
         output.textures_delta.clear();

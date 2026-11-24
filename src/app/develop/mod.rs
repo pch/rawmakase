@@ -1,6 +1,7 @@
 //! Develop: the open photo, its edit, its rendering and the views of it.
 pub(crate) mod ai_denoise;
 pub(in crate::app) mod auto;
+pub(in crate::app) mod auto_sync;
 pub(in crate::app) mod autosave;
 pub(in crate::app) mod before_after;
 pub(in crate::app) mod camera_look;

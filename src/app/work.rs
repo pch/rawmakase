@@ -27,6 +27,7 @@ pub(in crate::app) enum Kind {
     PresetThumbnails,
     Export,
     Batch,
+    AutoSync,
     FolderChange,
     FileChange,
     MergeHdr,
@@ -68,6 +69,8 @@ pub(in crate::app) const OUTPUT: &str = "the output the control socket asked for
 pub(in crate::app) const FOLDER_CHANGE: &str = "the folder change";
 /// What the close guard calls a file operation.
 pub(in crate::app) const FILE_CHANGE: &str = "the file operation";
+/// What the close guard calls Auto Sync writing the other selected photos.
+pub(in crate::app) const AUTO_SYNC: &str = "Auto Sync";
 
 /// One kind of work and its policy.
 struct Row {
@@ -190,6 +193,17 @@ const WORK: &[Row] = &[
         slows_previews: false,
         pauses_checksums: false,
         stop: None,
+    },
+    // The spinner beside Auto Sync's switch. Closing waits until every step is
+    // written; the batch writing is joined under the deadline.
+    Row {
+        kind: Kind::AutoSync,
+        running: Some(|e| e.auto_sync_busy()),
+        closing: Some(Label::Fixed(AUTO_SYNC)),
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| e.stop_auto_sync()),
     },
     // Its dialog, until the catalog has opened again.
     Row {

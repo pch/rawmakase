@@ -6,6 +6,7 @@ use super::grid::filter_caption;
 use super::selection::{Mark, Selection};
 use super::views::View;
 use super::{Action, Library, cell};
+use crate::app::develop::settings_transfer::{ButtonSize, TransferButtons, TransferClick};
 use crate::app::ui::design::{Tone, inset, radius, space, text};
 use crate::app::ui::theme;
 use crate::catalog::{Photo, PhotoId};
@@ -34,6 +35,8 @@ pub(crate) struct Outcome {
     pub pick: Option<Pick>,
     /// A rating, flag or label was changed from the strip.
     pub metadata_changed: bool,
+    /// Develop's Copy, Paste or Sync button was clicked.
+    pub transfer: Option<TransferClick>,
 }
 
 /// The strip's own state, beyond the scroll offset egui keeps.
@@ -90,7 +93,7 @@ impl Library {
     pub(crate) fn library_filmstrip(&mut self, ui: &mut egui::Ui) -> Action {
         self.prepare(ui.ctx());
         let active = self.selection.active;
-        match self.filmstrip_panel(ui, active, Module::Library).pick {
+        match self.filmstrip_panel(ui, active, Module::Library, None).pick {
             Some(pick) => self.filmstrip_pick(pick, ui.input(|i| i.modifiers)),
             None => Action::None,
         }
@@ -98,17 +101,18 @@ impl Library {
     /// The filmstrip's panel, at the bottom of the window. One panel and one
     /// scroll area serve every view, so the strip stays where it was when
     /// they change. `current` is the photo shown: Develop's, or the active
-    /// one.
+    /// one. Develop passes its Copy, Paste and Sync `buttons`.
     pub(crate) fn filmstrip_panel(
         &mut self,
         ui: &mut egui::Ui,
         current: Option<PhotoId>,
         module: Module,
+        buttons: Option<TransferButtons>,
     ) -> Outcome {
         egui::Panel::bottom(ID)
             .exact_size(HEIGHT)
             .frame(egui::Frame::new().fill(theme::palette(ui.ctx()).tone(Tone::BAR)))
-            .show(ui, |ui| self.filmstrip(ui, current, module))
+            .show(ui, |ui| self.filmstrip(ui, current, module, buttons))
             .inner
     }
     /// Whether the selection changed after the strip was drawn, as a click
@@ -175,17 +179,20 @@ impl Library {
     }
     /// The photos in the current source, with `current` highlighted and,
     /// in the Library, the rest of the selection marked. With no photo
-    /// current the strip still shows them. Returns a photo chosen and
-    /// whether metadata changed.
+    /// current the strip still shows them. `buttons` lead the bar above it when
+    /// it has room. Returns a photo chosen, whether metadata changed and a button
+    /// clicked.
     pub(super) fn filmstrip(
         &mut self,
         ui: &mut egui::Ui,
         current: Option<PhotoId>,
         module: Module,
+        buttons: Option<TransferButtons>,
     ) -> Outcome {
         let palette = theme::palette(ui.ctx());
         let mut target = None;
         let mut changed = false;
+        let mut transfer = None;
         let library = module == Module::Library;
         if self.filmstrip_behind() {
             self.strip.drawn = (self.selection.clone(), self.shown_version);
@@ -220,35 +227,71 @@ impl Library {
                     ),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        ui.label(
-                            egui::RichText::new(self.source_name())
-                                .size(text::SMALL)
-                                .color(palette.tone(Tone::SOFT)),
-                        );
+                        // Right-aligned by the width the controls took last frame, so
+                        // the row never runs past the window and widens the strip.
+                        let width_id = ui.id().with("controls-width");
+                        let width = ui.data(|d| d.get_temp::<f32>(width_id)).unwrap_or(250.);
+                        // Develop's buttons lead the row. Short of room, the captions
+                        // go first, then the buttons' labels, and last the buttons.
                         let selected = self.selection.selected.len();
-                        ui.label(filter_caption(
-                            &palette,
-                            &match position {
-                                Some(_) if selected > 1 => {
-                                    format!(
-                                        "{} of {} photos selected",
-                                        selected,
-                                        self.visible.len()
-                                    )
-                                }
-                                Some(at) => format!("{} of {} photos", at + 1, self.visible.len()),
-                                None => format!("{} photos", self.visible.len()),
-                            },
-                        ));
+                        let count = match position {
+                            Some(_) if selected > 1 => {
+                                format!("{} of {} photos selected", selected, self.visible.len())
+                            }
+                            Some(at) => format!("{} of {} photos", at + 1, self.visible.len()),
+                            None => format!("{} photos", self.visible.len()),
+                        };
+                        let filename = photo
+                            .as_ref()
+                            .map(|p| format!("{}{}", p.filename, cell::copy_suffix(p)));
+                        let source = self.source_name();
+                        // Measured from their text, whether they showed last frame or
+                        // not, so they come back once they fit.
+                        let captions = {
+                            let texts = [
+                                Some(source.as_str()),
+                                Some(count.as_str()),
+                                filename.as_deref(),
+                            ];
+                            let shown: Vec<f32> = texts
+                                .into_iter()
+                                .flatten()
+                                .map(|t| {
+                                    ui.painter()
+                                        .layout_no_wrap(
+                                            t.to_string(),
+                                            egui::FontId::proportional(text::SMALL),
+                                            egui::Color32::WHITE,
+                                        )
+                                        .size()
+                                        .x
+                                })
+                                .collect();
+                            let gaps = shown.len().saturating_sub(1) as f32;
+                            shown.iter().sum::<f32>() + gaps * ui.spacing().item_spacing.x
+                        };
+                        let (size, show_captions) = layout(
+                            ui,
+                            buttons,
+                            if photo.is_some() { width } else { 0. },
+                            captions,
+                        );
+                        if let (Some(buttons), Some(size)) = (buttons, size) {
+                            ui.scope(|ui| transfer = buttons.show(ui, size));
+                            ui.add_space(space::L);
+                        }
+                        if show_captions {
+                            ui.label(
+                                egui::RichText::new(source)
+                                    .size(text::SMALL)
+                                    .color(palette.tone(Tone::SOFT)),
+                            );
+                            ui.label(filter_caption(&palette, &count));
+                            if let Some(filename) = &filename {
+                                ui.label(filter_caption(&palette, filename));
+                            }
+                        }
                         if let Some(p) = &photo {
-                            ui.label(filter_caption(
-                                &palette,
-                                &format!("{}{}", p.filename, cell::copy_suffix(p)),
-                            ));
-                            // Right-aligned by the width the controls took last frame, so
-                            // the row never runs past the window and widens the strip.
-                            let width_id = ui.id().with("controls-width");
-                            let width = ui.data(|d| d.get_temp::<f32>(width_id)).unwrap_or(250.);
                             ui.add_space((ui.available_width() - width).max(space::M));
                             let start = ui.cursor().left();
                             changed = self.metadata_controls(ui, p.id, whole_selection);
@@ -339,6 +382,7 @@ impl Library {
         Outcome {
             pick: target,
             metadata_changed: changed,
+            transfer,
         }
     }
     /// One photo in the strip, with its menu. Returns a photo chosen and
@@ -463,6 +507,33 @@ impl Library {
         ui.ctx()
             .layer_painter(layer)
             .image(texture.id(), rect, uv, Color32::from_white_alpha(220));
+    }
+}
+
+/// What Develop's buttons and the captions fit in the bar `ui` lays out, beside the
+/// metadata controls `controls` wide: the buttons with their labels and the
+/// captions `captions` wide; short of room the captions go, then the buttons'
+/// labels, and last the buttons themselves, when the captions come back. Returns
+/// the buttons' size, if they show, and whether the captions do.
+fn layout(
+    ui: &egui::Ui,
+    buttons: Option<TransferButtons>,
+    controls: f32,
+    captions: f32,
+) -> (Option<ButtonSize>, bool) {
+    let Some(buttons) = buttons else {
+        return (None, true);
+    };
+    let room = ui.available_width() - controls - space::M;
+    let labelled = buttons.width(ui, ButtonSize::Labelled) + space::L;
+    if room >= labelled + captions {
+        (Some(ButtonSize::Labelled), true)
+    } else if room >= labelled {
+        (Some(ButtonSize::Labelled), false)
+    } else if room >= buttons.width(ui, ButtonSize::Icons) + space::L {
+        (Some(ButtonSize::Icons), false)
+    } else {
+        (None, true)
     }
 }
 
