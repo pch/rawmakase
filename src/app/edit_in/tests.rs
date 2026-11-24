@@ -62,9 +62,12 @@ fn a_file_saved_again_is_found_once_and_a_missing_one_forgotten() -> anyhow::Res
     let was = sent[1].identity.clone();
     std::fs::write(&saved, b"saved again by the editor")?;
     std::fs::remove_file(&gone)?;
-    // Seen once: not taken up until it has settled.
-    assert!(rewritten(&mut sent).is_empty());
-    let changed = rewritten(&mut sent);
+    // Seen: not taken up until it has stayed as it is for SETTLE.
+    let start = Instant::now();
+    let at = |ms: u64| start + Duration::from_millis(ms);
+    assert!(rewritten(&mut sent, at(0)).is_empty());
+    assert!(rewritten(&mut sent, at(250)).is_empty());
+    let changed = rewritten(&mut sent, at(300));
     assert_eq!(changed.len(), 1);
     assert_eq!(changed[0].0, saved);
     assert_eq!(changed[0].1, was);
@@ -74,13 +77,14 @@ fn a_file_saved_again_is_found_once_and_a_missing_one_forgotten() -> anyhow::Res
         [kept.clone(), saved]
     );
     // Looked at again with nothing saved since: nothing to do.
-    assert!(rewritten(&mut sent).is_empty());
+    assert!(rewritten(&mut sent, at(550)).is_empty());
     // Still being written at each look: never taken up mid-write.
-    for part in ["s", "sa", "sav"] {
+    for (ms, part) in [(800, "s"), (1050, "sa"), (1300, "sav")] {
         std::fs::write(&kept, part)?;
-        assert!(rewritten(&mut sent).is_empty(), "{part}");
+        assert!(rewritten(&mut sent, at(ms)).is_empty(), "{part}");
     }
-    assert_eq!(rewritten(&mut sent).len(), 1, "settled");
+    assert!(rewritten(&mut sent, at(1550)).is_empty(), "not settled yet");
+    assert_eq!(rewritten(&mut sent, at(1600)).len(), 1, "settled");
     Ok(())
 }
 
@@ -166,12 +170,14 @@ fn a_tiff_is_added_stacked_on_its_original_and_opened_then_followed() -> anyhow:
     let library = e.library.as_ref().unwrap();
     assert!(library.session.catalog().load_edit(photo, &tiff).is_err());
     // Taken up by the passes that run with the window behind the editor:
-    // seen once, then settled at the next look.
+    // seen, then once it has stayed so for SETTLE.
     let ctx = e.context.clone();
-    for _ in 0..2 {
-        e.edit_in.checked = None;
-        e.background(&ctx);
+    e.background(&ctx);
+    e.edit_in.checked = None;
+    if let Some((_, since)) = &mut e.edit_in.sent[0].seen {
+        *since -= SETTLE;
     }
+    e.background(&ctx);
     let now = Identity::read(&tiff)?;
     let library = e.library.as_ref().unwrap();
     let saved = library.session.catalog().load_edit(photo, &tiff)?;
@@ -289,7 +295,7 @@ fn an_added_tiff_shows_its_thumbnail_at_once() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// While files are sent out the passes keep coming about once a second, as
+/// While files are sent out the passes keep coming every 150 ms, as
 /// nothing else wakes a window behind the editor; with none, nothing does.
 #[test]
 fn files_sent_out_keep_the_window_waking() -> anyhow::Result<()> {
@@ -323,7 +329,9 @@ fn files_sent_out_keep_the_window_waking() -> anyhow::Result<()> {
     pass(&mut e);
     let woken = woken.lock().unwrap();
     assert!(
-        woken.iter().any(|delay| *delay <= Duration::from_secs(1)),
+        woken
+            .iter()
+            .any(|delay| *delay <= Duration::from_millis(150)),
         "{woken:?}"
     );
     Ok(())

@@ -19,10 +19,10 @@
 //! opened in the program and not added.
 //!
 //! The files sent out (originals included) are remembered while the app
-//! runs, and looked at about once a second, from the pass that runs even
+//! runs, and looked at about seven times a second (a stat is cheap), from the pass that runs even
 //! while the window is behind another (`Editor::watch_sent`, which keeps
 //! asking for the next pass while there are any): a stat each, and a change
-//! is taken up once it has settled over two looks. One saved has its
+//! is taken up once the file has stayed as it is for [`SETTLE`]. One saved has its
 //! edit in the catalog bound to the new version (so the edit is not
 //! protected, nor a save refused, as for a photo replaced by another), its
 //! previews made again (those shown staying until the new ones come: another
@@ -121,13 +121,17 @@ struct Rendered {
 pub(in crate::app) struct Sent {
     pub(in crate::app) path: PathBuf,
     pub(in crate::app) identity: Identity,
-    /// A change seen at the last look and not yet settled: the file's size
-    /// and modification time then.
-    pub(in crate::app) seen: Option<crate::storage::Stamp>,
+    /// A change not taken up yet: the file's size and modification time, and
+    /// when they were first seen so.
+    pub(in crate::app) seen: Option<(crate::storage::Stamp, std::time::Instant)>,
 }
 
-/// How often the files sent out are looked at, while there are any.
-const WATCH: std::time::Duration = std::time::Duration::from_secs(1);
+/// How often the files sent out are looked at, while there are any: a stat
+/// each.
+const WATCH: std::time::Duration = std::time::Duration::from_millis(150);
+/// How long a changed file must stay as it is before it is read, so one the
+/// editor is still writing is not.
+pub(in crate::app) const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// What the import worker sends back: whether the catalog added the file
 /// (false when it had it already), or why not.
@@ -200,10 +204,13 @@ pub(in crate::app) fn settings(space: OutputSpace) -> ExportSettings {
 
 /// The files of `sent` saved again since they were sent or last taken up,
 /// each with the version it was and the one it is now; `sent` keeps the new
-/// ones. A change counts once it has settled: the same size and
-/// modification time at two looks in a row, so a file still being written
-/// is not read. A file that can't be read (moved, deleted) is forgotten.
-pub(in crate::app) fn rewritten(sent: &mut Vec<Sent>) -> Vec<(PathBuf, Identity, Identity)> {
+/// ones. A change counts once it has settled, `now`: the same size and
+/// modification time for [`SETTLE`], so a file still being written is not
+/// read. A file that can't be read (moved, deleted) is forgotten.
+pub(in crate::app) fn rewritten(
+    sent: &mut Vec<Sent>,
+    now: std::time::Instant,
+) -> Vec<(PathBuf, Identity, Identity)> {
     let mut changed = Vec::new();
     sent.retain_mut(|file| {
         let Ok(stamp) = crate::storage::Stamp::read(&file.path) else {
@@ -213,8 +220,16 @@ pub(in crate::app) fn rewritten(sent: &mut Vec<Sent>) -> Vec<(PathBuf, Identity,
             file.seen = None;
             return true;
         }
-        if file.seen.replace(stamp) != Some(stamp) {
-            return true;
+        match file.seen {
+            Some((seen, since)) if seen == stamp => {
+                if now.duration_since(since) < SETTLE {
+                    return true;
+                }
+            }
+            _ => {
+                file.seen = Some((stamp, now));
+                return true;
+            }
         }
         let Ok(now) = Identity::read(&file.path) else {
             return false;
@@ -505,7 +520,7 @@ impl Editor {
         }
     }
 
-    /// Looks at the files sent out about once a second while there are any,
+    /// Looks at the files sent out about seven times a second while there are any,
     /// whether the window is in front or not: a save the editor made is
     /// taken up once it has settled. Called each pass, also while the window
     /// is behind another, and keeps the passes coming while it waits.
@@ -527,7 +542,7 @@ impl Editor {
     /// follow them, their previews are made again, and the one shown opens
     /// again.
     pub(in crate::app) fn edited_elsewhere(&mut self) {
-        for (path, was, now) in rewritten(&mut self.edit_in.sent) {
+        for (path, was, now) in rewritten(&mut self.edit_in.sent, std::time::Instant::now()) {
             let Some(library) = &mut self.library else {
                 continue;
             };

@@ -189,11 +189,12 @@ With the first two, adjustments made in RAWmakase are not in what the editor
 shows; the window says so when the photo has some. RAW photos chosen with them
 are always edited as a TIFF with their adjustments.
 
-While files are open in an editor, RAWmakase looks at them about once a second,
-whether its window is in front or not (on a second screen, say). When the editor
-has saved one and the file has stopped changing, its thumbnail and previews are
-made again, the ones shown staying until the new ones are ready, and the photo is
-opened again if it is the one shown. An edit made to the file in RAWmakase stays
+While files are open in an editor, RAWmakase keeps an eye on them, whether its
+window is in front or not (on a second screen, say). When the editor has saved one
+and the file has not changed for a third of a second, its thumbnail and previews
+are made again, the ones shown staying until the new ones are ready, and the photo
+is opened again if it is the one shown: about a second after the save for a
+100 MB TIFF. An edit made to the file in RAWmakase stays
 with it.
 
 ## Unused masks and patches
