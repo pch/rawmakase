@@ -740,9 +740,28 @@ pub(in crate::app) struct MenuCollections<'a> {
     /// The external editors' names, for Edit In.
     pub editors: &'a [String],
 }
+/// The Edit In submenu of a photo menu, offered when `enabled`: what was
+/// chosen from [`edit_in_menu`], the menu closed then.
+pub(in crate::app) fn edit_in_submenu(
+    ui: &mut egui::Ui,
+    enabled: bool,
+    editors: &[String],
+) -> Option<PhotoAction> {
+    let mut chosen = None;
+    crate::app::ui::widgets::submenu_style(ui);
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.menu_button("Edit In", |ui| {
+            chosen = edit_in_menu(ui, editors);
+            if chosen.is_some() {
+                ui.close();
+            }
+        })
+    });
+    chosen
+}
 /// Edit In's entries: each external editor, the first with its shortcut,
 /// then Configure External Editors….
-pub(in crate::app) fn edit_in_menu(ui: &mut egui::Ui, editors: &[String]) -> Option<PhotoAction> {
+fn edit_in_menu(ui: &mut egui::Ui, editors: &[String]) -> Option<PhotoAction> {
     use crate::app::ui::widgets::{menu_item, menu_separator};
     crate::app::ui::widgets::menu_width(ui, 230.);
     ui.spacing_mut().item_spacing.y = 0.;
@@ -834,13 +853,9 @@ pub(in crate::app) fn photo_menu(
             }
             menu_separator(ui);
         }
-        submenu_style(ui);
-        ui.menu_button("Edit In", |ui| {
-            if let Some(chosen) = edit_in_menu(ui, editors) {
-                action = Some(chosen);
-                ui.close();
-            }
-        });
+        if let Some(chosen) = edit_in_submenu(ui, true, editors) {
+            action = Some(chosen);
+        }
         menu_separator(ui);
         // Offline with an up-to-date copy recorded, it opens from that; opening
         // checks the copy and says why, if it can't.

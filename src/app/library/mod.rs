@@ -70,7 +70,7 @@ impl Place {
     }
 }
 pub(in crate::app) use cell::{
-    EDIT_IN_SHORTCUT, EXPORT_SHORTCUTS, PhotoAction, copy_suffix, edit_in_menu,
+    EDIT_IN_SHORTCUT, EXPORT_SHORTCUTS, PhotoAction, copy_suffix, edit_in_submenu,
 };
 pub(crate) use collection_edit::CollectionTreeCommand;
 pub(in crate::app) use collection_edit::NewCollection;
