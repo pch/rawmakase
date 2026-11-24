@@ -370,6 +370,8 @@ pub(in crate::app) struct Extension {
     mask_progress: Option<(u64, String)>,
     /// Commands whose target is being read, before they are sent.
     reading: Vec<TargetRead>,
+    /// When it was last busy (a request sent, or still being worked on at a
+    /// poll): an `on-demand` program is stopped [`IDLE_STOP`] after this.
     last_active: Instant,
     /// The manifest's and program's modification times, for developer mode.
     mtimes: (Option<std::time::SystemTime>, Option<std::time::SystemTime>),
@@ -2398,6 +2400,13 @@ impl Host {
         self.sync_sources();
         let mut next: Option<Instant> = None;
         for index in 0..self.extensions.len() {
+            // Busy until this poll: the idle time is counted from the end of
+            // its work, not from the request that began it, so a download
+            // longer than `IDLE_STOP` doesn't stop it the moment it is done.
+            let e = &mut self.extensions[index];
+            if e.busy() {
+                e.last_active = now;
+            }
             self.poll_one(index, now, answer, outcomes);
             let e = &mut self.extensions[index];
             let Some(run) = &e.run else {
