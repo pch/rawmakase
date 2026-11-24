@@ -70,6 +70,8 @@ pub(crate) struct Editor {
     clipboard: Option<crate::app::develop::settings_transfer::Clipboard>,
     /// The settings of the photo open before this one, for Paste from Previous.
     previous_settings: Option<crate::app::develop::settings_transfer::Settings>,
+    /// Auto Sync's steps waiting to go to the other selected photos, and its batch.
+    auto_sync: crate::app::develop::auto_sync::AutoSync,
     /// The Point Curve menu's saved curves and its Save window.
     curves: crate::app::develop::panels::curve_menu::CurveMenu,
     /// The Import LUTs window's color space, while it is open.
@@ -412,6 +414,7 @@ impl Editor {
             headroom: Default::default(),
             clipboard: None,
             previous_settings: None,
+            auto_sync: Default::default(),
             curves: Default::default(),
             lut_import: None,
             profile_manager: None,

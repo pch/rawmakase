@@ -328,7 +328,7 @@ static GENERAL: [Row; 16] = [
     row(&[Keys(&b::PREFERENCES)], "Preferences"),
     row(&[Keys(&b::SHORTCUTS)], "These shortcuts"),
 ];
-static DEVELOP: [Row; 55] = [
+static DEVELOP: [Row; 56] = [
     row(&[Keys(&b::CROP)], "Crop & Straighten"),
     row(&[Keys(&b::FINISH_CROP)], "Finish the crop"),
     row(
@@ -448,6 +448,7 @@ static DEVELOP: [Row; 55] = [
         "Sync settings to the selected photos",
     ),
     option(&[Keys(&b::MATCH_EXPOSURES)], "Match total exposures"),
+    option(&[Keys(&b::AUTO_SYNC)], "Turn Auto Sync on / off"),
     row(&[Keys(&b::NEW_PRESET)], "New Develop Preset"),
     row(&[Keys(&b::RESET)], "Reset all settings"),
     row(&[Keys(&b::DEVELOP_AUTO)], "Auto tone"),

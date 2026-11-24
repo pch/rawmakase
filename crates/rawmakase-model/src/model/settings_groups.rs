@@ -440,6 +440,54 @@ impl GroupSelection {
     pub fn groups(&self) -> impl Iterator<Item = SettingGroup> + '_ {
         self.0.iter().copied()
     }
+    /// The groups of this selection whose own settings `after` changed from `before`:
+    /// what Auto Sync takes from one History step. Each side is copied onto the same
+    /// blank recipe and the copies are compared, so what copying works out from the
+    /// settings (the order it gives spots, the Treatment a profile implies) is no
+    /// change. A panel's switch belongs to no one group of the panel, so turning it
+    /// on or off changes none of them (see [`Self::switches_changed`]).
+    pub fn changed(&self, before: &Recipe, after: &Recipe) -> Self {
+        let copied = |group: SettingGroup, from: &Recipe| {
+            let mut to = Recipe::default();
+            group.copy(from, &mut to);
+            to.panels = Default::default();
+            to
+        };
+        Self(
+            self.groups()
+                .filter(|group| copied(*group, before) != copied(*group, after))
+                .collect(),
+        )
+    }
+    /// The panels of this selection's groups whose switch `after` turned on or off
+    /// from `before`.
+    pub fn switches_changed(&self, before: &Recipe, after: &Recipe) -> BTreeSet<Panel> {
+        self.groups()
+            .filter_map(SettingGroup::panel)
+            .filter(|panel| before.panels.state(*panel) != after.panels.state(*panel))
+            .collect()
+    }
+    /// Every group but this selection's.
+    pub fn complement(&self) -> Self {
+        Self(
+            SettingGroup::ALL
+                .into_iter()
+                .filter(|group| !self.contains(*group))
+                .collect(),
+        )
+    }
+    /// Copies this selection's settings from `from` into `to` as the user set them,
+    /// with their panels' switches. Unlike [`transfer`], it works nothing out for
+    /// another photo: both recipes are of the same one.
+    pub fn copy_as_set(&self, from: &Recipe, to: &mut Recipe) {
+        for group in self.groups() {
+            group.copy(from, to);
+        }
+    }
+    /// Adds `other`'s groups to this selection.
+    pub fn add(&mut self, other: &Self) {
+        self.0.extend(other.groups());
+    }
 }
 
 /// Whether a group is part of a selection.

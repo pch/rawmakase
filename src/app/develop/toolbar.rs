@@ -175,6 +175,19 @@ impl Editor {
                                 );
                                 ui.close();
                             }
+                            let auto_sync = format!(
+                                "{cmd}{shift}{}A",
+                                if cfg!(target_os = "macos") {
+                                    "⌥ "
+                                } else {
+                                    "Alt+"
+                                }
+                            );
+                            if menu_item(ui, "Auto Sync", &auto_sync, true, self.session.auto_sync)
+                            {
+                                self.toggle_auto_sync();
+                                ui.close();
+                            }
                             // Lightroom's Match Total Exposures, for the photos selected
                             // with this one, from their aperture, shutter speed and ISO.
                             let matchable = targets > 0
@@ -457,16 +470,14 @@ impl Editor {
             menu_separator(ui);
         }
         if shown <= 4 {
-            crate::app::ui::widgets::submenu_style(ui);
-            ui.menu_button("Before / After", |ui| {
+            crate::app::ui::widgets::submenu(ui, "Before / After", true, |ui| {
                 crate::app::ui::widgets::menu_width(ui, 300.);
                 ui.spacing_mut().item_spacing.y = 0.;
                 self.before_after_items(ui);
             });
         }
         if shown <= 5 {
-            crate::app::ui::widgets::submenu_style(ui);
-            ui.menu_button("Reference", |ui| {
+            crate::app::ui::widgets::submenu(ui, "Reference", true, |ui| {
                 crate::app::ui::widgets::menu_width(ui, 220.);
                 ui.spacing_mut().item_spacing.y = 0.;
                 let reference = self.reference_view();

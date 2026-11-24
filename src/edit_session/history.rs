@@ -44,6 +44,8 @@ pub(crate) struct Recorded {
     pub after: Recipe,
     pub at_before: Mark,
     pub at_after: Mark,
+    /// A click in the History panel rather than an edit.
+    pub click: bool,
 }
 
 pub(crate) struct History {
@@ -198,6 +200,7 @@ impl History {
             after: current.clone(),
             at_before,
             at_after: self.mark(),
+            click: true,
         });
         true
     }
@@ -319,6 +322,7 @@ impl History {
             after: after.clone(),
             at_before,
             at_after: self.mark(),
+            click: false,
         });
         true
     }

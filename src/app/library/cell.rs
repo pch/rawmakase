@@ -705,19 +705,16 @@ fn collection_menu(
     ui: &mut egui::Ui,
     nodes: &[super::collections::CollectionNode],
 ) -> Option<crate::catalog::CollectionId> {
-    use crate::app::ui::widgets::{menu_item, submenu_style};
+    use crate::app::ui::widgets::{menu_item, submenu};
     crate::app::ui::widgets::menu_width(ui, 210.);
     ui.spacing_mut().item_spacing.y = 0.;
     let mut chosen = None;
     for node in nodes {
         if node.set {
-            submenu_style(ui);
-            ui.add_enabled_ui(!node.children.is_empty(), |ui| {
-                ui.menu_button(&node.name, |ui| {
-                    if let Some(id) = collection_menu(ui, &node.children) {
-                        chosen = Some(id);
-                    }
-                })
+            submenu(ui, &node.name, !node.children.is_empty(), |ui| {
+                if let Some(id) = collection_menu(ui, &node.children) {
+                    chosen = Some(id);
+                }
             });
         } else if node.smart.is_none() && menu_item(ui, &node.name, "", true, false) {
             // Smart collections take no photos by hand.
@@ -829,7 +826,7 @@ pub(in crate::app) fn photo_menu(
         editors,
     } = collections;
     use crate::app::library::photo_metadata::{Edit, LABELS};
-    use crate::app::ui::widgets::{menu_item, menu_separator, submenu_style};
+    use crate::app::ui::widgets::{menu_item, menu_separator, submenu};
     let Presence { available, copy } = presence;
     let mut action = None;
     // Why Develop can't open the photo reads its file: once each time the menu opens.
@@ -920,47 +917,35 @@ pub(in crate::app) fn photo_menu(
             }
         }
         menu_separator(ui);
-        submenu_style(ui);
-        ui.add_enabled_ui(target.merges(), |ui| {
-            ui.menu_button("Photo Merge", |ui| {
-                crate::app::ui::widgets::menu_width(ui, 120.);
-                ui.spacing_mut().item_spacing.y = 0.;
-                if menu_item(ui, "HDR…", "", true, false) {
-                    action = Some(PhotoAction::MergeHdr);
-                    ui.close();
-                }
-            })
+        submenu(ui, "Photo Merge", target.merges(), |ui| {
+            crate::app::ui::widgets::menu_width(ui, 120.);
+            ui.spacing_mut().item_spacing.y = 0.;
+            if menu_item(ui, "HDR…", "", true, false) {
+                action = Some(PhotoAction::MergeHdr);
+                ui.close();
+            }
         });
         menu_separator(ui);
-        submenu_style(ui);
-        ui.add_enabled_ui(stacks, |ui| {
-            ui.menu_button("Stacking", |ui| {
-                crate::app::ui::widgets::menu_width(ui, 250.);
-                ui.spacing_mut().item_spacing.y = 0.;
-                if let Some(choice) = stacking_menu(ui, photo, module) {
-                    action = Some(PhotoAction::Stack(choice));
-                    ui.close();
-                }
-            })
+        submenu(ui, "Stacking", stacks, |ui| {
+            crate::app::ui::widgets::menu_width(ui, 250.);
+            ui.spacing_mut().item_spacing.y = 0.;
+            if let Some(choice) = stacking_menu(ui, photo, module) {
+                action = Some(PhotoAction::Stack(choice));
+                ui.close();
+            }
         });
         menu_separator(ui);
-        submenu_style(ui);
-        ui.add_enabled_ui(!collections.is_empty(), |ui| {
-            ui.menu_button("Add to Collection", |ui| {
-                if let Some(id) = collection_menu(ui, collections) {
-                    action = Some(PhotoAction::AddToCollection(id));
-                    ui.close();
-                }
-            })
+        submenu(ui, "Add to Collection", !collections.is_empty(), |ui| {
+            if let Some(id) = collection_menu(ui, collections) {
+                action = Some(PhotoAction::AddToCollection(id));
+                ui.close();
+            }
         });
-        submenu_style(ui);
-        ui.add_enabled_ui(!in_collections.is_empty(), |ui| {
-            ui.menu_button("Go to Collection", |ui| {
-                if let Some(id) = go_to_menu(ui, in_collections) {
-                    action = Some(PhotoAction::GoToCollection(id));
-                    ui.close();
-                }
-            })
+        submenu(ui, "Go to Collection", !in_collections.is_empty(), |ui| {
+            if let Some(id) = go_to_menu(ui, in_collections) {
+                action = Some(PhotoAction::GoToCollection(id));
+                ui.close();
+            }
         });
         if let Some(label) = remove_from
             && menu_item(ui, label, REMOVE_FROM_COLLECTION_SHORTCUT, true, false)
@@ -1005,8 +990,7 @@ pub(in crate::app) fn photo_menu(
             ui.close();
         }
         menu_separator(ui);
-        submenu_style(ui);
-        ui.menu_button("Previews", |ui| {
+        submenu(ui, "Previews", true, |ui| {
             crate::app::ui::widgets::menu_width(ui, 250.);
             ui.spacing_mut().item_spacing.y = 0.;
             use crate::catalog::preview_cache::PreviewKind;
@@ -1038,8 +1022,7 @@ pub(in crate::app) fn photo_menu(
             }
         });
         menu_separator(ui);
-        submenu_style(ui);
-        ui.menu_button("Set Flag", |ui| {
+        submenu(ui, "Set Flag", true, |ui| {
             crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;
             for (flag, title) in [(1, "Flagged"), (0, "Unflagged"), (-1, "Rejected")] {
@@ -1055,7 +1038,7 @@ pub(in crate::app) fn photo_menu(
                 }
             }
         });
-        ui.menu_button("Set Rating", |ui| {
+        submenu(ui, "Set Rating", true, |ui| {
             crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;
             for rating in 0..=5 {
@@ -1076,7 +1059,7 @@ pub(in crate::app) fn photo_menu(
                 }
             }
         });
-        ui.menu_button("Set Color Label", |ui| {
+        submenu(ui, "Set Color Label", true, |ui| {
             let palette = theme::palette(ui.ctx());
             crate::app::ui::widgets::menu_width(ui, 170.);
             ui.spacing_mut().item_spacing.y = 0.;

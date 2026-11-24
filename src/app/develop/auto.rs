@@ -124,18 +124,27 @@ impl Editor {
                 self.document.auto_applied = Some(applied.clone());
                 self.document.auto_effect.take();
             }
-            AutoKind::WhiteBalance => {
-                applied.wb = auto.wb;
-                applied.temperature = auto.temperature;
-                applied.tint = auto.tint;
-                // A JPEG, PNG or TIFF's white balance is relative Temp and Tint.
-                applied.incremental_temperature = auto.incremental_temperature;
-                applied.incremental_tint = auto.incremental_tint;
-                applied.auto_white_balance = auto.auto_white_balance;
-            }
+            AutoKind::WhiteBalance => apply_white_balance(&auto, &mut applied),
         }
+        // With Auto Sync on, the other selected photos get an Auto of their own:
+        // the steps before are taken first, so only Auto's is measured.
+        self.sync_undo();
+        self.auto_sync_measure(kind);
         self.change_edit(Some(step), |r| *r = applied);
+        self.sync_undo();
+        self.auto_sync_measure_done();
     }
+}
+
+/// Auto White Balance's estimate `auto` set on `to`: only the white balance.
+pub(in crate::app) fn apply_white_balance(auto: &Recipe, to: &mut Recipe) {
+    to.wb = auto.wb;
+    to.temperature = auto.temperature;
+    to.tint = auto.tint;
+    // A JPEG, PNG or TIFF's white balance is relative Temp and Tint.
+    to.incremental_temperature = auto.incremental_temperature;
+    to.incremental_tint = auto.incremental_tint;
+    to.auto_white_balance = auto.auto_white_balance;
 }
 
 #[cfg(test)]

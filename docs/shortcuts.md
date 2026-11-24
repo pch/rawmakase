@@ -306,6 +306,7 @@ names where they have one. Fixed commands keep their keys.
 | `before_after:top_bottom` | Before and after, top and bottom |
 | `before_after:split` | Before and after, split |
 | `match_exposures` | Match total exposures |
+| `auto_sync` | Toggle Auto Sync |
 | `new_preset` | New Develop Preset |
 | `targeted:tone_curve` | Targeted adjustment: Tone Curve |
 | `targeted:hue` | Targeted adjustment: Hue |
