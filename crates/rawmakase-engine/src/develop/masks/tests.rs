@@ -515,6 +515,88 @@ fn exposure_of_a_mask_scales_the_scene_as_the_global_slider_does() {
         .fold(0., f32::max);
     assert!(max < 1e-4, "{max}");
 }
+/// A mask's Exposure must not shift a pixel away from the pre-mask map's base level
+/// when Shadows/Highlights reads `LocalToneMap::base`: on a dark patch well under the
+/// white curve, a mask with Exposure +2 and Shadows +100 lifts by the same factor over
+/// Exposure +2 alone as Shadows +100 alone lifts over default.
+#[test]
+fn mask_exposure_keeps_shadows_base_on_the_measured_map() {
+    let mut im = image(120, 80);
+    // Dark left half (0.02), bright right half (2.0), plus a tiny 0.0001 anchor so
+    // default black is negligible on both 0.02 and 0.08, and 0.08 * lift at Shadows +25
+    // stays well under the white shoulder.
+    for y in 0..80usize {
+        for x in 0..120usize {
+            let v = if y < 2 && x < 20 {
+                0.0001
+            } else if x < 60 {
+                0.02
+            } else {
+                2.0
+            };
+            im.pixels[y * 120 + x] = [v; 3];
+        }
+    }
+    let base = Recipe::with_profiles(&im.metadata, &[]);
+    let everywhere = || MaskComponent {
+        invert: true,
+        ..MaskComponent::new(MaskShape::Linear {
+            from: [0., -3.],
+            to: [0., -2.9],
+        })
+    };
+    let masked_both = Recipe {
+        masks: vec![MaskGroup {
+            components: vec![everywhere()],
+            adjust: LocalAdjust {
+                exposure: 2.,
+                shadows: 0.25,
+                ..Default::default()
+            },
+            ..Default::default()
+        }],
+        ..base.clone()
+    };
+    let masked_exp = Recipe {
+        masks: vec![MaskGroup {
+            components: vec![everywhere()],
+            adjust: LocalAdjust {
+                exposure: 2.,
+                ..Default::default()
+            },
+            ..Default::default()
+        }],
+        ..base.clone()
+    };
+    let global_sh = Recipe {
+        shadows: 0.25,
+        ..base.clone()
+    };
+    let out = |r: &Recipe| {
+        crate::develop::quality::render_stage(
+            &im,
+            r,
+            crate::develop::quality::Stage::SceneOutput,
+            Cancel::NEVER,
+        )
+        .unwrap()
+    };
+    let r_both = out(&masked_both);
+    let r_exp = out(&masked_exp);
+    let g_sh = out(&global_sh);
+    let g_def = out(&base);
+    // Centre of the dark half: linear ProPhoto output of the scene tone stage.
+    let i = 40 * 120 + 25;
+    let ratio_masked = (r_both.pixels[i][1] / r_exp.pixels[i][1]).log2();
+    let ratio_global = (g_sh.pixels[i][1] / g_def.pixels[i][1]).log2();
+    // Both read the same pre-mask base level; a ~0.02 EV residual remains from the
+    // global tone curve's slight nonlinearity between 0.02 and 0.08 (pre-fix error was
+    // >0.5 EV when mask Exposure +2 shifted the local-tone base level).
+    assert!(
+        (ratio_masked - ratio_global).abs() < 0.03,
+        "mask Exposure shifted Shadows lift: masked {ratio_masked:+.3} EV vs global {ratio_global:+.3} EV"
+    );
+}
 #[test]
 fn partial_masks_blend_and_amount_scales() {
     let im = image(120, 80);

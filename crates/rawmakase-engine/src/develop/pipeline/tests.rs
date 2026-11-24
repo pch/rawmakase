@@ -1091,6 +1091,330 @@ fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
         preview_source((&im).into(), 4).pixels
     );
 }
+/// Optical black corners that a camera's built-in barrel-distortion correction crops
+/// away must not pollute the measurement copy (or drag Shadows/Highlights' dark floor
+/// down), while in-frame pixels stay untouched.
+#[test]
+fn measurement_copies_clamp_corners_cropped_by_builtin_distortion() {
+    use crate::optics::{LensCorrection, Radial};
+    let (w, h) = (64u32, 48u32);
+    // Strong barrel distortion (k < 1 at outer radii) pulls corners inward.
+    let lens = LensCorrection {
+        source: "Panasonic built-in".into(),
+        default_on: true,
+        distortion: Radial::new(vec![0., 0.5, 1., 1.5], vec![1., 0.92, 0.78, 0.65]),
+        ..Default::default()
+    };
+    let mut pixels = vec![[0.2; 3]; (w * h) as usize];
+    // Black optical corners outside the built-in crop.
+    for y in 0..6u32 {
+        for x in 0..6u32 {
+            pixels[(y * w + x) as usize] = [0.; 3];
+            pixels[(y * w + (w - 1 - x)) as usize] = [0.; 3];
+            pixels[((h - 1 - y) * w + x) as usize] = [0.; 3];
+            pixels[((h - 1 - y) * w + (w - 1 - x)) as usize] = [0.; 3];
+        }
+    }
+    let im = CameraImage {
+        width: w,
+        height: h,
+        pixels: pixels.into(),
+        metadata: crate::camera_data::Metadata {
+            width: w,
+            height: h,
+            wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            lens: Some(lens),
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    let copy = measurement_source((&im).into(), 64);
+    assert!(
+        copy.pixels[0][1] > 0.15,
+        "optical black corner was not clamped away: {:?}",
+        copy.pixels[0]
+    );
+    // Centre pixel stays untouched.
+    assert_eq!(copy.pixels[(24 * w + 32) as usize], [0.2; 3]);
+}
+/// Optical-black margins outside the camera's default crop (`crop_left/top/width/height`,
+/// e.g. Sony A7R VI raw borders) must not leak into the measurement copy.
+#[test]
+fn measurement_copies_clamp_optical_black_outside_default_crop() {
+    let (w, h) = (64u32, 48u32);
+    let mut pixels = vec![[0.; 3]; (w * h) as usize];
+    for y in 2..40u32 {
+        for x in 4..56u32 {
+            pixels[(y * w + x) as usize] = [0.25; 3];
+        }
+    }
+    let im = CameraImage {
+        width: w,
+        height: h,
+        pixels: pixels.into(),
+        metadata: crate::camera_data::Metadata {
+            width: w,
+            height: h,
+            crop_left: 4,
+            crop_top: 2,
+            crop_width: 52,
+            crop_height: 38,
+            wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    for max in [64, 32] {
+        let copy = measurement_source((&im).into(), max);
+        for p in copy.pixels.iter() {
+            assert!(
+                (p[1] - 0.25).abs() < 1e-6,
+                "optical black leaked at max={max}: {p:?}"
+            );
+        }
+    }
+    // Non-power-of-two full-res frame (`47x502`, where `(1/47)*47 < 1` in f32) and
+    // reduced decode with odd crop offset must also never leak optical-black edges.
+    let (nw, nh) = (47u32, 502u32);
+    let mut npix = vec![[0.; 3]; (nw * nh) as usize];
+    for y in 1..501u32 {
+        for x in 1..46u32 {
+            npix[(y * nw + x) as usize] = [0.25; 3];
+        }
+    }
+    let non_pow2 = CameraImage {
+        width: nw,
+        height: nh,
+        pixels: npix.into(),
+        metadata: Metadata {
+            width: nw,
+            height: nh,
+            crop_left: 1,
+            crop_top: 1,
+            crop_width: 45,
+            crop_height: 500,
+            wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    let copy_np = measurement_source((&non_pow2).into(), 512);
+    assert!(
+        copy_np.pixels.iter().all(|p| (p[1] - 0.25).abs() < 1e-6),
+        "optical black leaked on non-power-of-two default crop"
+    );
+    // Half-size decode (`32x24` of `64x48`) with odd raw `crop_left = 11`: inner rect
+    // must round inward to `x0 = 6`, not outward to `5`.
+    let half = CameraImage {
+        width: 32,
+        height: 24,
+        pixels: vec![[0.25; 3]; 32 * 24].into(),
+        metadata: Metadata {
+            width: 64,
+            height: 48,
+            crop_left: 11,
+            crop_top: 5,
+            crop_width: 42,
+            crop_height: 38,
+            ..Default::default()
+        },
+        fast: true,
+        scale_factor: 0.5,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    assert_eq!(
+        crate::develop::local_tone::inner_crop_rect(&half),
+        Some([6, 3, 26, 21])
+    );
+}
+/// Built-in barrel-distortion corner clamping must only replace genuinely dark optical
+/// black corners (>3 stops darker than the rectified edge), leaving illuminated outer
+/// pixels and Sony's user-resettable `camera_crop` margins intact.
+#[test]
+fn measurement_copies_preserve_illuminated_outer_borders_and_sony_camera_crop() {
+    use crate::optics::{LensCorrection, Radial};
+    let (w, h) = (64u32, 48u32);
+    let mut pixels = vec![[0.2; 3]; (w * h) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            if x < 12 || x >= w - 12 || y < 6 || y >= h - 6 {
+                pixels[(y * w + x) as usize] = [0.35; 3];
+            }
+        }
+    }
+    let im = CameraImage {
+        width: w,
+        height: h,
+        pixels: pixels.clone().into(),
+        metadata: crate::camera_data::Metadata {
+            make: "SONY".into(),
+            width: w,
+            height: h,
+            camera_crop: Some([1. / 6., 0., 5. / 6., 1.]),
+            wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            lens: Some(LensCorrection {
+                source: LensCorrection::SONY_BUILTIN.into(),
+                default_on: true,
+                distortion: Radial::new(vec![0., 0.5, 1., 1.5], vec![1., 0.96, 0.92, 0.88]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    let copy = measurement_source((&im).into(), 64);
+    assert_eq!(copy.pixels[0], [0.35; 3]);
+    assert_eq!(copy.pixels[(24 * w + 2) as usize], [0.35; 3]);
+}
+/// A non-empty `CameraImage` with zero-sized metadata (`Metadata::default()`) must not
+/// produce a `NaN` inset or panic in `measurement_source` or `active_crop_rect`.
+#[test]
+fn zero_metadata_dimensions_do_not_panic_in_crop_helpers() {
+    let im = CameraImage {
+        width: 16,
+        height: 12,
+        pixels: vec![[0.2; 3]; 16 * 12].into(),
+        metadata: Metadata::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    assert_eq!(crate::develop::local_tone::active_crop_rect(&im), None);
+    let copy = measurement_source((&im).into(), 16);
+    assert_eq!((copy.width, copy.height), (16, 12));
+}
+/// Cached (`PreviewRenderer`) and uncached (`develop::render`) renders must agree on a
+/// cropped-sensor photo with Shadows/Highlights active (`MapBase::with_crop`).
+#[test]
+fn cached_and_uncached_renders_match_on_cropped_sensor_with_shadows_and_highlights() {
+    let (w, h) = (64u32, 48u32);
+    let mut pixels = vec![[0.; 3]; (w * h) as usize];
+    for y in 4..40u32 {
+        for x in 6..54u32 {
+            let v = 0.01 + 0.5 * ((x - 6) as f32 / 48.) * ((y - 4) as f32 / 36.);
+            pixels[(y * w + x) as usize] = [v, v * 0.9, v * 0.8];
+        }
+    }
+    let im = CameraImage {
+        width: w,
+        height: h,
+        pixels: pixels.into(),
+        metadata: Metadata {
+            width: w,
+            height: h,
+            crop_left: 6,
+            crop_top: 4,
+            crop_width: 48,
+            crop_height: 36,
+            wb: [1.; 3],
+            daylight_wb: [1.; 3],
+            matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+        recovered: Default::default(),
+    };
+    let r = Recipe {
+        shadows: 0.7,
+        highlights: -0.6,
+        ..Default::default()
+    };
+    let valid = r.checked().unwrap();
+    let uncached = crate::develop::render(&im, &valid, 0, Cancel::NEVER).unwrap();
+    let mut renderer = crate::develop::PreviewRenderer::default();
+    let cached = renderer.render(&im, &r, 0, None, Cancel::NEVER).unwrap();
+    assert_eq!(cached.pixels, uncached.pixels);
+}
+/// Shadows' `default_black` key shift must sample map cells at their exact centers, so
+/// the shifted black curve is invariant to the source image resolution.
+#[test]
+fn shadows_default_black_shift_is_resolution_invariant() {
+    let make = |w: u32, h: u32| {
+        let mut pixels = vec![[0.02; 3]; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let u = x as f32 / w as f32;
+                let v = if u < 0.05 { 0.002 } else { 0.02 + 0.5 * u };
+                pixels[(y * w + x) as usize] = [v; 3];
+            }
+        }
+        CameraImage {
+            width: w,
+            height: h,
+            pixels: pixels.into(),
+            metadata: Metadata {
+                width: w,
+                height: h,
+                wb: [1.; 3],
+                daylight_wb: [1.; 3],
+                matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+            recovered: Default::default(),
+        }
+    };
+    let small_im = Arc::new(make(64, 48));
+    let large_im = make(256, 192);
+    let r = Recipe {
+        shadows: 1.0,
+        ..Default::default()
+    };
+    let c_small = CurveSet::for_image(
+        Source {
+            measured: Some(&small_im),
+            ..Source::new(&small_im)
+        },
+        &r,
+        camera_stage(&small_im.metadata, &r),
+        false,
+    );
+    let c_large = CurveSet::for_image(
+        Source {
+            measured: Some(&small_im),
+            ..Source::new(&large_im)
+        },
+        &r,
+        camera_stage(&large_im.metadata, &r),
+        false,
+    );
+    let a = c_small.scene.global.apply([0.005; 3])[0];
+    let b = c_large.scene.global.apply([0.005; 3])[0];
+    assert!(
+        (a - b).abs() < 1e-5,
+        "default_black shift varied with source resolution: {a} vs {b}"
+    );
+}
 /// Before a per-channel warp (lateral chromatic aberration), each channel reads the
 /// GainMap where it samples the photo, not where green does.
 #[test]

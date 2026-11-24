@@ -989,7 +989,7 @@ fn pair_ramp(ratio: f32, same: bool) -> f32 {
     }
     return (1.0 - exp(-PAIR_OPPOSITE_RATE * r)) / (1.0 - exp(-PAIR_OPPOSITE_RATE));
 }
-fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
+fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
     let w = u32(p(P_LOCAL_SIZE));
     let h = u32(p(P_LOCAL_SIZE + 1u));
     let fx = clamp((pos.x + 0.5) * p(P_LOCAL_SCALE) - 0.5, 0.0, f32(w - 1u));
@@ -1007,7 +1007,12 @@ fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
         let bottom = grid[base + jy * w + ix] * (1.0 - tx) + grid[base + jy * w + jx] * tx;
         coef[k] = top * (1.0 - ty) + bottom * ty;
     }
-    let base = coef.x * log2(max(lum, LOCAL_FLOOR)) + coef.y;
+    // `LocalToneMap::base`: the map's local Laplacian level (coef.y) as far as the pixel
+    // sits at the map's own level (coef.x), the pixel's own level as it departs from it,
+    // on the same pre-mask basis as the map.
+    let own = log2(min(max(clarity_lum, LOCAL_FLOOR), 1e12));
+    let off = (own - coef.x) / LAPLACIAN_SIGMA;
+    let base = own + exp(-0.5 * off * off) * (coef.y - own);
     // Highlights' tail reads the base, but no more than 0.5 stops above the fine mean
     // (`LocalToneMap::tail_base`).
     let f = u32(offset(P_LOCAL_FINE));
@@ -1021,7 +1026,7 @@ fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
     if c >= 0 {
         let indices = vec4(iy * w + ix, iy * w + jx, jy * w + ix, jy * w + jx);
         let spatial = vec4((1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty);
-        let log_lum = log2(max(clarity_lum, LOCAL_FLOOR));
+        let log_lum = log2(min(max(clarity_lum, LOCAL_FLOOR), 1e12));
         var gains = vec4(0.0);
         var weights = vec4(0.0);
         for (var k = 0u; k < 4u; k++) {
@@ -1072,18 +1077,22 @@ fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
         var sg = family(0u, s, p(P_LOCAL_KEYS), base, base);
         if s > 0.0 && offset(P_RULE) >= 0 {
             let g = local_curve(P_RULE, base, base);
-            sg = (g + blend.x * (blend.y - g)) * min(s, 1.0);
+            let pg = local_curve(P_RULE_PIX, own, own);
+            sg = (g + blend.x * (blend.y - g) + pg) * min(s, 1.0);
         } else if s < 0.0 && offset(P_RULE + 8u) >= 0 {
             let g = local_curve(P_RULE + 8u, base, base);
-            sg = (g + blend.x * (blend.y - g)) * min(-s, 1.0);
+            let pg = local_curve(P_RULE_PIX + 8u, own, own);
+            sg = (g + blend.x * (blend.y - g) + pg) * min(-s, 1.0);
         }
         var hg = family(1u, h, p(P_LOCAL_KEYS + 1u), base, tail_base);
         if h < 0.0 && offset(P_RULE + 4u) >= 0 {
             let g = local_curve(P_RULE + 4u, base, base);
-            hg = (g + blend.z * (blend.w - g)) * min(-h, 1.0);
+            let pg = local_curve(P_RULE_PIX + 4u, own, own);
+            hg = (g + blend.z * (blend.w - g) + pg) * min(-h, 1.0);
         } else if h > 0.0 && offset(P_RULE + 12u) >= 0 {
             let g = local_curve(P_RULE + 12u, base, base);
-            hg = (g + blend.z * (blend.w - g)) * min(h, 1.0);
+            let pg = local_curve(P_RULE_PIX + 12u, own, own);
+            hg = (g + blend.z * (blend.w - g) + pg) * min(h, 1.0);
         }
         return exp2(sg + hg + lift + clarity);
     }
@@ -1091,7 +1100,10 @@ fn local_gain(pos: vec2<f32>, lum: f32, clarity_lum: f32) -> f32 {
     if r >= 0 {
         lift = local_curve(P_LIFT, base - region, base - region) + local_curve(P_LIFT + 4u, region, region);
     }
-    return exp2(local_curve(P_SHADOWS, base, base) + local_curve(P_HIGHLIGHTS, base, tail_base) + lift + clarity);
+    let sg = local_curve(P_SHADOWS, base, base);
+    let hg = local_curve(P_HIGHLIGHTS, base, tail_base);
+    let pg = local_curve(P_PIX, own, own);
+    return exp2(sg + hg + pg + lift + clarity);
 }
 // scene_tone::haze: the fraction of the haze positive Dehaze `s` removes.
 fn haze_omega(s_in: f32) -> f32 {
@@ -1663,7 +1675,7 @@ fn scene_stage(pro_in: vec3<f32>, pos: vec2<f32>, clarity_lum: f32) -> vec3<f32>
     var pro = pro_in;
     var tone_gain = 1.0;
     if V_LOCAL && p(P_LOCAL) != 0.0 {
-        tone_gain = local_gain(pos, dot(pro, vec3(0.2880402, 0.7118741, 0.0000857)), clarity_lum);
+        tone_gain = local_gain(pos, clarity_lum);
         pro *= tone_gain;
     }
     var dehaze = p(P_DEHAZE);
@@ -1704,8 +1716,9 @@ fn process_pixel(i: u32, pos: vec2<f32>) -> vec3<f32> {
     }
     let scene_in = exposure_stage(color, true);
     var clarity_scene = scene_in;
-    // Clarity reads fine detail on the same pre-mask basis as its measured blur.
-    if (V_LOCAL && V_MASKS && masked) && offset(P_LOCAL_A + 2u) >= 0 {
+    // Local tone (Shadows/Highlights base and Clarity) reads fine detail on the same
+    // pre-mask basis as its measured map.
+    if V_LOCAL && V_MASKS && masked {
         if delta[L_TEMPERATURE] != 0.0 || delta[L_TINT] != 0.0 || delta[L_EXPOSURE] != 0.0
             || delta[L_COLOR] != 0.0 || delta[L_COLOR + 1u] != 0.0 || delta[L_COLOR + 2u] != 0.0 {
             var original = color;

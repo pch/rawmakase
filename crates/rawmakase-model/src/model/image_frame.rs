@@ -45,12 +45,12 @@ impl ImageFrame {
             width,
             height,
             inset: [
-                if m.crop_left.saturating_add(m.crop_width) <= m.width {
+                if m.width > 0 && m.crop_left.saturating_add(m.crop_width) <= m.width {
                     m.crop_left as f32 / m.width as f32
                 } else {
                     (1. - cw) / 2.
                 },
-                if m.crop_top.saturating_add(m.crop_height) <= m.height {
+                if m.height > 0 && m.crop_top.saturating_add(m.crop_height) <= m.height {
                     m.crop_top as f32 / m.height as f32
                 } else {
                     (1. - ch) / 2.

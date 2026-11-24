@@ -115,30 +115,115 @@ pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
 /// on; the copy, kept per image, does not follow either.) Other vignetting, a camera
 /// maker's own table or an OpcodeList2 opcode, is not on the copy.
 pub(crate) fn measurement_source(im: Source, max: u32) -> CameraImage {
-    let mut copy = preview_source(im, max);
+    let mut copy = crop_clamped_preview(im, max);
     let lens = copy.metadata.lens.as_ref();
     let grid = lens.and_then(|l| l.gain_map.clone());
     let radial = lens
         .filter(|l| l.vignetting_measured)
         .and_then(|l| Some((l.vignetting.clone()?, l.centre)));
-    if grid.is_none() && radial.is_none() {
-        return copy;
+    if grid.is_some() || radial.is_some() {
+        let (w, h) = (copy.width as usize, copy.height as usize);
+        let (width, height) = (w as f32, h as f32);
+        // Radius 1 is the half diagonal, from the correction's optical centre, as
+        // [`VignetteField`] has it.
+        let half = width.hypot(height) * 0.5;
+        copy.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
+            let (x, y) = ((i % w) as f32 + 0.5, (i / w) as f32 + 0.5);
+            let mut gain = (grid.as_ref()).map_or([1.; 3], |g| g.gain(y / height, x / width));
+            if let Some((table, [cx, cy])) = &radial {
+                let lift = table.eval((x - cx * width).hypot(y - cy * height) / half);
+                gain = gain.map(|g| g * lift);
+            }
+            (0..3).for_each(|c| p[c] *= gain[c]);
+        });
     }
-    let (w, h) = (copy.width as usize, copy.height as usize);
-    let (width, height) = (w as f32, h as f32);
-    // Radius 1 is the half diagonal, from the correction's optical centre, as
-    // [`VignetteField`] has it.
-    let half = width.hypot(height) * 0.5;
-    copy.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
-        let (x, y) = ((i % w) as f32 + 0.5, (i / w) as f32 + 0.5);
-        let mut gain = (grid.as_ref()).map_or([1.; 3], |g| g.gain(y / height, x / width));
-        if let Some((table, [cx, cy])) = &radial {
-            let lift = table.eval((x - cx * width).hypot(y - cy * height) / half);
-            gain = gain.map(|g| g * lift);
+    // Cameras with built-in barrel-distortion correction can leave optical black corners
+    // outside the corrected default crop (e.g. Panasonic FZ1000 II). Clamp genuinely dark
+    // out-of-frame corner cells (>3 stops darker than the rectified boundary) to the
+    // nearest valid boundary pixel so black optical vignetting does not drag down the
+    // dark floor while illuminated outer borders and Sony aspect-crop margins stay intact.
+    if copy.width > 1
+        && copy.height > 1
+        && copy
+            .metadata
+            .lens
+            .as_ref()
+            .is_some_and(|l| l.default_on && l.distortion.is_some())
+    {
+        let orig = copy.clone();
+        if let Some(lens_map) = crate::develop::image_space::LensMap::builtin_default(&orig) {
+            let inset = crate::model::image_frame::ImageFrame::new(&orig).inset;
+            let [x0, y0, x1, y1] =
+                if inset.iter().all(|v| v.is_finite()) && inset[2] > 0. && inset[3] > 0. {
+                    let (w, h) = (orig.width as f32, orig.height as f32);
+                    [
+                        inset[0] * w,
+                        inset[1] * h,
+                        (inset[0] + inset[2]) * w,
+                        (inset[1] + inset[3]) * h,
+                    ]
+                } else {
+                    [0., 0., orig.width as f32, orig.height as f32]
+                };
+            let (min_x, max_x) = (x0, (x1 - 1.).max(x0));
+            let (min_y, max_y) = (y0, (y1 - 1.).max(y0));
+            let w = copy.width as usize;
+            let src = Source::new(&orig);
+            let peak = |c: [f32; 3]| c[0].max(c[1]).max(c[2]);
+            copy.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
+                let (x, y) = ((i % w) as f32, (i / w) as f32);
+                let [cx, cy] = lens_map.inverse(x, y);
+                if cx + 0.5 < x0 || cx + 0.5 > x1 || cy + 0.5 < y0 || cy + 0.5 > y1 {
+                    let [sx, sy] = lens_map.forward(cx.clamp(min_x, max_x), cy.clamp(min_y, max_y));
+                    let edge = sample(src, sx, sy);
+                    if peak(*p) < 0.125 * peak(edge) {
+                        *p = edge;
+                    }
+                }
+            });
         }
-        (0..3).for_each(|c| p[c] *= gain[c]);
-    });
+    }
     copy
+}
+/// Reduces `im` to `max` for measuring it, clamping any pixels outside the camera's
+/// default crop (`ImageFrame::inset`, e.g. optical-black sensor margins on Sony A7R VI)
+/// to the nearest active pixel before box integration so out-of-crop borders do not
+/// bleed black into the copy or drag down `PhotoMeasures::dark` and the tone histogram.
+fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
+    let Some([x0, y0, x1, y1]) = crate::develop::local_tone::inner_crop_rect(im.image) else {
+        return preview_source(im, max);
+    };
+    let (x0, y0, x1, y1) = (x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+    let read = |i: usize| {
+        let x = (i as u32 % im.width).clamp(x0, x1 - 1);
+        let y = (i as u32 / im.width).clamp(y0, y1 - 1);
+        im.px((y * im.width + x) as usize)
+    };
+    let (w, h) = if im.width.max(im.height) <= max {
+        (im.width, im.height)
+    } else {
+        let scale = max as f32 / im.width.max(im.height) as f32;
+        (
+            (im.width as f32 * scale).round() as u32,
+            (im.height as f32 * scale).round() as u32,
+        )
+    };
+    let pixels = if (w, h) == (im.width, im.height) {
+        (0..(w * h) as usize).into_par_iter().map(read).collect()
+    } else {
+        box_reduce(im.width, im.height, w, h, read)
+    };
+    CameraImage {
+        recovered: Default::default(),
+        width: w,
+        height: h,
+        pixels: pixels.into(),
+        metadata: im.metadata.clone(),
+        fast: im.fast,
+        scale_factor: im.scale_factor,
+        scale_clipped: im.scale_clipped,
+        hdr: Default::default(),
+    }
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
     if im.width.max(im.height) <= max {
