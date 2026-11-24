@@ -142,7 +142,10 @@ fn an_older_release_reusing_an_id_does_not_lower_the_mark() -> Result<()> {
 fn an_exported_catalog_keeps_the_ids_its_source_gave() -> Result<()> {
     let (dir, mut c, first) = catalog(&["a.ARW"])?;
     add(&dir, &mut c, "second", &["b.ARW"])?;
-    let top = highest(&c)?;
+    // The mark above every photo left, which only `meta` carries.
+    let copy = c.create_virtual_copy(highest(&c)?)?;
+    c.remove_virtual_copy(copy)?;
+    let top = copy;
     let destination = dir.path().join("Export.rawmakase");
     c.export_catalog(&ExportScope::Folders(vec![first.id]), &destination)?;
     let mut exported = Catalog::open(&destination)?;
