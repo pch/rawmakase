@@ -940,6 +940,27 @@ fn a_rename_whose_rows_did_not_follow_is_completed_by_recovery() -> Result<()> {
 }
 
 #[test]
+fn a_rename_journalled_before_its_photos_had_uuids_is_completed_by_recovery() -> Result<()> {
+    let (mut fx, batch) = renamed_but_unfinished();
+    let a = fx.photo("a.NEF");
+    // As a release before photo UUIDs left it: the photos it journalled have
+    // none, and this open gives them theirs.
+    fx.cat
+        .db_for_tests()
+        .execute("DELETE FROM photo_uuids", [])?;
+    fx.reopen();
+    assert!(fx.cat.photo_uuid(a)?.is_some());
+    let recovery = fx.recover(&disk::Real);
+    assert!(recovery.unfinished.is_empty(), "{recovery:?}");
+    assert_eq!(
+        results(&super::outcome(&fx.cat, &batch)?),
+        [renamed("x.NEF")]
+    );
+    assert_eq!(fx.rows()[&a], "x.NEF");
+    Ok(())
+}
+
+#[test]
 fn a_rename_changed_in_the_catalog_before_recovery_is_reported_and_left() -> Result<()> {
     let (mut fx, _) = renamed_but_unfinished();
     let a = fx.photo("a.NEF");

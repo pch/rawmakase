@@ -989,8 +989,18 @@ test extension in the SDK proves it here as well.
 | `importer` | Phase 2 | One-time Capture One and Lightroom CC imports; then moving the Lightroom importer out, after Lightroom edits are converted at import |
 | Filters | Phase 2 | Film grain, custom filters |
 | `export-destination` | Phase 2 | Uploads, galleries |
+| `publish-service` | `export-destination`, photo UUIDs | Publishing as Lightroom's publish services do: what was sent, and what changed since |
 | The official catalogue | Third-party extensions to list | — |
 | `derive` | Phase 3 | AI upscaling |
+
+**`export-destination` sends and forgets; `publish-service` keeps records.** An
+export destination gets the files of one export and keeps nothing in the
+catalog. A publish service, as Lightroom's, would have collections of its own and
+records the app keeps per (service, collection, photo), going with their photo:
+the remote id, the URL and what was published, so a photo is sent again only
+when it changed and is not uploaded twice. Lightroom keeps those records
+(`AgRemotePhoto`, keyed on collection and photo) and doesn't use its photos'
+global ids for it.
 
 **Filters start with a measured spike**: a filter pass on the split GPU passes
 and a WASM kernel on the CPU path, timed for slider updates on the GPU, CPU Fit,

@@ -56,8 +56,65 @@ fn a_ready_catalog_opens_without_a_write_lock() -> Result<()> {
     // Any write here would wait for the lock, then fail.
     let catalog = Catalog::open_as(&path, &computer("mac"))?;
     assert_eq!(catalog.photos()?.len(), 1);
+    // Every photo has its UUID already.
+    assert!(catalog.photo_uuid(catalog.photos()?[0].id)?.is_some());
     drop(catalog);
     other.execute_batch("ROLLBACK")?;
+    Ok(())
+}
+
+/// Adds a photo as a release before photo UUIDs would: without one.
+fn older_release_adds_a_photo(path: &Path) -> Result<PhotoId> {
+    let db = Connection::open(path)?;
+    db.execute(
+        "INSERT INTO photos(folder, filename, original_path) SELECT folder, 'b.ARW', 'b.ARW'
+         FROM photos LIMIT 1",
+        [],
+    )?;
+    Ok(PhotoId(db.last_insert_rowid()))
+}
+
+#[test]
+fn filling_in_uuids_waits_for_another_computers_write() -> Result<()> {
+    let (_dir, path) = ready()?;
+    let added = older_release_adds_a_photo(&path)?;
+    let other = writing(&path)?;
+    // While Linux is writing, Mac can't give the photo its UUID, and the
+    // open fails rather than going on without it.
+    let started = std::time::Instant::now();
+    assert!(Catalog::open_as(&path, &computer("mac")).is_err());
+    assert!(started.elapsed() >= std::time::Duration::from_secs(4));
+    other.execute_batch("ROLLBACK")?;
+    let catalog = Catalog::open_as(&path, &computer("mac"))?;
+    assert!(catalog.photo_uuid(added)?.is_some());
+    Ok(())
+}
+
+#[test]
+fn an_open_waiting_for_another_fill_in_finds_nothing_left_to_do() -> Result<()> {
+    let (_dir, path) = ready()?;
+    let added = older_release_adds_a_photo(&path)?;
+    // Another computer is giving it its UUID.
+    let other = writing(&path)?;
+    let theirs = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+    other.execute(
+        "INSERT INTO photo_uuids(photo, uuid) VALUES (?, ?)",
+        rusqlite::params![added.0, theirs],
+    )?;
+    let opening = std::thread::spawn(move || -> Result<_> {
+        let started = std::time::Instant::now();
+        let catalog = Catalog::open_as(&path, &computer("mac"))?;
+        Ok((started.elapsed(), catalog.photo_uuid(added)?))
+    });
+    // Long enough for the open to see the photo without a UUID and wait.
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    other.execute_batch("COMMIT")?;
+    let (took, found) = opening.join().unwrap()?;
+    assert!(
+        took >= std::time::Duration::from_millis(500),
+        "the open didn't wait for the other write: {took:?}"
+    );
+    assert_eq!(found, PhotoUuid::parse(theirs));
     Ok(())
 }
 

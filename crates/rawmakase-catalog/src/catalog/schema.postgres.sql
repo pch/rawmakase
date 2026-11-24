@@ -343,3 +343,8 @@ CREATE TABLE IF NOT EXISTS stack_photos (
     position BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS stack_photos_stack ON stack_photos(stack);
+
+CREATE TABLE IF NOT EXISTS photo_uuids (
+    photo BIGINT PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    uuid TEXT NOT NULL UNIQUE
+);
