@@ -442,16 +442,14 @@ impl Editor {
             menu_separator(ui);
         }
         if shown <= 4 {
-            crate::app::ui::widgets::submenu_style(ui);
-            ui.menu_button("Before / After", |ui| {
+            crate::app::ui::widgets::submenu(ui, "Before / After", true, |ui| {
                 crate::app::ui::widgets::menu_width(ui, 300.);
                 ui.spacing_mut().item_spacing.y = 0.;
                 self.before_after_items(ui);
             });
         }
         if shown <= 5 {
-            crate::app::ui::widgets::submenu_style(ui);
-            ui.menu_button("Reference", |ui| {
+            crate::app::ui::widgets::submenu(ui, "Reference", true, |ui| {
                 crate::app::ui::widgets::menu_width(ui, 220.);
                 ui.spacing_mut().item_spacing.y = 0.;
                 let reference = self.reference_view();
