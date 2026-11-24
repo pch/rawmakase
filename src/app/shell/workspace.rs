@@ -12,7 +12,7 @@ use crate::app::shell::panels::WorkspacePanel;
 use crate::app::ui::design::{self, Tone, inset, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{TOP_BAR_SEGMENTS, segment_bar};
-use crate::app::work::{FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
+use crate::app::work::{AUTO_SYNC, FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::time::{Duration, Instant};
@@ -289,6 +289,9 @@ impl Editor {
         self.end_aiming_off_mask();
         self.end_command_input_when_stale();
         self.finish_paused_turn(ctx);
+        // A batch finished or steps waiting, while the window is not drawn too.
+        self.sync_undo();
+        self.run_auto_sync();
         self.save_when_due(ctx);
         // Once work has gone quiet, what it freed goes back to the system.
         if let Some(after) = self.freed.poll() {
@@ -2181,7 +2184,7 @@ impl Editor {
                 // must stay possible should it stall on a network share.
                 let anyway = match waits_for.as_deref() {
                     Some(OUTPUT | MERGE_HDR) => Some("Cancel it and close"),
-                    Some(FOLDER_CHANGE | FILE_CHANGE) => Some("Close anyway"),
+                    Some(FOLDER_CHANGE | FILE_CHANGE | AUTO_SYNC) => Some("Close anyway"),
                     _ => None,
                 };
                 if let Some(label) = anyway
@@ -2189,6 +2192,8 @@ impl Editor {
                 {
                     self.automation.cancel_outputs();
                     self.cancel_merge_hdr();
+                    // The steps not written yet stay on the open photo alone.
+                    self.abandon_auto_sync();
                     self.close_anyway = true;
                     self.close_confirm = false;
                     self.close_after_work = false;

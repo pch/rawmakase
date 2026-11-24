@@ -132,14 +132,25 @@ pub(crate) enum BatchChange {
     /// Lightroom's Auto Settings, measured on each photo as Develop's Auto measures
     /// the open one.
     AutoSettings,
-    /// Develop's Auto White Balance, measured on each photo: Auto Sync's for an Auto
-    /// White Balance on the open photo.
-    AutoWhiteBalance,
+    /// Auto Sync's: one or more steps of the open photo.
+    AutoSync(Box<AutoSyncChange>),
     /// A Develop preset at 100%, as a click in Develop's Presets panel applies it.
     Preset(Box<BatchPreset>),
     /// Settings an extension proposed, set as the control socket's `set` sets
     /// them.
     Proposed(Box<ProposedSettings>),
+}
+/// What Auto Sync takes from steps of the open photo to each other photo.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct AutoSyncChange {
+    /// The groups whose settings the steps changed, among those Synchronize chose.
+    pub groups: GroupSelection,
+    /// The panels whose switch the steps turned on or off, among those of the
+    /// chosen groups.
+    pub switches: std::collections::BTreeSet<crate::model::panels::Panel>,
+    /// An Auto, measured on each photo, of which each takes only `groups`; without
+    /// one, the open photo's settings in `groups` are taken.
+    pub measure: Option<crate::app::worker::AutoKind>,
 }
 /// An extension's proposal for one photo, as a batch applies it.
 #[derive(Clone, Debug, PartialEq)]
@@ -164,7 +175,11 @@ impl BatchChange {
             BatchChange::Settings(_) => "Synchronize Settings".into(),
             BatchChange::MatchTotalExposures => "Match Total Exposures".into(),
             BatchChange::AutoSettings => "Auto Settings".into(),
-            BatchChange::AutoWhiteBalance => "Auto White Balance".into(),
+            BatchChange::AutoSync(c) => match c.measure {
+                None => "Synchronize Settings".into(),
+                Some(crate::app::worker::AutoKind::Settings) => "Auto Settings".into(),
+                Some(crate::app::worker::AutoKind::WhiteBalance) => "Auto White Balance".into(),
+            },
             BatchChange::Preset(p) => format!("Apply Preset: {}", p.name),
             BatchChange::Proposed(p) => p.name.clone(),
         }
@@ -173,7 +188,11 @@ impl BatchChange {
     fn step(&self) -> Step {
         match self {
             BatchChange::Preset(p) => Step::new("Preset", &p.name),
-            BatchChange::AutoWhiteBalance => Step::new("White Balance", "Auto"),
+            BatchChange::AutoSync(c)
+                if c.measure == Some(crate::app::worker::AutoKind::WhiteBalance) =>
+            {
+                Step::new("White Balance", "Auto")
+            }
             _ => Step::new(self.name(), ""),
         }
     }
@@ -181,7 +200,7 @@ impl BatchChange {
     pub(crate) fn has_source(&self) -> bool {
         matches!(
             self,
-            BatchChange::Settings(_) | BatchChange::MatchTotalExposures
+            BatchChange::Settings(_) | BatchChange::MatchTotalExposures | BatchChange::AutoSync(_)
         )
     }
 }
@@ -690,10 +709,14 @@ fn prepare(
     let identity = crate::storage::Identity::read(&target.path)?;
     // A proposal or a Sync sets settings and measures nothing: a RAW's header is
     // all it reads, unless an Upright or Straighten Auto has to be analysed.
-    let header = (matches!(change, BatchChange::Proposed(_) | BatchChange::Settings(_))
-        && crate::storage::is_raw(&target.path))
-    .then(|| crate::photo::header_metadata(&target.path).ok())
-    .flatten();
+    let sets_only = match change {
+        BatchChange::Proposed(_) | BatchChange::Settings(_) => true,
+        BatchChange::AutoSync(c) => c.measure.is_none(),
+        _ => false,
+    };
+    let header = (sets_only && crate::storage::is_raw(&target.path))
+        .then(|| crate::photo::header_metadata(&target.path).ok())
+        .flatten();
     let (metadata, opened) = match header {
         Some(metadata) => (metadata, None),
         None => {
@@ -724,7 +747,8 @@ fn prepare(
     // Straighten Auto the saved edit still had to analyse is analysed first, as
     // opening the photo does before its Auto can run. Undo still returns `before`.
     let measures = match change {
-        BatchChange::AutoSettings | BatchChange::AutoWhiteBalance => true,
+        BatchChange::AutoSettings => true,
+        BatchChange::AutoSync(c) => c.measure.is_some(),
         BatchChange::Preset(p) => p.preset.measures_photo(),
         _ => false,
     };
@@ -762,15 +786,49 @@ fn prepare(
             recipe: crate::develop::auto_tone(photo.image(decoding, cancel)?, &start, cancel)?,
             notes: Vec::new(),
         },
-        // Develop's Auto White Balance: only its white balance is taken.
-        BatchChange::AutoWhiteBalance => {
-            let auto =
-                crate::develop::auto_white_balance(photo.image(decoding, cancel)?, &start, cancel)?;
-            let mut recipe = start.clone();
-            crate::app::develop::auto::apply_white_balance(&auto, &mut recipe);
-            settings_groups::Transferred {
-                recipe,
-                notes: Vec::new(),
+        BatchChange::AutoSync(c) => {
+            use crate::app::worker::AutoKind;
+            match c.measure {
+                None => {
+                    let source = source()?;
+                    let mut t = settings_groups::transfer(
+                        Source {
+                            recipe: &source.recipe,
+                            metadata: &source.metadata,
+                        },
+                        before.recipe(),
+                        &c.groups,
+                        Target {
+                            metadata: &metadata,
+                            profiles: &profiles,
+                        },
+                    );
+                    for panel in &c.switches {
+                        t.recipe
+                            .panels
+                            .set(*panel, source.recipe.panels.state(*panel));
+                    }
+                    t
+                }
+                // Develop's Auto on this photo, of which only the groups the open
+                // photo's Auto changed, and Synchronize chose, are taken.
+                Some(kind) => {
+                    let image = photo.image(decoding, cancel)?;
+                    let mut recipe = match kind {
+                        AutoKind::Settings => crate::develop::auto_tone(image, &start, cancel)?,
+                        AutoKind::WhiteBalance => {
+                            let auto = crate::develop::auto_white_balance(image, &start, cancel)?;
+                            let mut recipe = start.clone();
+                            crate::app::develop::auto::apply_white_balance(&auto, &mut recipe);
+                            recipe
+                        }
+                    };
+                    c.groups.complement().copy_as_set(&start, &mut recipe);
+                    settings_groups::Transferred {
+                        recipe,
+                        notes: Vec::new(),
+                    }
+                }
             }
         }
         // As a click in Develop applies it; decoded only to measure an Auto in it.
@@ -981,12 +1039,13 @@ fn matched_exposure(source: &Settings, target: &crate::camera_data::Metadata) ->
 /// Writes one side of a Sync back, in one transaction, keeping each photo's History,
 /// which notices the change when the photo opens. A photo that had no edit before
 /// goes back to having none. `path` gives each photo's current location, which a
-/// relink may have changed since.
+/// relink may have changed since. The saves in `also` join the same transaction.
 pub(in crate::app) fn restore(
     session: &mut crate::catalog_session::CatalogSession,
     edits: &[Synced],
     side: SyncSide,
     path: impl Fn(PhotoId) -> Option<PathBuf>,
+    also: &[EditToSave<'_>],
 ) -> std::result::Result<(), SyncRestoreError> {
     // A photo removed since can't be restored; the caller drops the command.
     let paths = edits
@@ -1039,7 +1098,7 @@ pub(in crate::app) fn restore(
             history: *history,
         })
         .collect();
-    let mut changes: Vec<EditChange> = saves.iter().map(EditChange::Save).collect();
+    let mut changes: Vec<EditChange> = saves.iter().chain(also).map(EditChange::Save).collect();
     changes.extend(clears.iter().map(|(id, path, source)| {
         EditChange::Clear(crate::catalog::EditToClear {
             id: *id,
@@ -1582,18 +1641,24 @@ mod tests {
         };
         // One Undo restores every photo; these had no edit, and have none again.
         let mut session = open_session(&_dir)?;
-        restore(&mut session, &result.synced, SyncSide::Before, path)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path, &[])?;
         for (id, path) in &photos[1..3] {
             assert!(c.load_edit(*id, path)?.is_none());
             assert!(c.load_history(*id)?.is_none());
         }
         // Redo brings the edit back with its History step.
-        restore(&mut session, &result.synced, SyncSide::After, path)?;
+        restore(&mut session, &result.synced, SyncSide::After, path, &[])?;
         let history = c.load_history(photos[1].0)?.unwrap();
         assert_eq!(history.steps.last().unwrap().name, "Synchronize Settings");
         // A photo removed since makes the command unusable rather than wrong.
         assert!(matches!(
-            restore(&mut session, &result.synced, SyncSide::Before, |_| None),
+            restore(
+                &mut session,
+                &result.synced,
+                SyncSide::Before,
+                |_| None,
+                &[]
+            ),
             Err(SyncRestoreError::PhotoRemoved)
         ));
         assert_eq!(
@@ -1634,10 +1699,10 @@ mod tests {
             &BatchProgress::new("Sync", 0),
         );
         assert_eq!(again.synced.len(), 1);
-        restore(&mut session, &again.synced, SyncSide::Before, path)?;
+        restore(&mut session, &again.synced, SyncSide::Before, path, &[])?;
         assert_eq!(c.load_history(id)?, Some(earlier));
         assert_eq!(c.load_edit(id, &path0)?.unwrap().recipe.exposure, -0.3);
-        restore(&mut session, &again.synced, SyncSide::After, path)?;
+        restore(&mut session, &again.synced, SyncSide::After, path, &[])?;
         // Settings the photos already have change nothing.
         let again = synchronize(
             &mut c,
@@ -1650,12 +1715,12 @@ mod tests {
         );
         assert!(again.synced.is_empty() && again.failed.is_empty());
         // A file changed while it had no edit is not given the old settings again.
-        restore(&mut session, &result.synced, SyncSide::Before, path)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path, &[])?;
         let changed = &photos[1].1;
         let mut bytes = std::fs::read(changed)?;
         bytes.extend_from_slice(b"changed");
         std::fs::write(changed, bytes)?;
-        assert!(restore(&mut session, &result.synced, SyncSide::After, path).is_err());
+        assert!(restore(&mut session, &result.synced, SyncSide::After, path, &[]).is_err());
         assert!(c.load_edit(photos[2].0, &photos[2].1)?.is_none());
         Ok(())
     }
@@ -1779,7 +1844,7 @@ mod tests {
             std::fs::rename(&offline.1, &away)?;
             for side in [SyncSide::Before, SyncSide::After] {
                 assert!(matches!(
-                    restore(&mut session, &result.synced, side, path),
+                    restore(&mut session, &result.synced, side, path, &[]),
                     Err(SyncRestoreError::Write(_))
                 ));
                 assert_eq!(exposure(&c, offline.0, identity)?, Some(0.5));
@@ -1787,7 +1852,7 @@ mod tests {
             std::fs::rename(&away, &offline.1)?;
         }
         // Online again, Undo goes through: one gets its edit back, the other none.
-        restore(&mut session, &result.synced, SyncSide::Before, path)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path, &[])?;
         assert_eq!(exposure(&c, edited.0, &identities[0])?, Some(-0.3));
         assert_eq!(exposure(&c, unedited.0, &identities[1])?, None);
         Ok(())
@@ -1898,11 +1963,11 @@ mod tests {
         // One Undo: none of them has an edit again. Redo: what was measured.
         let path = |id: PhotoId| all.iter().find(|(p, _)| *p == id).map(|(_, p)| p.clone());
         let mut session = open_session(&f._dir)?;
-        restore(&mut session, &result.synced, SyncSide::Before, path)?;
+        restore(&mut session, &result.synced, SyncSide::Before, path, &[])?;
         for (id, path) in &all {
             assert!(f.catalog.load_edit(*id, path)?.is_none());
         }
-        restore(&mut session, &result.synced, SyncSide::After, path)?;
+        restore(&mut session, &result.synced, SyncSide::After, path, &[])?;
         for synced in &result.synced {
             let saved = f.catalog.load_edit(synced.id, &synced.path)?.unwrap();
             assert_eq!(saved.recipe, synced.after);

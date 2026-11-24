@@ -1053,3 +1053,96 @@ fn changed_names_the_chosen_groups_an_edit_changed() {
     more.add(&changed);
     assert_eq!(more.groups().count(), 3);
 }
+
+/// A panel's switch is no setting of the groups beside the one edited: Sharpening
+/// moved with Detail off turns Detail on, which leaves its noise reductions as
+/// they were; the switch alone is a change of the panel, not of any group.
+#[test]
+fn a_panel_switch_changes_no_group_beside_the_one_edited() {
+    let mut before = Recipe::default();
+    before.panels.set(Panel::Detail, PanelState::Off);
+    let mut after = before.clone();
+    after.panels.set(Panel::Detail, PanelState::On);
+    after.sharpening = before.sharpening + 0.5;
+    let all = GroupSelection::all();
+    assert_eq!(
+        all.changed(&before, &after).groups().collect::<Vec<_>>(),
+        [SettingGroup::Sharpening]
+    );
+    assert_eq!(
+        all.switches_changed(&before, &after)
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [Panel::Detail]
+    );
+    let mut switched = before.clone();
+    switched.panels.set(Panel::Detail, PanelState::On);
+    assert!(all.changed(&before, &switched).is_empty());
+    // A panel none of the chosen groups is in is not named.
+    let mut exposure = GroupSelection::none();
+    exposure.set(SettingGroup::Exposure, GroupInclusion::Included);
+    assert!(exposure.switches_changed(&before, &switched).is_empty());
+}
+
+/// What copying works out from a recipe is no change of it: the order Copy gives
+/// spots (AI Remove's last), and black & white from the profile alone.
+#[test]
+fn what_copying_works_out_is_no_change() {
+    let generated = RetouchOp {
+        mode: RetouchMode::Generate,
+        shape: RetouchShape::Spot {
+            center: [0.3, 0.3],
+            radius: 0.02,
+        },
+        feather: 0.5,
+        opacity: 1.,
+        offset: [0.; 2],
+        patch: None,
+    };
+    let heal = RetouchOp {
+        mode: RetouchMode::Heal,
+        offset: [0.02, 0.],
+        ..generated.clone()
+    };
+    let before = Recipe {
+        retouch: vec![generated, heal],
+        ..Recipe::default()
+    };
+    let mut after = before.clone();
+    after.exposure = 0.5;
+    let all = GroupSelection::all();
+    assert_eq!(
+        all.changed(&before, &after).groups().collect::<Vec<_>>(),
+        [SettingGroup::Exposure]
+    );
+    let mut mono = crate::camera_profiles::open::color(&camera("Fujifilm", "X100F")).unwrap();
+    mono.enhanced.as_mut().unwrap().monochrome = true;
+    let before = Recipe {
+        profile: Some(Arc::new(mono)),
+        ..Recipe::default()
+    };
+    assert!(!before.effects.monochrome);
+    assert_eq!(
+        before.treatment(),
+        crate::model::recipe::Treatment::BlackWhite
+    );
+    let mut after = before.clone();
+    after.exposure = 0.5;
+    assert_eq!(
+        all.changed(&before, &after).groups().collect::<Vec<_>>(),
+        [SettingGroup::Exposure]
+    );
+}
+
+#[test]
+fn copy_as_set_copies_only_the_selection() {
+    let from = everything_changed();
+    let mut to = Recipe::default();
+    let mut exposure = GroupSelection::none();
+    exposure.set(SettingGroup::Exposure, GroupInclusion::Included);
+    exposure.copy_as_set(&from, &mut to);
+    assert_eq!(to.exposure, from.exposure);
+    assert_eq!(to.contrast, Recipe::default().contrast);
+    assert!(exposure.complement().contains(SettingGroup::Contrast));
+    assert!(!exposure.complement().contains(SettingGroup::Exposure));
+}

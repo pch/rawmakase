@@ -365,11 +365,26 @@ fn auto_is_measured_on_each_photo() -> anyhow::Result<()> {
     assert!(own != 0. && b != 0. && c != 0., "{own} {b} {c}");
     // Brighter photos need less: each has its own.
     assert!(own > b && b > c, "{own} {b} {c}");
-    // Their own Contrast is Auto's for them, not kept: Auto sets it.
+    // Of each photo's Auto only the groups Synchronize chose are taken: Contrast is
+    // not one, so `b` keeps its own.
+    assert_eq!(saved(&e, &photos[1]).contrast, 0.3);
     e.undo();
     assert_eq!(e.document.edit.recipe().exposure, 0.);
     assert_eq!(saved(&e, &photos[1]).exposure, 0.);
     assert_eq!(saved(&e, &photos[1]).contrast, 0.3);
+
+    // Auto White Balance goes nowhere while White Balance is not chosen.
+    e.start_auto(crate::app::worker::AutoKind::WhiteBalance);
+    wait(&mut e, "Auto White Balance", |e| {
+        !e.document.auto.is_running()
+    });
+    panel_frame(&mut e, Vec::new(), FocusedButton::No);
+    assert!(!e.auto_sync_busy());
+    assert!(saved(&e, &photos[1]).auto_white_balance.is_none());
+    e.undo();
+    let mut chosen = e.sync_groups();
+    chosen.set(SettingGroup::WhiteBalance, GroupInclusion::Included);
+    e.session.sync_groups = Some(chosen);
 
     // Auto White Balance from the White Balance menu's Auto.
     e.start_auto(crate::app::worker::AutoKind::WhiteBalance);
@@ -383,6 +398,110 @@ fn auto_is_measured_on_each_photo() -> anyhow::Result<()> {
         e.document.edit.recipe().auto_white_balance.is_some()
     );
     assert_eq!(saved(&e, &photos[1]).exposure, 0., "only the white balance");
+    Ok(())
+}
+
+/// A step recorded in the frame the photo is left in (a drag still held, an edit
+/// just made) goes to the other photos before the save returns.
+#[test]
+fn leaving_the_photo_writes_the_step_of_the_same_frame() -> anyhow::Result<()> {
+    let (_d, mut e, photos) = auto_syncing()?;
+    let ctx = e.context.clone();
+    crate::app::testing::in_edit_frame(&ctx, &mut e, |e| {
+        e.document.edit.recipe_mut().exposure = 0.4
+    });
+    assert!(e.flush(), "{}", e.messages.line());
+    assert!(!e.auto_sync_busy());
+    assert_eq!(saved(&e, &photos[1]).exposure, 0.4);
+    assert_eq!(saved(&e, &photos[2]).exposure, 0.4);
+    Ok(())
+}
+
+/// Undo pressed in the frame of an edit takes back that edit on every photo: it is
+/// recorded and written first, never written after it was undone.
+#[test]
+fn undo_in_the_frame_of_an_edit_takes_it_back_on_every_photo() -> anyhow::Result<()> {
+    let (_d, mut e, photos) = auto_syncing()?;
+    let ctx = e.context.clone();
+    crate::app::testing::in_edit_frame(&ctx, &mut e, |e| {
+        e.document.edit.recipe_mut().exposure = 0.4
+    });
+    e.undo();
+    settle(&mut e);
+    assert_eq!(e.document.edit.recipe().exposure, 0.);
+    assert_eq!(saved(&e, &photos[1]).exposure, 0.);
+    assert_eq!(saved(&e, &photos[2]).exposure, 0.);
+    e.redo();
+    assert_eq!(e.document.edit.recipe().exposure, 0.4);
+    assert_eq!(saved(&e, &photos[1]).exposure, 0.4);
+    Ok(())
+}
+
+/// A step Auto Sync does not take, between steps it does, keeps an Undo of its own:
+/// it is never joined into theirs.
+#[test]
+fn a_step_not_synced_keeps_its_own_undo() -> anyhow::Result<()> {
+    let (_d, mut e, photos) = auto_syncing()?;
+    let release = hold_batches(&mut e);
+    edit(&mut e, |r| r.exposure = 0.1);
+    edit(&mut e, |r| r.exposure = 0.2);
+    // Contrast is not among Synchronize's groups.
+    edit(&mut e, |r| r.contrast = 0.5);
+    edit(&mut e, |r| r.exposure = 0.3);
+    for _ in 0..3 {
+        release.send(())?;
+    }
+    settle(&mut e);
+    assert_eq!(saved(&e, &photos[2]).exposure, 0.3);
+    e.undo();
+    assert_eq!(e.document.edit.recipe().exposure, 0.2);
+    assert_eq!(e.document.edit.recipe().contrast, 0.5);
+    assert_eq!(saved(&e, &photos[2]).exposure, 0.2);
+    e.undo();
+    assert_eq!(e.document.edit.recipe().contrast, 0.);
+    assert_eq!(e.document.edit.recipe().exposure, 0.2);
+    assert_eq!(saved(&e, &photos[2]).exposure, 0.2);
+    Ok(())
+}
+
+/// When the photo the step was made on is removed, Undo still takes back what Auto
+/// Sync wrote to the others.
+#[test]
+fn removing_the_source_photo_keeps_the_others_undo() -> anyhow::Result<()> {
+    let (_d, mut e, photos) = auto_syncing()?;
+    edit(&mut e, |r| r.exposure = 0.5);
+    settle(&mut e);
+    e.undo_log.forget_photo(photos[0].0);
+    e.undo();
+    assert_eq!(saved(&e, &photos[1]).exposure, 0.);
+    assert_eq!(saved(&e, &photos[2]).exposure, 0.);
+    assert_eq!(saved(&e, &photos[1]).contrast, 0.3);
+    Ok(())
+}
+
+/// Closing waits for Auto Sync as for any batch; a save that can't wait for it
+/// long enough is refused, not taken as done.
+#[test]
+fn closing_and_leaving_wait_for_auto_sync() -> anyhow::Result<()> {
+    let (_d, mut e, photos) = auto_syncing()?;
+    let release = hold_batches(&mut e);
+    edit(&mut e, |r| r.exposure = 0.5);
+    assert_eq!(
+        e.closing_waits_for().as_deref(),
+        Some(crate::app::work::AUTO_SYNC)
+    );
+    assert!(e.quitting_would_cut_off_work());
+    assert!(!e.flush(), "the batch is still held");
+    assert!(
+        e.messages.line().contains("Auto Sync is still writing"),
+        "{}",
+        e.messages.line()
+    );
+    release.send(())?;
+    settle(&mut e);
+    assert_eq!(e.closing_waits_for(), None);
+    assert!(e.flush());
+    assert_eq!(saved(&e, &photos[1]).exposure, 0.5);
     Ok(())
 }
 

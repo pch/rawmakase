@@ -47,6 +47,9 @@ impl Editor {
         match self.flush_by(until) {
             Flushed::Saved => {}
             Flushed::Failed => eprintln!("{}", self.messages.line()),
+            Flushed::Late if self.auto_sync_busy() => {
+                eprintln!("Auto Sync's last steps were not written to the other photos");
+            }
             Flushed::Late => eprintln!("Edits not saved: the catalog did not answer in time"),
         }
         self.remember_place(crate::app::shell::workspace::LayoutEdit::Settled);

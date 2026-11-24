@@ -233,8 +233,43 @@ impl Library {
                         let width = ui.data(|d| d.get_temp::<f32>(width_id)).unwrap_or(250.);
                         // Develop's buttons lead the row. Short of room, the captions
                         // go first, then the buttons' labels, and last the buttons.
-                        let captions_id = ui.id().with("captions-width");
-                        let captions = ui.data(|d| d.get_temp::<f32>(captions_id)).unwrap_or(360.);
+                        let selected = self.selection.selected.len();
+                        let count = match position {
+                            Some(_) if selected > 1 => {
+                                format!("{} of {} photos selected", selected, self.visible.len())
+                            }
+                            Some(at) => format!("{} of {} photos", at + 1, self.visible.len()),
+                            None => format!("{} photos", self.visible.len()),
+                        };
+                        let filename = photo
+                            .as_ref()
+                            .map(|p| format!("{}{}", p.filename, cell::copy_suffix(p)));
+                        let source = self.source_name();
+                        // Measured from their text, whether they showed last frame or
+                        // not, so they come back once they fit.
+                        let captions = {
+                            let texts = [
+                                Some(source.as_str()),
+                                Some(count.as_str()),
+                                filename.as_deref(),
+                            ];
+                            let shown: Vec<f32> = texts
+                                .into_iter()
+                                .flatten()
+                                .map(|t| {
+                                    ui.painter()
+                                        .layout_no_wrap(
+                                            t.to_string(),
+                                            egui::FontId::proportional(text::SMALL),
+                                            egui::Color32::WHITE,
+                                        )
+                                        .size()
+                                        .x
+                                })
+                                .collect();
+                            let gaps = shown.len().saturating_sub(1) as f32;
+                            shown.iter().sum::<f32>() + gaps * ui.spacing().item_spacing.x
+                        };
                         let (size, show_captions) = layout(
                             ui,
                             buttons,
@@ -245,40 +280,15 @@ impl Library {
                             ui.scope(|ui| transfer = buttons.show(ui, size));
                             ui.add_space(space::L);
                         }
-                        let start = ui.cursor().left();
                         if show_captions {
                             ui.label(
-                                egui::RichText::new(self.source_name())
+                                egui::RichText::new(source)
                                     .size(text::SMALL)
                                     .color(palette.tone(Tone::SOFT)),
                             );
-                            let selected = self.selection.selected.len();
-                            ui.label(filter_caption(
-                                &palette,
-                                &match position {
-                                    Some(_) if selected > 1 => {
-                                        format!(
-                                            "{} of {} photos selected",
-                                            selected,
-                                            self.visible.len()
-                                        )
-                                    }
-                                    Some(at) => {
-                                        format!("{} of {} photos", at + 1, self.visible.len())
-                                    }
-                                    None => format!("{} photos", self.visible.len()),
-                                },
-                            ));
-                            if let Some(p) = &photo {
-                                ui.label(filter_caption(
-                                    &palette,
-                                    &format!("{}{}", p.filename, cell::copy_suffix(p)),
-                                ));
-                            }
-                            let taken = ui.min_rect().right() - start;
-                            if (taken - captions).abs() > 0.5 {
-                                ui.data_mut(|d| d.insert_temp(captions_id, taken));
-                                ui.ctx().request_repaint();
+                            ui.label(filter_caption(&palette, &count));
+                            if let Some(filename) = &filename {
+                                ui.label(filter_caption(&palette, filename));
                             }
                         }
                         if let Some(p) = &photo {

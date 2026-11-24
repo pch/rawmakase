@@ -106,7 +106,15 @@ impl Command {
                         *synced = None;
                     }
                 }
-                *photo != Some(id)
+                if *photo != Some(id) {
+                    return true;
+                }
+                // What Auto Sync wrote to the other photos still undoes on its own.
+                let Some(sync) = synced.take() else {
+                    return false;
+                };
+                *self = Command::Sync(sync);
+                true
             }
             Command::Stack(change) => change.forget_photo(id),
             // The keywords change whichever photos are left.
@@ -177,6 +185,11 @@ impl UndoLog {
         let Some(first) = (first..=last).find(|i| in_history(&self.undo[*i])) else {
             return Err(sync);
         };
+        // Only steps that follow one another are joined: one between them that
+        // Auto Sync did not take keeps an Undo of its own.
+        if (first..=last).any(|i| in_history(&self.undo[i]) && !covered(&self.undo[i])) {
+            return Err(sync);
+        }
         let (before, at_before) = match &self.undo[first] {
             Command::Develop { change, .. } => (change.before.clone(), change.at_before),
             _ => return Err(sync),
@@ -352,8 +365,12 @@ impl Editor {
     }
     /// Shared by UI shortcuts and external commands; false preserves a failed step.
     pub(in crate::app) fn command_history(&mut self, redo: bool) -> bool {
-        // An Auto Sync still to finish is part of the step Undo takes back.
-        self.settle_auto_sync();
+        // A drag still held is a step of its own, which Auto Sync takes too; and an
+        // Auto Sync still to finish is part of the step Undo takes back.
+        self.finish_gesture();
+        if !self.settle_auto_sync() {
+            return false;
+        }
         if self.activity.holds_catalog_writes() {
             return false;
         }
@@ -477,7 +494,7 @@ impl Editor {
                     library.restore_stacks(state)
                 })
             }
-            Command::Sync(sync) => match self.restore_synced(sync, direction) {
+            Command::Sync(sync) => match self.restore_synced(sync, direction, &[]) {
                 SyncRestored::Failed => false,
                 SyncRestored::UsedUp => true,
                 SyncRestored::Done => {
@@ -496,12 +513,6 @@ impl Editor {
                 change,
                 synced,
             } => {
-                // The other photos first: a failure there leaves all as it was.
-                if let Some(sync) = synced
-                    && self.restore_synced(sync, direction) == SyncRestored::Failed
-                {
-                    return false;
-                }
                 let (target, at) = match direction {
                     Direction::Undo => (&change.before, change.at_before),
                     Direction::Redo => (&change.after, change.at_after),
@@ -515,6 +526,14 @@ impl Editor {
                     && self.document.path.is_some()
                     && self.document.file == *source;
                 if same_history || reopened {
+                    // The other photos first: a failure there leaves all as it was.
+                    let restored = match synced {
+                        Some(sync) => self.restore_synced(sync, direction, &[]),
+                        None => SyncRestored::UsedUp,
+                    };
+                    if restored == SyncRestored::Failed {
+                        return false;
+                    }
                     self.module = Module::Develop;
                     let step = Step::new(verb, "");
                     if same_history {
@@ -528,11 +547,11 @@ impl Editor {
                     self.ensure_analysis();
                     self.schedule();
                     self.messages.note(match synced {
-                        Some(sync) => format!(
+                        Some(sync) if restored == SyncRestored::Done => format!(
                             "{verb} in Develop and on {} synced",
                             crate::app::ui::widgets::plural(sync.edits.len(), "photo", "photos")
                         ),
-                        None => format!("{verb} in Develop"),
+                        _ => format!("{verb} in Develop"),
                     });
                     return true;
                 }
@@ -555,7 +574,7 @@ impl Editor {
                         .warn(format!("{verb}: that photo is no longer in the catalog"));
                     return true;
                 };
-                let saved = library
+                let read = library
                     .session
                     .catalog()
                     .load_edit(id, &path)
@@ -569,19 +588,44 @@ impl Editor {
                                 anyhow::anyhow!("its file could not be read when it was edited")
                             })?,
                         };
-                        let export = edit.map(|e| e.export).unwrap_or_default();
-                        library.session.save_edit(
-                            id,
-                            &path,
-                            &source,
-                            target,
-                            &export,
-                            crate::catalog::HistoryUpdate::Keep,
-                        )
+                        Ok((source, edit.map(|e| e.export).unwrap_or_default()))
                     });
-                if let Err(e) = saved {
-                    self.messages.fail(format!("{verb} failed: {e}"));
-                    return false;
+                let (source, export) = match read {
+                    Ok(read) => read,
+                    Err(e) => {
+                        self.messages.fail(format!("{verb} failed: {e}"));
+                        return false;
+                    }
+                };
+                let save = crate::catalog::EditToSave {
+                    id,
+                    original: (&path).into(),
+                    source: &source,
+                    recipe: target,
+                    export: &export,
+                    history: crate::catalog::HistoryUpdate::Keep,
+                };
+                // With the other photos Auto Sync wrote, in one transaction: a
+                // failure leaves every photo as it was.
+                let restored = match synced {
+                    Some(sync) => self.restore_synced(sync, direction, std::slice::from_ref(&save)),
+                    None => SyncRestored::UsedUp,
+                };
+                match restored {
+                    SyncRestored::Done => {}
+                    SyncRestored::Failed => return false,
+                    SyncRestored::UsedUp => {
+                        let Some(library) = &mut self.library else {
+                            return false;
+                        };
+                        if let Err(e) = library
+                            .session
+                            .change_edits(&[crate::catalog::EditChange::Save(&save)])
+                        {
+                            self.messages.fail(format!("{verb} failed: {e}"));
+                            return false;
+                        }
+                    }
                 }
                 self.develop_catalog_photo(id);
                 true
@@ -589,11 +633,13 @@ impl Editor {
         }
     }
     /// Writes back the edits a Sync left on its photos, from before it (undo) or
-    /// after it (redo), once the open photo is saved.
+    /// after it (redo), with `also` in the same transaction, once the open photo is
+    /// saved. [`SyncRestored::UsedUp`] wrote nothing, `also` included.
     fn restore_synced(
         &mut self,
         sync: &crate::app::library::sync::SyncCommand,
         direction: Direction,
+        also: &[crate::catalog::EditToSave<'_>],
     ) -> SyncRestored {
         let verb = match direction {
             Direction::Undo => "Undo",
@@ -617,7 +663,13 @@ impl Editor {
             .filter_map(|e| Some((e.id, library.photo(e.id)?.path.clone())))
             .collect();
         let path = |id: PhotoId| paths.get(&id).cloned();
-        match crate::app::library::sync::restore(&mut library.session, &sync.edits, side, path) {
+        match crate::app::library::sync::restore(
+            &mut library.session,
+            &sync.edits,
+            side,
+            path,
+            also,
+        ) {
             Ok(()) => {}
             // Nothing to return to: the command is used up, not retried.
             Err(e @ crate::app::library::sync::SyncRestoreError::PhotoRemoved) => {

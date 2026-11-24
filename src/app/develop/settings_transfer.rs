@@ -89,7 +89,7 @@ impl Editor {
         })
     }
     /// The header's metadata, or the decoded image's while the header is pending.
-    fn document_metadata(&self) -> Option<Metadata> {
+    pub(in crate::app) fn document_metadata(&self) -> Option<Metadata> {
         self.document
             .metadata
             .clone()
@@ -376,8 +376,10 @@ impl TransferButtons {
         };
         let hover = if self.can_sync {
             hover
-        } else {
+        } else if cfg!(target_os = "macos") {
             "Cmd-click photos in the filmstrip to sync to them".into()
+        } else {
+            "Ctrl-click photos in the filmstrip to sync to them".into()
         };
         // As wide as its longer label, so the switch stays put when it turns.
         let width = match size {
@@ -410,9 +412,10 @@ impl TransferButtons {
             egui::Sense::hover(),
         );
         if self.syncing {
-            egui::Spinner::new().size(SPINNER).paint_at(
+            crate::app::ui::widgets::paint_spinner(
                 ui,
                 egui::Rect::from_center_size(rect.center(), Vec2::splat(SPINNER)),
+                None,
             );
             response.on_hover_text("Auto Sync is writing the other photos");
         }

@@ -172,6 +172,7 @@ fn quitting_stops_the_workers_in_order() {
             CurveHistogram,
             PresetThumbnails,
             Export,
+            AutoSync,
             MergeHdr,
             PreviewBuilds,
             EditableBuilds,

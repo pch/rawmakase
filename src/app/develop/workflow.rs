@@ -192,11 +192,10 @@ impl Editor {
         }
         true
     }
-    /// Saves the edit now, after any background save in flight; false if
-    /// it could not be saved.
+    /// Saves the edit now, after any background save in flight, and waits for Auto
+    /// Sync to write every step to the other photos; false if either could not be
+    /// done, when nothing that waits on it may go on.
     pub(in crate::app) fn flush(&mut self) -> bool {
-        // Every step Auto Sync still has for the other photos is written first.
-        self.settle_auto_sync();
         // A Sync may be writing the open photo: nothing is saved over it until it is
         // done (see `autosave`).
         if self.activity.holds_catalog_writes() {
@@ -218,7 +217,8 @@ impl Editor {
         }
         if !self.document.edit.save_state().needs_save() {
             self.finish_saved_gesture();
-            return true;
+            // After the gesture's step, which Auto Sync takes too.
+            return self.settle_auto_sync();
         }
         if let (Some(path), Some(l), Some(id)) = (
             &self.document.path,
@@ -261,7 +261,7 @@ impl Editor {
         }
         // Its state was just saved with History: nothing new to save.
         self.finish_saved_gesture();
-        true
+        self.settle_auto_sync()
     }
     /// Autosave: collects a finished background save and, once the edit
     /// has settled, starts the next.
@@ -391,6 +391,11 @@ impl Editor {
         }
         // Its state was just saved with History: nothing new to save.
         self.finish_saved_gesture();
+        // Steps Auto Sync still has to write: closing waits for them (see
+        // `work::WORK`).
+        if self.auto_sync_busy() {
+            return Flushed::Late;
+        }
         Flushed::Saved
     }
     fn background_saved(&mut self, completion: crate::app::develop::autosave::Completion) {
