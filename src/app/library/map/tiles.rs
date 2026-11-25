@@ -187,7 +187,7 @@ impl Meta {
         });
         let now_secs = seconds(now);
         let fresh_until = match (max_age, expires.and_then(http_date)) {
-            (Some(age), _) => now_secs + age,
+            (Some(age), _) => now_secs.saturating_add(age),
             (None, Some(at)) => at,
             (None, None) => now_secs + DEFAULT_FRESH.as_secs(),
         };
@@ -319,6 +319,9 @@ mod tests {
         let expires = Meta::of(now, None, Some("Sun, 06 Nov 1994 08:49:37 GMT"), None, None);
         assert_eq!(expires.fresh_until, 784_111_777);
         assert!(!expires.fresh(now));
+        // A max-age past the end of time is kept until then, not wrapped round.
+        let forever = Meta::of(now, Some("max-age=18446744073709551615"), None, None, None);
+        assert_eq!(forever.fresh_until, u64::MAX);
         let silent = Meta::of(now, Some("public"), Some("never"), None, None);
         assert_eq!(silent.fresh_until, 800_000_000 + 7 * 86_400);
         assert!(silent.fresh(now));

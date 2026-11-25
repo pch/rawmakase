@@ -375,3 +375,25 @@ fn a_session_without_the_map_reads_as_off_and_a_chosen_server_survives_a_save() 
     let json = serde_json::to_string(&Session::default()).unwrap();
     assert!(!json.contains("map"), "{json}");
 }
+
+#[test]
+fn a_tile_the_map_shows_twice_is_asked_for_once() {
+    let tiles = tempfile::tempdir().unwrap();
+    let (_d, mut e, ids) = crate::app::testing::editor_with_catalog(&["a.ARW", "b.ARW"]).unwrap();
+    let mut library = *e.library.take().unwrap();
+    // Far apart: the map fits them at zoom 0, where its 270 points show the
+    // world's one tile more than once.
+    locate(&mut library, ids[0], 60., -170.);
+    locate(&mut library, ids[1], -40., 170.);
+    library.select_all();
+    library.map = Map::for_tests(tiles.path().to_path_buf());
+    let (port, asked) = tile_server();
+    library.map.set_source(Some(source(port)));
+    let ctx = egui::Context::default();
+    frame(&mut library, &ctx);
+    assert_eq!(library.map.view.as_ref().unwrap().zoom, 0);
+    settle(&mut library, &ctx, |l| !l.map.textures.is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    let asked = asked.lock().unwrap().clone();
+    assert_eq!(asked, ["/0/0/0.png"]);
+}

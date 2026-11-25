@@ -95,7 +95,11 @@ impl Fetcher {
             if q.closed {
                 return;
             }
-            q.wanted = tiles.into_iter().filter(|t| !q.busy.contains(t)).collect();
+            let mut seen = HashSet::new();
+            q.wanted = tiles
+                .into_iter()
+                .filter(|t| !q.busy.contains(t) && seen.insert(*t))
+                .collect();
             q.template = Some(template.clone());
             q.asked = Some(Instant::now());
         }
@@ -189,6 +193,10 @@ fn work(shared: &Shared, tx: &Sender<Done>, root: &Path, agent: &ureq::Agent, ct
                 if q.asked.is_some_and(|at| at.elapsed() > WANTED_FOR) {
                     q.wanted.clear();
                 }
+                // A tile another worker took meanwhile is not fetched twice.
+                let busy = std::mem::take(&mut q.busy);
+                q.wanted.retain(|t| !busy.contains(t));
+                q.busy = busy;
                 if let (false, Some(template)) = (q.wanted.is_empty(), q.template.clone()) {
                     let tile = q.wanted.remove(0);
                     q.busy.insert(tile);
@@ -311,7 +319,17 @@ fn load(
     }
 }
 
+/// A tile's pixels. Only square tiles of 256 or 512 pixels are taken: a
+/// server the user named could send an image far larger than a texture may be.
 fn decode(bytes: &[u8]) -> Result<egui::ColorImage, String> {
+    let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_dimensions()
+        .map_err(|e| format!("the tile is not an image: {e}"))?;
+    if w != h || !(w == 256 || w == 512) {
+        return Err(format!("the tile is {w}×{h} pixels, not 256 or 512 square"));
+    }
     let image = image::load_from_memory(bytes)
         .map_err(|e| format!("the tile is not an image: {e}"))?
         .into_rgba8();

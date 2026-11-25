@@ -102,7 +102,7 @@ impl Server {
 }
 
 fn png() -> Vec<u8> {
-    let image = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
+    let image = image::RgbaImage::from_pixel(256, 256, image::Rgba([10, 20, 30, 255]));
     let mut out = std::io::Cursor::new(Vec::new());
     image.write_to(&mut out, image::ImageFormat::Png).unwrap();
     out.into_inner()
@@ -134,7 +134,7 @@ fn a_tile_is_kept_used_while_fresh_and_then_asked_for_only_if_it_changed() {
     let folder = template.folder(dir.path());
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let image = load(&agent, &template, &folder, TILE, now).unwrap();
-    assert_eq!(image.size, [4, 4]);
+    assert_eq!(image.size, [256, 256]);
     let first = &server.requests()[0];
     assert_eq!(first.path, "/3/4/5.png");
     assert!(
@@ -168,7 +168,7 @@ fn a_tile_is_kept_used_while_fresh_and_then_asked_for_only_if_it_changed() {
     let later = now + Duration::from_secs(4000);
     assert_eq!(
         load(&agent, &template, &folder, TILE, later).unwrap().size,
-        [4, 4]
+        [256, 256]
     );
     let asked = &server.requests()[1];
     assert_eq!(asked.header("if-none-match"), Some("\"v1\""));
@@ -294,4 +294,38 @@ fn the_tiles_fetched_longest_ago_go_first_when_the_cache_is_over_its_limit() {
     let left: Vec<bool> = kept.iter().map(|(f, m)| f.exists() && m.exists()).collect();
     assert_eq!(left, [false, false, true, true]);
     assert!(!kept[0].1.exists());
+}
+
+#[test]
+fn a_tile_that_isnt_a_square_of_256_or_512_pixels_is_refused() {
+    let png = |w, h| {
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::new(w, h)
+            .write_to(&mut out, image::ImageFormat::Png)
+            .unwrap();
+        out.into_inner()
+    };
+    assert!(decode(&png(256, 256)).is_ok());
+    assert!(decode(&png(512, 512)).is_ok());
+    assert!(decode(&png(4096, 4096)).unwrap_err().contains("4096×4096"));
+    assert!(decode(&png(256, 128)).is_err());
+}
+
+#[test]
+fn a_tile_asked_for_twice_is_fetched_once() {
+    let body = png();
+    let server = Server::start(Duration::from_millis(300), move |_| {
+        (200, Vec::new(), body.clone())
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let mut fetcher = Fetcher::new(
+        dir.path().to_path_buf(),
+        Net { https_only: false },
+        egui::Context::default(),
+    );
+    let template = Arc::new(server.template());
+    fetcher.want(&template, vec![TILE, TILE, TILE]);
+    assert_eq!(wait_for_done(&fetcher, 1).len(), 1);
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(server.requests().len(), 1);
 }

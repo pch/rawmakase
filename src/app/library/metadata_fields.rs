@@ -354,7 +354,7 @@ impl Library {
         } else if self.map.is_on() || self.fields.places.is_empty() {
             text
         } else {
-            format!("{text}\nTurn on Map in Preferences › General to see it on a map")
+            format!("{text}\nPreferences › General › Map shows it on a map")
         });
         let clear = ui
             .put(

@@ -208,6 +208,13 @@ impl Map {
         let height = (width * 0.62).clamp(140., 240.).round();
         let (rect, response) =
             ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
+        // The panel scrolls, and egui runs what it clips: a map out of sight
+        // keeps its place in the layout but asks for no tile.
+        if !ui.is_rect_visible(rect) {
+            ui.add_space(space::XS);
+            ui.allocate_exact_size(Vec2::new(width, size::ROW), Sense::hover());
+            return;
+        }
         let world: Vec<World> = places
             .iter()
             .map(|(lat, lon)| World::of(*lat, *lon))
@@ -256,6 +263,14 @@ impl Map {
                 Some((at, _)) if at.elapsed() < RETRY => failures += 1,
                 _ => missing.push(*tile),
             }
+        }
+        // A map wider than the world at zoom 0 or 1 shows a tile more than once.
+        let mut seen = std::collections::HashSet::new();
+        missing.retain(|t| seen.insert(*t));
+        if failures > 0 {
+            // A failed tile is asked for again once RETRY has passed, even
+            // while nothing else repaints.
+            ui.ctx().request_repaint_after(RETRY);
         }
         if !missing.is_empty() {
             let fetcher = self.fetcher.get_or_insert_with(|| {

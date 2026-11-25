@@ -74,7 +74,10 @@ fn committed(ui: &mut egui::Ui, label: &str, value: &mut String, default: &str) 
             ui.add(egui::TextEdit::singleline(&mut draft).desired_width(320.)),
             label,
         );
-        if field.lost_focus() {
+        // A draft left behind when the page was switched away from while it was
+        // typed in (the field wasn't drawn as it lost the focus) is taken too.
+        let stranded = !field.has_focus() && ui.data(|d| d.get_temp::<String>(id)).is_some();
+        if field.lost_focus() || stranded {
             let taken = if draft.trim().is_empty() {
                 default.to_owned()
             } else {
