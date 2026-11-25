@@ -57,6 +57,11 @@ pub(crate) mod slot {
         HIGHLIGHTS: 4,
         // Combined global pixel-level contrast curve (`local_tone::LocalToneMap::pix`).
         PIX: 4,
+        // Positive Clarity's base and pixel curves (`local_tone::LocalToneMap::clarity_pos`),
+        // and optional HDR weight grid offset (`clarity_hdr`, or -1).
+        CLARITY_BASE: 4,
+        CLARITY_PIX: 4,
+        CLARITY_HDR: 1,
         // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
         // grid or -1 (see `local_tone::LocalToneMap::lift`).
         LIFT: 8,
@@ -456,6 +461,10 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         &[grid.region_at().map_or(-1., |at| at as f32)],
     );
     p.grid = Some(grid);
+    let clarity_hdr = match &local.clarity_hdr {
+        Some(w) if local.clarity_pos.is_some() => p.push(w.iter().copied()),
+        _ => -1.,
+    };
     let mut curve = |c: Option<&crate::develop::local_tone::Curve>| match c {
         // The table, then its tail (`local_curve` reads it after the 48 columns).
         Some(c) => [
@@ -469,6 +478,10 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     let shadows = curve(local.shadows.as_ref());
     let highlights = curve(local.highlights.as_ref());
     let pix = curve(local.pix.as_ref());
+    let [clarity_base, clarity_pix] = match &local.clarity_pos {
+        Some([cb, cp]) => [curve(Some(cb)), curve(Some(cp))],
+        None => [curve(None), curve(None)],
+    };
     let [detail, region] = match &local.lift {
         Some([d, r]) => [curve(Some(d)), curve(Some(r))],
         None => [curve(None), curve(None)],
@@ -486,6 +499,9 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set(slot::SHADOWS, &shadows);
     p.set(slot::HIGHLIGHTS, &highlights);
     p.set(slot::PIX, &pix);
+    p.set(slot::CLARITY_BASE, &clarity_base);
+    p.set(slot::CLARITY_PIX, &clarity_pix);
+    p.set(slot::CLARITY_HDR, &[clarity_hdr]);
     p.set(slot::LIFT, &[detail, region].concat());
     p.set(slot::RULE, &rule);
     p.set(slot::RULE_PIX, &rule_pix);

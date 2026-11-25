@@ -125,9 +125,15 @@ pub(crate) struct LocalToneMap {
     /// Image keys of negative Shadows, Highlights and positive Shadows, for masks
     /// that evaluate them at their own slider values.
     pub(crate) keys: [f32; 3],
-    /// Clarity's measured gains and luminance guidance on this grid (`clarity.rs`).
+    /// Negative Clarity's measured gains and luminance guidance on this grid (`clarity.rs`).
     pub(crate) clarity: Option<super::clarity::ClarityField>,
-    /// Clarity's detail, when masks change Clarity and read it at their own amount.
+    /// Positive Clarity's scaled base and pixel curves (`clarity_rule.rs`).
+    pub(crate) clarity_pos: Option<[Curve; 2]>,
+    /// Positive Clarity's unit (+100) curves, when masks change Clarity.
+    clarity_pos_unit: Option<[Curve; 2]>,
+    /// Optional per-cell HDR weight grid for positive Clarity.
+    pub(crate) clarity_hdr: Option<Vec<f32>>,
+    /// Negative Clarity's detail, when masks change Clarity and read it at their own amount.
     pub(crate) clarity_detail: Option<super::clarity::ClarityDetail>,
     /// The photo's global rule at full strength (`local_tone_rule`), in
     /// [`RuleCurve::ALL`]'s order: Shadows +100, Highlights −100, Shadows −100 and
@@ -142,6 +148,7 @@ pub(crate) struct LocalToneMap {
     /// already carry it for the recipe's own values.
     pub(crate) pair: Option<super::local_tone_rule::Pair>,
 }
+#[derive(Clone)]
 pub(crate) struct Curve {
     pub(crate) key: f32,
     pub(crate) lo: f32,
@@ -260,6 +267,7 @@ pub(crate) struct MapBase {
     lift_offset: std::sync::OnceLock<f32>,
     region: std::sync::OnceLock<Vec<f32>>,
     detail: std::sync::OnceLock<super::clarity::ClarityDetail>,
+    clarity_rule: std::sync::OnceLock<[Curve; 2]>,
     rule: std::sync::OnceLock<super::local_tone_rule::RuleStats>,
 }
 impl std::fmt::Debug for MapBase {
@@ -331,6 +339,7 @@ impl MapBase {
             lift_offset: Default::default(),
             region: Default::default(),
             detail: Default::default(),
+            clarity_rule: Default::default(),
             rule: Default::default(),
         }
     }
@@ -349,6 +358,29 @@ impl MapBase {
                 super::local_tone_rule::RuleStats::new(&logs, &lap, cw, ch)
             } else {
                 super::local_tone_rule::RuleStats::new(
+                    &self.logs,
+                    &self.laplacian,
+                    self.width,
+                    self.height,
+                )
+            }
+        })
+    }
+    /// Positive Clarity's unit (+100) base and pixel curves (`clarity_rule.rs`).
+    fn clarity_rule(&self) -> &[Curve; 2] {
+        self.clarity_rule.get_or_init(|| {
+            if let Some([x0, y0, x1, y1]) = self.crop {
+                let (cw, ch) = (x1 - x0, y1 - y0);
+                let mut logs = Vec::with_capacity(cw * ch);
+                let mut lap = Vec::with_capacity(cw * ch);
+                for y in y0..y1 {
+                    let row = y * self.width;
+                    logs.extend_from_slice(&self.logs[row + x0..row + x1]);
+                    lap.extend_from_slice(&self.laplacian[row + x0..row + x1]);
+                }
+                super::clarity_rule::unit_curves(&logs, &lap, cw, ch)
+            } else {
+                super::clarity_rule::unit_curves(
                     &self.logs,
                     &self.laplacian,
                     self.width,
@@ -633,20 +665,26 @@ impl LocalToneMap {
                 0.
             };
         let keys = [base.shadow_key, base.highlight_key, lift_key];
-        let detail = (sliders.clarity != 0. || sliders.mask_clarity).then(|| base.detail());
+        let has_clarity = sliders.clarity != 0. || sliders.mask_clarity;
         // An HDR master's Clarity is stronger beside light above white, a mask's too.
-        let hdr_weights = detail
-            .is_some()
-            .then_some(())
-            .filter(|_| sliders.hdr)
-            .map(|_| hdr_clarity_weights(base));
+        let hdr_weights = (has_clarity && sliders.hdr).then(|| hdr_clarity_weights(base));
+        let detail = (sliders.clarity < 0. || sliders.mask_clarity).then(|| base.detail());
         let clarity = detail
-            .filter(|_| sliders.clarity != 0.)
+            .filter(|_| sliders.clarity < 0.)
             .map(|d| d.field(sliders.clarity))
             .map(|f| match &hdr_weights {
                 Some(weights) => f.scaled(weights),
                 None => f,
             });
+        let pos_unit = (sliders.clarity > 0. || sliders.mask_clarity).then(|| base.clarity_rule());
+        let clarity_pos = pos_unit
+            .filter(|_| sliders.clarity > 0.)
+            .map(|u| super::clarity_rule::scale(u, sliders.clarity));
+        let clarity_pos_unit = pos_unit.filter(|_| sliders.mask_clarity).cloned();
+        let clarity_hdr = hdr_weights
+            .as_ref()
+            .filter(|_| sliders.clarity > 0. || sliders.mask_clarity)
+            .cloned();
         // Shadows and Highlights follow the photo's global rule (`local_tone_rule`);
         // the two-scale lift and the regional level are not read.
         let (rule, rule_pix) = if sliders.shadows != 0. || sliders.highlights != 0. || local {
@@ -741,6 +779,9 @@ impl LocalToneMap {
             lift: None,
             keys,
             clarity,
+            clarity_pos,
+            clarity_pos_unit,
+            clarity_hdr,
             clarity_detail: detail
                 .filter(|_| sliders.mask_clarity)
                 .map(|d| match &hdr_weights {
@@ -756,27 +797,43 @@ impl LocalToneMap {
     /// pixel's scene luminance before mask color and Exposure, matching the measurement
     /// copy that supplied the map's base and Clarity's blur.
     pub(crate) fn gain(&self, x: f32, y: f32, lum: f32) -> f32 {
+        let own = level(lum);
         let base = self.base(x, y, lum);
         let tb = self.tail_base(x, y, base);
         let mut ev = self.shadows.as_ref().map_or(0., |c| c.eval(base))
             + self.highlights.as_ref().map_or(0., |c| c.eval_t(base, tb));
         if let Some(p) = &self.pix {
-            ev += p.eval(level(lum));
+            ev += p.eval(own);
         }
         if let (Some([detail, region]), Some(k)) = (&self.lift, self.region()) {
             let k = self.bilinear(x, y, k);
             ev += detail.eval(base - k) + region.eval(k);
         }
-        (ev + self.clarity(x, y, lum)).exp2()
+        (ev + self.clarity_at(x, y, base, own)).exp2()
     }
     /// As [`Self::gain`], with Shadows, Highlights and Clarity at the given slider
     /// values (a mask's added to the recipe's).
     pub(crate) fn gain_with(&self, x: f32, y: f32, lum: f32, sliders: [f32; 3]) -> f32 {
         let own = level(lum);
         let base = self.base(x, y, lum);
-        let clarity = match &self.clarity_detail {
-            Some(d) => d.at(self.clarity_sample(x, y), sliders[2], own),
-            None => self.clarity(x, y, lum),
+        let clarity = if self.clarity_detail.is_some() || self.clarity_pos_unit.is_some() {
+            if sliders[2] > 0. {
+                self.clarity_pos_unit.as_ref().map_or(0., |[cb, cp]| {
+                    let hw = self
+                        .clarity_hdr
+                        .as_ref()
+                        .map_or(1., |w| self.bilinear(x, y, w));
+                    (cb.eval(base) + cp.eval(own)) * sliders[2].min(1.) * hw
+                })
+            } else if sliders[2] < 0. {
+                self.clarity_detail
+                    .as_ref()
+                    .map_or(0., |d| d.at(self.clarity_sample(x, y), sliders[2], own))
+            } else {
+                0.
+            }
+        } else {
+            self.clarity_at(x, y, base, own)
         };
         let lift = self.region().map_or(0., |k| {
             let k = self.bilinear(x, y, k);
@@ -856,11 +913,21 @@ impl LocalToneMap {
         let d = (l - self.bilinear(x, y, &self.base.logs)) / LAPLACIAN_SIGMA;
         l + (-0.5 * d * d).exp() * (self.bilinear(x, y, &self.base.laplacian) - l)
     }
-    /// The measured Clarity's log2 gain at sample position `x`, `y`.
-    fn clarity(&self, x: f32, y: f32, lum: f32) -> f32 {
-        self.clarity
+    /// Global Clarity's log2 gain at sample position `x`, `y` (negative via `ClarityField`,
+    /// positive via `clarity_rule`'s base and pixel curves).
+    fn clarity_at(&self, x: f32, y: f32, base: f32, own: f32) -> f32 {
+        let neg = self
+            .clarity
             .as_ref()
-            .map_or(0., |c| c.at(self.clarity_sample(x, y), level(lum)))
+            .map_or(0., |c| c.at(self.clarity_sample(x, y), own));
+        let pos = self.clarity_pos.as_ref().map_or(0., |[cb, cp]| {
+            let hw = self
+                .clarity_hdr
+                .as_ref()
+                .map_or(1., |w| self.bilinear(x, y, w));
+            (cb.eval(base) + cp.eval(own)) * hw
+        });
+        neg + pos
     }
     /// The same four neighbours used by bilinear reconstruction.
     fn clarity_sample(&self, x: f32, y: f32) -> super::clarity::ClaritySample {

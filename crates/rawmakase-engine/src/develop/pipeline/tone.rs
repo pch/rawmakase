@@ -491,7 +491,8 @@ impl CurveSet {
                     Some(m) => m.as_shot(make_camera),
                     None => Arc::new(make_camera()),
                 };
-                let divide_base = r.shadows != 0. || map.clarity.is_some();
+                let divide_base =
+                    r.shadows != 0. || map.clarity.is_some() || map.clarity_pos.is_some();
                 let post_camera: Vec<[f32; 3]> = camera
                     .par_iter()
                     .enumerate()
@@ -1326,6 +1327,25 @@ mod tests {
         assert!(
             (sc_tiny_top - sc_top).abs() < 1e-3 && (sc_tiny_y - sc_y).abs() < 1e-4,
             "discontinuity at h -> 0 with Shadows+Clarity: sc=({sc_y}, {sc_top}) tiny=({sc_tiny_y}, {sc_tiny_top})"
+        );
+        // Continuity as highlights -> 0 with positive Clarity alone (Shadows == 0):
+        // positive Clarity must be divided out of the Highlights white-point key just like
+        // negative Clarity, and must not shift W* when Highlights leaves 0.
+        let im_dim_c = make_image(0.16, rawmakase_model::camera_data::Source::Raw);
+        let mut r_c_only = base_r.clone();
+        r_c_only.effects.clarity = 0.7;
+        let (c_y, c_top) = white_at(&im_dim_c, &r_c_only, false);
+        let (c_tiny_y, c_tiny_top) = white_at(
+            &im_dim_c,
+            &Recipe {
+                highlights: -1e-4,
+                ..r_c_only
+            },
+            false,
+        );
+        assert!(
+            (c_tiny_top - c_top).abs() < 1e-3 && (c_tiny_y - c_y).abs() < 1e-4,
+            "discontinuity at h -> 0 with positive Clarity alone: c=({c_y}, {c_top}) tiny=({c_tiny_y}, {c_tiny_top})"
         );
 
         // Case 2: dim scene (baseline +2 EV -> sensor_white = 4.0, bright = 0.16 -> scene = 0.64 -> W* ≈ 1.3).
