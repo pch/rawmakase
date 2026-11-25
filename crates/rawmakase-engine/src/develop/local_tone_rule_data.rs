@@ -1,8 +1,8 @@
 //! The global Shadows/Highlights rule (`G_base(b) + G_pix(l)`): dual ensembles of small
-//! networks from histogram, per-level texture and absolute-level descriptors to the log2
-//! gain at Shadows +100 and Highlights −100, fitted from different seeds to Camera Raw 18.7
-//! on textured flat-patch mosaics, linear-profile training photos and scenes made from
-//! those photos' maps, from the engine's own measurement maps
+//! networks from exposure-invariant histogram and per-level texture descriptors to the
+//! log2 gain at Shadows +100 and Highlights −100, fitted from different seeds to Camera
+//! Raw 18.7 on textured flat-patch mosaics, linear-profile training photos and scenes
+//! made from those photos' maps, from the engine's own measurement maps
 //! (scripts/corpus/scene-tone-rule.py). Generated; do not edit.
 #![allow(
     clippy::excessive_precision,
