@@ -191,6 +191,22 @@ fn ask_before_quitting_holds_the_close_until_answered() {
     assert!(e.quit_by.is_some());
 }
 
+/// The question is modal: the workspace's own keys (Escape restoring hidden
+/// panels, for one) wait while it is open.
+#[test]
+fn the_quit_question_is_modal() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    assert!(!e.workspace_modal());
+    e.quit_asked = true;
+    assert!(e.workspace_modal());
+}
+
 /// Without Ask before quitting, the default, a close goes ahead at once.
 #[test]
 fn quitting_asks_nothing_by_default() {

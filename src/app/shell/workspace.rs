@@ -35,6 +35,7 @@ impl Editor {
             || self.collection_dialog_open()
             || self.merge_hdr.dialog_open()
             || self.edit_in.asking.is_some()
+            || self.quit_asked
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
@@ -2157,7 +2158,11 @@ impl Editor {
     fn save_when_due(&mut self, ctx: &egui::Context) {
         self.autosave(ctx);
         // For a quit the close guard doesn't see (the Dock, logging out).
-        crate::platform::quit::set_work_pending(self.quitting_would_cut_off_work());
+        // Ask before quitting sends a Dock quit or a logout through the close
+        // guard too, so it asks, and never past a question already open.
+        crate::platform::quit::set_work_pending(
+            self.quitting_would_cut_off_work() || self.confirm_quit,
+        );
         if let Some(due) = self.document.edit.save_state().due_in() {
             // Just after it is due, so the frame finds it ready.
             ctx.request_repaint_after(due + Duration::from_millis(10));
