@@ -34,7 +34,7 @@ pub(super) fn profile_menus(ui: &mut egui::Ui, r: &mut Recipe, m: Option<&Metada
         control_row(ui, "Profile", |ui| {
             muted(
                 ui,
-                builtin.map_or("No matching profile", |l| l.source.as_str()),
+                builtin.map_or("No matching profile", |l| l.shown_source()),
             );
         });
         return;

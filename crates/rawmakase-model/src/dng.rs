@@ -174,7 +174,7 @@ pub fn read(path: &Path) -> Option<Dng> {
         .map_or((None, false), |(v, measured)| (Some(v), measured));
     let (distortion, chromatic) = warp.map_or((None, None), |(d, c, _)| (d, c));
     let lens = LensCorrection {
-        source: "DNG opcodes".into(),
+        source: crate::optics::LensCorrection::DNG_OPCODES.into(),
         default_on: true,
         vignetting,
         vignetting_measured,

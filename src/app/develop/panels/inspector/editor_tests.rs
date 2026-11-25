@@ -425,3 +425,100 @@ fn shots_of_the_crop_drawer() {
         },
     );
 }
+
+/// A photo whose file carries the lens correction `lens`, for the Lens Corrections
+/// shots.
+fn lens_photo(lens: crate::optics::LensCorrection) -> Metadata {
+    Metadata {
+        make: "Samsung".into(),
+        model: "SM-S911B".into(),
+        lens_model: "Samsung Galaxy S23 Rear Main Camera".into(),
+        lens: Some(lens),
+        width: 4000,
+        height: 3000,
+        ..Default::default()
+    }
+}
+
+/// Draws the Lens Corrections panel for photo `m`, with Enable Profile Corrections
+/// `on`, as `<name>.png` ([`crate::app::ui::shots`]).
+fn lens_corrections_shot(name: &str, m: Metadata, on: bool) {
+    use crate::model::recipe::{ProfileCorrections, Recipe};
+    let mut recipe = Recipe::for_metadata(&m);
+    let state = if on {
+        ProfileCorrections::On
+    } else {
+        ProfileCorrections::Off
+    };
+    recipe.set_profile_corrections(&m, state);
+    let mut step = crate::app::develop::step_name::StepName::default();
+    let mut view = crate::app::develop::state::ViewState::default();
+    let lensfun = super::lensfun::View {
+        db: None,
+        running: None,
+        progress: None,
+        failure: None,
+        suggest: false,
+    };
+    let width = 340.;
+    crate::app::ui::shots::shot(
+        name,
+        Vec2::new(width + 20., if on { 720. } else { 640. }),
+        |_, _| {},
+        |_, ctx| {
+            let palette = crate::app::ui::theme::palette(ctx);
+            crate::app::ui::shots::panel(ctx, width, |ui| {
+                let _side = crate::app::ui::widgets::SectionSide::enter(
+                    ui,
+                    crate::app::ui::widgets::SectionGroup::DevelopRight,
+                );
+                super::panels::lens_corrections::show(
+                    ui,
+                    &mut step,
+                    &mut recipe,
+                    &mut view,
+                    Some(&m),
+                    &lensfun,
+                    &palette,
+                );
+            });
+        },
+    );
+}
+
+/// Lens Corrections for a phone DNG whose warp the file stores (#1289): the panel
+/// says it always applies, with Enable Profile Corrections off and on; a Nikon
+/// optional profile, which follows the switch, gets no such note; Sony's lateral
+/// CA is said to be only part of it.
+#[test]
+fn shots_of_lens_corrections_stored_in_the_file() {
+    use crate::optics::{LensCorrection, Radial};
+    let warp = |source: &str, default_on| LensCorrection {
+        source: source.into(),
+        default_on,
+        distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+        ..Default::default()
+    };
+    let dng = lens_photo(warp(LensCorrection::DNG_OPCODES, true));
+    lens_corrections_shot("lens-corrections-dng-off", dng.clone(), false);
+    lens_corrections_shot("lens-corrections-dng-on", dng, true);
+    let nikon = Metadata {
+        make: "Nikon".into(),
+        model: "Z 8".into(),
+        lens_model: "NIKKOR Z 14-24mm f/2.8 S".into(),
+        ..lens_photo(warp("Nikon built-in", false))
+    };
+    lens_corrections_shot("lens-corrections-nikon-optional-off", nikon.clone(), false);
+    lens_corrections_shot("lens-corrections-nikon-optional-on", nikon, true);
+    let sony = Metadata {
+        make: "Sony".into(),
+        model: "ILCE-7M3".into(),
+        lens_model: "FE 55mm F1.8 ZA".into(),
+        lens_stand_in: Some(LensCorrection {
+            vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
+            ..warp(LensCorrection::SONY_BUILTIN, true)
+        }),
+        ..lens_photo(warp(LensCorrection::SONY_BUILTIN, true))
+    };
+    lens_corrections_shot("lens-corrections-sony-on", sony, true);
+}

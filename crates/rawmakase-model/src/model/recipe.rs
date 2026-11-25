@@ -688,6 +688,14 @@ impl Recipe {
     /// Why Enable Profile Corrections cannot render with the profile it should here,
     /// and what renders instead, when it is on.
     pub fn missing_lens_profile(&self, m: &Metadata) -> Option<String> {
+        // A DNG's opcodes by what they are to the reader, not by their format's term.
+        let builtin_name = |c: &crate::optics::LensCorrection| -> String {
+            if c.source == crate::optics::LensCorrection::DNG_OPCODES {
+                "the lens correction stored in the file".into()
+            } else {
+                c.source.clone()
+            }
+        };
         // A Lens Corrections panel switched off renders no lens correction at all.
         let panel = self
             .panels
@@ -706,7 +714,7 @@ impl Recipe {
             let profile = format!("Lensfun profile \"{}\" {why}", lensfun.name());
             return Some(match (&applied.correction, self.builtin_correction(m)) {
                 (Some(_), _) => profile,
-                (None, Some(builtin)) => format!("{profile}; using {}", builtin.source),
+                (None, Some(builtin)) => format!("{profile}; using {}", builtin_name(builtin)),
                 (None, None) => format!("{profile}; no lens correction"),
             });
         }
@@ -728,7 +736,7 @@ impl Recipe {
         };
         let instead = match (resolved.used, self.builtin_correction(m)) {
             (Some(used), _) => format!("using {}", used.profile.name),
-            (None, Some(builtin)) => format!("using {}", builtin.source),
+            (None, Some(builtin)) => format!("using {}", builtin_name(builtin)),
             (None, None) => "no lens correction".to_string(),
         };
         Some(format!("{profile}; {instead}"))
@@ -785,6 +793,33 @@ impl Recipe {
         (m.lens_stand_in.as_ref())
             .filter(|_| self.lens_profile)
             .or(m.lens.as_ref())
+    }
+    /// The correction stored in the file that renders whether Enable Profile
+    /// Corrections is on or off, and whatever the profile amounts say: the file's
+    /// `default_on` correction ([`Self::lens_amounts`]), unless the edit's choice
+    /// holds an imported Adobe profile or a Lensfun lens that replaces it once the
+    /// switch is on. Corrections that follow the switch
+    /// (Nikon's optional profile, Canon's, Sony's tables beyond the lateral CA) are
+    /// never it, nor is a correction an edit saved before `lens_builtin` existed
+    /// keeps off.
+    pub fn fixed_lens_correction<'a>(
+        &self,
+        m: &'a Metadata,
+    ) -> Option<&'a crate::optics::LensCorrection> {
+        let lens = m
+            .lens
+            .as_ref()
+            .filter(|l| l.default_on && self.lens_builtin)?;
+        // What the choice would use with the switch on, so the answer is the same
+        // whether it is on or off.
+        let replaced = self
+            .lens_profile_choice
+            .resolve(&m.lens_profiles, m)
+            .used
+            .is_some()
+            || (self.lens_profile_choice.lensfun())
+                .is_some_and(|l| l.apply(m).correction.is_some());
+        (!replaced).then_some(lens)
     }
     /// Lightroom's profile Distortion and Vignetting amounts (1 = 100%) as they apply
     /// to the lens correction in use. They scale a profile: an imported Adobe one, or
