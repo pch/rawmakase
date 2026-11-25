@@ -963,7 +963,9 @@ impl Service {
             let joined = std::mem::take(&mut queue.joined);
             queue.running = None;
             // A result is kept in memory only while exports wait for it (the cache
-            // keeps it otherwise); failures are small.
+            // keeps it otherwise); failures are small. Only waiters on the key itself
+            // count: one on a key moved here may be cancelled before it follows, and
+            // nothing would then let go of the result. It finds it in the cache.
             let waited = queue.waiting.get(&job.key).is_some_and(|n| *n > 0);
             if waited || !matches!(outcome, Outcome::Done(_)) {
                 queue.outcomes.insert(job.key.clone(), outcome.clone());
@@ -1223,17 +1225,32 @@ impl Drop for Waiting<'_> {
 }
 
 /// Whether an export still waits for `key`'s result: one waiting on the key itself,
-/// or on a key moved to it (the GPU's, retried on the CPU) and not yet following it,
-/// which it does at its next look.
+/// or on a key moved to it (the Neural Engine's retried on the GPU, the GPU's on the
+/// CPU, or both in turn) and not yet following it, which it does at its next look.
 fn exported(
     waiting: &HashMap<String, usize>,
     outcomes: &HashMap<String, Outcome>,
     key: &str,
 ) -> bool {
-    waiting.iter().any(|(on, n)| {
-        *n > 0
-            && (on == key || matches!(outcomes.get(on), Some(Outcome::Moved(to, _)) if to == key))
-    })
+    waiting
+        .iter()
+        .any(|(on, n)| *n > 0 && moves_to(outcomes, on, key))
+}
+
+/// Whether `from` is `key`, or was moved to it, in as many steps as there are
+/// providers to fall back to.
+fn moves_to(outcomes: &HashMap<String, Outcome>, from: &str, key: &str) -> bool {
+    let mut at = from;
+    for _ in 0..4 {
+        if at == key {
+            return true;
+        }
+        match outcomes.get(at) {
+            Some(Outcome::Moved(to, _)) => at = to,
+            _ => return false,
+        }
+    }
+    false
 }
 
 fn ensure_running(queue: &Queue) -> Result<()> {

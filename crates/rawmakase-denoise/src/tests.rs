@@ -410,6 +410,25 @@ fn exported_counts_waiters_on_a_key_moved_here() {
     assert!(exported(&waiting, &outcomes, &cpu));
 }
 
+/// A job moved twice before its export's waiter followed (the Neural Engine's, retried
+/// on the GPU, then the GPU's on the CPU) still runs for it.
+#[test]
+fn exported_follows_a_key_moved_twice() {
+    let (ane, gpu, cpu) = (
+        "b-ane".to_string(),
+        "b-gpu".to_string(),
+        "b-cpu".to_string(),
+    );
+    let waiting = HashMap::from([(ane.clone(), 1)]);
+    let outcomes = HashMap::from([
+        (ane, Outcome::Moved(gpu.clone(), Provider::CoreML)),
+        (gpu.clone(), Outcome::Moved(cpu.clone(), Provider::Cpu)),
+    ]);
+    assert!(exported(&waiting, &outcomes, &cpu));
+    assert!(exported(&waiting, &outcomes, &gpu));
+    assert!(!exported(&waiting, &outcomes, "c-cpu"));
+}
+
 #[test]
 fn failures_and_panics_are_reported_and_the_worker_carries_on() {
     let f = fixture(
