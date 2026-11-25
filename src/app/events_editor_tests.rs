@@ -1053,9 +1053,9 @@ fn a_region_rendered_after_a_turn_shows_at_once() {
     );
 }
 
-/// Zoomed in, the minimap keeps its picture from before a turn: it is drawn
-/// turned, at the turned photo's shape, so its outline and clicks, which follow
-/// the turned photo, land on the part they show.
+/// Opened at 100%, with only a region rendered: after a turn the region is
+/// drawn turned where it now sits until the one for the turn lands, and the
+/// samples kept from before the turn no longer fit.
 #[test]
 fn a_region_alone_is_drawn_turned_until_the_one_for_the_turn_lands() {
     let ctx = egui::Context::default();
@@ -1118,11 +1118,14 @@ fn a_region_alone_is_drawn_turned_until_the_one_for_the_turn_lands() {
     });
     // The pixels kept for the readout were sampled before the turn.
     e.preview.samples_recipe = None;
-    assert!(e.samples_fit());
+    assert!(e.samples_fit(&e.effective_recipe()));
     let mut before = e.effective_recipe();
     before.rotation = (before.rotation + 3) % 4;
     e.preview.samples_recipe = Some(before);
-    assert!(!e.samples_fit(), "samples from before a turn don't fit");
+    assert!(
+        !e.samples_fit(&e.effective_recipe()),
+        "samples from before a turn don't fit"
+    );
     let output = frame(&mut e);
     assert!(
         output
@@ -1133,6 +1136,9 @@ fn a_region_alone_is_drawn_turned_until_the_one_for_the_turn_lands() {
     );
 }
 
+/// Zoomed in, the minimap keeps its picture from before a turn: it is drawn
+/// turned, at the turned photo's shape, so its outline and clicks, which follow
+/// the turned photo, land on the part they show.
 #[test]
 fn the_minimap_turns_its_picture_from_before_a_turn() {
     let ctx = egui::Context::default();
@@ -1174,6 +1180,146 @@ fn the_minimap_turns_its_picture_from_before_a_turn() {
             crate::develop::QuarterTurn::Right,
         )
     });
-    let (_, size, turns) = e.navigator_view().0.expect("a minimap picture");
+    let crate::app::view::navigator::Photo { size, turns, .. } =
+        e.navigator_view().0.expect("a minimap picture");
     assert_eq!((size, turns), (Vec2::new(24., 32.), 1));
+}
+
+/// At 100%, a flip leaves the region rendered before it drawn, as before
+/// turns were drawn: only a turn holds it back.
+#[test]
+fn a_flip_leaves_the_region_drawn() {
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    let rendered = |id, width: usize, height: usize| Event::Rendered {
+        id,
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: width as u32,
+                height: height as u32,
+                pixels: vec![[0.5; 3]; width * height],
+            },
+            display_rgb: vec![128; width * height * 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Fit,
+        status: String::new(),
+    };
+    e.view.viewport = Vec2::new(400., 400.);
+    e.schedule();
+    e.tx.send(rendered(e.preview.task.id(), 32, 24)).unwrap();
+    e.events(&ctx);
+    let frame = |e: &mut Editor| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(16., 16.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                e.viewport_ui(ui);
+            },
+        );
+        output.textures_delta.clear();
+        output
+    };
+    e.set_zoom(1.);
+    frame(&mut e);
+    e.tx.send(rendered(e.preview.task.id(), 16, 16)).unwrap();
+    e.events(&ctx);
+    let region = e.preview.region.as_ref().expect("the region landed").id();
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::mirror(
+            e.document.edit.recipe_mut(),
+            crate::develop::Mirror::Horizontal,
+        )
+    });
+    let output = frame(&mut e);
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape, egui::epaint::Shape::Mesh(m) if m.texture_id == region)),
+        "the region from before the flip is still drawn"
+    );
+}
+
+/// The Library thumbnail behind the minimap was made from the edit the photo
+/// opened with, so that edit's orientation is kept, not the first render's:
+/// a turn before that render lands still turns the thumbnail.
+#[test]
+fn the_minimap_thumbnail_counts_turns_from_the_edit_opened() {
+    let ctx = egui::Context::default();
+    let (mut e, image) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    let (generation, _) = e.document.start_load();
+    let opened = Recipe {
+        rotation: 1,
+        ..Default::default()
+    };
+    e.tx.send(Event::Header(Box::new(worker::LoadedHeader {
+        from: Default::default(),
+        id: generation,
+        file: None,
+        path: std::path::PathBuf::from("blue.dng"),
+        metadata: image.metadata.clone(),
+        recipe: opened.clone(),
+        export: Default::default(),
+        status: String::new(),
+    })))
+    .unwrap();
+    e.events(&ctx);
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    e.view.viewport = Vec2::new(400., 400.);
+    e.schedule();
+    e.tx.send(Event::Rendered {
+        id: e.preview.task.id(),
+        pane: worker::Pane::After,
+        preview: worker::Preview::Pixels {
+            image: crate::rendered::Rendered {
+                width: 24,
+                height: 32,
+                pixels: vec![[0.5; 3]; 24 * 32],
+            },
+            display_rgb: vec![128; 24 * 32 * 3],
+            navigator: None,
+        },
+        histogram: Box::new(crate::rendered::Histogram::EMPTY),
+        thumbnail: None,
+        samples: None,
+        stage: worker::RenderStage::Fit,
+        status: String::new(),
+    })
+    .unwrap();
+    e.events(&ctx);
+    assert_eq!(
+        e.preview.opened_orientation,
+        Some(crate::app::develop::state::Orientation::of(&opened))
+    );
 }

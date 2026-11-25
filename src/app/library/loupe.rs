@@ -488,7 +488,9 @@ impl Library {
             .as_ref()
             .filter(|_| self.loupe.regions.photo == Some(photo.id))
             .map(|(_, rect)| *rect);
-        Some(((texture.id(), texture.size_vec2(), 0), shown))
+        let photo =
+            crate::app::view::navigator::Photo::turned(texture.id(), texture.size_vec2(), 0);
+        Some((photo, shown))
     }
     /// A click in the Loupe toggled the zoom away from `before`.
     pub(in crate::app) fn loupe_zoom_toggled(&mut self, before: bool) {

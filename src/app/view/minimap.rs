@@ -79,7 +79,11 @@ impl Editor {
         &mut self,
         ui: &egui::Ui,
         area: Rect,
-        (texture, size, turns): crate::app::view::navigator::Photo,
+        crate::app::view::navigator::Photo {
+            texture,
+            size,
+            turns,
+        }: crate::app::view::navigator::Photo,
         shown: [f32; 4],
     ) -> (bool, Option<[f32; 2]>) {
         const EDGE: f32 = 180.;

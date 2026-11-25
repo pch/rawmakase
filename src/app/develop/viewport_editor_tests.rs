@@ -993,7 +993,7 @@ fn the_next_photo_shows_at_the_zoom_from_its_first_frame() -> anyhow::Result<()>
     let (metadata, image) = photo_of(1600, 1200, false);
     e.document.metadata = Some(metadata);
     e.document.set_image(image);
-    e.set_pixels(&ctx, false, [16, 12], &[90; 16 * 12 * 3], None);
+    e.set_pixels(&ctx, false, [16, 12], &[90; 16 * 12 * 3], None, None);
     e.set_zoom(1.);
     // The second frame's toolbar knows the size of the view the first laid out.
     draw_frame(&mut e, None);
@@ -1024,7 +1024,7 @@ fn the_next_photo_shows_at_the_zoom_from_its_first_frame() -> anyhow::Result<()>
     // The half-size draft, then the full-size image: the same.
     let (_, draft) = photo_of(1600, 1200, true);
     e.document.set_image(draft);
-    e.set_pixels(&ctx, false, [16, 12], &[90; 16 * 12 * 3], None);
+    e.set_pixels(&ctx, false, [16, 12], &[90; 16 * 12 * 3], None, None);
     let shown = draw_frame(&mut e, None);
     assert_eq!(e.view.shown_rect.unwrap().size(), Vec2::new(1600., 1200.));
     assert_eq!(shown.knob, knob);

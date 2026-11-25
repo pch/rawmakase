@@ -1,6 +1,9 @@
 use crate::app::shell::messages::Topic;
 use crate::app::worker::{LoadJob, RenderJob};
-use crate::app::{Editor, develop::state::Picture};
+use crate::app::{
+    Editor,
+    develop::state::{Orientation, Picture},
+};
 use crate::model::recipe::Recipe;
 use crate::{
     app::Module,
@@ -628,7 +631,8 @@ impl Editor {
     pub(in crate::app) fn render_edges(&self, g: &Geometry) -> RenderEdges {
         render_edges(&self.render_zoom(), self.view.viewport, g)
     }
-    /// A CPU render: the whole photo, or a 100% region drawn over it.
+    /// A CPU render: the whole photo, or a 100% region drawn over it, rendered
+    /// with `orientation`.
     pub(in crate::app) fn set_pixels(
         &mut self,
         ctx: &egui::Context,
@@ -636,31 +640,32 @@ impl Editor {
         [w, h]: [u32; 2],
         data: &[u8],
         navigator: Option<image::RgbImage>,
-    ) -> bool {
+        orientation: Option<Orientation>,
+    ) {
         let image = egui::ColorImage::from_rgb([w as usize, h as usize], data);
         if region {
             Picture::upload(&mut self.preview.region, ctx, "photo region", image);
+            oriented(&mut self.preview.region, orientation);
             // Zoomed in before the photo was decoded: the region is the live render.
             self.preview.stand_in = None;
-            return false;
+            return;
         }
         // Zoomed in, a whole render still fills a minimap that has none,
         // e.g. after moving on to the next photo at the same zoom.
-        let navigated =
-            (!self.view.zoom.on || self.preview.navigator.is_none()) && navigator.is_some();
-        if navigated && let Some(small) = navigator {
+        if let Some(small) = navigator.filter(|_| self.fills_navigator()) {
             let small = egui::ColorImage::from_rgb(
                 [small.width() as usize, small.height() as usize],
                 small.as_raw(),
             );
             Picture::upload(&mut self.preview.navigator, ctx, "navigator", small);
+            oriented(&mut self.preview.navigator, orientation);
         }
         Picture::upload(&mut self.preview.texture, ctx, "photo", image);
+        oriented(&mut self.preview.texture, orientation);
         // A live render replaces the stored preview; the embedded JPEG sets this
         // again once shown.
         self.preview.embedded = false;
         self.preview.stand_in = None;
-        navigated
     }
     /// A GPU render, presented into textures the renderer registered.
     pub(in crate::app) fn set_presented(
@@ -669,22 +674,27 @@ impl Editor {
         (id, size): (egui::TextureId, [usize; 2]),
         navigator: Option<(egui::TextureId, [usize; 2])>,
         hdr: Option<crate::app::worker::HdrTexture>,
-    ) -> bool {
-        let picture = Some(Picture::presented_with(id, size, hdr));
+        orientation: Option<Orientation>,
+    ) {
+        let mut picture = Some(Picture::presented_with(id, size, hdr));
+        oriented(&mut picture, orientation);
         if region {
             self.preview.region = picture;
             self.preview.stand_in = None;
-            return false;
+            return;
         }
-        let navigated =
-            (!self.view.zoom.on || self.preview.navigator.is_none()) && navigator.is_some();
-        if navigated && let Some((id, size)) = navigator {
+        if let Some((id, size)) = navigator.filter(|_| self.fills_navigator()) {
             self.preview.navigator = Some(Picture::presented(id, size));
+            oriented(&mut self.preview.navigator, orientation);
         }
         self.preview.texture = picture;
         self.preview.embedded = false;
         self.preview.stand_in = None;
-        navigated
+    }
+    /// Whether a whole render's navigator replaces the minimap's picture: always
+    /// at Fit, and zoomed in only when there is none.
+    fn fills_navigator(&self) -> bool {
+        !self.view.zoom.on || self.preview.navigator.is_none()
     }
     pub(in crate::app) fn navigate(&mut self, delta: isize) {
         if let Some(id) = self.document.catalog_photo
@@ -756,3 +766,10 @@ mod editor_tests;
 #[cfg(test)]
 #[path = "editable_preview_editor_tests.rs"]
 mod editable_preview_editor_tests;
+
+/// Records the orientation the picture in `slot` was rendered with.
+fn oriented(slot: &mut Option<Picture>, orientation: Option<Orientation>) {
+    if let Some(picture) = slot {
+        picture.orientation = orientation;
+    }
+}

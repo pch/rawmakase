@@ -234,9 +234,28 @@ impl Glide {
     }
 }
 
-/// A photo's texture, its size as shown, and the quarter turns clockwise it is
-/// drawn with: a render from before a turn, until one after it lands.
-pub(in crate::app) type Photo = (egui::TextureId, Vec2, u8);
+/// A photo's texture as the minimap draws it.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::app) struct Photo {
+    pub(in crate::app) texture: egui::TextureId,
+    /// Its size as shown.
+    pub(in crate::app) size: Vec2,
+    /// The quarter turns clockwise it is drawn with: a render from before a
+    /// turn, until one after it lands.
+    pub(in crate::app) turns: u8,
+}
+impl Photo {
+    /// A texture of `size` drawn `turns` quarter turns clockwise, at its
+    /// turned size.
+    pub(in crate::app) fn turned(texture: egui::TextureId, size: Vec2, turns: u8) -> Self {
+        let size = if turns % 2 == 1 { size.yx() } else { size };
+        Self {
+            texture,
+            size,
+            turns,
+        }
+    }
+}
 
 /// The zoom slider, in a toolbar button's shape `height` high: `−`, a track from
 /// Fit to 1600% on a log scale, `+`, and the level shown. `zoom` is on a photo

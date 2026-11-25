@@ -112,35 +112,26 @@ impl Editor {
         // Until a whole render makes one (none while zoomed in), the
         // Library's preview stands in. One from before a turn is drawn turned,
         // as the photo is.
-        let photo = self
-            .preview
-            .navigator
-            .as_ref()
-            .map(|p| {
-                let turns = self
-                    .preview
-                    .navigator_orientation
-                    .and_then(|then| then.turns_to(Orientation::of(&self.effective_recipe())))
-                    .unwrap_or(0);
-                let size = p.size_vec2();
-                let size = if turns % 2 == 1 { size.yx() } else { size };
-                (p.id(), size, turns)
-            })
-            .or_else(|| {
-                let texture = self
-                    .library
-                    .as_ref()?
-                    .thumbnail(self.document.catalog_photo?)?;
-                // Turned since it opened, the thumbnail turns with it.
-                let turns = self
-                    .preview
-                    .opened_orientation
-                    .and_then(|then| then.turns_to(Orientation::of(&self.effective_recipe())))
-                    .unwrap_or(0);
-                let size = texture.size_vec2();
-                let size = if turns % 2 == 1 { size.yx() } else { size };
-                Some((texture.id(), size, turns))
-            });
+        let now = Orientation::of(&self.effective_recipe());
+        let turns = |then: Option<Orientation>| then.and_then(|t| t.turns_to(now)).unwrap_or(0);
+        let photo = match &self.preview.navigator {
+            Some(p) => Some(navigator::Photo::turned(
+                p.id(),
+                p.size_vec2(),
+                turns(p.orientation),
+            )),
+            None => self
+                .library
+                .as_ref()
+                .and_then(|l| l.thumbnail(self.document.catalog_photo?))
+                .map(|t| {
+                    navigator::Photo::turned(
+                        t.id(),
+                        t.size_vec2(),
+                        turns(self.preview.opened_orientation),
+                    )
+                }),
+        };
         (photo, shown)
     }
     /// A point of the edit chosen on the minimap: zoomed in there.
@@ -390,10 +381,9 @@ impl Editor {
             }
             return response;
         };
-        let geometry = self
-            .document
-            .full()
-            .map(|im| Geometry::new(im, &self.effective_recipe(), 0));
+        // The edit as shown this frame, read once: it copies the whole recipe.
+        let recipe = self.effective_recipe();
+        let geometry = self.document.full().map(|im| Geometry::new(im, &recipe, 0));
         let zoomed = self.zoom_geometry();
         self.view.glide_pan(ui.ctx(), self.document.catalog_photo);
         // `rect` is where the whole (cropped) photo sits on screen. The last whole-photo
@@ -461,36 +451,29 @@ impl Editor {
         // A turn changes the shown aspect before the render for it lands: the old
         // render is drawn turned with it, its crop turned as `turn` turns it, and
         // a 100% region rendered before the turn waits for one rendered after it.
-        let shown = Orientation::of(&self.effective_recipe());
+        let shown = Orientation::of(&recipe);
         let turns = (!self.preview.embedded)
-            .then_some(self.preview.orientation)
+            .then(|| texture.orientation?.turns_to(shown))
             .flatten()
-            .and_then(|then| then.turns_to(shown))
             .unwrap_or(0);
-        let region_turned = self
-            .preview
-            .region_orientation
-            .is_some_and(|then| then != shown);
+        // A change of flips alone is drawn as before.
+        let region_turns = region_texture
+            .as_ref()
+            .and_then(|r| r.orientation?.turns_to(shown))
+            .unwrap_or(0);
+        let region_turned = region_turns != 0;
         let mut gpu_whole = false;
         if self.preview.texture.is_some() {
             let hdr = gpu_hdr(&texture);
             gpu_whole = hdr.is_some();
             // Opening or leaving the Crop tool changes the crop before the render for
             // it lands: the old render goes where its crop sits, clipped to the new one.
-            let now = zoomed
-                .as_ref()
-                .map_or(self.effective_recipe().crop, |g| g.crop());
+            let now = zoomed.as_ref().map_or(recipe.crop, |g| g.crop());
             let metadata = (self.document.metadata.as_ref())
                 .or_else(|| self.document.full().map(|im| &im.metadata));
             let then = match (self.preview.embedded, metadata) {
                 (true, Some(m)) => Some(embedded_frame(m, texture.size_vec2())),
-                _ => self.preview.crop.map(|mut c| {
-                    for _ in 0..turns {
-                        let [left, top, right, bottom] = c;
-                        c = [1. - bottom, left, 1. - top, right];
-                    }
-                    c
-                }),
+                _ => self.preview.crop.map(|c| develop::turned_crop(c, turns)),
             };
             let (at, clipped) = match then {
                 Some(then) if then != now && zoomed.is_some() => {
@@ -516,21 +499,13 @@ impl Editor {
             region_turned,
             self.preview.texture.as_ref(),
         ) {
-            let region_turns = self
-                .preview
-                .region_orientation
-                .and_then(|then| then.turns_to(shown))
-                .unwrap_or(0);
-            let mut n = [
+            let n = [
                 (at.left() - rect.left()) / rect.width(),
                 (at.top() - rect.top()) / rect.height(),
                 (at.right() - rect.left()) / rect.width(),
                 (at.bottom() - rect.top()) / rect.height(),
             ];
-            for _ in 0..region_turns {
-                let [left, top, right, bottom] = n;
-                n = [1. - bottom, left, 1. - top, right];
-            }
+            let n = develop::turned_crop(n, region_turns);
             let turned = Rect::from_min_max(
                 rect.min + Vec2::new(n[0], n[1]) * rect.size(),
                 rect.min + Vec2::new(n[2], n[3]) * rect.size(),
@@ -664,7 +639,8 @@ impl Editor {
             .filter(|p| edit_shown && panes.after.clip.contains(*p));
         // Not over pixels rendered for another crop, which sit elsewhere until the
         // render for this one lands.
-        let hover = hover.filter(|_| self.samples_fit());
+        let fit = self.samples_fit(&recipe);
+        let hover = hover.filter(|_| fit);
         self.update_readout(hover, rect, region_rect);
         if self.wants_samples() {
             // The loupe and the readout read the shown pixels, which renders keep only
@@ -679,7 +655,7 @@ impl Editor {
             && let Some(pos) = response.hover_pos()
             && rect.contains(pos)
         {
-            self.white_balance_loupe(ui, pos, rect, region_rect, area);
+            self.white_balance_loupe(ui, pos, rect, region_rect, area, fit);
         }
         if self.view.is(Tool::WhiteBalance)
             && picking
@@ -727,7 +703,10 @@ impl Editor {
             // The samples must come from the settings the pick is mapped through.
             let current = self.preview.samples_recipe.as_ref() == Some(&self.effective_recipe())
                 && self.document.full().is_some();
-            match self.shown_color(pos, rect, region_rect).filter(|_| current) {
+            match self
+                .shown_color(pos, rect, region_rect, fit)
+                .filter(|_| current)
+            {
                 Some(rgb) => match develop::pick_fringe(self.document.edit.recipe_mut(), rgb) {
                     Some(_) => self.view.set_tool(Tool::None),
                     None => {
@@ -941,8 +920,15 @@ impl Editor {
     }
     /// The shown color (encoded sRGB, 0–1) at `pos`, from the samples renders keep while
     /// an eyedropper is active.
-    fn shown_color(&self, pos: Pos2, rect: Rect, region: Option<Rect>) -> Option<[f32; 3]> {
-        if !self.samples_fit() {
+    /// `fit` says the kept samples were rendered for the crop and orientation shown.
+    fn shown_color(
+        &self,
+        pos: Pos2,
+        rect: Rect,
+        region: Option<Rect>,
+        fit: bool,
+    ) -> Option<[f32; 3]> {
+        if !fit {
             return None;
         }
         let (samples, shown) = match (&self.preview.region_samples, region) {
@@ -970,20 +956,18 @@ impl Editor {
                 spread(a).total_cmp(&spread(b))
             })
     }
-    /// Lightroom's white balance selector over the photo: an eyedropper cursor
-    /// whose tip is the picked point, and a loupe of the pixels around it with the
-    /// values of the one under the tip.
     /// Whether the pixels kept for the readout and the loupe were rendered for
-    /// the crop and orientation shown: until the render for a new crop or a
-    /// turn lands, they sit elsewhere.
-    pub(in crate::app) fn samples_fit(&self) -> bool {
-        let now = self.effective_recipe();
+    /// the crop and orientation of `now`, the edit shown: until the render for
+    /// a new crop or a turn lands, they sit elsewhere.
+    pub(in crate::app) fn samples_fit(&self, now: &crate::model::recipe::Recipe) -> bool {
         self.preview
             .samples_recipe
             .as_ref()
-            .is_none_or(|r| r.crop == now.crop && Orientation::of(r) == Orientation::of(&now))
+            .is_none_or(|r| r.crop == now.crop && Orientation::of(r) == Orientation::of(now))
     }
-
+    /// Lightroom's white balance selector over the photo: an eyedropper cursor
+    /// whose tip is the picked point, and a loupe of the pixels around it with the
+    /// values of the one under the tip, while `fit` (see [`Self::samples_fit`]).
     fn white_balance_loupe(
         &self,
         ui: &egui::Ui,
@@ -991,6 +975,7 @@ impl Editor {
         rect: Rect,
         region: Option<Rect>,
         area: Rect,
+        fit: bool,
     ) {
         let palette = theme::palette(ui.ctx());
         const CELLS: i32 = 5;
@@ -1021,7 +1006,7 @@ impl Editor {
             );
         }
         icons::paint_at(&painter, Icon::Eyedropper, pos + tip, icon, Color32::WHITE);
-        if !self.samples_fit() {
+        if !fit {
             return;
         }
         let (samples, shown) = match (&self.preview.region_samples, region) {

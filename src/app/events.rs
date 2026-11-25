@@ -288,6 +288,7 @@ impl Editor {
                         [im.width(), im.height()],
                         im.as_raw(),
                         Some(navigator),
+                        None,
                     );
                     self.preview.embedded = true;
                     self.preview.mode = crate::app::develop::state::TextureMode::Whole;
@@ -295,8 +296,6 @@ impl Editor {
                     // until then, or the camera's own crop when the JPEG is of that
                     // (`viewport::embedded_frame`).
                     self.preview.crop = Some([0., 0., 1., 1.]);
-                    self.preview.orientation = None;
-                    self.preview.navigator_orientation = None;
                     self.preview.status = "Camera preview • developing RAW…".into();
                 }
                 Event::Ready {
@@ -365,7 +364,11 @@ impl Editor {
                     if !region {
                         self.preview.histogram = *histogram;
                     }
-                    let navigated = match preview {
+                    let orientation = request
+                        .recipe
+                        .as_ref()
+                        .map(crate::app::develop::state::Orientation::of);
+                    match preview {
                         worker::Preview::Pixels {
                             image,
                             display_rgb,
@@ -376,32 +379,18 @@ impl Editor {
                             [image.width, image.height],
                             &display_rgb,
                             navigator,
+                            orientation,
                         ),
                         worker::Preview::Texture {
                             id,
                             size,
                             navigator,
                             hdr,
-                        } => self.set_presented(region, (id, size), navigator, hdr),
-                    };
+                        } => self.set_presented(region, (id, size), navigator, hdr, orientation),
+                    }
                     // Pixels asked for by a hover or loupe that has since ended are
                     // not kept.
                     self.preview.keep_samples(region, samples);
-                    let orientation = request
-                        .recipe
-                        .as_ref()
-                        .map(crate::app::develop::state::Orientation::of);
-                    if region {
-                        self.preview.region_orientation = orientation;
-                    } else {
-                        self.preview.orientation = orientation;
-                    }
-                    if navigated {
-                        self.preview.navigator_orientation = orientation;
-                    }
-                    if self.preview.opened_orientation.is_none() {
-                        self.preview.opened_orientation = orientation;
-                    }
                     self.preview.samples_recipe = request.recipe;
                     self.preview.mode = request.mode;
                     self.preview.region_frame = request.frame;
@@ -759,6 +748,10 @@ impl Editor {
                 }
             }
         }
+        // The Library thumbnail the minimap stands in with was made from this edit.
+        self.preview.opened_orientation = Some(crate::app::develop::state::Orientation::of(
+            self.document.edit.recipe(),
+        ));
         self.document.path = Some(p);
         let _ = self.save_session();
     }

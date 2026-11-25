@@ -120,6 +120,9 @@ pub(in crate::app) struct Picture {
     handle: Option<egui::TextureHandle>,
     /// The HDR master's preview of the same view, presented with it on the GPU.
     hdr: Option<crate::app::worker::HdrTexture>,
+    /// The quarter turns and flips it was rendered with, when known: until a
+    /// render for a turned photo lands, it is drawn turned with the photo.
+    pub(in crate::app) orientation: Option<Orientation>,
 }
 impl Picture {
     pub(in crate::app) fn presented(id: egui::TextureId, size: [usize; 2]) -> Self {
@@ -128,6 +131,7 @@ impl Picture {
             size,
             handle: None,
             hdr: None,
+            orientation: None,
         }
     }
     /// As [`Self::presented`], with the HDR master's preview presented with it.
@@ -185,6 +189,7 @@ impl From<egui::TextureHandle> for Picture {
             size: handle.size(),
             handle: Some(handle),
             hdr: None,
+            orientation: None,
         }
     }
 }
@@ -322,16 +327,8 @@ pub(in crate::app) struct PreviewState {
     /// The crop `texture` was rendered with, when known: until a render for a new
     /// crop lands, the old one is placed where its crop sits instead of stretched.
     pub(in crate::app) crop: Option<[f32; 4]>,
-    /// The quarter turns and flips `texture` was rendered with, when known: until
-    /// a render for a turned photo lands, the old one is drawn turned with it.
-    pub(in crate::app) orientation: Option<Orientation>,
-    /// The same for `region`, which lands without a new `texture` at 100%.
-    pub(in crate::app) region_orientation: Option<Orientation>,
-    /// The same for `navigator`, which a whole render while zoomed in leaves.
-    pub(in crate::app) navigator_orientation: Option<Orientation>,
-    /// The orientation of the photo's first render: the Library thumbnail
-    /// the minimap shows without a navigator was made from the edit it opened
-    /// with.
+    /// The orientation of the edit the photo opened with, which the Library
+    /// thumbnail the minimap shows without a navigator was made from.
     pub(in crate::app) opened_orientation: Option<Orientation>,
     /// Before's render, while it shows beside the edit.
     pub(in crate::app) before: crate::app::develop::before_after::BeforePreview,
@@ -366,9 +363,6 @@ impl Default for PreviewState {
             mode: TextureMode::Whole,
             region_frame: [1, 1],
             crop: None,
-            orientation: None,
-            region_orientation: None,
-            navigator_orientation: None,
             opened_orientation: None,
             before: Default::default(),
             magnifier: Default::default(),
@@ -775,9 +769,6 @@ impl PreviewState {
         self.last_region = None;
         self.mode = TextureMode::Whole;
         self.crop = None;
-        self.orientation = None;
-        self.region_orientation = None;
-        self.navigator_orientation = None;
         self.opened_orientation = None;
         self.before.clear();
         self.magnifier.clear();
