@@ -656,7 +656,7 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.black_point = 0.02;
     r.white_point = 0.97;
     r.midtone = 1.2;
-    // Positive Dehaze removes the photo's haze, negative uses the measured tables.
+    // Positive and negative Dehaze share the photo's haze model.
     let toned = recipes.len();
     recipes.push(r.clone());
     let mut negative = r.clone();

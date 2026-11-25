@@ -853,9 +853,9 @@ pub(super) fn photo_measures(
         p99: crate::develop::local_tone::level(p99),
     }
 }
-/// The haze positive Dehaze removes (`scene_tone::Haze`), on the scene values
-/// `photo_measures` reads: the measurement copy at the stage's input, Exposure 0. Reads
-/// what `photo_measures` reads, so it is kept with them.
+/// The haze Dehaze uses (`scene_tone::Haze`), on the scene values `photo_measures`
+/// reads: the measurement copy at the stage's input, Exposure 0. Airlight candidates
+/// are ranked in the camera's white-balanced values (`small.pixels` × `r.wb`).
 pub(super) fn photo_haze(
     im: Source,
     r: &Recipe,
@@ -867,7 +867,26 @@ pub(super) fn photo_haze(
         ..r.clone()
     };
     let scene = measured_scene(&small, &base, &CurveSet::new(&base), camera);
-    crate::develop::scene_tone::Haze::of(&scene, small.width as usize, small.height as usize)
+    let ranked: Vec<[f32; 3]> = small
+        .pixels
+        .par_iter()
+        .map(|p| {
+            std::array::from_fn(|c| {
+                let held = if p[c] > camera.clip[c] {
+                    camera.clip[c]
+                } else {
+                    p[c]
+                };
+                held * r.wb[c]
+            })
+        })
+        .collect();
+    crate::develop::scene_tone::Haze::of(
+        &ranked,
+        &scene,
+        small.width as usize,
+        small.height as usize,
+    )
 }
 /// The recipe, camera stage and curves at as-shot white balance and Exposure 0, shared
 /// by [`photo_measures`] and post-Highlights maximum measurement.

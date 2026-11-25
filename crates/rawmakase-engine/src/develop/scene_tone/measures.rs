@@ -16,12 +16,11 @@ pub(crate) struct PhotoMeasures {
     /// Its luminance's 0.1th percentile: a darkest level a few dark pixels do not move,
     /// which Camera Raw's default black follows.
     pub(crate) dark: f32,
-    /// Its luminance's 99th percentile: the level Dehaze's response is relative to, and
-    /// a stop below the level Whites stretches toward.
+    /// Its luminance's 99th percentile: a stop below the level Whites stretches toward.
     pub(crate) p99: f32,
 }
 /// What the stage cache keeps of a photo's measurement copy for the settings the
-/// measures read: the measures, and the haze positive Dehaze removes, measured on the
+/// measures read: the measures, and the haze Dehaze uses, measured on the
 /// same scene values the first time a render needs it; and what renders measure on
 /// the same scene values with one more setting, by that setting.
 #[derive(Debug)]

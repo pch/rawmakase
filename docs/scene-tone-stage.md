@@ -63,7 +63,7 @@ XMP RGB-table look.
 | Blacks | S3, after Whites (exact composition) | before | before | per channel (negative) |
 | Highlights, Shadows | S3 | before | before | luminance gain |
 | Clarity | S3 | before | before | luminance gain |
-| Dehaze | S3 | before | before | per channel (positive: from the airlight) |
+| Dehaze | S3 | before | before | per channel (from/toward the airlight) |
 | Texture | before the profile curve (full-resolution detail) | before | before | per channel |
 | Contrast | S5, after the profile curve and looks | after | — | RGBTone |
 
@@ -784,56 +784,96 @@ were fitted with.
 
 ### Dehaze
 
-On synthetic scenes Dehaze works on each channel by its level relative to the photo's
-bright end (the 99th percentile of luminance): no change at the top and about −0.5 EV a
-few stops below at +40. A curve per amount explains ±40 to 0.10 (doing nothing:
-0.36–0.64) and +100 to 0.46 (1.22) in cross-validation; the rest is spatial. On the 22
-training photos the same curves fitted on the photos themselves do better at every
-amount (cross-validated by photo, per-channel gain in EV): +100 0.54 against 0.69 for
-the synthetic curves and 0.90 for doing nothing, +40 0.16 (0.18, 0.30), −40 0.14 (0.16,
-0.57), −100 0.34 (0.39, 1.45). **Negative Dehaze** uses these photo-fitted curves. In Camera
-Raw's renders of the train photos it is rather a veil: sized by the photo's median luminance,
-colored like the airlight, fading toward black, with a contrast change per photo (display
-slope 0.34–1.33) that follows the airlight's brightness. A veil model without that per-photo
-contrast term improved the median but made 11 of 26 photos worse ([parity
-gaps](records/parity-gaps.md), 2026-10-20).
+Both positive and negative Dehaze use a single dark-channel atmospheric haze model
+(`scene_tone/haze.rs`, GPU port in `gpu/develop.wgsl`), applied in scene-linear
+ProPhoto RGB in S3 before `GlobalTone` (`white_curve` and `default_black`). On 99
+linear-profile Camera Raw 18.7 training photos, the implied optical depths of Dehaze
++100 and Dehaze −100 correlate 0.996 (median), and both signs mix linearly with the
+same chromatic airlight `A`.
 
-**Positive Dehaze** is a dark-channel haze removal model (`scene_tone/haze.rs`), on the
-scene tone stage's input (linear ProPhoto), measured on the photo's measurement copy (512
-pixels on the long edge) at Exposure 0:
+The haze is measured once per photo on its measurement copy (512 pixels on the long
+edge) at Exposure 0, the first time a render has non-zero Dehaze globally or in an
+active mask (`needs_haze`), and kept in the stage cache alongside the photo's measures:
 
-1. The dark channel: the minimum of the darkest channel over a (2r+1)² window, clamped
-   at the borders, with r = max(1, round(0.005 × the copy's long edge)) (3 at 512). The
-   airlight A, per channel, is the mean of the pixels at or above the dark channel's 99th
-   percentile (sorted index ⌊(n−1)·0.99⌋).
-2. The haze's density: the same window minimum of min_c(I_c / A_c), smoothed by a guided
-   filter with itself as the guide (box radius 2r, ε = 0.01).
-3. A pixel p at Dehaze s > 0 (the slider plus the masks' Dehaze there) becomes
-   J = (p − g·A) / t + g·A, with t = max(1 − ω(s)·density, 0.3), the density read
-   bilinearly at the pixel's position. The gain g includes 2^Exposure, mask Exposure,
-   and the Shadows/Highlights/Clarity gain already applied to p. Transforming the
-   airlight consistently prevents negative Highlights from turning the sky black
-   when combined with positive Dehaze (#600). The density measurement and
-   interpolation stay independent of those tone edits. ω is linear between (0, 0),
-   (+20, 0.3), (+40, 0.45) and (+100, 0.9). No channel falls below half of p scaled by
-   the luminance's change, so weak channels of bright saturated colors are not driven
-   to black (on the training photos: +100 3.06 → 3.04; a floor of 0.7 costs 3.18, 1.0
-   costs 4.53). The transmission floor 0.3 costs nothing there (3.06 at 0.1 to 0.3).
+1. **Airlight `A`**: the dark channel `min_c` over a `(2r + 1)²` window with
+   `r = max(1, round(0.005 × long_edge))` (3 px at 512) is ranked in camera
+   white-balanced space (`ranked`, clamped at `camera.clip` and multiplied by `r.wb`,
+   where saturated lights retain more of their weakest channel than in ProPhoto). `A`
+   is the per-channel median of the haziest 0.17% of pixels (`HAZIEST_PER_TEN_THOUSAND
+   = 17`) in scene-linear ProPhoto, with unit-luminance channels pulled toward neutral
+   if outside `[0.1, 4.0]` while preserving luminance (`clamp_airlight`).
+2. **Optical-depth density `density`**: the same `(2r + 1)²` window minimum of
+   `min_c(I_c / A_c)`, smoothed by a Durand–Dorsey joint bilateral filter
+   (`sigma_s = 0.047 × long_edge`, `sigma_r = 2.0` stops) guided by unblurred
+   `log2(Y / Y_A)` clamped to `[-10.0, 2.0]` stops, then clamped to `[0, 1]`. Using
+   `log2(Y / Y_A)` instead of a narrow guided filter or cube-root guide stays
+   scale-invariant across deep shadow/sky boundaries and removes the bright silhouette
+   halos of #600.
+3. **Dark luminance floor**: both signs multiply `density` by
+   `smoothstep(0.0005, 0.003, Y)` (`dark_weight`), matching Camera Raw's dark turn-on
+   near 2⁻¹⁰ while remaining exact under Exposure scaling for `Y ≥ 0.003`.
+4. **Positive Dehaze (`s > 0`)**: `J = (p − g·A) / t + g·A` with
+   `d = min(density, min_c(p_c / (g·A_c))) · dark_weight(Y)` and
+   `t = max(1 − ω(s)·d, 0.28)`. Capping `d` by the pixel's own relative dark channel
+   prevents sub-cell bilinear interpolation across sharp full-resolution edges from
+   driving dark pixels below zero (#600) and prevents sky density from bleeding onto
+   saturated foliage. `ω` is piecewise linear through `(0, 0)`, `(0.2, 0.23)`,
+   `(0.5, 0.46)` and `(1.0, 0.88)` (continuing the last segment for HDR masks past
+   +100 via `omega_hdr`). No channel falls below `0.5` of `p` scaled by the
+   luminance ratio (`CHANNEL_FLOOR = 0.5`).
+5. **Negative Dehaze (`s < 0`)**: `I = t·p + (1 − t)·(g·A)` with
+   `d = min(density, Y / Y_{g·A}) · dark_weight(Y)` and `t = exp(−κ(|s|)·d)`, where
+   `κ(|s|)` is piecewise linear through `(0, 0)`, `(0.25, 0.50)`, `(0.50, 1.25)`,
+   `(0.75, 2.30)` and `(1.00, 4.30)`. Capping `d` at `Y / Y_{g·A}` keeps dark edges
+   and silhouettes from picking up bright-neighbour fog.
 
-The model's few parameters (the window, ε, the transmission floor and ω) were chosen by
-grid search on the 22 training photos against Camera Raw 18.7, by display ΔE00. Median
-over the photos, against the curves above: +100 5.97 → 3.06, +40 2.73 → 1.68, +20 1.42.
-A and the density read exactly what the photo's measures read (white balance, the
-profile, calibration, the camera's exposure), so they are kept with them in the stage
-cache, measured the first time a render has positive Dehaze somewhere; Exposure scales A
-with the scene.
+The gain `g` combines `2^Exposure`, mask Exposure, and the Shadows/Highlights/Clarity
+gain already applied to `p`, preventing negative Highlights from turning a sky black
+when combined with positive Dehaze (#600).
 
-The model is fitted to photos; on synthetic inputs it does less well than the curves.
-On the stage probes at +40 the error of the effect grows on all three scenes (0.048 →
-0.110, 0.069 → 0.152 and 0.036 → 0.044 EV), and on the synthetic chart it darkens Dehaze
-+100 more than Camera Raw (p95 ΔE00 11.3 → 17.1, while the mean improves 6.9 → 5.9):
-its wide-gamut cyan patches lose their red, which Camera Raw only reduces, and its dark
-gray field darkens strongly.
+On the 12 Dehaze-affected validation sets (all six Camera Raw 18.7 families: 53
+`dehaze-validation` photos and 56 `mixed-validation` photos, against
+`sh-laplacian-c57b4d1fb-metric2`, pooled medians): `dehaze-100` 6.83 → 1.29 (main 3
+families 5.87 → 0.95, stress 7.51 → 1.98), `dehaze-50` 3.39 → 1.32, `dehaze-25`
+1.58 → 0.89, `dehaze+25` 1.27 → 0.83, `dehaze+50` 1.65 → 1.21, `dehaze+100`
+2.38 → 1.93, `color-dehaze+40` 1.46 → 1.05, and `dehaze+40+clarity+40` 1.93 → 1.73
+(54,690 regional windows >2 ΔE00 better vs. 3,118 worse, 17.5×; all non-Dehaze
+settings unchanged). On the one-shot `dehaze-holdout` sets (all six families, 52
+scored photos with `holdout-excluded.txt`, against `main-6ef32ab87`, pooled medians):
+`dehaze-100` 5.62 → 1.47 (main 3 families 5.22 → 0.64, 22/0; stress 6.49 → 2.34,
+28/2), `dehaze-50` 2.89 → 1.39, `dehaze-25` 1.57 → 1.01, `dehaze+25` 1.20 → 0.98
+(18/0), `dehaze+50` 1.60 → 1.44 (18/1), and `dehaze+100` 2.95 → 2.25 (30/0; 45,723
+regional windows >2 ΔE00 better vs. 3,262 worse, 14.0×; clipping disagreement falls on
+every setting, e.g. `dehaze-100` 3.74% → 1.19%). On the synthetic chart, every Dehaze
+case improves 2×–4.6× (`dehaze-100` 7.42 → 1.62, `dehaze-50` 3.61 → 1.70, `dehaze+100`
+5.87 → 1.69, `dehaze+50` 2.57 → 0.71, `pair-dehaze+50-saturation-30` 2.78 → 1.31). On
+the Tier 1 stage probes, five of six Dehaze probes improve 1.4×–3.4× on every metric;
+`scene3/D-40` improves MAE 0.00645 → 0.00232 and max 0.01357 → 0.00780 while its
+log-EV effect error rises slightly (0.09194 → 0.10184 EV) due to `dark_weight` on its
+deepest blocks. On the HDR family (`baselines/hdr/family`, `split=validation`, stops as
+median/p95 and ΔE_ITP as HDR/SDR, main → unified model), all four supported global HDR
+Dehaze settings improve below white and in ΔE_ITP: `Dehaze +30` (`n=4`) below white
+0.095/0.336 → 0.040/0.238 stop (SDR 0.040/0.238), above white 0.112/0.245 → 0.086/0.280
+(median improves, p95 rises slightly and both stay above SDR's below-white error;
+positive Dehaze predates the 2026-11-11 HDR-vs-SDR rule), ΔE_ITP 6.17/5.32 → 4.14/3.30;
+`Dehaze +100` (`n=6`) below white 0.358/1.609 → 0.247/1.403 (SDR 0.245/1.393), above
+white 0.195/0.447 → 0.067/0.288, ΔE_ITP 19.07/18.68 → 13.78/13.75; `Dehaze −30` (`n=4`)
+below white 0.190/0.347 → 0.111/0.267 (SDR 0.109/0.267), ΔE_ITP 7.45/7.18 → 5.46/4.99,
+with a small above-white rise (0.065/0.098 → 0.077/0.116, still well below SDR); and
+`Dehaze −50` (`n=6`) below white 0.278/0.666 → 0.170/0.477 vs. SDR 0.166/0.476, above
+white 0.086/0.259 → 0.073/0.166, ΔE_ITP 14.20/13.66 → 7.62/7.07 (meeting the HDR-vs-SDR
+rule with wider margin than `main`). HDR holdout (`split=holdout`, 14 jobs) confirms
+these gains (`D+100-hdr` `n=6` below 0.388/1.788 → 0.295/1.378, above 0.270/0.515 →
+0.127/0.303, ΔE_ITP 22.33/21.17 → 17.83/16.94; `D-50-hdr` `n=6` below 0.244/0.677 →
+0.166/0.524 vs. SDR 0.163/0.520, above 0.064/0.129 → 0.088/0.131, ΔE_ITP 14.49/12.81 →
+8.19/7.82; `Dehaze +30` `n=1` above 0.093/0.151 → 0.024/0.063; `Dehaze −30` `n=1` below
+0.068/0.236 → 0.017/0.125, ΔE_ITP 5.80/5.61 → 2.36/2.63). HDR mask Dehaze improves at
+`+30`/`+80`/`+100` (`mask-dhz +100` above white 0.217 → 0.070 stop, ΔE_ITP 32.71 →
+23.25) while `+60` moves slightly (0.215 → 0.258 stop below white, ΔE_ITP 13.71 →
+14.90); `DEHAZE_MEASURED = -0.5` and `HDR_MASK_DEHAZE_GAIN = 0.1` remain unchanged.
+Remaining outliers are extreme low-key scenes with a small bright light source and
+sunsets/clouds where a small warm highlight shifts the 0.17% airlight estimate away from
+the sky.
 
 ### Masks
 

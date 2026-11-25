@@ -402,7 +402,7 @@ pub(super) mod tests {
         };
         r.effects.clarity = -0.4;
         r.effects.texture = 0.3;
-        // Negative Dehaze from its tables, positive from the photo's haze.
+        // Both positive and negative Dehaze read the photo's haze.
         for dehaze in [-0.3, 0.6] {
             r.effects.dehaze = dehaze;
             let full = render(&im, &r.checked()?, 0, None, Cancel::NEVER)?;

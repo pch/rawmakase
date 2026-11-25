@@ -645,7 +645,7 @@ mod tests {
             );
         }
         assert!(variant(&[(slot::LOCAL, &[1.])], false).local);
-        assert!(variant(&[(slot::DEHAZE, &[0.3, 0.])], false).dehaze);
+        assert!(variant(&[(slot::DEHAZE, &[0.3])], false).dehaze);
         let masked = variant(&[], true);
         assert!(masked.masks && masked.dehaze);
     }
