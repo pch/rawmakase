@@ -325,11 +325,9 @@ class Photo:
                          self.lin_mean - x, self.q[0.99] - x, x - self.q[0.01], const(self.lin_mean - self.mean)], -1)
 
     def features_first(self, x):
-        """`features`, then the absolute levels the first ensemble reads (`FEAT_EXT`),
+        """Exposure-invariant 28-feature vector the first ensemble reads (`FEAT`),
         without BOTTOM_GAP clamping (`RuleStats::features_first_z`)."""
-        x = np.asarray(x, dtype=np.float64)
-        const = lambda v: np.full_like(x, v)
-        return np.concatenate([self.features(x, self.bot), np.stack([const(self.top), const(self.q[0.5]), const(self.mean), x], -1)], -1)
+        return self.features(x, self.bot)
 
     def features_ext(self, x):
         """`features`, then the absolute levels the second ensemble reads (`FEAT_EXT`), with
@@ -841,7 +839,7 @@ def engine_map(rawmakase, dng, out, settings):
     if out.exists() and 'white' in np.load(out).files:
         return
     tmp = Path(f'/tmp/rule-map-{os.getpid()}')
-    for p in (tmp, tmp.with_suffix('.map'), tmp.with_suffix('.white')):
+    for p in (tmp, tmp.with_suffix('.map'), tmp.with_suffix('.white'), tmp.with_suffix('.measures')):
         p.unlink(missing_ok=True)
     tmp.with_suffix('.xmp').write_text(camera_raw.xmp({**settings, 'Shadows2012': '100'}))
     env = dict(os.environ, RAWMAKASE_RULE_DUMP=str(tmp))
@@ -851,7 +849,10 @@ def engine_map(rawmakase, dng, out, settings):
     w, h = int(raw[0]), int(raw[1])
     n = w * h
     white = np.fromfile(tmp.with_suffix('.white'), dtype=np.float32).reshape(-1, 2).T
-    np.savez(out, logs=raw[2:2 + n].reshape(h, w), base=raw[2 + n:2 + 2 * n].reshape(h, w), white=white)
+    extra = {}
+    if tmp.with_suffix('.measures').exists():
+        extra['measures'] = np.fromfile(tmp.with_suffix('.measures'), dtype=np.float32)
+    np.savez(out, logs=raw[2:2 + n].reshape(h, w), base=raw[2 + n:2 + 2 * n].reshape(h, w), white=white, **extra)
 
 
 def engine_curves(rawmakase, dng, out, settings):
@@ -900,18 +901,29 @@ def taps(args):
 
 # --- training ------------------------------------------------------------------------
 
+def cr_rgb(path):
+    """Linear ProPhoto RGB (H, W, 3) or luminance (H, W) of a Camera Raw render."""
+    npy = Path(path).with_suffix('.npy')
+    if npy.exists():
+        return np.maximum(np.load(npy).astype(np.float64), 0)
+    import tifffile
+    return (tifffile.imread(str(path)).astype(np.float64)[..., :3] / 65535.) ** 1.8
+
+
 def cr_linear(path, peak=False):
     """Luminance of a Camera Raw render, or its brightest channel (`peak`): the TIFF, or
     the `.npy` kept in its place (a luminance-only one gives luminance for both)."""
-    npy = Path(path).with_suffix('.npy')
-    if npy.exists():
-        a = np.maximum(np.load(npy).astype(np.float64), 0)
-    else:
-        import tifffile
-        a = (tifffile.imread(str(path)).astype(np.float64)[..., :3] / 65535.) ** 1.8
+    a = cr_rgb(path)
     if a.ndim == 2:
         return a
     return a.max(-1) if peak else a @ YW
+
+
+def on_map_rgb(ph, image):
+    """`image` (2D luminance or 3D RGB) at the size of `ph`'s map."""
+    if image.ndim == 2:
+        return on_map(ph, image)
+    return np.stack([on_map(ph, image[..., c]) for c in range(image.shape[2])], -1)
 
 
 def rendered(path):
@@ -972,18 +984,133 @@ def on_map(ph, image):
 # mosaics are rendered without the black, and their ratios are gains as they are.
 
 BLACK = ROOT / 'crates/rawmakase-engine/src/develop/scene_tone/default_black.bin'
+WHITE_BIN = ROOT / 'crates/rawmakase-engine/src/develop/scene_tone/white.bin'
+WHITE3_BIN = ROOT / 'crates/rawmakase-engine/src/develop/scene_tone/white3.bin'
 BLACK_KEYS = -14 + 0.5 * np.arange(15)      # the table's dark keys (`DEFAULT_BLACK_KEYS`)
 BLACK_LEVELS = -16 + np.arange(129) / 8.    # log2 of the table's inputs
+WHITE_DUMP_X = np.exp2(np.arange(-96, 81) / 16.)  # 2^-6 .. 2^5 at 1/16 stops (`pipeline/tone.rs`)
 # The settings under which the stage moves the black's key: True by positive Shadows'
 # rule, False by negative's (`key_shift`).
 KEY_MOVES = {'S+100': True, 'S-100': False, 'S-50': False}
+_TABLES = {}
+
+
+def _load_tables():
+    if not _TABLES:
+        _TABLES['black'] = np.fromfile(BLACK, dtype='<f4').reshape(len(BLACK_KEYS), len(BLACK_LEVELS)).astype(np.float64)
+        _TABLES['white'] = np.fromfile(WHITE_BIN, dtype='<f4').reshape(25, 17, 177).astype(np.float64)
+        _TABLES['white3'] = np.fromfile(WHITE3_BIN, dtype='<u2').reshape(15, 11, 17, 113).astype(np.float64) / 65535.0
+    return _TABLES
+
+
+def _eval_log_lut(samples, first, step, x):
+    x = np.asarray(x, np.float64)
+    low = 2.0 ** first
+    n = len(samples)
+    f = (np.log2(np.maximum(x, 1e-30)) - first) / step
+    fc = np.clip(f, 0.0, n - 1)
+    i = np.minimum(fc.astype(int), n - 2)
+    t = fc - i
+    return np.where(x <= low, x * samples[0] / low, np.where(f >= n - 1, samples[-1], samples[i] * (1.0 - t) + samples[i + 1] * t))
+
+
+def white_curve_for(sensor, top, black_point=True):
+    """Exact replica of `GlobalTone::new` (Whites = 0, SDR) white curve on `WHITE_DUMP_X`:
+    returns `(x, y, cal_key)` where `cal_key` is `top_clamped - 14.` (the default-black
+    calibration key already baked into `white3.bin`)."""
+    t = _load_tables()
+    white, white3 = t['white'], t['white3']
+    sensor = float(np.clip(sensor, -3.0, 4.0))
+    top = sensor - float(np.clip(sensor - top, 0.0, 5.0))
+    wp = max(sensor, -1.0) if sensor < 0.0 else min(sensor, max(top + 1.0, 0.0))
+    fw = float(np.clip((wp - (-1.0)) / 0.25, 0.0, 24.0))
+    wi = min(int(fw), 23)
+    tw = fw - wi
+    tail = white[wi, 8] * (1.0 - tw) + white[wi + 1, 8] * tw
+    fi = float(np.clip((sensor - (-3.0)) / 0.5, 0.0, 14.0))
+    ii = min(int(fi), 13)
+    ti = fi - ii
+    fj = float(np.clip((sensor - top) / 0.5, 0.0, 10.0))
+    jj = min(int(fj), 9)
+    tj = fj - jj
+    logs = top - 14.0 + 0.125 * np.arange(113)
+    tail_logs = _eval_log_lut(tail, -16.0, 0.125, np.exp2(logs))
+
+    def corner_curve(i, j):
+        corner = -3.0 + i * 0.5 - j * 0.5
+        u = (logs - corner + 14.0) / 0.125
+        at_top = white3[i, j, 8, 112]
+        rm = float(_eval_log_lut(tail, -16.0, 0.125, 2.0 ** corner))
+        above = (at_top + (1.0 - at_top) * np.clip((tail_logs - rm) / (1.0 - rm), 0.0, 1.0)) if rm < 1.0 else np.full_like(logs, at_top)
+        uc = np.clip(u, 0.0, 112.0)
+        n = np.minimum(uc.astype(int), 111)
+        frac = uc - n
+        inside = white3[i, j, 8, n] * (1.0 - frac) + white3[i, j, 8, n + 1] * frac
+        return np.where(u > 112.0, above, inside)
+
+    row = ((corner_curve(ii, jj) * (1.0 - tj) + corner_curve(ii, jj + 1) * tj) * (1.0 - ti)
+           + (corner_curve(ii + 1, jj) * (1.0 - tj) + corner_curve(ii + 1, jj + 1) * tj) * ti)
+    toe = None if black_point else white[4, 8]
+    linear_below = 0.0
+    if toe is not None:
+        xs_row = np.exp2(logs)
+        row = row * np.minimum(xs_row, 1.0) / np.maximum(_eval_log_lut(toe, -16.0, 0.125, xs_row), 1e-9)
+        idx = np.flatnonzero(toe >= 1.0 / 512.0)
+        k0 = int(idx[0]) if idx.size else 176
+        linear_below = 2.0 ** (-16.0 + k0 * 0.125)
+    row = np.maximum.accumulate(row)
+    top_lin = 2.0 ** top
+    y_le = _eval_log_lut(row, top - 14.0, 0.125, WHITE_DUMP_X)
+    at_top = float(row[-1])
+    r_x = _eval_log_lut(tail, -16.0, 0.125, WHITE_DUMP_X)
+    rm = float(_eval_log_lut(tail, -16.0, 0.125, top_lin))
+    y_gt = (at_top + (1.0 - at_top) * np.clip((r_x - rm) / (1.0 - rm), 0.0, 1.0)) if (rm < 1.0 and at_top < 1.0) else np.full_like(WHITE_DUMP_X, at_top)
+    y = np.where(WHITE_DUMP_X <= top_lin, y_le, y_gt)
+    if toe is not None:
+        y_lb = float(_eval_log_lut(row, top - 14.0, 0.125, linear_below))
+        y = np.where((WHITE_DUMP_X > 0.0) & (WHITE_DUMP_X < linear_below), y_lb * WHITE_DUMP_X / linear_below, y)
+    return WHITE_DUMP_X.copy(), y, top - 14.0
+
+
+def infer_sensor_white(m, key=None, par=None, sensor_map=None):
+    """log2 sensor white for a photo, scene, gap probe or mosaic."""
+    if 'measures' in m.files:
+        return float(m['measures'][0])
+    if sensor_map and key in sensor_map:
+        return float(sensor_map[key])
+    if par is not None:
+        return float(par['head']) if 'head' in par else 1.0
+    if key:
+        if key.startswith(('clipwb-', 'partial-')):
+            return float(-np.log2(min(NEUTRAL['A'])))
+        if key.startswith('clipwb2-'):
+            k = int(key.split('-')[1])
+            neutral = NEUTRAL['B'] if k % 3 == 1 else NEUTRAL['A']
+            return float(-np.log2(min(neutral)))
+        if not key.startswith('photo'):
+            return 0.0
+    # Fallback for legacy photo maps without `measures`: infer W*_pre from `m['white']`
+    # (exact upper bound for H-100, where post-H max <= pre-H max).
+    x, y = m['white'].astype(np.float64)
+    sel = (x >= 0.3) & (x <= 4.0) & (y < 0.995)
+    t = _load_tables()['white']
+    best = None
+    for lw in np.linspace(-0.5, 4.0, 91):
+        fw = float(np.clip((lw + 1.0) / 0.25, 0.0, 24.0))
+        wi = min(int(fw), 23)
+        tw = fw - wi
+        row = t[wi, 8] * (1.0 - tw) + t[wi + 1, 8] * tw
+        e = float(np.mean((_eval_log_lut(row, -16.0, 0.125, x[sel]) - y[sel]) ** 2))
+        if best is None or e < best[0]:
+            best = (e, lw)
+    return float(best[1])
 
 
 def black_row(key):
     """The default black's transfer at dark key `key`: its output at each of
     `BLACK_LEVELS`, between the table's rows and held past its ends, as
     `scene_tone::global` reads default_black.bin."""
-    table = np.fromfile(BLACK, dtype='<f4').reshape(len(BLACK_KEYS), len(BLACK_LEVELS)).astype(np.float64)
+    table = _load_tables()['black']
     f = (np.clip(key, BLACK_KEYS[0], BLACK_KEYS[-1]) - BLACK_KEYS[0]) / 0.5
     i = min(int(f), len(BLACK_KEYS) - 2)
     return table[i] * (1 - (f - i)) + table[i + 1] * (f - i)
@@ -1014,14 +1141,11 @@ def black_undone(m, shift=0.):
     return lambda a: np.where((a > y[0]) & (a < y[-1]), np.interp(a, y, x), a)
 
 
-def stage_curve(m, shift=0.):
-    """A photo's global curve through the stage, scene value → output, with the default
-    black at the photo's dark key moved by `shift` stops. From 2^-6 up it is the dumped
-    white curve, which carries the black of the tables' own key (the first), less what
-    the photo's black takes beyond that; below, where the white curve is straight, it
-    is the black's transfer alone."""
-    x, y = m['white'].astype(np.float64)
-    photo, own = black_row(dark_key(m) + shift), black_row(BLACK_KEYS[0])
+def stage_curve_from(x, y, m, shift=0., cal_key=None):
+    """Stage curve (scene -> output) from a white curve `(x, y)` and a photo's default
+    black at `dark_key(m) + shift`."""
+    photo = black_row(dark_key(m) + shift)
+    own = black_row(BLACK_KEYS[0] if cal_key is None else cal_key)
     deep = np.exp2(np.arange(-16, np.log2(x[0]) - 1e-9, 1 / 16.))
     xs = np.r_[deep, x]
     ys = np.maximum(np.r_[deep - black_taken(photo, deep), y - (black_taken(photo, x) - black_taken(own, x))], 0.)
@@ -1029,13 +1153,57 @@ def stage_curve(m, shift=0.):
     return xs[rising], ys[rising]
 
 
+def stage_curve(m, shift=0.):
+    """A photo's global curve through the stage, scene value → output, with the default
+    black at the photo's dark key moved by `shift` stops. From 2^-6 up it is the dumped
+    white curve, which carries the black of the tables' own key (the first), less what
+    the photo's black takes beyond that; below, where the white curve is straight, it
+    is the black's transfer alone."""
+    x, y = m['white'].astype(np.float64)
+    return stage_curve_from(x, y, m, shift)
+
+
+def invert_curve(x, y):
+    rising = np.r_[True, np.diff(y) > 0]
+    xr, yr = x[rising], y[rising]
+    return lambda a: np.where(a > yr[0], np.interp(a, yr, xr), a), xr, yr
+
+
 def to_scene(m, shift=0.):
     """A photo's render value → the scene value `stage_curve` renders as it."""
     x, y = stage_curve(m, shift)
-    return lambda a: np.where(a > y[0], np.interp(a, y, x), a)
+    return invert_curve(x, y)[0]
 
 
-def key_shift(m, ph, default, setting, positive=True, rounds=4):
+def _inv_rgb_tone(rgb, xr, yr):
+    """Exact inverse of DNG RGBTone for a monotone white curve `(xr, yr)`."""
+    if rgb.ndim == 2:
+        return np.where(rgb > yr[0], np.interp(rgb, yr, xr), rgb)
+    lo, hi = rgb.min(-1), rgb.max(-1)
+    lo_in = np.where(lo > yr[0], np.interp(lo, yr, xr), lo)
+    hi_in = np.where(hi > yr[0], np.interp(hi, yr, xr), hi)
+    d = hi - lo
+    return np.where(d[..., None] > 1e-9, lo_in[..., None] + (hi_in - lo_in)[..., None] * (rgb - lo[..., None]) / np.maximum(d[..., None], 1e-9), lo_in[..., None])
+
+
+def post_h_white(sensor, img_on_map, black_point=True, m=None, shift=0., rounds=4):
+    """Fixed-point post-Highlights white curve `(x, y, cal_key)` matching
+    `CurveSet::for_image`'s 128 px post-Highlights maximum (`MAX_EDGE = 128`)."""
+    top = float(sensor)
+    for _ in range(rounds):
+        xw, yw, cal = white_curve_for(sensor, top, black_point=black_point)
+        xs, ys = stage_curve_from(xw, yw, m, shift, cal) if (black_point and m is not None) else (xw, yw)
+        _, xr, yr = invert_curve(xs, ys)
+        sc = _inv_rgb_tone(img_on_map, xr, yr)
+        if sc.ndim == 3:
+            mx = max(float(reduce(sc[..., c], 128).max()) for c in range(3))
+        else:
+            mx = float(reduce(sc, 128).max())
+        top = min(float(sensor), float(np.log2(max(mx, 1e-6))))
+    return white_curve_for(sensor, top, black_point=black_point)
+
+
+def key_shift(m, ph, default, setting, positive=True, rounds=4, setting_white=None):
     """The stops by which the stage moves the black's key under a Shadows setting
     (`pipeline/tone.rs`), from Camera Raw's renders at the map's size: the change in
     the 0.1th percentile of scene log-luminance (`q0.001(post) - q0.001(pre)`) for both
@@ -1045,38 +1213,49 @@ def key_shift(m, ph, default, setting, positive=True, rounds=4):
     q_pre = float(np.quantile(d, 0.001))
     shift = 0.
     for _ in range(rounds):
-        s = np.log2(np.maximum(to_scene(m, shift)(setting), FLOOR)).ravel()
+        if setting_white is not None:
+            xw, yw, cal = setting_white
+            xs, ys = stage_curve_from(xw, yw, m, shift, cal)
+            inv = invert_curve(xs, ys)[0]
+        else:
+            inv = to_scene(m, shift)
+        s = np.log2(np.maximum(inv(setting), FLOOR)).ravel()
         shift = float(np.quantile(s, 0.001) - q_pre)
     return shift
 
 
-def samples(key, root, images, rng, n=2500, photo=False, peaks=None):
+def samples(key, root, images, rng, n=2500, photo=False, peaks=None, rgbs=None, par=None, sensor_map=None):
     """The first ensemble's inputs (`Xb` at `base`, `Xl` at `logs`, both `FEAT_EXT`),
-    targets (S+100, H−100) with the engine's white curve undone, and validity mask `C`
-    (0 valid, 2 ignored) at `n` map pixels of one mosaic, scene or photo."""
+    targets (S+100, H−100) with the engine's white curve undone (and post-Highlights W*
+    for H−100), and validity mask `C` (0 valid, 2 ignored) at `n` map pixels of one
+    mosaic, scene or photo."""
     m = np.load(root / 'maps' / f'{key}.npz')
     ph = Photo(logs=m['logs'], base=m['base'])
     if peaks is None:
         peaks = images
-    al = aligned(ph, list(images) + list(peaks), coarse=photo)
+    to_align = list(images) + list(peaks) + ([rgbs[2]] if rgbs is not None else [])
+    al = aligned(ph, to_align, coarse=photo)
     if al is None:
         print('misaligned', key)
         return None
     count = len(images)
-    imgs, pks = [on_map(ph, a) for a in al[:count]], [on_map(ph, a) for a in al[count:]]
+    imgs, pks = [on_map(ph, a) for a in al[:count]], [on_map(ph, a) for a in al[count:2 * count]]
+    h_rgb = on_map_rgb(ph, al[2 * count]) if rgbs is not None else imgs[2]
     x, y = m['white'].astype(np.float64)
-    rising = np.r_[True, np.diff(y) > 0]
-    x, y = x[rising], y[rising]
-    white_undone = lambda a: np.where(a > y[0], np.interp(a, y, x), a)
+    white_undone, _, _ = invert_curve(x, y)
+    sensor = infer_sensor_white(m, key, par=par, sensor_map=sensor_map)
+    xh, yh, cal_h = post_h_white(sensor, h_rgb, black_point=photo, m=m if photo else None)
     if photo:
         moved = key_shift(m, ph, imgs[0], imgs[1], True)
         ld = np.log2(np.maximum(to_scene(m, 0.)(imgs[0]), FLOOR))
         ls = np.log2(np.maximum(to_scene(m, moved)(imgs[1]), FLOOR))
-        lh = np.log2(np.maximum(to_scene(m, 0.)(imgs[2]), FLOOR))
+        h_inv = invert_curve(*stage_curve_from(xh, yh, m, 0., cal_h))[0]
+        lh = np.log2(np.maximum(h_inv(imgs[2]), FLOOR))
     else:
         ld = np.log2(np.maximum(white_undone(imgs[0]), FLOOR))
         ls = np.log2(np.maximum(white_undone(imgs[1]), FLOOR))
-        lh = np.log2(np.maximum(white_undone(imgs[2]), FLOOR))
+        h_inv = invert_curve(xh, yh)[0]
+        lh = np.log2(np.maximum(h_inv(imgs[2]), FLOOR))
     vs = (imgs[0] > CLIP_LOW) & (pks[0] < WHITE) & (pks[1] < CLIP_HIGH)
     vh = (imgs[0] > CLIP_LOW) & (pks[0] < WHITE) & (pks[2] < CLIP_HIGH)
     idx = np.flatnonzero((vs | vh).ravel())
@@ -1088,58 +1267,68 @@ def samples(key, root, images, rng, n=2500, photo=False, peaks=None):
     return dict(key=key, X=ph.features_first(ph.base.ravel()[idx]), Xl=ph.features_first(ph.logs.ravel()[idx]), Y=Y, C=C)
 
 
-def samples_ext(key, root, images, halves, peaks, rng, n=2500, photo=False):
+def samples_ext(key, root, images, halves, peaks, rng, n=2500, photo=False, rgbs=None, par=None, sensor_map=None):
     """The second ensemble's inputs (`FEAT_EXT`), targets (`OUTPUTS`) and their censoring
     (`C`: 0 an exact target, +1 a lower bound, −1 an upper bound) at `n` map pixels of one
     mosaic or photo. `images`: Camera Raw's luminance at default and at each of
     `OUTPUTS`; `halves`: at each of `HALVES`, or none; `peaks`: the brightest channel of
     each of the two lists' renders, in their order.
 
-    The engine applies the rule's gain before its white curve (the map's `white`) and
-    Camera Raw's renders show the gain after its own, so the targets are taken with the
-    engine's curve undone: near the photo's top the engine shows only a part of a gain.
-    Where the full slider's result is clipped, the render shows only a bound on the
-    gain. At the black floor it is at most what is seen. At white (in any channel: a
-    colored highlight clips one channel well before its luminance nears white, and
-    its luminance then understates the gain) it is at least what takes the brightest
-    channel to the level the engine renders white, and `CLIP_MARGIN` more. Camera Raw's
-    gain is linear in the slider before the white curve, so the half-slider render tells
-    more there: twice its gain, exact where it is unclipped itself and a tighter bound
-    where not.
-
-    A `photo`'s renders carry the default black as well, so they are taken back through
-    the stage's whole curve (`stage_curve`), each at the key the stage gives the black
-    under its setting."""
+    Highlights renders (`H−100`, `H+100`, `H+50`) invert through their own post-Highlights
+    white curve (`post_h_white`), matching `CurveSet::for_image`."""
     m = np.load(root / 'maps' / f'{key}.npz')
     ph = Photo(logs=m['logs'], base=m['base'])
     count, total = len(images), len(images) + len(halves)
-    names = list(SETTINGS) + [half for half, _ in HALVES.values()]
-    images = aligned(ph, images + halves + peaks, coarse=True)
-    if images is None:
+    names = list(SETTINGS) + ([half for half, _ in HALVES.values()] if halves else [])
+    h_idx = [k for k, nm in enumerate(names) if nm.startswith('H')]
+    h_rgbs = [rgbs[k] for k in h_idx] if rgbs is not None else []
+    to_align = images + halves + peaks + h_rgbs
+    al = aligned(ph, to_align, coarse=True)
+    if al is None:
         print('misaligned', key)
         return None
-    images, peaks = images[:total], images[total:]
-    # The curve up to where it reaches white; past that every scene value renders white.
-    x, y = m['white']
-    rising = np.r_[True, np.diff(y) > 0]
-    x, y = x[rising], y[rising]
-    white_undone = lambda a: np.where(a > y[0], np.interp(a, y, x), a)
+    images, peaks = al[:total], al[total:2 * total]
+    h_aligned = al[2 * total:]
+    # Default white curve up to where it reaches white.
+    x, y = m['white'].astype(np.float64)
+    white_undone, xr_def, _ = invert_curve(x, y)
     in_stops = lambda a: np.log2(np.maximum(on_map(ph, a), FLOOR))
+    on = [on_map(ph, a) for a in images]
+    sensor = infer_sensor_white(m, key, par=par, sensor_map=sensor_map)
+    post_curves = {}
+    for pos, k in enumerate(h_idx):
+        h_src = on_map_rgb(ph, h_aligned[pos]) if h_aligned else on[k]
+        post_curves[k] = post_h_white(sensor, h_src, black_point=photo, m=m if photo else None)
     if photo:
-        on = [on_map(ph, a) for a in images]
         moved = [key_shift(m, ph, on[0], on[k], KEY_MOVES[names[k]]) if names[k] in KEY_MOVES else 0. for k in range(total)]
-        level = lambda k: in_stops(to_scene(m, moved[k])(images[k]))
+        def level(k):
+            if k in post_curves:
+                xw, yw, cal = post_curves[k]
+                inv = invert_curve(*stage_curve_from(xw, yw, m, moved[k], cal))[0]
+                return in_stops(inv(images[k]))
+            return in_stops(to_scene(m, moved[k])(images[k]))
     else:
-        level = lambda k: in_stops(white_undone(images[k]))
+        def level(k):
+            if k in post_curves:
+                xw, yw, _ = post_curves[k]
+                return in_stops(invert_curve(xw, yw)[0](images[k]))
+            return in_stops(white_undone(images[k]))
     default = level(0)
-    valid = (on_map(ph, images[0]) > CLIP_LOW) & (on_map(ph, peaks[0]) < WHITE)
+    valid = (on[0] > CLIP_LOW) & (on_map(ph, peaks[0]) < WHITE)
     idx = np.flatnonzero(valid.ravel())
     if idx.size < 200:
         return None
     idx = rng.choice(idx, min(n, idx.size), replace=False)
     gain = lambda k: (level(k) - default).ravel()[idx]
     at = lambda group, k: on_map(ph, group[k]).ravel()[idx]
-    to_white = (np.log2(x[-1]) + CLIP_MARGIN - in_stops(white_undone(peaks[0]))).ravel()[idx]
+    def white_top(k):
+        if k in post_curves:
+            xw, yw, _ = post_curves[k]
+            _, xr, _ = invert_curve(xw, yw)
+            return float(xr[-1])
+        return float(xr_def[-1])
+    base_peak = in_stops(white_undone(peaks[0])).ravel()[idx]
+    to_white_for = lambda k: np.log2(white_top(k)) + CLIP_MARGIN - base_peak
     Y = np.stack([gain(k) for k in range(1, count)], 1)
     C = np.zeros(Y.shape, np.int8)
     for output, sign in (('H+100', 1), ('S-100', -1)):
@@ -1147,28 +1336,29 @@ def samples_ext(key, root, images, halves, peaks, rng, n=2500, photo=False):
         j = OUTPUTS.index(output)
         bound = clipped(1 + j)
         if sign > 0:
-            Y[bound, j] = to_white[bound]
+            Y[bound, j] = to_white_for(1 + j)[bound]
         if halves:
             h = count + list(HALVES).index(output)
             twice = 2 * gain(h)
             exact = bound & ~clipped(h)
             Y[exact, j] = twice[exact]
             bound &= ~exact
-            Y[bound, j] = 2 * to_white[bound] if sign > 0 else np.minimum(Y[bound, j], twice[bound])
+            Y[bound, j] = 2 * to_white_for(h)[bound] if sign > 0 else np.minimum(Y[bound, j], twice[bound])
         C[bound, j] = sign
     return dict(key=key, X=ph.features_ext(ph.base.ravel()[idx]), Xl=ph.features_ext(ph.logs.ravel()[idx]), Y=Y, C=C)
 
 
 def sample_job(job):
-    kind, key, root, renders, halves, ext, seed = job
+    kind, key, root, renders, halves, ext, seed, sensor_map = job
     rng = np.random.default_rng(seed)
     if kind == 'scene':
         # A scene's renders show its gain as a mosaic's do (no default black, grey), so
         # its brightest channel is its luminance. Kept as float32: there are thousands.
         z = np.load(renders[0])
         images = [z[n].astype(np.float64) for n in SETTINGS]
+        par = json.loads(str(z['par']))
         if ext:
-            smp = samples_ext(key, root, images, [], list(images), rng, n=SCENE_SAMPLES)
+            smp = samples_ext(key, root, images, [], list(images), rng, n=SCENE_SAMPLES, par=par)
             if smp:
                 # Scenes have no half-slider renders, so clipped pixels would enter as
                 # unbounded one-sided bounds (with CLIP_MARGIN) and bias H+100/S-100
@@ -1178,19 +1368,29 @@ def sample_job(job):
                     return None
                 smp = {k: (v[exact] if k in ('X', 'Xl', 'Y', 'C') else v) for k, v in smp.items()}
         else:
-            smp = samples(key, root, images[:3], rng, n=SCENE_SAMPLES)
+            smp = samples(key, root, images[:3], rng, n=SCENE_SAMPLES, par=par)
         if not smp:
             return None
-        par = json.loads(str(z['par']))
         made_of = {f'photo{par[k]}' for k in 'ab' if par.get(k)}
         return dict({k: v.astype(np.float32) if k in ('X', 'Xl', 'Y') else v for k, v in smp.items()}, kind=kind, made_of=made_of)
+    all_rgbs = [cr_rgb(r) for r in renders + halves]
+    to_lum = lambda a: a if a.ndim == 2 else a @ YW
+    to_pk = lambda a: a if a.ndim == 2 else a.max(-1)
+    r_lum = [to_lum(a) for a in all_rgbs[:len(renders)]]
+    h_lum = [to_lum(a) for a in all_rgbs[len(renders):]]
+    all_pk = [to_pk(a) for a in all_rgbs]
     if ext:
-        smp = samples_ext(key, root, [cr_linear(r) for r in renders], [cr_linear(r) for r in halves],
-                          [cr_linear(r, peak=True) for r in renders + halves], rng, photo=kind == 'photo')
+        smp = samples_ext(key, root, r_lum, h_lum, all_pk, rng, photo=kind == 'photo',
+                          rgbs=all_rgbs, sensor_map=sensor_map)
     else:
-        smp = samples(key, root, [cr_linear(r) for r in renders], rng, photo=kind == 'photo',
-                      peaks=[cr_linear(r, peak=True) for r in renders])
+        smp = samples(key, root, r_lum, rng, photo=kind == 'photo', peaks=all_pk,
+                      rgbs=all_rgbs, sensor_map=sensor_map)
     return dict(smp, kind=kind) if smp else None
+
+
+def load_sensor_map(root):
+    p = root / 'sensor_whites.json'
+    return json.loads(p.read_text()) if p.exists() else {}
 
 
 def stamp(path):
@@ -1209,11 +1409,12 @@ def load(root, ext, photos_dir=None):
     cache built from anything else is rebuilt."""
     cache = root / ('samples_ext.pkl' if ext else 'samples.pkl')
     settings = list(SETTINGS) if ext else list(SETTINGS)[:3]
+    sensor_map = load_sensor_map(root)
     jobs = []
     d = root / 'probes'
     for name, _, _, _ in probe_jobs(root, photos_dir, images=False):
         if all(rendered(d / f'{name}-{s}.tif') for s in settings) and (root / 'maps' / f'{name}.npz').exists():
-            jobs.append(('mosaic', name, root, [d / f'{name}-{s}.tif' for s in settings], [], ext, len(jobs)))
+            jobs.append(('mosaic', name, root, [d / f'{name}-{s}.tif' for s in settings], [], ext, len(jobs), None))
     for npz in sorted((root / 'maps').glob('photo[0-9]*.npz')):
         i = npz.stem[5:]
         cr = root / 'photos' / 'crlin'
@@ -1223,18 +1424,19 @@ def load(root, ext, photos_dir=None):
         if ext:
             halves = [cr / f'{i}-{s}.tif' for s, _ in HALVES.values()]
             halves = halves if all(rendered(h) for h in halves) else []
-        jobs.append(('photo', f'photo{i}', root, renders, halves, ext, len(jobs)))
+        jobs.append(('photo', f'photo{i}', root, renders, halves, ext, len(jobs), sensor_map))
     for name, renders, _, offset in scene_sets(root):
         if (root / 'maps' / f'{name}.npz').exists():
-            jobs.append(('scene', name, root, [renders], [], ext, (80000 if ext else 70000) + offset))
+            jobs.append(('scene', name, root, [renders], [], ext, (80000 if ext else 70000) + offset, None))
     made_from = dict(
-        features=FEAT_EXT,
+        features=FEAT_EXT if ext else FEAT,
         black=[hashlib.sha256(BLACK.read_bytes()).hexdigest(), sorted(KEY_MOVES.items())],
+        white=[hashlib.sha256(WHITE_BIN.read_bytes()).hexdigest(), hashlib.sha256(WHITE3_BIN.read_bytes()).hexdigest()],
         constants=dict(BOTTOM_GAP=BOTTOM_GAP, WHITE=WHITE, CLIP_HIGH=CLIP_HIGH, CLIP_LOW=CLIP_LOW,
                        CLIP_MARGIN=CLIP_MARGIN, STAT_BLUR=STAT_BLUR, SCENE_SAMPLES=SCENE_SAMPLES,
-                       dual_pix=True),
+                       dual_pix=True, post_h_white=True, sensor_count=len(sensor_map)),
         inputs=[[key, stamp(root / 'maps' / f'{key}.npz')] + [stamp(r) for r in renders + halves]
-                for _, key, _, renders, halves, _, _ in jobs])
+                for _, key, _, renders, halves, _, _, _ in jobs])
     if cache.exists():
         cached = pickle.loads(cache.read_bytes())
         if isinstance(cached, dict) and cached.get('made_from') == made_from:
@@ -1314,13 +1516,17 @@ def report(predict, ds, label, outputs=OUTPUTS):
 
 def train(args):
     out = args.out or args.root / 'global_rule.json'
-    # The second ensemble fits every target; the engine keeps EXT_OUTPUTS.
-    ensemble(load(args.root, True, args.histograms), OUTPUTS, args.cv, out.with_name(out.stem + '_ext.json'), DATA_EXT, EXT_OUTPUTS)
+    # The second ensemble fits only EXT_OUTPUTS (S-100, H+100) so its hidden units
+    # are not diluted across the first ensemble's outputs.
+    ext_rows = [OUTPUTS.index(o) for o in EXT_OUTPUTS]
+    ext_data = [dict(d, Y=d['Y'][:, ext_rows], C=d['C'][:, ext_rows])
+                for d in load(args.root, True, args.histograms)]
+    ensemble(ext_data, EXT_OUTPUTS, args.cv, out.with_name(out.stem + '_ext.json'), DATA_EXT, EXT_OUTPUTS, FEAT_EXT)
     if args.first:
-        ensemble(load(args.root, False, args.histograms), OUTPUTS[:2], args.cv, out, DATA, OUTPUTS[:2])
+        ensemble(load(args.root, False, args.histograms), OUTPUTS[:2], args.cv, out, DATA, OUTPUTS[:2], FEAT)
 
 
-def ensemble(data, outputs, cv, json_path, rust_path, keep):
+def ensemble(data, outputs, cv, json_path, rust_path, keep, feat_names=FEAT_EXT):
     """Fits MEMBERS dual networks to the samples' targets `outputs` and writes those in `keep`."""
     data = [dict(d, C=d.get('C', np.zeros(d['Y'].shape, np.int8))) for d in data]
     mos, pho = [d for d in data if d['kind'] == 'mosaic'], [d for d in data if d['kind'] == 'photo']
@@ -1347,7 +1553,7 @@ def ensemble(data, outputs, cv, json_path, rust_path, keep):
     slice_w = lambda w: dict(w, **{'l3.w': np.array(w['l3.w'])[rows].tolist(), 'l3.b': np.array(w['l3.b'])[rows].tolist()})
     kept_base = [slice_w(wb) for _, (wb, _) in members]
     kept_pix = [slice_w(wp) for _, (_, wp) in members]
-    rule = dict(features=FEAT_EXT, outputs=keep, mu=mu.tolist(), sd=sd.tolist(),
+    rule = dict(features=feat_names, outputs=keep, mu=mu.tolist(), sd=sd.tolist(),
                 members_base=kept_base, members_pix=kept_pix)
     json_path.write_text(json.dumps(rule))
     rust_path.write_text(rust(rule, rust_path == DATA_EXT))
@@ -1415,24 +1621,51 @@ def pair_sample(job):
     from the sum of its single gains (`I`) and each curve's own error at its single
     setting (`S`); and the 14 photo inputs the engine predicts the coefficients from
     (`F`, `RuleStats::pair`)."""
-    key, root = job
+    key, root, sensor_map = job
     cr = root / 'photos' / 'crlin'
     m, curves = np.load(root / 'maps' / f'{key}.npz'), np.load(root / 'curves' / f'{key}.npz')
     ph = Photo(logs=m['logs'], base=m['base'])
     names = list(SETTINGS) + list(PAIRS)
-    lum = [cr_linear(cr / f'{key[5:]}-{n}.tif') for n in names]
-    peak = [cr_linear(cr / f'{key[5:]}-{n}.tif', peak=True) for n in names]
-    images = aligned(ph, lum + peak, coarse=True)
+    rgbs_raw = [cr_rgb(cr / f'{key[5:]}-{n}.tif') for n in names]
+    lum = [a if a.ndim == 2 else a @ YW for a in rgbs_raw]
+    peak = [a if a.ndim == 2 else a.max(-1) for a in rgbs_raw]
+    h_idx = [k for k, n in enumerate(names) if ('H+' in n) or ('H-' in n)]
+    images = aligned(ph, lum + peak + [rgbs_raw[k] for k in h_idx], coarse=True)
     if images is None:
         print('misaligned', key)
         return None
-    lum, peak = images[:len(names)], images[len(names):]
+    nn = len(names)
+    lum, peak, h_rgbs = images[:nn], images[nn:2 * nn], images[2 * nn:]
     on = [on_map(ph, a) for a in lum]
     pk = [on_map(ph, a) for a in peak]
-    # Every Shadows setting (single and pair) moves default_black by its own q0.001 shift.
-    moved = {n: key_shift(m, ph, on[0], on[names.index(n)], n.startswith('S+'))
-             for n in names[1:] if n.startswith('S+') or n.startswith('S-')}
-    level = lambda n, a: np.log2(np.maximum(on_map(ph, to_scene(m, moved.get(n, 0.))(a)), FLOOR))
+    h_rgb_map = {k: on_map_rgb(ph, a) for k, a in zip(h_idx, h_rgbs)}
+    sensor = infer_sensor_white(m, key, sensor_map=sensor_map)
+    # Every Highlights setting (single and pair) uses its own post-Highlights white curve,
+    # and every Shadows setting (single and pair) moves default_black by its own q0.001 shift.
+    post_w, moved = {}, {}
+    for idx_n, n in enumerate(names[1:], 1):
+        has_s = n.startswith('S+') or n.startswith('S-')
+        has_h = idx_n in h_rgb_map
+        if has_h and has_s:
+            sh = 0.
+            pw = None
+            for _ in range(2):
+                pw = post_h_white(sensor, h_rgb_map[idx_n], black_point=True, m=m, shift=sh)
+                sh = key_shift(m, ph, on[0], on[idx_n], n.startswith('S+'), setting_white=pw)
+            post_w[n], moved[n] = pw, sh
+        elif has_h:
+            post_w[n] = post_h_white(sensor, h_rgb_map[idx_n], black_point=True, m=m)
+        elif has_s:
+            moved[n] = key_shift(m, ph, on[0], on[idx_n], n.startswith('S+'))
+
+    def level(n, a):
+        if n in post_w:
+            xw, yw, cal = post_w[n]
+            inv = invert_curve(*stage_curve_from(xw, yw, m, moved.get(n, 0.), cal))[0]
+        else:
+            inv = to_scene(m, moved.get(n, 0.))
+        return np.log2(np.maximum(on_map(ph, inv(a)), FLOOR))
+
     default = level(names[0], lum[0])
     gain_maps = {n: level(n, a) - default for n, a in zip(names[1:], lum[1:])}
     base, logs = ph.base.ravel(), ph.logs.ravel()
@@ -1514,9 +1747,10 @@ def pair(args):
     keys = [p.stem for p in sorted((args.root / 'maps').glob('photo[0-9]*.npz'))
             if (args.root / 'curves' / p.name).exists()
             and all(rendered(args.root / 'photos' / 'crlin' / f'{p.stem[5:]}-{n}.tif') for n in list(SETTINGS) + list(PAIRS))]
+    sensor_map = load_sensor_map(args.root)
     import multiprocessing
     with multiprocessing.get_context('fork').Pool(6) as pool:
-        data = [d for d in pool.imap(pair_sample, [(k, args.root) for k in keys], chunksize=4) if d]
+        data = [d for d in pool.imap(pair_sample, [(k, args.root, sensor_map) for k in keys], chunksize=4) if d]
     print(f'{len(data)} of {len(keys)} photos')
     rms = lambda v: float(np.sqrt(np.mean(v ** 2)))
     line = lambda label, v: print(f'  {label:48s}' + '  '.join(f'{np.median(v[:, c]):.3f} ({v[:, c].mean():.3f})' for c in range(4)))

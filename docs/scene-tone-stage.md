@@ -83,7 +83,13 @@ alone (identity when W* = 1), with the toe of its black point below about 0.02:
 - The photo's maximum is that of its brightest channel on a reduced copy (128 pixels
   on the long edge): on a 920-pixel probe a bright spot counts fully from about 8 pixels
   across and not at 2, and twice as large on a probe twice the size. A red highlight
-  counts like a white one.
+  counts like a white one. Global `Highlights` moves this maximum (and therefore both
+  `W*` and `white3.bin`'s top) to the post-`Highlights` 128-pixel maximum, capped at
+  the sensor's white (`pipeline/tone.rs`, 2026-11-25): Camera Raw keys its highlight
+  rolloff on the photo as global `Highlights` leaves it, not as it finds it (the
+  highlight-side counterpart to `default_black` following post-`Shadows` `dark_key`).
+  Masked `Highlights`, HDR masters and rendered files leave the global white point
+  unchanged.
 - The black point's toe does not follow the camera's baseline exposure. Engine 4 scaled
   it with the baseline (0.0015 × 2^(baseline + Exposure)), which crushed the deep
   shadows of files with a large baseline.
