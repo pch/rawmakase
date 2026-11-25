@@ -98,7 +98,7 @@ impl Sky {
     }
 
     /// The sky model in folder `dir` on Apple Silicon's GPU, converted for Core ML
-    /// ([`crate::core_ml`]), where this computer can run it; elsewhere as
+    /// (`core_ml`, on Apple platforms only), where this computer can run it; elsewhere as
     /// [`Sky::load_with`]. A photo whose input size the converted model has no function for
     /// is selected with ONNX Runtime as [`Sky::load_with`] would, opened with `options`
     /// when first needed, and so is every photo after the converted model failed.
