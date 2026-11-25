@@ -128,7 +128,8 @@ enum Command {
         /// The model's folder (the installed model by default).
         #[arg(long)]
         model: Option<PathBuf>,
-        /// cpu or coreml.
+        /// cpu, coreml or neural-engine (its model made from the ONNX one the first
+        /// time; the job falls back to coreml when that fails).
         #[arg(long, default_value = "cpu")]
         provider: String,
         #[arg(long, default_value_t = 1.0)]
@@ -690,6 +691,7 @@ fn main() -> Result<()> {
             let provider = match provider.as_str() {
                 "cpu" => rawmakase_inference::Provider::Cpu,
                 "coreml" => rawmakase_inference::Provider::CoreML,
+                "neural-engine" => rawmakase_inference::Provider::NeuralEngine,
                 other => anyhow::bail!("Unknown provider {other}"),
             };
             rawmakase::ai_denoise::command(rawmakase::ai_denoise::Command {

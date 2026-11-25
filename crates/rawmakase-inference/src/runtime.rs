@@ -92,6 +92,11 @@ pub enum Provider {
     Cuda,
     /// Apple Silicon through ONNX Runtime's CoreML execution provider.
     CoreML,
+    /// Apple's Neural Engine, which computes in half precision only. A model runs there
+    /// only in a form converted for it: AI Denoise's is run by Core ML directly
+    /// ([`crate::neural_engine`]). Asked of ONNX Runtime, it is CoreML limited to the CPU
+    /// and the Neural Engine.
+    NeuralEngine,
 }
 impl Provider {
     /// The name ONNX Runtime gives it, for reporting what was registered.
@@ -100,6 +105,7 @@ impl Provider {
             Self::Cpu => "CPU",
             Self::Cuda => "CUDA",
             Self::CoreML => "CoreML",
+            Self::NeuralEngine => "NeuralEngine",
         }
     }
     /// The providers to register, fastest first, with the CPU last as the
@@ -111,6 +117,13 @@ impl Provider {
             Self::Cpu => vec![cpu],
             Self::Cuda => vec![ep::CUDA::default().build().error_on_failure(), cpu],
             Self::CoreML => vec![ep::CoreML::default().build().error_on_failure(), cpu],
+            Self::NeuralEngine => vec![
+                ep::CoreML::default()
+                    .with_compute_units(ep::coreml::ComputeUnits::CPUAndNeuralEngine)
+                    .build()
+                    .error_on_failure(),
+                cpu,
+            ],
         }
     }
 }

@@ -12,6 +12,14 @@ pub struct Behaviour {
     pub loads: Mutex<Vec<Provider>>,
     /// A non-finite value from this run on, on a provider other than the CPU.
     gpu_poison_after: Option<usize>,
+    /// Only this provider's runs are poisoned by `gpu_poison_after`, when set.
+    poisoned: Option<Provider>,
+    /// The Neural Engine's model does not load.
+    neural_engine_load_fails: bool,
+    /// The Neural Engine's model does not load the first time.
+    neural_engine_load_fails_once: AtomicBool,
+    /// Core ML fails each prediction on the Neural Engine.
+    neural_engine_run_fails: bool,
     /// Panic on the first run.
     panic: bool,
     /// Never return from a run, whatever the cancel flag says.
@@ -43,6 +51,9 @@ impl TileModel for Fake {
             return Err(InferenceError::Cancelled);
         }
         let n = self.behaviour.runs.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.provider == Provider::NeuralEngine && self.behaviour.neural_engine_run_fails {
+            return Err(InferenceError::Failed("E5RT: evaluation failed".into()));
+        }
         if self.behaviour.panic {
             panic!("fake model panicked");
         }
@@ -66,6 +77,7 @@ impl TileModel for Fake {
             }
         }
         if self.provider != Provider::Cpu
+            && self.behaviour.poisoned.is_none_or(|p| p == self.provider)
             && self
                 .behaviour
                 .gpu_poison_after
@@ -106,6 +118,17 @@ pub fn fixture(provider: Provider, behaviour: Behaviour) -> Fixture {
     let b = behaviour.clone();
     let loader: Loader = Arc::new(move |_: &Path, provider: Provider| {
         b.loads.lock().unwrap().push(provider);
+        if provider == Provider::NeuralEngine
+            && b.neural_engine_load_fails_once
+                .swap(false, Ordering::SeqCst)
+        {
+            return Err("the Neural Engine's model would not compile this time".into());
+        }
+        if provider == Provider::NeuralEngine && b.neural_engine_load_fails {
+            // Held at the gate, as a slow first compile is.
+            let _gate = b.gate.lock().unwrap();
+            return Err("the Neural Engine's model would not compile".into());
+        }
         Ok(Box::new(Fake {
             provider,
             behaviour: b.clone(),
@@ -378,7 +401,7 @@ fn an_export_on_a_queued_job_moved_to_the_cpu_gets_its_result() {
 fn exported_counts_waiters_on_a_key_moved_here() {
     let (gpu, cpu) = ("b-gpu".to_string(), "b-cpu".to_string());
     let mut waiting = HashMap::from([(gpu.clone(), 1)]);
-    let outcomes = HashMap::from([(gpu.clone(), Outcome::Moved(cpu.clone()))]);
+    let outcomes = HashMap::from([(gpu.clone(), Outcome::Moved(cpu.clone(), Provider::Cpu))]);
     assert!(exported(&waiting, &outcomes, &cpu));
     assert!(!exported(&waiting, &HashMap::new(), &cpu));
     waiting.insert(gpu, 0);
@@ -1007,4 +1030,290 @@ fn a_result_key_keeps_its_form() {
             rawmakase_decode::decode_cache::build_identity()
         )
     );
+}
+
+/// The Neural Engine's tests: the stand-in loader runs whatever it is asked to.
+#[cfg(all(test, target_vendor = "apple", target_arch = "aarch64"))]
+mod neural_engine {
+    use super::*;
+
+    /// The user's choice of the Neural Engine, as Preferences sets it.
+    fn choose_neural_engine(f: &Fixture) {
+        f.service.set_neural_engine(true);
+    }
+
+    #[test]
+    fn unless_the_user_chose_it_the_neural_engine_leaves_the_photo_to_the_gpu() {
+        let f = fixture(Provider::NeuralEngine, Behaviour::default());
+        let photo = f.photo("a.raw");
+        let (rx, _wanted) = f.request(&photo, &f.plain(), None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert_eq!(*f.behaviour.loads.lock().unwrap(), [Provider::CoreML]);
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+    }
+
+    #[test]
+    fn chosen_the_neural_engines_result_has_its_own_key_and_the_library_finds_it() {
+        let f = fixture(Provider::NeuralEngine, Behaviour::default());
+        choose_neural_engine(&f);
+        let photo = f.photo("a.raw");
+        let (rx, _wanted) = f.request(&photo, &f.plain(), None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert_eq!(*f.behaviour.loads.lock().unwrap(), [Provider::NeuralEngine]);
+        let neural = key(&photo, Provider::NeuralEngine).unwrap();
+        assert!(f.service.cache().contains(&neural));
+        // Half precision's result never stands in for the GPU's.
+        assert!(
+            !f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+        let identity = crate::storage::Identity::read(&photo).unwrap();
+        assert_eq!(finished(f.service.cache(), &identity), Some(neural));
+    }
+
+    #[test]
+    fn a_neural_engine_model_that_wont_load_moves_the_job_and_the_next_ones_to_the_gpu() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                neural_engine_load_fails: true,
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let photo = f.photo("a.raw");
+        let plain = f.plain();
+        let (rx, _wanted) = f.request(&photo, &plain, None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+        // Not tried again in this session.
+        let (rx, _wanted) = f.request(&f.photo("b.raw"), &plain, None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert_eq!(
+            *f.behaviour.loads.lock().unwrap(),
+            [Provider::NeuralEngine, Provider::CoreML]
+        );
+    }
+
+    #[test]
+    fn a_neural_engine_failure_after_good_tiles_reruns_on_the_gpu_not_the_cpu() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                gpu_poison_after: Some(1),
+                poisoned: Some(Provider::NeuralEngine),
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let photo = f.photo("a.raw");
+        let plain = f.plain();
+        let (rx, _wanted) = f.request(&photo, &plain, None);
+        // An export of the same photo follows the job to the GPU.
+        let export = {
+            let (service, photo, plain) = (f.service.clone(), photo.clone(), plain);
+            std::thread::spawn(move || export(&service, &photo, &plain, Cancel::NEVER))
+        };
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        export.join().unwrap().unwrap();
+        assert_eq!(
+            *f.behaviour.loads.lock().unwrap(),
+            [Provider::NeuralEngine, Provider::CoreML]
+        );
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+        for provider in [Provider::NeuralEngine, Provider::Cpu] {
+            assert!(
+                !f.service.cache().contains(&key(&photo, provider).unwrap()),
+                "{provider:?}"
+            );
+        }
+    }
+
+    /// An export alone on a Neural Engine job that fails follows it to the GPU, the job
+    /// moved under the GPU's key and provider.
+    #[test]
+    fn an_export_follows_its_job_from_the_neural_engine_to_the_gpu() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                neural_engine_load_fails: true,
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let photo = f.photo("a.raw");
+        export(&f.service, &photo, &f.plain(), Cancel::NEVER).unwrap();
+        assert_eq!(
+            *f.behaviour.loads.lock().unwrap(),
+            [Provider::NeuralEngine, Provider::CoreML]
+        );
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+    }
+
+    #[test]
+    fn a_core_ml_error_on_the_neural_engine_moves_the_job_to_the_gpu() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                neural_engine_run_fails: true,
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let photo = f.photo("a.raw");
+        let (rx, _wanted) = f.request(&photo, &f.plain(), None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert_eq!(
+            *f.behaviour.loads.lock().unwrap(),
+            [Provider::NeuralEngine, Provider::CoreML]
+        );
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+    }
+
+    #[test]
+    fn the_neural_engines_key_names_its_converted_model() {
+        let f = fixture(Provider::Cpu, Behaviour::default());
+        let photo = f.photo("a.raw");
+        let neural = key(&photo, Provider::NeuralEngine).unwrap();
+        let tag = rawmakase_inference::neural_engine::tag();
+        assert!(neural.contains(&tag), "{neural}");
+        assert!(!key(&photo, Provider::CoreML).unwrap().contains(&tag));
+    }
+
+    /// A model removed while its first load runs fails that load; the job was cancelled,
+    /// so the Neural Engine is not taken for broken and serves the next photo.
+    #[test]
+    fn a_load_that_fails_while_its_job_is_cancelled_leaves_the_neural_engine_on() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                neural_engine_load_fails: true,
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let gate = f.behaviour.gate.lock().unwrap();
+        let (rx, _wanted) = f.request(&f.photo("a.raw"), &f.plain(), None);
+        let started = std::time::Instant::now();
+        while f.behaviour.loads.lock().unwrap().is_empty() {
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "the load never began"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // The model removed meanwhile: the running job is cancelled, then its load fails.
+        let unload = {
+            let service = f.service.clone();
+            std::thread::spawn(move || service.unload())
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        drop(gate);
+        unload.join().unwrap();
+        let started = std::time::Instant::now();
+        while f.service.busy() {
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "the job never ended"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // A cancelled job's failure is nobody's to hear.
+        assert!(!matches!(rx.try_recv(), Ok(State::Ready(_))));
+        assert!(!f.service.queue().neural_engine_off);
+        assert_eq!(*f.behaviour.loads.lock().unwrap(), [Provider::NeuralEngine]);
+        // Installed again, the next photo goes to the Neural Engine.
+        f.service.set_model(Some(f.dir.path().join("model")));
+        let photo = f.photo("b.raw");
+        let identity = crate::storage::Identity::read(&photo).unwrap();
+        let (keyed, _queue) = f.service.keyed(identity).unwrap();
+        assert_eq!(keyed.provider, Provider::NeuralEngine);
+    }
+
+    /// Turning the Neural Engine on again tries it again after it failed; off, new
+    /// requests go to the GPU.
+    #[test]
+    fn the_users_choice_decides_new_requests_and_turning_it_on_retries_a_failed_engine() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                neural_engine_load_fails: true,
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let (rx, _wanted) = f.request(&f.photo("a.raw"), &f.plain(), None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert!(f.service.queue().neural_engine_off);
+        let provider = |f: &Fixture| {
+            let identity = crate::storage::Identity::read(&f.photo("b.raw")).unwrap();
+            f.service.keyed(identity).unwrap().0.provider
+        };
+        assert_eq!(provider(&f), Provider::CoreML);
+        f.service.set_neural_engine(false);
+        assert_eq!(provider(&f), Provider::CoreML);
+        f.service.set_neural_engine(true);
+        assert!(!f.service.queue().neural_engine_off);
+        assert_eq!(provider(&f), Provider::NeuralEngine);
+    }
+
+    /// An export of a photo whose earlier job fell back to the GPU runs on the Neural
+    /// Engine once it is turned on again, not on the GPU the earlier job moved to.
+    #[test]
+    fn an_export_after_the_neural_engine_is_turned_on_again_runs_there() {
+        let f = fixture(
+            Provider::NeuralEngine,
+            Behaviour {
+                neural_engine_load_fails_once: AtomicBool::new(true),
+                ..Default::default()
+            },
+        );
+        choose_neural_engine(&f);
+        let photo = f.photo("a.raw");
+        let plain = f.plain();
+        let (rx, _wanted) = f.request(&photo, &plain, None);
+        assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::CoreML).unwrap())
+        );
+        f.service.set_neural_engine(false);
+        f.service.set_neural_engine(true);
+        export(&f.service, &photo, &plain, Cancel::NEVER).unwrap();
+        assert!(
+            f.service
+                .cache()
+                .contains(&key(&photo, Provider::NeuralEngine).unwrap())
+        );
+        assert_eq!(
+            *f.behaviour.loads.lock().unwrap(),
+            [
+                Provider::NeuralEngine,
+                Provider::CoreML,
+                Provider::NeuralEngine
+            ]
+        );
+    }
 }

@@ -18,6 +18,17 @@ rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
 # opened, which fails with a real error when it cannot.
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "cuda", "coreml"] }
 
+# AI Denoise on Apple's Neural Engine runs a converted model through Core ML
+# directly (`neural_engine`): ONNX Runtime's CoreML provider keeps the network in
+# single precision, which the Neural Engine does not compute.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+half = "2.7"
+# The converted model's weights are checked against the conversion's digest.
+sha2.workspace = true
+objc2.workspace = true
+objc2-core-ml = { version = "0.3", default-features = false, features = ["std", "MLDictionaryFeatureProvider", "MLFeatureProvider", "MLFeatureValue", "MLModel", "MLModel_MLModelCompilation", "MLModelConfiguration", "MLModelDescription", "MLModelMetadataKeys", "MLMultiArray"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSProcessInfo", "NSString", "NSURL", "NSValue"] }
+
 [dev-dependencies]
 # The credit file's digest is checked against the manifest's text.
 sha2.workspace = true

@@ -119,6 +119,7 @@ pub fn command(c: Command) -> Result<()> {
         loader(c.runtime.clone()),
     );
     service.set_model(Some(c.model.clone()));
+    service.set_neural_engine(c.provider == Provider::NeuralEngine);
     let t = Instant::now();
     let entry = service.entry(&c.input, &file, Cancel::NEVER)?;
     let inferred = t.elapsed();
@@ -204,11 +205,22 @@ pub fn command(c: Command) -> Result<()> {
         recipe.ai_denoise.amount = c.amount;
         save(path, Some(&source), &recipe)?;
     }
+    // The provider the result came from: the one asked for, or the one the job fell
+    // back to.
+    let ran = [
+        Provider::NeuralEngine,
+        Provider::CoreML,
+        Provider::Cuda,
+        Provider::Cpu,
+    ]
+    .into_iter()
+    .find(|p| service.cache().contains(&key_of(&file, *p)))
+    .unwrap_or(c.provider);
     println!(
         "{}",
         serde_json::json!({
             "file": c.input,
-            "provider": c.provider.name(),
+            "provider": ran.name(),
             "width": plain.width,
             "height": plain.height,
             "decode_s": decoded.as_secs_f64(),

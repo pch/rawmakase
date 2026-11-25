@@ -101,10 +101,17 @@ pub fn key(path: &Path, provider: Provider) -> Result<String> {
 }
 /// The key of a file whose identity is `id`, run on `provider`.
 fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
+    // The Neural Engine runs a model of its own, converted from RAWNIND: its results are
+    // named for it too.
+    let converted = match provider {
+        #[cfg(target_vendor = "apple")]
+        Provider::NeuralEngine => format!("-{}", rawmakase_inference::neural_engine::tag()),
+        _ => String::new(),
+    };
     rawmakase_decode::decode_cache::source_key(
         id,
         format_args!(
-            "{}-a{}-{}",
+            "{}-a{}-{}{converted}",
             RAWNIND.model.sha256,
             RAWNIND.version,
             provider.name()
@@ -121,10 +128,15 @@ pub fn model_tag() -> String {
 /// The key of a finished result of the installed model for the file `file` names, run
 /// on any provider, when `cache` has one: what a Library preview of the photo shows.
 pub fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<String> {
-    [Provider::Cpu, Provider::Cuda, Provider::CoreML]
-        .into_iter()
-        .map(|provider| key_of(file, provider))
-        .find(|key| cache.contains(key))
+    [
+        Provider::Cpu,
+        Provider::Cuda,
+        Provider::CoreML,
+        Provider::NeuralEngine,
+    ]
+    .into_iter()
+    .map(|provider| key_of(file, provider))
+    .find(|key| cache.contains(key))
 }
 
 /// `sink`, handed a result (partial or final) only while the file at `path` is still
@@ -181,8 +193,9 @@ struct Job {
 enum Outcome {
     Done(Arc<AiEntry>),
     Failed(String),
-    /// Retried under another key (on the CPU after the GPU failed).
-    Moved(String),
+    /// Retried under another key, on the provider named (the GPU after the Neural Engine
+    /// failed, the CPU after the GPU did).
+    Moved(String, Provider),
 }
 
 #[derive(Default)]
@@ -202,6 +215,9 @@ struct Queue {
     waiting: HashMap<String, usize>,
     /// The GPU produced a non-finite value: not used again in this session.
     gpu_off: bool,
+    /// The Neural Engine's model would not load, or produced a non-finite value: not
+    /// used again in this session.
+    neural_engine_off: bool,
     /// The worker is to drop its loaded models (the model is being removed).
     unload: bool,
     /// A worker thread serves the queue. Cleared by a worker leaving it, under the
@@ -219,6 +235,8 @@ struct Shared {
     stored: Mutex<Option<Stored>>,
     /// The installed model's folder, `None` when it is not installed.
     model: Mutex<Option<PathBuf>>,
+    /// Whether the user chose the Neural Engine ([`Service::set_neural_engine`]).
+    neural_engine: AtomicBool,
     provider: Provider,
     source: Source,
     loader: Loader,
@@ -246,13 +264,45 @@ pub fn model_dir() -> PathBuf {
     crate::model_install::dir()
 }
 
-/// The provider AI Denoise asks for: CoreML's GPU on Apple Silicon (measured equal to
-/// the CPU, docs/rendering-quality.md#ai-denoise), the CPU elsewhere.
+/// The provider AI Denoise asks for: on Apple Silicon the Neural Engine, where the user
+/// chose it ([`Service::set_neural_engine`],
+/// docs/rendering-quality.md#ai-denoise-on-the-neural-engine), otherwise CoreML's GPU
+/// (measured equal to the CPU, docs/rendering-quality.md#ai-denoise); the CPU elsewhere.
 pub fn preferred_provider() -> Provider {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        Provider::CoreML
+        Provider::NeuralEngine
     } else {
         Provider::Cpu
+    }
+}
+
+/// Whether the app offers the Neural Engine for AI Denoise: on Apple Silicon Macs, where
+/// it's [`preferred_provider`].
+pub fn neural_engine_offered() -> bool {
+    preferred_provider() == Provider::NeuralEngine && neural_engine_supported()
+}
+
+/// Whether this computer has a Neural Engine to run the model on: Apple Silicon.
+fn neural_engine_supported() -> bool {
+    #[cfg(target_vendor = "apple")]
+    {
+        rawmakase_inference::neural_engine::supported()
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    {
+        false
+    }
+}
+
+/// Whether a load of the Neural Engine's model has outlasted its limit in this process.
+fn neural_engine_stalled() -> bool {
+    #[cfg(target_vendor = "apple")]
+    {
+        rawmakase_inference::neural_engine::stalled()
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    {
+        false
     }
 }
 
@@ -274,13 +324,20 @@ fn threads() -> usize {
         .max(2)
 }
 
-/// Loads the model in `dir` on `provider`, with the ONNX Runtime library bundled in
-/// `runtime` when it is there (the system's otherwise).
+/// Loads the model in `dir` on `provider`: on the Neural Engine its converted model,
+/// through Core ML; on the others the ONNX model, with the ONNX Runtime library bundled
+/// in `runtime` when it is there (the system's otherwise).
 fn load_model(
     runtime: &Path,
     dir: &Path,
     provider: Provider,
 ) -> Result<Box<dyn TileModel + Send>, String> {
+    #[cfg(target_vendor = "apple")]
+    if provider == Provider::NeuralEngine {
+        return rawmakase_inference::neural_engine::NeuralDenoiser::load(dir)
+            .map(|d| Box::new(d) as Box<dyn TileModel + Send>)
+            .map_err(|e| e.to_string());
+    }
     let runtime_library = rawmakase_inference::runtime::runtime_file_names()
         .iter()
         .map(|name| runtime.join(name))
@@ -322,6 +379,7 @@ impl Service {
                 cache,
                 stored: Mutex::new(None),
                 model: Mutex::new(None),
+                neural_engine: AtomicBool::new(false),
                 provider,
                 source,
                 loader,
@@ -332,6 +390,23 @@ impl Service {
     /// The installed model's folder, or `None`: jobs then fail with the reason.
     pub fn set_model(&self, dir: Option<PathBuf>) {
         *self.shared.model.lock().unwrap_or_else(|e| e.into_inner()) = dir;
+    }
+    /// Whether AI Denoise runs on the Neural Engine where the service would: the user's
+    /// choice (Preferences > Performance). Off, it runs on CoreML's GPU there. Turning it
+    /// on tries the Neural Engine again after it failed in this session, unless a load of
+    /// it never finished ([`rawmakase_inference::neural_engine::stalled`]: the compiler
+    /// service stays stuck until the computer restarts). Requests made before keep the
+    /// provider they were made with.
+    pub fn neural_engine(&self) -> bool {
+        self.shared.neural_engine.load(Ordering::Relaxed)
+    }
+    /// See [`Service::neural_engine`].
+    pub fn set_neural_engine(&self, on: bool) {
+        let mut queue = self.queue();
+        self.shared.neural_engine.store(on, Ordering::Relaxed);
+        if on {
+            queue.neural_engine_off = false;
+        }
     }
     pub fn cache(&self) -> &AiCache {
         &self.shared.cache
@@ -345,12 +420,27 @@ impl Service {
     fn queue(&self) -> std::sync::MutexGuard<'_, Queue> {
         self.shared.queue.lock().unwrap_or_else(|e| e.into_inner())
     }
+    /// The provider a new request runs on: the service's, unless it was switched off in
+    /// this session (or, for the Neural Engine, the user hasn't chosen it).
     fn provider(&self, queue: &Queue) -> Provider {
-        if queue.gpu_off {
-            Provider::Cpu
-        } else {
-            self.shared.provider
+        self.usable(queue, self.shared.provider)
+    }
+    /// `provider`, or the next one down (Neural Engine, then CoreML's GPU, then the
+    /// CPU) while it is switched off.
+    fn usable(&self, queue: &Queue, provider: Provider) -> Provider {
+        match provider {
+            Provider::NeuralEngine if queue.neural_engine_off || !self.neural_engine_ready() => {
+                self.usable(queue, Provider::CoreML)
+            }
+            Provider::Cpu | Provider::NeuralEngine => provider,
+            Provider::Cuda | Provider::CoreML if queue.gpu_off => Provider::Cpu,
+            Provider::Cuda | Provider::CoreML => provider,
         }
+    }
+    fn neural_engine_ready(&self) -> bool {
+        self.shared.neural_engine.load(Ordering::Relaxed)
+            && neural_engine_supported()
+            && !neural_engine_stalled()
     }
     /// The inputs of a request for the file `identity`, captured once, with the
     /// provider in use. Nothing is read from the file: the worker checks it before and
@@ -655,8 +745,19 @@ impl Service {
         let model = match models.entry((model_dir.clone(), job.provider)) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::hash_map::Entry::Vacant(e) => {
-                let model = (self.shared.loader)(&model_dir, job.provider)
-                    .map_err(|why| anyhow!("The AI Denoise model could not be loaded: {why}"))?;
+                let model = (self.shared.loader)(&model_dir, job.provider).map_err(|why| {
+                    // The Neural Engine's model is converted for it: the GPU runs the
+                    // installed one instead. A load that failed while the job was being
+                    // cancelled (the model removed, the app quitting) says nothing of the
+                    // Neural Engine.
+                    if job.provider == Provider::NeuralEngine && !cancel.is_cancelled() {
+                        anyhow::Error::new(AcceleratorFailed(format!(
+                            "its model could not be loaded: {why}"
+                        )))
+                    } else {
+                        anyhow!("The AI Denoise model could not be loaded: {why}")
+                    }
+                })?;
                 e.insert(model)
             }
         };
@@ -728,8 +829,14 @@ impl Service {
             },
         )
         .map_err(|e| match e {
+            InferenceError::Cancelled => anyhow!("AI Denoise failed: {e}"),
+            _ if cancel.is_cancelled() => anyhow!("AI Denoise failed: {e}"),
             InferenceError::OutputInvalid(why) if job.provider != Provider::Cpu => {
-                anyhow::Error::new(GpuFailed(why))
+                anyhow::Error::new(AcceleratorFailed(why))
+            }
+            // Any error of Core ML's on the Neural Engine: the GPU runs the installed model.
+            e if job.provider == Provider::NeuralEngine => {
+                anyhow::Error::new(AcceleratorFailed(e.to_string()))
             }
             e => anyhow!("AI Denoise failed: {e}"),
         })?;
@@ -784,35 +891,42 @@ impl Service {
     fn finish(&self, job: Job, result: Result<Outcome>) {
         let outcome = match result {
             Ok(outcome) => outcome,
-            Err(e) if e.downcast_ref::<GpuFailed>().is_some() => {
-                // Retried on the CPU under the CPU's key; the GPU is not used again.
+            Err(e) if e.downcast_ref::<AcceleratorFailed>().is_some() => {
+                // Retried on the next provider down under its key; the one that failed
+                // is not used again.
                 let mut queue = self.queue();
-                queue.gpu_off = true;
+                if job.provider == Provider::NeuralEngine {
+                    queue.neural_engine_off = true;
+                } else {
+                    queue.gpu_off = true;
+                }
                 let joined = std::mem::take(&mut queue.joined);
                 queue.running = None;
-                let cpu = key_of(&job.identity, Provider::Cpu);
+                let next = self.usable(&queue, job.provider);
+                let moved = key_of(&job.identity, next);
                 queue
                     .outcomes
-                    .insert(job.key.clone(), Outcome::Moved(cpu.clone()));
+                    .insert(job.key.clone(), Outcome::Moved(moved.clone(), next));
                 let mut develop = job.develop;
                 develop.extend(joined);
                 queue.pending.push_front(Job {
-                    key: cpu,
-                    provider: Provider::Cpu,
+                    key: moved,
+                    provider: next,
                     develop,
                     ..job
                 });
-                // Queued jobs move to the CPU too, under the CPU's keys (their waiters
-                // follow), merged where two now name the same result.
+                // Queued jobs on a provider now off move too, under their new keys (their
+                // waiters follow), merged where two now name the same result.
                 let pending: Vec<Job> = queue.pending.drain(..).collect();
                 for mut job in pending {
-                    if job.provider != Provider::Cpu {
-                        let cpu = key_of(&job.identity, Provider::Cpu);
+                    let next = self.usable(&queue, job.provider);
+                    if next != job.provider {
+                        let moved = key_of(&job.identity, next);
                         queue
                             .outcomes
-                            .insert(job.key.clone(), Outcome::Moved(cpu.clone()));
-                        job.key = cpu;
-                        job.provider = Provider::Cpu;
+                            .insert(job.key.clone(), Outcome::Moved(moved.clone(), next));
+                        job.key = moved;
+                        job.provider = next;
                     }
                     if let Some(same) = queue.pending.iter_mut().find(|j| j.key == job.key) {
                         same.develop.extend(job.develop);
@@ -963,7 +1077,7 @@ impl Service {
         }
         let mut queue = self.queue();
         ensure_running(&queue)?;
-        // The GPU switched off meanwhile: the CPU's key, for the same file.
+        // A provider switched off meanwhile: the next one's key, for the same file.
         let provider = self.provider(&queue);
         let keyed = if provider == keyed.provider {
             keyed
@@ -975,8 +1089,13 @@ impl Service {
             }
         };
         let mut key = keyed.key.clone();
-        // A failure of an earlier attempt is not this one's.
-        if matches!(queue.outcomes.get(&key), Some(Outcome::Failed(_))) {
+        let mut provider = keyed.provider;
+        // A failure of an earlier attempt is not this one's, nor a move away from a
+        // provider that is in use again (the Neural Engine turned on again).
+        if matches!(
+            queue.outcomes.get(&key),
+            Some(Outcome::Failed(_) | Outcome::Moved(..))
+        ) {
             queue.outcomes.remove(&key);
         }
         let mut waiting = Waiting::new(self, &mut queue, key.clone());
@@ -1007,9 +1126,10 @@ impl Service {
                     return Ok(entry);
                 }
                 Some(Outcome::Failed(why)) => bail!("{why}"),
-                Some(Outcome::Moved(next)) => {
+                Some(Outcome::Moved(next, on)) => {
                     waiting.leave(&mut queue);
                     key = next;
+                    provider = on;
                     waiting = Waiting::new(self, &mut queue, key.clone());
                 }
                 None => {
@@ -1034,11 +1154,7 @@ impl Service {
                             || queue.outcomes.contains_key(&key);
                         if !known {
                             let mut retry = job(&key);
-                            retry.provider = if key == keyed.key {
-                                keyed.provider
-                            } else {
-                                Provider::Cpu
-                            };
+                            retry.provider = provider;
                             queue.pending.push_back(retry);
                             drop(queue);
                             self.shared.changed.notify_all();
@@ -1108,7 +1224,8 @@ fn exported(
     key: &str,
 ) -> bool {
     waiting.iter().any(|(on, n)| {
-        *n > 0 && (on == key || matches!(outcomes.get(on), Some(Outcome::Moved(to)) if to == key))
+        *n > 0
+            && (on == key || matches!(outcomes.get(on), Some(Outcome::Moved(to, _)) if to == key))
     })
 }
 
@@ -1119,15 +1236,16 @@ fn ensure_running(queue: &Queue) -> Result<()> {
     Ok(())
 }
 
-/// A non-finite value from a GPU provider: the attempt is discarded and rerun on the CPU.
+/// A non-finite value from an accelerated provider, or the Neural Engine's model not
+/// loading: the attempt is discarded and rerun on the next provider down.
 #[derive(Debug)]
-struct GpuFailed(String);
-impl std::fmt::Display for GpuFailed {
+struct AcceleratorFailed(String);
+impl std::fmt::Display for AcceleratorFailed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "the GPU produced an invalid result: {}", self.0)
+        write!(f, "the accelerator produced no valid result: {}", self.0)
     }
 }
-impl std::error::Error for GpuFailed {}
+impl std::error::Error for AcceleratorFailed {}
 
 impl AiBase for Service {
     fn get(

@@ -6,7 +6,8 @@
 //! every model reports ([`InferenceError`]), the file record a model pack is made
 //! of ([`ModelFile`]), and AI Denoise: its pinned contract ([`manifest`]), its tiler
 //! and gain fit on packed mosaic planes ([`denoise`]) and its loaded model
-//! ([`Denoiser`]). The selection models (Subject, Background and Sky) are
+//! ([`Denoiser`]), and on Apple's Neural Engine its converted model run by Core ML
+//! (`neural_engine`, on Apple platforms only). The selection models (Subject, Background and Sky) are
 //! `rawmakase-selection`'s, which builds on this crate. The only other workspace
 //! crate it depends on is the cancellation token (`rawmakase-cancel`). Where a
 //! model file lives, how it is downloaded and verified, job scheduling and cache
@@ -18,6 +19,8 @@
 pub mod denoise;
 mod error;
 pub mod manifest;
+#[cfg(target_vendor = "apple")]
+pub mod neural_engine;
 pub mod runtime;
 
 pub use error::InferenceError;
