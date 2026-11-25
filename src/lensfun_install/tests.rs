@@ -259,3 +259,28 @@ fn set_time(path: &Path, when: std::time::SystemTime) -> Result<()> {
     let file = std::fs::File::open(path)?;
     Ok(file.set_modified(when)?)
 }
+
+/// A removal cut short (the manifest gone, its version's folder only partly
+/// deleted) leaves a folder that still reads; installing that version again
+/// writes it whole rather than naming what was left of it.
+#[test]
+fn reinstalling_over_a_partly_removed_version_writes_it_whole() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let progress = Progress::default();
+    let Installed::New(whole) = install(dir.path(), &archive("good.tar.bz2"), &progress)? else {
+        panic!("not installed");
+    };
+    std::fs::remove_file(dir.path().join(MANIFEST))?;
+    std::fs::remove_file(dir.path().join(OLD.to_string()).join("slr-nikon.xml"))?;
+    let Installed::New(again) = install(dir.path(), &archive("good.tar.bz2"), &progress)? else {
+        panic!("not installed");
+    };
+    assert_eq!((again.lenses, again.cameras), (whole.lenses, whole.cameras));
+    let loaded = installed::load(dir.path())?;
+    assert_eq!(
+        loaded.db.cameras.len(),
+        whole.cameras,
+        "a partial folder named"
+    );
+    Ok(())
+}

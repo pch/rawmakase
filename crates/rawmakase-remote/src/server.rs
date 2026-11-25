@@ -259,6 +259,26 @@ impl<E: Engine> Server<E> {
     }
 }
 
+impl<E: Engine> Server<E> {
+    /// The engine, one request at a time. A run that panicked was caught in
+    /// [`Self::run`], so the lock is never poisoned by one; it is taken back
+    /// all the same rather than failing every request after it.
+    fn engine(&self) -> std::sync::MutexGuard<'_, E> {
+        self.engine.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    /// Runs `f` on the engine; a panic in it is that request's failure.
+    fn run<T>(&self, f: impl FnOnce(&mut E) -> Result<T, EngineError>) -> Result<T, EngineError> {
+        let mut engine = self.engine();
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut engine))).unwrap_or_else(
+            |_| {
+                Err(EngineError::Failed(InferenceError::Failed(
+                    "the model stopped unexpectedly".into(),
+                )))
+            },
+        )
+    }
+}
+
 impl<E: Engine + 'static> Server<E> {
     /// Serves forever, one thread per connection.
     pub fn serve(self: Arc<Self>, listener: TcpListener) -> ! {
@@ -310,7 +330,7 @@ impl<E: Engine + 'static> Server<E> {
             let running = Arc::new(AtomicBool::new(false));
             match request.op {
                 Op::Ping => {
-                    let info = self.engine.lock().expect("engine lock").describe();
+                    let info = self.engine().describe();
                     self.answer(
                         &mut stream,
                         &request_id,
@@ -351,11 +371,7 @@ impl<E: Engine + 'static> Server<E> {
                         self.refuse(&mut stream, &request_id, Code::Invalid, why)?;
                         return Ok(());
                     }
-                    let outcome = self
-                        .engine
-                        .lock()
-                        .expect("engine lock")
-                        .analyze(&photo, Cancel::new(&running));
+                    let outcome = self.run(|e| e.analyze(&photo, Cancel::new(&running)));
                     self.cancels
                         .lock()
                         .expect("cancel registry")
@@ -408,11 +424,7 @@ impl<E: Engine + 'static> Server<E> {
                         self.refuse(&mut stream, &request_id, Code::Invalid, why)?;
                         return Ok(());
                     }
-                    let outcome = self
-                        .engine
-                        .lock()
-                        .expect("engine lock")
-                        .sky(&photo, Cancel::new(&running));
+                    let outcome = self.run(|e| e.sky(&photo, Cancel::new(&running)));
                     self.cancels
                         .lock()
                         .expect("cancel registry")
@@ -456,11 +468,7 @@ impl<E: Engine + 'static> Server<E> {
                         self.refuse(&mut stream, &request_id, Code::Invalid, why)?;
                         return Ok(());
                     }
-                    let coverage = self.engine.lock().expect("engine lock").segment(
-                        &key,
-                        &prompt,
-                        Cancel::new(&running),
-                    );
+                    let coverage = self.run(|e| e.segment(&key, &prompt, Cancel::new(&running)));
                     self.cancels
                         .lock()
                         .expect("cancel registry")

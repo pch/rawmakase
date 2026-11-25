@@ -1002,3 +1002,56 @@ fn a_cancelled_sky_is_cancelled_and_a_worker_without_the_model_says_why() {
         other => panic!("{other:?}"),
     }
 }
+
+/// A model run that panics is that request's failure, said as one, and the
+/// worker goes on answering: the engine's lock isn't left poisoned for every
+/// request after it.
+#[test]
+fn a_panicking_model_run_fails_its_request_only() {
+    struct Panicky {
+        fake: Fake,
+        panicked: bool,
+    }
+    impl Engine for Panicky {
+        fn analyze(
+            &mut self,
+            photo: &RgbImage,
+            cancel: Cancel<'_>,
+        ) -> Result<Outcome, EngineError> {
+            if !self.panicked {
+                self.panicked = true;
+                panic!("a bug in the model run");
+            }
+            self.fake.analyze(photo, cancel)
+        }
+        fn segment(
+            &mut self,
+            key: &str,
+            prompt: &Prompt,
+            cancel: Cancel<'_>,
+        ) -> Result<Coverage, EngineError> {
+            self.fake.segment(key, prompt, cancel)
+        }
+        fn sky(&mut self, photo: &RgbImage, cancel: Cancel<'_>) -> Result<Coverage, EngineError> {
+            self.fake.sky(photo, cancel)
+        }
+        fn describe(&self) -> rawmakase_remote::server::Info {
+            self.fake.describe()
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = listener.local_addr().unwrap().to_string();
+    let server = Arc::new(Server::new(Panicky {
+        fake: Fake::of(Photo::of("k1", 2, 2, 1)),
+        panicked: false,
+    }));
+    std::thread::spawn(move || server.serve(listener));
+    let session = RemoteSession::new(&endpoint);
+    let cancel = AtomicBool::new(false);
+    let error = session
+        .analyze(&photo(2, 2), Cancel::new(&cancel))
+        .unwrap_err();
+    assert!(matches!(&error, ClientError::Failed(_)), "{error:?}");
+    let analysed = session.analyze(&photo(2, 2), Cancel::new(&cancel));
+    assert!(analysed.is_ok(), "{:?}", analysed.err());
+}
