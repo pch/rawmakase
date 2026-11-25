@@ -35,12 +35,30 @@ const STEP: f32 = std::f32::consts::SQRT_2;
 pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
     const NEAR: f32 = 1e-3;
     let next = if up { current * STEP } else { current / STEP };
-    if (current < 1. - NEAR && next > 1. + NEAR) || (current > 1. + NEAR && next < 1. - NEAR) {
-        return 1.;
-    }
+    let at_100 = if up {
+        current < 1. - NEAR && next > 1. + NEAR
+    } else {
+        current > 1. + NEAR && next < 1. - NEAR
+    };
     let below_fit = current < fit * (1. - NEAR);
-    if next <= fit * (1. + NEAR) && (up || !below_fit) {
-        return 0.;
+    let at_fit = if up {
+        below_fit && next >= fit * (1. - NEAR)
+    } else {
+        !below_fit && next <= fit * (1. + NEAR)
+    };
+    // A step reaching both stops at the nearer one it moves to: going in, the
+    // lower; going out, Fit when it lies between, and 100% from a level
+    // already at Fit's size.
+    let fit_first = if up {
+        fit < 1.
+    } else {
+        fit > 1. && current > fit * (1. + NEAR)
+    };
+    match (at_100, at_fit) {
+        (true, true) => return if fit_first { 0. } else { 1. },
+        (true, false) => return 1.,
+        (false, true) => return 0.,
+        (false, false) => {}
     }
     // At a limit, a step stays put rather than going the other way.
     let next = next.clamp(MIN_LEVEL.min(fit), max_level(fit));
@@ -300,7 +318,7 @@ pub(in crate::app) fn zoom_slider(
     height: f32,
 ) -> Option<ZoomChoice> {
     const BUTTON: f32 = 20.;
-    const LABEL: f32 = 48.;
+    const LABEL: f32 = 52.;
     let palette = theme::palette(ui.ctx());
     let fit = fit.filter(|f| f.is_finite() && *f > 0.).unwrap_or(0.1);
     let max = max_level(fit);
@@ -479,7 +497,19 @@ mod tests {
         assert_eq!(stepped(2., 2., false), 0.);
         assert_eq!(stepped(1.2, 1.2, false), 1.);
         assert!((stepped(1., 1.2, false) - 1. / std::f32::consts::SQRT_2).abs() < 1e-5);
-        assert_eq!(stepped(1., 1.2, true), std::f32::consts::SQRT_2);
+        // Zooming in from below Fit steps on and stops at Fit, not past it
+        // nor straight to it.
+        assert_eq!(stepped(1., 1.2, true), 0.);
+        let up = |l: f32, fit| stepped(l, fit, true);
+        assert!((up(0.125, 0.5) - 0.125 * std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert_eq!(up(0.25, 0.3), 0.);
+        assert!((up(0.125, 2.) - 0.125 * std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert_eq!(up(0.8, 2.), 1.);
+        // Fit below 100%, both within the step: Fit comes first going in,
+        // 100% going out.
+        assert_eq!(up(0.8, 0.9), 0.);
+        assert_eq!(stepped(1.1, 0.9, false), 1.);
+        assert_eq!(stepped(1.3, 1.2, false), 0.);
         assert_eq!(stepped(0.07, 1.2, false), 1. / 16.);
         // A large photo stops at Fit, whether zoomed in at it or above it.
         assert_eq!(stepped(0.2, 0.2, false), 0.);
@@ -576,7 +606,7 @@ mod tests {
         }
     }
 
-    /// The zoom controls as a photo's toolbar draws them, at Fit and at 50%,
+    /// The zoom controls as a photo's toolbar draws them, at Fit, 50% and 1600%,
     /// each with the level's menu closed and open, for `RAWMAKASE_UI_SHOTS`
     /// ([`crate::app::ui::shots`]). The menu opens on a click, which a shot
     /// can't make, so it is drawn here.
@@ -593,6 +623,7 @@ mod tests {
             ("zoom-fit-menu", 0., true),
             ("zoom-50", 0.5, false),
             ("zoom-12-menu", 0.125, true),
+            ("zoom-1600", 16., false),
         ] {
             let mut harness = egui_kittest::Harness::builder()
                 .with_size(Vec2::new(520., 360.))

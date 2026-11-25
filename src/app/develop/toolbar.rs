@@ -540,7 +540,7 @@ pub(in crate::app) fn photo_toolbar_frame(palette: &theme::Palette) -> egui::Fra
 /// Narrower than this, the toolbar's Before button shows its icon alone.
 const NARROW_TOOLBAR: f32 = 1000.;
 /// The zoom slider's least and greatest widths in the toolbar.
-const ZOOM_SLIDER: (f32, f32) = (188., 232.);
+const ZOOM_SLIDER: (f32, f32) = (192., 236.);
 const PHOTO_MENU_WIDTH: f32 = 82.;
 /// Reference View's button, its layouts' buttons and its lock's, which the
 /// toolbar and the photo menu share.
