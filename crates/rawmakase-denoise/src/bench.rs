@@ -119,6 +119,7 @@ pub fn command(c: Command) -> Result<()> {
         loader(c.runtime.clone()),
     );
     service.set_model(Some(c.model.clone()));
+    service.set_neural_engine(c.provider == Provider::NeuralEngine);
     let t = Instant::now();
     let entry = service.entry(&c.input, &file, Cancel::NEVER)?;
     let inferred = t.elapsed();
@@ -204,11 +205,12 @@ pub fn command(c: Command) -> Result<()> {
         recipe.ai_denoise.amount = c.amount;
         save(path, Some(&source), &recipe)?;
     }
+    let ran = ran(c.provider, |p| service.cache().contains(&key_of(&file, p)));
     println!(
         "{}",
         serde_json::json!({
             "file": c.input,
-            "provider": c.provider.name(),
+            "provider": ran.name(),
             "width": plain.width,
             "height": plain.height,
             "decode_s": decoded.as_secs_f64(),
@@ -218,6 +220,19 @@ pub fn command(c: Command) -> Result<()> {
         })
     );
     Ok(())
+}
+
+/// The provider a job asked of `asked` ran on: the first of it and those it falls back
+/// to that has a result (`stored`). A provider above it is never named, though a cache
+/// kept from earlier runs may hold its result too.
+fn ran(asked: Provider, stored: impl Fn(Provider) -> bool) -> Provider {
+    let down: &[Provider] = match asked {
+        Provider::NeuralEngine => &[Provider::NeuralEngine, Provider::CoreML, Provider::Cpu],
+        Provider::CoreML => &[Provider::CoreML, Provider::Cpu],
+        Provider::Cuda => &[Provider::Cuda, Provider::Cpu],
+        Provider::Cpu => &[Provider::Cpu],
+    };
+    down.iter().copied().find(|p| stored(*p)).unwrap_or(asked)
 }
 
 /// Centre crops of the camera image without noise reduction, with AI Denoise, and with
@@ -333,4 +348,21 @@ fn bench(
     }
     println!("{}", serde_json::Value::Array(report));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_provider_reported_is_the_one_asked_or_one_it_fell_back_to() {
+        // A cache kept from an earlier run on the Neural Engine, now asked of the CPU.
+        let all = |_: Provider| true;
+        assert_eq!(ran(Provider::Cpu, all), Provider::Cpu);
+        assert_eq!(ran(Provider::CoreML, all), Provider::CoreML);
+        // The Neural Engine's run fell back to the GPU.
+        let gpu = |p: Provider| p == Provider::CoreML;
+        assert_eq!(ran(Provider::NeuralEngine, gpu), Provider::CoreML);
+        assert_eq!(ran(Provider::Cpu, |_| false), Provider::Cpu);
+    }
 }

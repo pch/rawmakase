@@ -333,6 +333,7 @@ impl Editor {
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_denoise =
             crate::ai_denoise::Service::new(ai_cache, crate::model_install::runtime_dir());
+        ai_denoise.set_neural_engine(session.ai_denoise_neural_engine);
         let ai_loupe = crate::app::develop::ai_denoise::cached_loader(tx.clone(), ctx.clone());
         let (stored_tx, stored_ctx) = (std::sync::Mutex::new(tx.clone()), ctx.clone());
         ai_denoise.on_stored(std::sync::Arc::new(move |path| {
@@ -567,6 +568,7 @@ impl Editor {
                 ),
                 external_editors: self.edit_in.editors().to_vec(),
                 edit_in_color_space: Some(self.edit_in.space_name()),
+                ai_denoise_neural_engine: self.ai_denoise.neural_engine(),
                 ..Default::default()
             },
             self.session_path(),

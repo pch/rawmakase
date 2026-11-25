@@ -157,6 +157,52 @@ Camera Raw 4.6 and 5.1); over 64-pixel blocks they are 4.6 and 5.2, and ΔE00 in
 areas fell from 5.8 to 4.4 on the R10 and rose from 11.5 to 13.4 on the Z fc, whose deep
 shadows already differ in color from Camera Raw's with AI Denoise off.
 
+### AI Denoise on the Neural Engine
+
+On Apple Silicon Macs AI Denoise can run on the Neural Engine instead of CoreML's GPU,
+when the user chooses it (Preferences › Performance › AI Denoise › Use the Neural Engine;
+off by default). The Neural Engine computes in half precision only. RawNIND's activations
+reach about 1.3 million and half precision stops at 65,504, so the network can't run
+there as it is, and ONNX Runtime's CoreML provider keeps it in single precision on the
+CPU and GPU. RAWmakase therefore runs a converted form of it, through Core ML directly
+(`rawmakase_inference::neural_engine`): `scripts/models/convert_denoise_ane.py`
+multiplies each convolution's output by a power of two so that the largest value seen in
+calibration (the repository's colour-chart DNGs and synthetic tiles) lands at 2¹², and
+the weights are rounded to half precision. Every operation in the network is positively
+homogeneous, so in full precision the result is unchanged. The model's metadata holds
+the input and output scales and the SHA-256 of the ONNX model it was made from; a model
+made from another is refused.
+
+Nothing of the converted model is downloaded. The repository holds what has no weights
+(`crates/rawmakase-inference/models/neural-engine`: the package's manifest, the ML
+Program, and each tensor's powers of two). The first time the Neural Engine runs, the
+app makes the weights from the installed `model_bayer.onnx` (each tensor times its powers
+of two, rounded to half precision), checks them against the SHA-256 the conversion wrote,
+compiles the package for the Mac, and keeps it in a `neural-engine` folder inside the
+model's, with a notice of what was changed (a few seconds in all). Removing the model
+removes it too.
+
+Its results are cached under their own provider (`NeuralEngine`) and the converted
+model's name, so they never stand in for the GPU's single-precision ones, and a model
+converted again recomputes them; the Library's previews show a finished result of
+either. When the converted model can't be made or won't load, its load takes longer than
+a minute (Apple's compiler service stuck), a prediction fails or a tile is not finite,
+the job runs on CoreML's GPU under the GPU's key, and the Neural Engine is not used again
+in that session unless the user turns it on again (after a load that never finished,
+not until the app is restarted, as Apple's compiler service stays stuck); a non-finite
+tile on the GPU still moves the job to the CPU. The command line's renders use the GPU,
+whatever the app's choice. The Neural Engine is offered from macOS 14 on, which the
+converted program needs. A failure while the job is being cancelled (the model removed,
+the app quitting) switches nothing off.
+
+Measured on 2026-11-25 on an M4 Pro with a 47 MP Leica DNG (88 tiles), against the CPU's
+result after the gain fit: the Neural Engine's is 91.7 dB from it, 99.9% of values within
+3.7 × 10⁻⁴ of white and none further than 1.7 × 10⁻³; encoded at 8 bits with a 2.2
+gamma, 0.4% of values differ, by at most 3 levels. CoreML's GPU stays within 10⁻⁶. The
+model itself took 1.15 s on the Neural Engine against 1.92 s on the GPU, and the whole job
+(packing, tiles, gain fit) 1.9–2.1 s against 3.4–3.8 s; the CPU took 18.8 s. On an M1
+iPad Pro the same model ran a tile in 13 ms against 56 ms on its GPU.
+
 ## Tone and highlights
 
 Profile-based recipes also store a camera exposure baseline independently of the Exposure slider. The verified X100F DR100 reference baseline is +0.15 EV; unverified camera/DR combinations use zero. Point curves use a natural cubic spline and the sRGB transfer function in ProPhoto primaries, with a hue-preserving master pass followed by independent RGB curves. Clipped input endpoints and 0–255 point editing are supported. Contrast preserves endpoints. See the comparison report for reference-derived metadata and limits.

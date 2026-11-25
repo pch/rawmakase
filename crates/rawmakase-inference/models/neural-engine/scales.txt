@@ -1,0 +1,46 @@
+convs1.0.weight 1 2*4
+convs1.0.bias - 10
+convs1.2.weight 1 -3*32
+convs1.2.bias - 7
+convs2.0.weight 1 -1*32
+convs2.0.bias - 6
+convs2.2.weight 1 -2*64
+convs2.2.bias - 4
+convs3.0.weight 1 -1*64
+convs3.0.bias - 3
+convs3.2.weight 1 -1*128
+convs3.2.bias - 2
+convs4.0.weight 1 -2*128
+convs4.0.bias - 0
+convs4.2.weight 1 0*256
+convs4.2.bias - 0
+bottom.0.weight 1 0*256
+bottom.0.bias - 0
+bottom.2.weight 1 -1*512
+bottom.2.bias - -1
+up1.weight 0 2*512
+up1.bias - 1
+tconvs1.0.weight 1 -2*256 -1*256
+tconvs1.0.bias - -1
+tconvs1.2.weight 1 -1*256
+tconvs1.2.bias - -2
+up2.weight 0 3*256
+up2.bias - 1
+tconvs2.0.weight 1 -1*128 -2*128
+tconvs2.0.bias - 0
+tconvs2.2.weight 1 -2*128
+tconvs2.2.bias - -2
+up3.weight 0 2*128
+up3.bias - 0
+tconvs3.0.weight 1 -2*64 -6*64
+tconvs3.0.bias - -2
+tconvs3.2.weight 1 -1*64
+tconvs3.2.bias - -3
+up4.weight 0 -1*64
+up4.bias - -4
+tconvs4.0.weight 1 -2*32 -13*32
+tconvs4.0.bias - -6
+tconvs4.2.weight 1 -2*32
+tconvs4.2.bias - -8
+output_module.0.weight 1 0*32
+output_module.0.bias - -8
