@@ -1024,3 +1024,39 @@ fn a_setup_finishing_before_the_pass_that_would_drop_its_aiming_leaves_the_tool(
     assert!(e.document.edit.recipe().masks.is_empty());
     assert_eq!(e.messages.line(), "the Example model installed");
 }
+
+/// A program that keeps working on selections the user cancelled, past the
+/// grace for their buffers, is ended each time to free them, but isn't
+/// counted as crashing: cancels as many as [`CRASHES`] in a row leave the
+/// extension usable, and the next selection starts it again.
+///
+/// [`CRASHES`]: crate::app::extensions::CRASHES
+#[test]
+fn cancelling_selections_a_slow_program_finishes_late_never_fails_it() {
+    let mut f = fixture(0.71);
+    let folder = f.folder.clone();
+    let e = &mut f.editor;
+    e.extensions.set_lease_grace(Duration::from_millis(200));
+    hold(&folder);
+    for _ in 0..crate::app::extensions::CRASHES {
+        e.request_selection(tile(e, "Late"));
+        started(e, &folder);
+        e.cancel_selection();
+        pump(e, "the program to be ended", |e| {
+            !e.extensions.get(ID).unwrap().running()
+        });
+        let x = e.extensions.get(ID).unwrap();
+        assert!(!x.failed, "{:?}", x.errors);
+    }
+    assert_eq!(leased_after_end(e), 0);
+    e.request_selection(tile(e, "Blob"));
+    pump(e, "Blob", settled);
+    assert!(e.selection.failure.is_none(), "{:?}", e.selection.failure);
+    assert_eq!(e.document.edit.recipe().masks.len(), 1);
+}
+
+/// The buffers of programs ended, once their units have.
+fn leased_after_end(e: &mut Editor) -> u64 {
+    pump(e, "the ended programs' buffers", |e| leased(e) == 0);
+    leased(e)
+}
