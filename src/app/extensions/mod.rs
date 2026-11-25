@@ -277,18 +277,55 @@ struct TargetRead {
     input: Option<ViewerInput>,
     cancel: Arc<AtomicBool>,
 }
+impl Running {
+    /// Done with `hello`: requests go straight to the program.
+    fn ready(&self) -> bool {
+        matches!(self.handshake, Handshake::Ready)
+    }
+    /// The requests waiting for `hello`; none once it is done.
+    fn queued(&self) -> &[Queued] {
+        match &self.handshake {
+            Handshake::Waiting(queued) => queued,
+            Handshake::Ready => &[],
+        }
+    }
+    /// Keeps only the requests waiting for `hello` that `keep` holds for.
+    fn retain_queued(&mut self, keep: impl FnMut(&Queued) -> bool) {
+        if let Handshake::Waiting(queued) = &mut self.handshake {
+            queued.retain(keep);
+        }
+    }
+    /// Takes every request waiting for `hello`.
+    fn take_queued(&mut self) -> Vec<Queued> {
+        match &mut self.handshake {
+            Handshake::Waiting(queued) => std::mem::take(queued),
+            Handshake::Ready => Vec::new(),
+        }
+    }
+    /// Every request waiting for its outcome: sent, or waiting for `hello`.
+    fn pending(&self) -> impl Iterator<Item = &Pending> {
+        self.requests
+            .values()
+            .chain(self.queued().iter().map(|q| &q.pending))
+    }
+}
+
 impl Drop for TargetRead {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
 }
 
+/// Where a program's `hello` is: requests made before it is done wait.
+enum Handshake {
+    Waiting(Vec<Queued>),
+    Ready,
+}
+
 /// A program running, or starting.
 struct Running {
     session: Session,
-    /// Done with `hello`; requests before it wait in `queued`.
-    ready: bool,
-    queued: Vec<Queued>,
+    handshake: Handshake,
     /// The per-request state: see the module's documentation.
     requests: HashMap<u64, Pending>,
     started: Instant,
@@ -370,6 +407,8 @@ pub(in crate::app) struct Extension {
     mask_progress: Option<(u64, String)>,
     /// Commands whose target is being read, before they are sent.
     reading: Vec<TargetRead>,
+    /// When it was last busy (a request sent, or still being worked on at a
+    /// poll): an `on-demand` program is stopped [`IDLE_STOP`] after this.
     last_active: Instant,
     /// The manifest's and program's modification times, for developer mode.
     mtimes: (Option<std::time::SystemTime>, Option<std::time::SystemTime>),
@@ -463,12 +502,13 @@ impl Extension {
     /// or a command's target is being read for it.
     fn busy(&self) -> bool {
         !self.reading.is_empty()
-            || self.run.as_ref().is_some_and(|r| {
-                !r.ready || !r.requests.is_empty() || !r.queued.is_empty() || !r.deferred.is_empty()
-            })
+            || self
+                .run
+                .as_ref()
+                .is_some_and(|r| !r.ready() || !r.requests.is_empty() || !r.deferred.is_empty())
     }
     fn ready_session(&mut self) -> Option<&mut Running> {
-        self.run.as_mut().filter(|r| r.ready)
+        self.run.as_mut().filter(|r| r.ready())
     }
 }
 
@@ -1461,12 +1501,15 @@ impl Host {
         if let Some(mut run) = e.run.take() {
             let mut ids: Vec<u64> = run.requests.keys().copied().collect();
             ids.sort_unstable();
-            let pending = ids.into_iter().filter_map(|id| {
-                run.session.cancel(id);
-                run.requests.remove(&id)
-            });
-            let queued = run.queued.drain(..).map(|q| q.pending);
-            for pending in pending.collect::<Vec<_>>().into_iter().chain(queued) {
+            let sent: Vec<Pending> = ids
+                .into_iter()
+                .filter_map(|id| {
+                    run.session.cancel(id);
+                    run.requests.remove(&id)
+                })
+                .collect();
+            let queued = run.take_queued().into_iter().map(|q| q.pending);
+            for pending in sent.into_iter().chain(queued) {
                 outcomes.extend(Self::stopped(e, pending, &code));
             }
             drop(run);
@@ -1671,8 +1714,7 @@ impl Host {
         }
         e.run = Some(Running {
             session,
-            ready: false,
-            queued: Vec::new(),
+            handshake: Handshake::Waiting(Vec::new()),
             requests,
             started: now,
             deferred: Vec::new(),
@@ -1719,8 +1761,8 @@ impl Host {
         let e = &mut self.extensions[index];
         e.last_active = Instant::now();
         let run = e.run.as_mut().expect("started above");
-        if !run.ready {
-            run.queued.push(Queued {
+        if let Handshake::Waiting(queued) = &mut run.handshake {
+            queued.push(Queued {
                 request,
                 pending,
                 buffers,
@@ -1928,10 +1970,13 @@ impl Host {
         let Some(run) = &mut e.run else {
             return outcomes;
         };
-        let (commands, rest): (Vec<Queued>, Vec<Queued>) = std::mem::take(&mut run.queued)
+        let (commands, rest): (Vec<Queued>, Vec<Queued>) = run
+            .take_queued()
             .into_iter()
             .partition(|q| matches!(q.pending, Pending::Command { .. }));
-        run.queued = rest;
+        if let Handshake::Waiting(queued) = &mut run.handshake {
+            *queued = rest;
+        }
         for queued in commands {
             if let Pending::Command { command, by } = queued.pending {
                 outcomes.push(Outcome::Command {
@@ -1964,12 +2009,9 @@ impl Host {
     pub(in crate::app) fn command_running(&self, id: &str) -> bool {
         let Some(e) = self.get(id) else { return false };
         !e.reading.is_empty()
-            || e.run.as_ref().is_some_and(|r| {
-                r.requests
-                    .values()
-                    .chain(r.queued.iter().map(|q| &q.pending))
-                    .any(|p| matches!(p, Pending::Command { .. }))
-            })
+            || e.run
+                .as_ref()
+                .is_some_and(|r| r.pending().any(|p| matches!(p, Pending::Command { .. })))
     }
 
     /// The commands of extension `id` sent and not answered, or waiting for
@@ -1980,9 +2022,7 @@ impl Host {
             return Vec::new();
         };
         let mut commands: Vec<String> = run
-            .requests
-            .values()
-            .chain(run.queued.iter().map(|q| &q.pending))
+            .pending()
             .filter_map(|p| match p {
                 Pending::Command { command, .. } => Some(command.clone()),
                 _ => None,
@@ -2398,6 +2438,13 @@ impl Host {
         self.sync_sources();
         let mut next: Option<Instant> = None;
         for index in 0..self.extensions.len() {
+            // Busy until this poll: the idle time is counted from the end of
+            // its work, not from the request that began it, so a download
+            // longer than `IDLE_STOP` doesn't stop it the moment it is done.
+            let e = &mut self.extensions[index];
+            if e.busy() {
+                e.last_active = now;
+            }
             self.poll_one(index, now, answer, outcomes);
             let e = &mut self.extensions[index];
             let Some(run) = &e.run else {
@@ -2618,8 +2665,8 @@ impl Host {
             Pending::Hello => match result.and_then(check_hello) {
                 Ok(_) => {
                     let Some(run) = e.run.as_mut() else { return };
-                    run.ready = true;
-                    let queued = std::mem::take(&mut run.queued);
+                    let queued = run.take_queued();
+                    run.handshake = Handshake::Ready;
                     let id = e.manifest.extension.id.clone();
                     for q in queued {
                         if let Err(why) = self.send(&id, q.request, q.pending.clone(), q.buffers) {
@@ -2917,9 +2964,9 @@ impl Host {
     /// session, which still admits requests.
     fn in_scope(e: &Extension, source: &str, scope: u64) -> bool {
         e.entry.enabled
-            && e.run
-                .as_ref()
-                .is_some_and(|r| r.ready && r.scopes.get(source).is_some_and(|(s, _)| *s == scope))
+            && e.run.as_ref().is_some_and(|r| {
+                r.ready() && r.scopes.get(source).is_some_and(|(s, _)| *s == scope)
+            })
     }
 
     /// The report `ticket`'s files were added, or not, with `result`: the
@@ -3017,13 +3064,10 @@ impl Host {
         let mut out = Vec::new();
         for e in &self.extensions {
             let running = e.run.as_ref().and_then(|run| {
-                run.requests
-                    .values()
-                    .chain(run.queued.iter().map(|q| &q.pending))
-                    .find_map(|p| match p {
-                        Pending::Command { command, .. } => Some(command),
-                        _ => None,
-                    })
+                run.pending().find_map(|p| match p {
+                    Pending::Command { command, .. } => Some(command),
+                    _ => None,
+                })
             });
             if let Some(text) = e.status.as_ref().filter(|_| e.run.is_some()) {
                 out.push(format!("{}: {text}", e.name()));
@@ -3047,7 +3091,7 @@ impl Host {
                     run.session.cancel(id);
                 }
                 run.requests.clear();
-                run.queued.clear();
+                run.take_queued();
                 // Their work is cancelled: nothing more is written.
                 run.deferred.clear();
             }

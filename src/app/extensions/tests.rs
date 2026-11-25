@@ -1311,6 +1311,39 @@ fn proposals_after_a_command_was_stopped_or_timed_out_change_nothing() {
     assert_eq!(exposure(e, &f.photos[0]), None);
 }
 
+/// An on-demand program is stopped once it has been idle for
+/// [`super::IDLE_STOP`], counted from when its last request finished, not
+/// from when it was sent: one that worked longer than that (a model's
+/// download) stays running for the request that follows.
+#[test]
+fn an_on_demand_program_idles_from_when_its_work_ends() {
+    let mut f = fixture_with(&["a.png"], Duration::from_secs(3600));
+    let e = &mut f.editor;
+    assert_eq!(
+        run(e, "settings", "Show Settings"),
+        Ok(json!({"step": 0.5}))
+    );
+    e.run_extension_command(&format!("{ID}/settings"), RunBy::Button)
+        .unwrap();
+    // Its answer is taken as if it had taken longer than the idle time.
+    let late = Instant::now() + super::IDLE_STOP + Duration::from_secs(1);
+    let until = Instant::now() + Duration::from_secs(20);
+    loop {
+        let (outcomes, _) = e.extensions_poll(late);
+        if result(&outcomes, "Show Settings").is_some() {
+            break;
+        }
+        assert!(Instant::now() < until, "no answer");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        e.extensions.get(ID).unwrap().running(),
+        "stopped the moment its long request finished"
+    );
+    e.extensions_poll(late + super::IDLE_STOP);
+    assert!(!e.extensions.get(ID).unwrap().running(), "never idled out");
+}
+
 #[test]
 fn disabling_an_extension_mid_request_stops_it_and_takes_its_commands_away() {
     let mut f = fixture(&["a.png"]);

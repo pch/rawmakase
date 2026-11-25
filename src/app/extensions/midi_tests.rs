@@ -699,7 +699,7 @@ fn the_built_program_runs_its_page() {
             .unwrap()
             .run
             .as_ref()
-            .is_some_and(|r| r.ready)
+            .is_some_and(|r| r.ready())
     });
     e.extensions.open_panel(MIDI, "devices").unwrap();
     pump(&mut e, "its page", |e| {

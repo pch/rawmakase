@@ -719,6 +719,39 @@ fn the_drawer_draws_in_every_state_a_selection_can_be_in() {
     draw_masking_panel(e); // disabled with its reason
 }
 
+/// A setup that finishes while another selection runs (one started from a
+/// component's Refine or Regenerate, which the setup card doesn't hide) can't
+/// go on by itself: the user is told to ask again, rather than seeing
+/// "installed" and then nothing.
+#[test]
+fn a_setup_finishing_during_another_selection_says_to_ask_again() {
+    let mut f = fixture(0.27);
+    let e = &mut f.editor;
+    let waiting = subject(e);
+    e.selection.prompt = Some(Prompt::Setup {
+        request: waiting.clone(),
+        setup: NeedsSetup {
+            what: "the selection models".into(),
+            bytes: 270_000_000,
+        },
+        guard: Guard::of(e.document.edit.recipe(), Target::NewMask),
+        then: Resume::Select,
+    });
+    let g = begin(e, sky(e));
+    e.mask_setup_done(
+        &waiting.generator.extension,
+        &waiting.generator.generator,
+        Ok(serde_json::Value::Null),
+    );
+    assert_eq!(e.selection.prompt, None);
+    assert!(
+        e.messages.line().contains("Select Subject again"),
+        "{}",
+        e.messages.line()
+    );
+    finish(e, g, Err(Failure::Cancelled));
+}
+
 /// The drawer offers Subject, Sky and Background in that order, as it always
 /// did, whatever order the extension lists them in, and each asks its own
 /// generator: Background is Subject's, inverted.
