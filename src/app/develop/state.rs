@@ -120,6 +120,9 @@ pub(in crate::app) struct Picture {
     handle: Option<egui::TextureHandle>,
     /// The HDR master's preview of the same view, presented with it on the GPU.
     hdr: Option<crate::app::worker::HdrTexture>,
+    /// The quarter turns and flips it was rendered with, when known: until a
+    /// render for a turned photo lands, it is drawn turned with the photo.
+    pub(in crate::app) orientation: Option<Orientation>,
 }
 impl Picture {
     pub(in crate::app) fn presented(id: egui::TextureId, size: [usize; 2]) -> Self {
@@ -128,6 +131,7 @@ impl Picture {
             size,
             handle: None,
             hdr: None,
+            orientation: None,
         }
     }
     /// As [`Self::presented`], with the HDR master's preview presented with it.
@@ -185,9 +189,42 @@ impl From<egui::TextureHandle> for Picture {
             size: handle.size(),
             handle: Some(handle),
             hdr: None,
+            orientation: None,
         }
     }
 }
+/// A recipe's quarter turns and flips, as the photo is shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) struct Orientation {
+    pub(in crate::app) turns: u8,
+    pub(in crate::app) flip_x: bool,
+    pub(in crate::app) flip_y: bool,
+}
+impl Orientation {
+    pub(in crate::app) fn of(r: &Recipe) -> Self {
+        Self {
+            turns: r.rotation,
+            flip_x: r.flip_x,
+            flip_y: r.flip_y,
+        }
+    }
+    /// The clockwise quarter turns, as the photo is shown, from `self` to `now`;
+    /// None when the flips differ too.
+    pub(in crate::app) fn turns_to(self, now: Self) -> Option<u8> {
+        if (self.flip_x, self.flip_y) != (now.flip_x, now.flip_y) {
+            return None;
+        }
+        let turns = (now.turns + 4 - self.turns % 4) % 4;
+        // The flips apply after the turns: under a single mirror a turn of the
+        // recorded photo shows the other way round.
+        Some(if now.flip_x != now.flip_y {
+            (4 - turns) % 4
+        } else {
+            turns
+        })
+    }
+}
+
 /// What a render was asked for, which its result is shown with.
 #[derive(Clone)]
 pub(in crate::app) struct Pending {
@@ -290,6 +327,9 @@ pub(in crate::app) struct PreviewState {
     /// The crop `texture` was rendered with, when known: until a render for a new
     /// crop lands, the old one is placed where its crop sits instead of stretched.
     pub(in crate::app) crop: Option<[f32; 4]>,
+    /// The orientation of the edit the photo opened with, which the Library
+    /// thumbnail the minimap shows without a navigator was made from.
+    pub(in crate::app) opened_orientation: Option<Orientation>,
     /// Before's render, while it shows beside the edit.
     pub(in crate::app) before: crate::app::develop::before_after::BeforePreview,
     /// The magnifier's render, while it is shown.
@@ -323,6 +363,7 @@ impl Default for PreviewState {
             mode: TextureMode::Whole,
             region_frame: [1, 1],
             crop: None,
+            opened_orientation: None,
             before: Default::default(),
             magnifier: Default::default(),
             stand_in: None,
@@ -728,6 +769,7 @@ impl PreviewState {
         self.last_region = None;
         self.mode = TextureMode::Whole;
         self.crop = None;
+        self.opened_orientation = None;
         self.before.clear();
         self.magnifier.clear();
         // The pixels the readout and loupes read belong to the photo left.

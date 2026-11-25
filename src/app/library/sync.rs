@@ -139,6 +139,9 @@ pub(crate) enum BatchChange {
     /// Settings an extension proposed, set as the control socket's `set` sets
     /// them.
     Proposed(Box<ProposedSettings>),
+    /// Lightroom's Rotate Left or Rotate Right, as the Crop panel's buttons turn
+    /// the open photo.
+    Turn(crate::develop::QuarterTurn),
 }
 /// What Auto Sync takes from steps of the open photo to each other photo.
 #[derive(Clone, Debug, PartialEq)]
@@ -182,6 +185,8 @@ impl BatchChange {
             },
             BatchChange::Preset(p) => format!("Apply Preset: {}", p.name),
             BatchChange::Proposed(p) => p.name.clone(),
+            BatchChange::Turn(crate::develop::QuarterTurn::Left) => "Rotate Left".into(),
+            BatchChange::Turn(crate::develop::QuarterTurn::Right) => "Rotate Right".into(),
         }
     }
     /// Each photo's History step, named as Develop names the same change.
@@ -193,6 +198,8 @@ impl BatchChange {
             {
                 Step::new("White Balance", "Auto")
             }
+            // Develop names a turn by its panel.
+            BatchChange::Turn(_) => Step::new("Crop", ""),
             _ => Step::new(self.name(), ""),
         }
     }
@@ -707,10 +714,11 @@ fn prepare(
 ) -> Result<Prepared> {
     // Read first, so a file replaced while its settings are worked out is noticed.
     let identity = crate::storage::Identity::read(&target.path)?;
-    // A proposal or a Sync sets settings and measures nothing: a RAW's header is
-    // all it reads, unless an Upright or Straighten Auto has to be analysed.
+    // A proposal, a Sync or a turn sets settings and measures nothing: a RAW's
+    // header is all it reads, unless an Upright or Straighten Auto has to be
+    // analysed.
     let sets_only = match change {
-        BatchChange::Proposed(_) | BatchChange::Settings(_) => true,
+        BatchChange::Proposed(_) | BatchChange::Settings(_) | BatchChange::Turn(_) => true,
         BatchChange::AutoSync(c) => c.measure.is_none(),
         _ => false,
     };
@@ -857,6 +865,14 @@ fn prepare(
             settings_groups::Transferred {
                 recipe: applied.recipe,
                 notes,
+            }
+        }
+        BatchChange::Turn(turn) => {
+            let mut recipe = before.recipe().clone();
+            crate::develop::turn(&mut recipe, *turn);
+            settings_groups::Transferred {
+                recipe,
+                notes: Vec::new(),
             }
         }
         // As `set` changes the open photo's settings (see `command_parameter`).

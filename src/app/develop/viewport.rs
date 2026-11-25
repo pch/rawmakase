@@ -1,7 +1,7 @@
 use crate::app::Editor;
 use crate::app::Module;
 use crate::app::develop::before_after;
-use crate::app::develop::state::{TextureMode, Tool};
+use crate::app::develop::state::{Orientation, TextureMode, Tool};
 use crate::app::develop::tools::crop_drag::{self, CropDrag, Handle};
 use crate::app::develop::tools::crop_tool::{Attention, Guide, Ruler, crop_aspect_shown};
 use crate::app::ui::design::{Tone, radius, text};
@@ -110,19 +110,29 @@ impl Editor {
             self.view.zoom.shown(self.view.viewport, size)
         });
         // Until a whole render makes one (none while zoomed in), the
-        // Library's preview stands in.
-        let photo = self
-            .preview
-            .navigator
-            .as_ref()
-            .map(|p| (p.id(), p.size_vec2()))
-            .or_else(|| {
-                let texture = self
-                    .library
-                    .as_ref()?
-                    .thumbnail(self.document.catalog_photo?)?;
-                Some((texture.id(), texture.size_vec2()))
-            });
+        // Library's preview stands in. One from before a turn is drawn turned,
+        // as the photo is.
+        let now = Orientation::of(&self.effective_recipe());
+        let turns = |then: Option<Orientation>| then.and_then(|t| t.turns_to(now)).unwrap_or(0);
+        let photo = match &self.preview.navigator {
+            Some(p) => Some(navigator::Photo::turned(
+                p.id(),
+                p.size_vec2(),
+                turns(p.orientation),
+            )),
+            None => self.library.as_ref().and_then(|l| {
+                let id = self.document.catalog_photo?;
+                let t = l.thumbnail(id)?;
+                // An edited thumbnail shows the edit the photo opened with; the
+                // camera's preview, none.
+                let then = if l.has_edited_thumbnail(id) {
+                    self.preview.opened_orientation
+                } else {
+                    Some(Orientation::of(&Default::default()))
+                };
+                Some(navigator::Photo::turned(t.id(), t.size_vec2(), turns(then)))
+            }),
+        };
         (photo, shown)
     }
     /// A point of the edit chosen on the minimap: zoomed in there.
@@ -372,10 +382,9 @@ impl Editor {
             }
             return response;
         };
-        let geometry = self
-            .document
-            .full()
-            .map(|im| Geometry::new(im, &self.effective_recipe(), 0));
+        // The edit as shown this frame, read once: it copies the whole recipe.
+        let recipe = self.effective_recipe();
+        let geometry = self.document.full().map(|im| Geometry::new(im, &recipe, 0));
         let zoomed = self.zoom_geometry();
         self.view.glide_pan(ui.ctx(), self.document.catalog_photo);
         // `rect` is where the whole (cropped) photo sits on screen. The last whole-photo
@@ -440,20 +449,33 @@ impl Editor {
         let gpu_hdr = |picture: &crate::app::develop::state::Picture| {
             gpu_hdr_for(Some(picture), due.as_ref().ok())
         };
+        // A turn changes the shown aspect before the render for it lands: the old
+        // render is drawn turned with it, its crop turned as `turn` turns it, and
+        // a 100% region rendered before the turn waits for one rendered after it.
+        let shown = Orientation::of(&recipe);
+        let turns = (!self.preview.embedded)
+            .then(|| texture.orientation?.turns_to(shown))
+            .flatten()
+            .unwrap_or(0);
+        // A turn holds back a region rendered before it, a turn and a flip
+        // together included; a change of flips alone is drawn as before.
+        let region_then = region_texture.as_ref().and_then(|r| r.orientation);
+        let region_turned = region_then.is_some_and(|then| then.turns % 4 != shown.turns % 4);
+        let region_turns = region_then
+            .and_then(|then| then.turns_to(shown))
+            .unwrap_or(0);
         let mut gpu_whole = false;
         if self.preview.texture.is_some() {
             let hdr = gpu_hdr(&texture);
             gpu_whole = hdr.is_some();
             // Opening or leaving the Crop tool changes the crop before the render for
             // it lands: the old render goes where its crop sits, clipped to the new one.
-            let now = zoomed
-                .as_ref()
-                .map_or(self.effective_recipe().crop, |g| g.crop());
+            let now = zoomed.as_ref().map_or(recipe.crop, |g| g.crop());
             let metadata = (self.document.metadata.as_ref())
                 .or_else(|| self.document.full().map(|im| &im.metadata));
             let then = match (self.preview.embedded, metadata) {
                 (true, Some(m)) => Some(embedded_frame(m, texture.size_vec2())),
-                _ => self.preview.crop,
+                _ => self.preview.crop.map(|c| develop::turned_crop(c, turns)),
             };
             let (at, clipped) = match then {
                 Some(then) if then != now && zoomed.is_some() => {
@@ -468,11 +490,33 @@ impl Editor {
                 _ => (rect, painter.clone()),
             };
             for id in std::iter::once(texture.id()).chain(hdr.map(|h| h.id)) {
-                clipped.image(id, at, uv, Color32::WHITE);
+                clipped.add(turned_image(id, at, turns));
             }
         }
+        // A region rendered before a turn (and no flip), with no whole render to
+        // show instead, is drawn turned where it now sits until the one for the
+        // turn lands.
+        if let (Some(region), Some(at), true, None) = (
+            &region_texture,
+            region_rect,
+            region_turns != 0,
+            self.preview.texture.as_ref(),
+        ) {
+            let n = [
+                (at.left() - rect.left()) / rect.width(),
+                (at.top() - rect.top()) / rect.height(),
+                (at.right() - rect.left()) / rect.width(),
+                (at.bottom() - rect.top()) / rect.height(),
+            ];
+            let n = develop::turned_crop(n, region_turns);
+            let turned = Rect::from_min_max(
+                rect.min + Vec2::new(n[0], n[1]) * rect.size(),
+                rect.min + Vec2::new(n[2], n[3]) * rect.size(),
+            );
+            painter.add(turned_image(region.id(), turned, region_turns));
+        }
         let mut gpu_region = false;
-        if let (Some(region), Some(at)) = (&region_texture, region_rect) {
+        if let (Some(region), Some(at), false) = (&region_texture, region_rect, region_turned) {
             let hdr = gpu_hdr(region);
             gpu_region = hdr.is_some();
             for id in std::iter::once(region.id()).chain(hdr.map(|h| h.id)) {
@@ -598,9 +642,8 @@ impl Editor {
             .filter(|p| edit_shown && panes.after.clip.contains(*p));
         // Not over pixels rendered for another crop, which sit elsewhere until the
         // render for this one lands.
-        let crop = self.effective_recipe().crop;
-        let sampled_crop = self.preview.samples_recipe.as_ref().map(|r| r.crop);
-        let hover = hover.filter(|_| sampled_crop.is_none_or(|c| c == crop));
+        let fit = self.samples_fit(&recipe);
+        let hover = hover.filter(|_| fit);
         self.update_readout(hover, rect, region_rect);
         if self.wants_samples() {
             // The loupe and the readout read the shown pixels, which renders keep only
@@ -615,7 +658,7 @@ impl Editor {
             && let Some(pos) = response.hover_pos()
             && rect.contains(pos)
         {
-            self.white_balance_loupe(ui, pos, rect, region_rect, area);
+            self.white_balance_loupe(ui, pos, rect, region_rect, area, fit);
         }
         if self.view.is(Tool::WhiteBalance)
             && picking
@@ -663,7 +706,10 @@ impl Editor {
             // The samples must come from the settings the pick is mapped through.
             let current = self.preview.samples_recipe.as_ref() == Some(&self.effective_recipe())
                 && self.document.full().is_some();
-            match self.shown_color(pos, rect, region_rect).filter(|_| current) {
+            match self
+                .shown_color(pos, rect, region_rect, fit)
+                .filter(|_| current)
+            {
                 Some(rgb) => match develop::pick_fringe(self.document.edit.recipe_mut(), rgb) {
                     Some(_) => self.view.set_tool(Tool::None),
                     None => {
@@ -877,7 +923,17 @@ impl Editor {
     }
     /// The shown color (encoded sRGB, 0–1) at `pos`, from the samples renders keep while
     /// an eyedropper is active.
-    fn shown_color(&self, pos: Pos2, rect: Rect, region: Option<Rect>) -> Option<[f32; 3]> {
+    /// `fit` says the kept samples were rendered for the crop and orientation shown.
+    fn shown_color(
+        &self,
+        pos: Pos2,
+        rect: Rect,
+        region: Option<Rect>,
+        fit: bool,
+    ) -> Option<[f32; 3]> {
+        if !fit {
+            return None;
+        }
         let (samples, shown) = match (&self.preview.region_samples, region) {
             (Some(samples), Some(region)) if region.contains(pos) => (samples, region),
             _ => (self.preview.samples.as_ref()?, rect),
@@ -903,9 +959,18 @@ impl Editor {
                 spread(a).total_cmp(&spread(b))
             })
     }
+    /// Whether the pixels kept for the readout and the loupe were rendered for
+    /// the crop and orientation of `now`, the edit shown: until the render for
+    /// a new crop or a turn lands, they sit elsewhere.
+    pub(in crate::app) fn samples_fit(&self, now: &crate::model::recipe::Recipe) -> bool {
+        self.preview
+            .samples_recipe
+            .as_ref()
+            .is_none_or(|r| r.crop == now.crop && Orientation::of(r) == Orientation::of(now))
+    }
     /// Lightroom's white balance selector over the photo: an eyedropper cursor
     /// whose tip is the picked point, and a loupe of the pixels around it with the
-    /// values of the one under the tip.
+    /// values of the one under the tip, while `fit` (see [`Self::samples_fit`]).
     fn white_balance_loupe(
         &self,
         ui: &egui::Ui,
@@ -913,6 +978,7 @@ impl Editor {
         rect: Rect,
         region: Option<Rect>,
         area: Rect,
+        fit: bool,
     ) {
         let palette = theme::palette(ui.ctx());
         const CELLS: i32 = 5;
@@ -943,6 +1009,9 @@ impl Editor {
             );
         }
         icons::paint_at(&painter, Icon::Eyedropper, pos + tip, icon, Color32::WHITE);
+        if !fit {
+            return;
+        }
         let (samples, shown) = match (&self.preview.region_samples, region) {
             (Some(samples), Some(region)) if region.contains(pos) => (samples, region),
             _ => match &self.preview.samples {
@@ -1042,6 +1111,35 @@ impl Editor {
             palette.tone(Tone::TEXT),
         );
     }
+}
+
+/// `texture` drawn in `rect` turned `turns` quarter turns clockwise.
+pub(in crate::app) fn turned_image(texture: egui::TextureId, rect: Rect, turns: u8) -> egui::Shape {
+    let corners = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+    ];
+    let uvs = [
+        Pos2::new(0., 0.),
+        Pos2::new(1., 0.),
+        Pos2::new(1., 1.),
+        Pos2::new(0., 1.),
+    ];
+    let mut mesh = egui::Mesh::with_texture(texture);
+    for (i, pos) in corners.into_iter().enumerate() {
+        // A clockwise turn shows the texture's bottom-left corner at the top left.
+        let uv = uvs[(i + 4 - usize::from(turns % 4)) % 4];
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos,
+            uv,
+            color: Color32::WHITE,
+        });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    egui::Shape::mesh(mesh)
 }
 
 /// The GPU's HDR master preview presented with `picture`, when it is the master `due`

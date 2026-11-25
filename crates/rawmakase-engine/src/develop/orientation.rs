@@ -28,11 +28,23 @@ pub fn turn(r: &mut Recipe, turn: QuarterTurn) {
     } else {
         (r.rotation + 3) % 4
     };
-    let [left, top, right, bottom] = r.crop;
     r.crop = match turn {
-        QuarterTurn::Right => [1. - bottom, left, 1. - top, right],
-        QuarterTurn::Left => [top, 1. - right, bottom, 1. - left],
+        QuarterTurn::Right => turned_crop(r.crop, 1),
+        QuarterTurn::Left => {
+            let [left, top, right, bottom] = r.crop;
+            [top, 1. - right, bottom, 1. - left]
+        }
     };
+}
+
+/// A crop (`[left, top, right, bottom]`, 0-1) as [`turn`] turns it, after
+/// `turns` quarter turns clockwise.
+pub fn turned_crop(mut crop: [f32; 4], turns: u8) -> [f32; 4] {
+    for _ in 0..turns % 4 {
+        let [left, top, right, bottom] = crop;
+        crop = [1. - bottom, left, 1. - top, right];
+    }
+    crop
 }
 
 /// Mirrors the photo as shown. The crop mirrors with it and the straighten angle turns
@@ -57,6 +69,20 @@ pub fn mirror(r: &mut Recipe, mirror: Mirror) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turned_crop_turns_as_turn_does() {
+        let crop = [0.1, 0.2, 0.7, 0.9];
+        let mut r = Recipe {
+            crop,
+            ..Default::default()
+        };
+        turn(&mut r, QuarterTurn::Right);
+        assert_eq!(turned_crop(crop, 1), r.crop);
+        turn(&mut r, QuarterTurn::Right);
+        assert_eq!(turned_crop(crop, 2), r.crop);
+        assert_eq!(turned_crop(crop, 4), crop);
+    }
     use crate::{camera_data::CameraImage, develop::Geometry};
 
     fn photo() -> CameraImage {

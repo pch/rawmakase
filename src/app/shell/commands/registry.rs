@@ -151,6 +151,8 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("stack:to_top", "Move to the top of the stack"),
     command("merge_hdr", "Merge the selected photos to HDR"),
     command("edit_in", "Edit in the first external editor"),
+    command("rotate_left", "Rotate left"),
+    command("rotate_right", "Rotate right"),
     fixed("select_all", "Select all"),
     command("select_none", "Select none"),
     command("deselect_active", "Deselect the active photo"),
@@ -609,6 +611,9 @@ pub(in crate::app) mod bindings {
         ]);
         LIBRARY_SYNC = b("sync", Library, &[d(&[Key::S], CMD_SHIFT)]).consuming();
         LIBRARY_AUTO = b("auto_tone", Library, &[d(&[Key::U], CMD_SHIFT)]).consuming();
+        // Lightroom's Rotate Left and Rotate Right.
+        LIBRARY_ROTATE_LEFT = b("rotate_left", Library, &[d(OPEN_BRACKETS, CMD).once_per_press()]);
+        LIBRARY_ROTATE_RIGHT = b("rotate_right", Library, &[d(CLOSE_BRACKETS, CMD).once_per_press()]);
         // Lightroom's Keyword Set keys: the number row by its place, as Alt
         // types other symbols on it.
         KEYWORD_SET_1 = b("keyword_set:1", Library, &[d(&[Key::Num1], ALT).placed().once_per_press()]);
@@ -697,6 +702,8 @@ pub(in crate::app) mod bindings {
         RESET = b("reset", Develop, &[d(&[Key::R], CMD_SHIFT)]);
         TOGGLE_BLACK_WHITE = b("toggle:bw", Develop, &[d(&[Key::V], NONE).once_per_press()]);
         DEVELOP_AUTO = b("auto_tone", Develop, &[d(&[Key::U], CMD_SHIFT)]);
+        ROTATE_LEFT = b("rotate_left", Develop, &[d(OPEN_BRACKETS, CMD).once_per_press()]);
+        ROTATE_RIGHT = b("rotate_right", Develop, &[d(CLOSE_BRACKETS, CMD).once_per_press()]);
         DEVELOP_EXPORT = b("export_dialog", Develop, &[d(&[Key::E], CMD_SHIFT).once_per_press()]);
         DEVELOP_EXPORT_PREVIOUS = b("export_previous", Develop, &[
             d(&[Key::E], CMD_ALT_SHIFT).once_per_press(),

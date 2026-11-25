@@ -288,6 +288,7 @@ impl Editor {
                         [im.width(), im.height()],
                         im.as_raw(),
                         Some(navigator),
+                        None,
                     );
                     self.preview.embedded = true;
                     self.preview.mode = crate::app::develop::state::TextureMode::Whole;
@@ -363,6 +364,10 @@ impl Editor {
                     if !region {
                         self.preview.histogram = *histogram;
                     }
+                    let orientation = request
+                        .recipe
+                        .as_ref()
+                        .map(crate::app::develop::state::Orientation::of);
                     match preview {
                         worker::Preview::Pixels {
                             image,
@@ -374,13 +379,14 @@ impl Editor {
                             [image.width, image.height],
                             &display_rgb,
                             navigator,
+                            orientation,
                         ),
                         worker::Preview::Texture {
                             id,
                             size,
                             navigator,
                             hdr,
-                        } => self.set_presented(region, (id, size), navigator, hdr),
+                        } => self.set_presented(region, (id, size), navigator, hdr, orientation),
                     }
                     // Pixels asked for by a hover or loupe that has since ended are
                     // not kept.
@@ -742,6 +748,10 @@ impl Editor {
                 }
             }
         }
+        // The Library thumbnail the minimap stands in with was made from this edit.
+        self.preview.opened_orientation = Some(crate::app::develop::state::Orientation::of(
+            self.document.edit.recipe(),
+        ));
         self.document.path = Some(p);
         let _ = self.save_session();
     }

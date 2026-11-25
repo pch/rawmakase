@@ -505,6 +505,7 @@ impl Editor {
         self.update_notice(&ctx, dialog);
         // Last, after whatever else this frame opened or asked: see its docs.
         self.develop_key_steps(&ctx, typing);
+        self.develop_rotate_keys(&ctx);
         // A press that ran neither of two commands on one key says so.
         for report in FrameKeys::of(&ctx).take_reports() {
             self.messages.warn(report);
@@ -1218,6 +1219,17 @@ impl Editor {
             // stays the open photo's.
             if keys.take(&bindings::LIBRARY_AUTO).is_some() {
                 self.start_batch(crate::app::library::sync::BatchChange::AutoSettings);
+            }
+            // Lightroom's Rotate Left and Rotate Right, on each selected photo. The
+            // frame's first press starts the batch; a later one is dropped, as a
+            // press while a batch runs is.
+            let turns = quarter_turns(
+                &keys,
+                &bindings::LIBRARY_ROTATE_LEFT,
+                &bindings::LIBRARY_ROTATE_RIGHT,
+            );
+            if let Some(turn) = turns.first() {
+                self.start_batch(crate::app::library::sync::BatchChange::Turn(*turn));
             }
             // Lightroom's Keyword Set keys, on what the Keywording panel edits.
             let slot = keys.take_first(&[
@@ -2251,6 +2263,49 @@ impl Editor {
             self.dropped(dropped);
         }
     }
+}
+
+impl Editor {
+    /// Lightroom's Rotate Left and Rotate Right in Develop: the Crop panel's
+    /// buttons, each press in order a History step of its own. Run as
+    /// [`Editor::develop_key_steps`] runs, last in the frame and outside its edit
+    /// frame, on the photo the frame ends on once it is ready. Not while a drag,
+    /// wheel scroll or dial turn is under way: a crop drag sets the crop from
+    /// where it started.
+    fn develop_rotate_keys(&mut self, ctx: &egui::Context) {
+        use bindings as b;
+        let held = ctx.input(|i| i.pointer.any_down()) || self.document.edit.history().in_gesture();
+        if held || !self.basic_keys_ready(ctx) {
+            return;
+        }
+        let keys = self.keys(ctx);
+        for turn in quarter_turns(&keys, &b::ROTATE_LEFT, &b::ROTATE_RIGHT) {
+            self.change_edit(None, |r| crate::develop::turn(r, turn));
+        }
+    }
+}
+
+/// The frame's presses of `left` and `right`, taken, as the quarter turns they ask
+/// for in the order they came.
+fn quarter_turns(
+    keys: &FrameKeys,
+    left: &crate::app::shell::keymap::Binding,
+    right: &crate::app::shell::keymap::Binding,
+) -> Vec<crate::develop::QuarterTurn> {
+    use crate::develop::QuarterTurn;
+    let mut turns = Vec::new();
+    for press in keys.presses() {
+        let turn = if keys.is(&press, left) {
+            QuarterTurn::Left
+        } else if keys.is(&press, right) {
+            QuarterTurn::Right
+        } else {
+            continue;
+        };
+        keys.take_press(&press);
+        turns.push(turn);
+    }
+    turns
 }
 
 /// egui-winit reads Cmd+C, Cmd+V and Cmd+X with any other modifier as the

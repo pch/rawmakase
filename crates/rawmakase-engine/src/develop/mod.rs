@@ -62,7 +62,7 @@ pub use auto::{AutoTone, Measures, auto_tone, auto_tone_basis, auto_white_balanc
 pub use black_white::{AutoMix, ColorSpread};
 pub use geometry::{Geometry, rendered_crop};
 pub use image_space::ViewMapping;
-pub use orientation::{Mirror, QuarterTurn, mirror, turn};
+pub use orientation::{Mirror, QuarterTurn, mirror, turn, turned_crop};
 pub(crate) use pipeline::{Camera, camera_stage, render_base};
 pub use pipeline::{
     neutral_pick, pick_fringe, preview, render, render_export, render_region, render_with_ai,

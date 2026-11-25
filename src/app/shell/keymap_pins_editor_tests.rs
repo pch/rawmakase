@@ -1075,6 +1075,185 @@ fn library_export_sync_and_auto_settings_keys() {
     }
 }
 
+/// Lightroom's Rotate Left and Rotate Right: Cmd+[ and Cmd+] turn the open
+/// photo in Develop as the Crop panel's buttons do, one History step that Undo
+/// takes back, and start a batch on the selection in the Library's views.
+#[test]
+fn cmd_brackets_rotate_the_open_photo_or_the_selection() {
+    let mut f = Fixture::new(Place::Develop);
+    let start = f.e.document.edit.recipe().clone();
+    let (_, applied) = f.e.document.edit.history().steps();
+    let o = tap_in(&mut f, Key::OpenBracket, cmd());
+    assert!(o.get("photos").is_none(), "{o:?}");
+    let mut left = start.clone();
+    crate::develop::turn(&mut left, crate::develop::QuarterTurn::Left);
+    assert_eq!(*f.e.document.edit.recipe(), left);
+    let (steps, now) = f.e.document.edit.history().steps();
+    assert_eq!(now, applied + 1);
+    assert_eq!(
+        (steps[now - 1].name.as_str(), steps[now - 1].value.as_str()),
+        ("Crop", "")
+    );
+    f.e.undo();
+    assert_eq!(*f.e.document.edit.recipe(), start);
+    tap_in(&mut f, Key::CloseBracket, cmd());
+    let mut right = start;
+    crate::develop::turn(&mut right, crate::develop::QuarterTurn::Right);
+    assert_eq!(*f.e.document.edit.recipe(), right);
+    // Held, it turns once.
+    let o = repeat(Place::Develop, Key::OpenBracket, cmd());
+    assert!(o.get("recipe").is_none(), "{o:?}");
+    // In the Library, the selection.
+    for (place, key, name) in [
+        (Place::Grid, Key::OpenBracket, "Rotate Left"),
+        (Place::Loupe, Key::CloseBracket, "Rotate Right"),
+    ] {
+        let o = tap(place, key, cmd());
+        assert!(
+            o.get("busy").is_some_and(|b| b.starts_with("true"))
+                && o.get("message")
+                    .is_some_and(|m| m.starts_with(&format!("{name} on 3 photos"))),
+            "{place:?} {o:?}"
+        );
+    }
+    for key in [Key::OpenBracket, Key::CloseBracket] {
+        assert_inert_behind_a_window_and_while_typing(key, cmd(), "rotate");
+    }
+}
+
+/// Every press of the rotate keys in a frame counts, in the order they came: two
+/// in Develop turn the photo twice. In the Library the first starts the batch,
+/// and a later one is dropped as a press while it runs is.
+#[test]
+fn rotate_keys_take_every_press_of_a_frame_in_order() {
+    use crate::develop::{QuarterTurn, turn};
+    let mut f = Fixture::new(Place::Develop);
+    let start = f.e.document.edit.recipe().clone();
+    f.taps(&[(Key::OpenBracket, cmd()), (Key::OpenBracket, cmd())]);
+    let mut twice = start.clone();
+    turn(&mut twice, QuarterTurn::Left);
+    turn(&mut twice, QuarterTurn::Left);
+    assert_eq!(*f.e.document.edit.recipe(), twice);
+    f.taps(&[(Key::CloseBracket, cmd()), (Key::CloseBracket, cmd())]);
+    assert_eq!(*f.e.document.edit.recipe(), start);
+    let o = taps(
+        Place::Grid,
+        &[(Key::CloseBracket, cmd()), (Key::OpenBracket, cmd())],
+    );
+    assert!(
+        o.get("message")
+            .is_some_and(|m| m.starts_with("Rotate Right on 3 photos")),
+        "{o:?}"
+    );
+}
+
+/// While the pointer is held, as in a crop drag that sets the crop from where it
+/// started, the rotate keys leave the photo alone.
+#[test]
+fn rotate_keys_wait_for_the_pointer() {
+    let mut f = Fixture::new(Place::Crop);
+    let at = eframe::egui::Pos2::new(600., 400.);
+    let button = |pressed| eframe::egui::Event::PointerButton {
+        pos: at,
+        button: eframe::egui::PointerButton::Primary,
+        pressed,
+        modifiers: NONE,
+    };
+    f.frame(vec![eframe::egui::Event::PointerMoved(at), button(true)]);
+    let held = f.e.document.edit.recipe().clone();
+    let o = tap_in(&mut f, Key::OpenBracket, cmd());
+    assert!(o.get("recipe").is_none(), "{o:?}");
+    assert_eq!(*f.e.document.edit.recipe(), held);
+    f.frame(vec![button(false)]);
+    let o = tap_in(&mut f, Key::OpenBracket, cmd());
+    assert!(o.get("recipe").is_some(), "{o:?}");
+}
+
+/// A turn in the frame that undoes is a History step of its own on top of what
+/// the Undo restored, not a change History never sees.
+#[test]
+fn a_turn_in_the_frame_of_an_undo_is_its_own_step() {
+    use crate::develop::{QuarterTurn, turn};
+    let mut f = Fixture::new(Place::Develop);
+    let undone = f.e.document.edit.recipe().clone();
+    f.e.change_edit(None, |r| r.exposure += 0.3);
+    f.taps(&[(Key::Z, cmd()), (Key::CloseBracket, cmd())]);
+    let mut turned = undone.clone();
+    turn(&mut turned, QuarterTurn::Right);
+    assert_eq!(*f.e.document.edit.recipe(), turned);
+    let (steps, applied) = f.e.document.edit.history().steps();
+    assert_eq!(steps[applied - 1].name, "Crop");
+    f.e.undo();
+    assert_eq!(*f.e.document.edit.recipe(), undone);
+}
+
+/// A turn in the frame that releases a crop drag is a step of its own: Undo takes
+/// back the turn and leaves the drag.
+#[test]
+fn a_turn_in_the_frame_that_ends_a_crop_drag_is_its_own_step() {
+    use eframe::egui::{Event, PointerButton, Pos2, Vec2};
+    let mut f = Fixture::new(Place::Crop);
+    // A render to draw the crop over; the fixture's own may not have landed.
+    let texture = f.e.context.load_texture(
+        "photo",
+        eframe::egui::ColorImage::filled([300, 200], eframe::egui::Color32::GRAY),
+        eframe::egui::TextureOptions::LINEAR,
+    );
+    f.e.preview.texture = Some(texture.into());
+    f.frame(Vec::new());
+    let start = f.e.document.edit.recipe().clone();
+    let photo = f.e.view.shown_rect.expect("the photo is drawn");
+    let at = photo.min + Vec2::new(0.3, 0.4) * photo.size();
+    let button = |pos: Pos2, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: NONE,
+    };
+    f.frame(vec![Event::PointerMoved(at), button(at, true)]);
+    let to = at + Vec2::new(30., 20.);
+    for step in 1..=3 {
+        f.frame(vec![Event::PointerMoved(at + (to - at) * step as f32 / 3.)]);
+    }
+    let dragged = f.e.document.edit.recipe().crop;
+    assert_ne!(dragged, start.crop, "the drag moved the crop");
+    let mut events = vec![button(to, false)];
+    events.extend(tap_events(Key::CloseBracket, Key::CloseBracket, cmd()));
+    f.frame(events);
+    assert_eq!(
+        f.e.document.edit.recipe().rotation,
+        (start.rotation + 1) % 4
+    );
+    f.e.undo();
+    assert_eq!(f.e.document.edit.recipe().rotation, start.rotation);
+    assert_eq!(f.e.document.edit.recipe().crop, dragged);
+}
+
+/// A turn in the frame that moves on to the next photo turns the next photo, as a
+/// History step, once it is ready; until then it turns nothing. The photo left
+/// keeps its settings.
+#[test]
+fn a_turn_in_the_frame_that_moves_on_edits_no_photo_left_behind() {
+    let mut f = Fixture::new(Place::Develop);
+    let left = f.e.document.catalog_photo;
+    let before = f.e.document.edit.recipe().clone();
+    f.taps(&[(Key::ArrowRight, NONE), (Key::CloseBracket, cmd())]);
+    assert_ne!(f.e.document.catalog_photo, left, "moved on");
+    let photo = f.photo(3);
+    let saved = f
+        .library()
+        .session
+        .catalog()
+        .load_edit(photo.id, &photo.path)
+        .unwrap()
+        .map(|e| e.recipe);
+    assert!(saved.is_none_or(|r| r.rotation == before.rotation));
+    let (steps, applied) = f.e.document.edit.history().steps();
+    let turned = f.e.document.edit.recipe().rotation != 0;
+    let stepped = applied > 0 && steps[applied - 1].name == "Crop";
+    assert_eq!(turned, stepped, "{steps:?}");
+}
+
 // ---------------------------------------------------------------------------
 // Develop.
 
@@ -1985,6 +2164,8 @@ fn every_default_shortcut_changes_something_from_its_places_start() {
         (Grid, Key::E, cmd_alt_shift, "export with previous"),
         (Grid, Key::S, cmd_shift, "sync"),
         (Grid, Key::U, cmd_shift, "auto settings"),
+        (Grid, Key::OpenBracket, cmd, "rotate left"),
+        (Grid, Key::CloseBracket, cmd, "rotate right"),
         // The Loupe.
         (Loupe, Key::ArrowLeft, none, "previous"),
         (Loupe, Key::ArrowUp, none, "previous by Up"),
@@ -2056,6 +2237,8 @@ fn every_default_shortcut_changes_something_from_its_places_start() {
         (Develop, Key::R, cmd_shift, "Reset"),
         (Develop, Key::V, none, "B&W"),
         (Develop, Key::U, cmd_shift, "Auto Settings"),
+        (Develop, Key::OpenBracket, cmd, "rotate left"),
+        (Develop, Key::CloseBracket, cmd, "rotate right"),
         (Develop, Key::E, cmd_shift, "Export"),
         (Develop, Key::E, cmd_alt_shift, "Export with Previous"),
         (Develop, Key::A, cmd, "select all"),

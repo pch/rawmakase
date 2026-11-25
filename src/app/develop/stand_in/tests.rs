@@ -55,7 +55,7 @@ fn embedded(e: &mut Editor, load: u64) {
 }
 fn live_render(e: &mut Editor) {
     let ctx = e.context.clone();
-    e.set_pixels(&ctx, false, [2, 2], &[0; 12], None);
+    e.set_pixels(&ctx, false, [2, 2], &[0; 12], None, None);
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn a_first_render_of_a_region_takes_over_too() {
     open(&mut e, ids[0], None);
     until(&mut e, |e| e.preview.stand_in.is_some());
     let ctx = e.context.clone();
-    e.set_pixels(&ctx, true, [2, 2], &[0; 12], None);
+    e.set_pixels(&ctx, true, [2, 2], &[0; 12], None, None);
     assert!(!e.preview.standing_in());
 }
 
@@ -273,7 +273,7 @@ fn a_stored_preview_arriving_after_a_region_render_is_dropped() {
     let (_dir, mut e, ids, _) = editor(&["a.ARW"]);
     let load = open(&mut e, ids[0], None);
     let ctx = e.context.clone();
-    e.set_pixels(&ctx, true, [2, 2], &[0; 12], None);
+    e.set_pixels(&ctx, true, [2, 2], &[0; 12], None, None);
     let wanted = e.stand_in_for(ids[0]).unwrap();
     e.stand_in_ready(
         &ctx,
