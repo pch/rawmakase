@@ -34,6 +34,9 @@ pub(in crate::app) struct State {
     /// Previews being built: how many are done of how many queued.
     pub building_previews: Option<BuildProgress>,
     pub auto_running: bool,
+    /// Why `preview` and `export` would answer `not_ready` now: the open
+    /// photo's edit isn't final yet.
+    pub output_waits: Option<&'static str>,
     pub treatment_pending: bool,
     pub save_state: &'static str,
     /// Which of the open module's panels show: `left`, `right` and `filmstrip`,

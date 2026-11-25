@@ -469,6 +469,10 @@ impl Editor {
                     total: p.total,
                 }),
             auto_running: self.document.auto.is_running(),
+            output_waits: develop
+                .then(|| self.open_photo_unready())
+                .flatten()
+                .filter(|_| !self.document.edit.save_state().is_protected()),
             treatment_pending: self.document.pending_treatment.is_some(),
             panels: self.shown_panels(),
             chrome: if self.chrome.hidden(self.module) {
@@ -875,6 +879,28 @@ impl Editor {
                 space,
             } => {
                 self.require_develop()?;
+                // A protected edit isn't what Develop shows, and waiting
+                // doesn't clear it.
+                if self.document.edit.save_state().is_protected() {
+                    let why = self
+                        .document
+                        .edit
+                        .save_state()
+                        .message()
+                        .unwrap_or("it can't be saved here");
+                    return Err(Error::new(
+                        "protected",
+                        format!("The photo's edit is protected: {why}"),
+                    ));
+                }
+                // What Export waits for: an edit not final yet would be
+                // written as it stands and reported completed.
+                if let Some(why) = self.open_photo_unready() {
+                    return Err(Error::new(
+                        "not_ready",
+                        format!("The photo is not ready to export: {why}"),
+                    ));
+                }
                 let photo = self
                     .export_photo()
                     .ok_or_else(|| Error::new("not_ready", "The photo is not ready to export"))?;
