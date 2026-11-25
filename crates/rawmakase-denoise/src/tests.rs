@@ -1216,8 +1216,8 @@ mod neural_engine {
         let photo = f.photo("a.raw");
         let neural = key(&photo, Provider::NeuralEngine).unwrap();
         let tag = rawmakase_inference::neural_engine::tag();
-        assert!(neural.contains(&tag), "{neural}");
-        assert!(!key(&photo, Provider::CoreML).unwrap().contains(&tag));
+        assert!(neural.contains(tag), "{neural}");
+        assert!(!key(&photo, Provider::CoreML).unwrap().contains(tag));
     }
 
     /// A model removed while its first load runs fails that load; the job was cancelled,

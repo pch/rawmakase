@@ -49,6 +49,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -97,13 +98,20 @@ pub fn stalled() -> bool {
 /// Whether this computer has a Neural Engine Core ML can run the model on: Apple
 /// Silicon, on macOS 14 or later (iOS and iPadOS 17), which the converted program needs
 /// (Core ML's specification 8).
+/// Asked of the system once per process: it is asked per request, and per frame while
+/// Preferences shows the choice.
 pub fn supported() -> bool {
-    cfg!(target_arch = "aarch64")
-        && NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion {
-            majorVersion: if cfg!(target_os = "macos") { 14 } else { 17 },
-            minorVersion: 0,
-            patchVersion: 0,
-        })
+    static SUPPORTED: OnceLock<bool> = OnceLock::new();
+    *SUPPORTED.get_or_init(|| {
+        cfg!(target_arch = "aarch64")
+            && NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(
+                NSOperatingSystemVersion {
+                    majorVersion: if cfg!(target_os = "macos") { 14 } else { 17 },
+                    minorVersion: 0,
+                    patchVersion: 0,
+                },
+            )
+    })
 }
 
 /// Where the converted model is made, for [`RAWNIND`] installed in `dir`.
@@ -114,13 +122,17 @@ pub fn folder(dir: &Path) -> PathBuf {
 /// Names the converted model by its program and its weights: what its compiled copy and
 /// its results' cache key are named for, so a model converted again never stands in for
 /// the one before.
-pub fn tag() -> String {
-    let program: String = Sha256::digest(PROGRAM)
-        .iter()
-        .take(6)
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    format!("{program}{}", &WEIGHTS_SHA256[..12])
+/// Hashed once per process: every result's key is named with it.
+pub fn tag() -> &'static str {
+    static TAG: OnceLock<String> = OnceLock::new();
+    TAG.get_or_init(|| {
+        let program: String = Sha256::digest(PROGRAM)
+            .iter()
+            .take(6)
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        format!("{program}{}", &WEIGHTS_SHA256[..12])
+    })
 }
 
 /// AI Denoise's network on the Neural Engine. One tile at a time.
