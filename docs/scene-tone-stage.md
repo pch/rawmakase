@@ -875,6 +875,10 @@ Remaining outliers are extreme low-key scenes with a small bright light source a
 sunsets/clouds where a small warm highlight shifts the 0.17% airlight estimate away from
 the sky.
 
+### Clarity
+
+Positive Clarity (`clarity > 0`) runs on the same local Laplacian base (`MapBase::laplacian`, σ = 1.5 EV) as Shadows and Highlights via an additive curve pair, `g(x, y) = G_base(base(x, y)) + G_pix(l(x, y))`, scaled linearly by the slider (`clarity_rule.rs`, `clarity_rule_data.rs`). A 6-member SiLU ensemble (`H = 64`) evaluates 72 shift-invariant descriptors of the measurement copy's active crop (clamping dead-black optical borders at `q01(logs) − 1.0 EV` via `DARK_TAIL_GAP` and returning exact zero curves on flat frames), projects both `G_flat` and `G_pix` onto monotone curves (`monotone`), and folds them into `G_base = G_flat − G_pix` and `G_pix` over a shared 48-knot `[lo, hi]` domain. Positive Clarity bypasses the four bilateral blurs and shares one model across CPU, GPU (`P_CLARITY_BASE`, `P_CLARITY_PIX`, `P_CLARITY_HDR`), HDR (`hdr_clarity_weights`) and masks. Negative Clarity (`clarity < 0`) keeps the four-scale bilateral `ClarityField`/`ClarityDetail` path in `clarity.rs`.
+
 ### Masks
 
 A full-frame mask's Shadows, Highlights, Dehaze, Clarity and Contrast render like the

@@ -639,7 +639,7 @@ fn monotone_pos(table: &mut [f32; 48], pos: &[f32; 48]) {
         }
     }
 }
-fn monotone(table: &mut [f32; 48], step: f32) {
+pub(super) fn monotone(table: &mut [f32; 48], step: f32) {
     let pos: [f32; 48] = std::array::from_fn(|i| i as f32 * step);
     monotone_pos(table, &pos);
 }
