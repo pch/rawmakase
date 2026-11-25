@@ -394,9 +394,9 @@ impl Service {
     /// Whether AI Denoise runs on the Neural Engine where the service would: the user's
     /// choice (Preferences > Performance). Off, it runs on CoreML's GPU there. Turning it
     /// on tries the Neural Engine again after it failed in this session, unless a load of
-    /// it never finished ([`rawmakase_inference::neural_engine::stalled`]: the compiler
-    /// service stays stuck until the computer restarts). Requests made before keep the
-    /// provider they were made with.
+    /// it never finished (`rawmakase_inference::neural_engine::stalled`, a module built on
+    /// Apple platforms only, so not linked here: the compiler service stays stuck until the
+    /// computer restarts). Requests made before keep the provider they were made with.
     pub fn neural_engine(&self) -> bool {
         self.shared.neural_engine.load(Ordering::Relaxed)
     }

@@ -94,8 +94,8 @@ pub enum Provider {
     CoreML,
     /// Apple's Neural Engine, which computes in half precision only. A model runs there
     /// only in a form converted for it: AI Denoise's is run by Core ML directly
-    /// ([`crate::neural_engine`]). Asked of ONNX Runtime, it is CoreML limited to the CPU
-    /// and the Neural Engine.
+    /// (`neural_engine`, on Apple platforms only). Asked of ONNX Runtime, it is CoreML
+    /// limited to the CPU and the Neural Engine.
     NeuralEngine,
 }
 impl Provider {
