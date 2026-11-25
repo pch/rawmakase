@@ -106,9 +106,27 @@ impl Updates {
         self.requests = None;
         self.replies = None;
     }
-    fn send(&self, request: Request) {
-        if let Some(requests) = &self.requests {
-            let _ = requests.send(request);
+    /// Asks the checker; with its thread gone, what was asked ends now.
+    fn send(&mut self, request: Request) {
+        if let Some(requests) = &self.requests
+            && requests.send(request).is_err()
+        {
+            self.checker_gone();
+        }
+    }
+    /// The checker's thread ended (a panic, or it never started): a check or
+    /// download waiting on it fails with why, rather than showing as running
+    /// for good.
+    fn checker_gone(&mut self) {
+        const GONE: &str = "the update checker stopped; restart RAWmakase to check again";
+        if matches!(self.manual, Some(None)) {
+            self.manual = Some(Some(Err(GONE.into())));
+        }
+        if matches!(
+            self.download,
+            Download::Downloading(..) | Download::Installing
+        ) {
+            self.download = Download::Failed(GONE.into());
         }
     }
 }
@@ -189,7 +207,15 @@ impl Editor {
             return;
         };
         let mut install = false;
-        while let Ok(reply) = replies.try_recv() {
+        loop {
+            let reply = match replies.try_recv() {
+                Ok(reply) => reply,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    updates.checker_gone();
+                    break;
+                }
+            };
             match reply {
                 Reply::Checked {
                     found,
@@ -493,4 +519,40 @@ fn close_button(ui: &mut egui::Ui) -> egui::Response {
         color,
     );
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The checker's thread gone (a panic, or it never started): what waits
+    /// on it ends with why, rather than "Checking…" or a progress bar for
+    /// good, and asking again answers at once.
+    #[test]
+    fn a_checker_that_is_gone_ends_what_waits_on_it() {
+        let ctx = egui::Context::default();
+        let mut e = Editor::with_context(
+            &ctx,
+            None,
+            crate::app::preferences::session::Session::default(),
+            None,
+        );
+        let (requests, incoming) = mpsc::channel();
+        let (outgoing, replies) = mpsc::channel::<Reply>();
+        drop((incoming, outgoing));
+        e.updates.requests = Some(requests);
+        e.updates.replies = Some(replies);
+        e.updates.manual = Some(None);
+        e.updates.download = Download::Downloading(10, 100);
+        e.poll_updates(&ctx);
+        assert!(
+            matches!(e.updates.manual, Some(Some(Err(_)))),
+            "still checking"
+        );
+        assert!(matches!(e.updates.download, Download::Failed(_)));
+        e.updates.manual = Some(None);
+        e.updates.send(Request::Check { manual: true });
+        e.poll_updates(&ctx);
+        assert!(matches!(e.updates.manual, Some(Some(Err(_)))));
+    }
 }

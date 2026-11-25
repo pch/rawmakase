@@ -1146,3 +1146,21 @@ fn the_status_says_what_skipped_photos_were() {
         "Building 1 preview"
     );
 }
+
+/// A refresh that finds nothing stale (an edit saved on leaving a photo)
+/// starts no build, so a finished build's failures stay listed until
+/// dismissed; a refresh that queues photos starts a new count.
+#[test]
+fn a_refresh_with_nothing_to_build_keeps_the_last_failures() {
+    let mut state = State {
+        progress: Progress {
+            done: 2,
+            total: 2,
+            failed: vec![("a.ARW".into(), "unreadable".into())],
+        },
+        ..Default::default()
+    };
+    assert_eq!(state.enqueue(Vec::new()), 0);
+    assert_eq!(state.progress.failed.len(), 1, "{:?}", state.progress);
+    assert_eq!((state.progress.done, state.progress.total), (2, 2));
+}
