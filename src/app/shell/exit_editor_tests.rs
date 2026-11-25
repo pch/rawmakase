@@ -146,6 +146,112 @@ fn closing_anyway_does_not_wait_for_a_folder_change() {
     assert!(!e.close_anyway, "for that close only");
 }
 
+/// With Ask before quitting on, a close is refused until it is answered: Cancel
+/// (or Escape) keeps the window open and saves or stops nothing, and the next
+/// close asks again; once answered Quit, the close goes ahead as before.
+#[test]
+fn ask_before_quitting_holds_the_close_until_answered() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session {
+            confirm_quit: true,
+            ..Default::default()
+        },
+        None,
+    );
+    let commands = |e: &mut Editor, input| {
+        let mut output = ctx.run_ui(input, |ui| e.pending_work(ui.ctx()));
+        output.textures_delta.clear();
+        output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .clone()
+    };
+    let asked = commands(&mut e, close_request());
+    assert!(asked.contains(&egui::ViewportCommand::CancelClose));
+    assert!(e.quit_asked);
+    assert!(e.quit_by.is_none(), "nothing is stopped or saved yet");
+    let mut escape = egui::RawInput::default();
+    escape.events.push(egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Default::default(),
+    });
+    assert!(!commands(&mut e, escape).contains(&egui::ViewportCommand::Close));
+    assert!(!e.quit_asked, "Escape cancels");
+    assert!(commands(&mut e, close_request()).contains(&egui::ViewportCommand::CancelClose));
+    assert!(e.quit_asked, "the next close asks again");
+    // Answered Quit: the close it sends goes through the guard.
+    e.quit_asked = false;
+    e.quit_confirmed = true;
+    assert!(!commands(&mut e, close_request()).contains(&egui::ViewportCommand::CancelClose));
+    assert!(e.quit_by.is_some());
+}
+
+/// The question is modal: the workspace's own keys (Escape restoring hidden
+/// panels, for one) wait while it is open.
+#[test]
+fn the_quit_question_is_modal() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    assert!(!e.workspace_modal());
+    e.quit_asked = true;
+    assert!(e.workspace_modal());
+}
+
+/// Without Ask before quitting, the default, a close goes ahead at once.
+#[test]
+fn quitting_asks_nothing_by_default() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    assert!(!e.confirm_quit);
+    let mut output = ctx.run_ui(close_request(), |ui| e.pending_work(ui.ctx()));
+    output.textures_delta.clear();
+    let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+    assert!(!commands.contains(&egui::ViewportCommand::CancelClose));
+    assert!(!e.quit_asked);
+    assert!(e.quit_by.is_some());
+}
+
+/// Quit answered, then Keep editing in the pending work's window: the next
+/// close asks again.
+#[test]
+fn keep_editing_after_quit_asks_again_next_time() {
+    let ctx = egui::Context::default();
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session {
+            confirm_quit: true,
+            ..Default::default()
+        },
+        None,
+    );
+    assert!(e.activity.begin_folder_change());
+    e.quit_confirmed = true;
+    let mut output = ctx.run_ui(close_request(), |ui| e.pending_work(ui.ctx()));
+    output.textures_delta.clear();
+    assert!(e.close_confirm, "the folder change holds the close");
+    e.keep_editing();
+    e.activity.finish_dialog();
+    let mut output = ctx.run_ui(close_request(), |ui| e.pending_work(ui.ctx()));
+    output.textures_delta.clear();
+    assert!(e.quit_asked);
+}
+
 /// The input of a frame in which the window is asked to close.
 fn close_request() -> egui::RawInput {
     let mut input = egui::RawInput::default();

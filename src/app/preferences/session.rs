@@ -100,6 +100,9 @@ pub(crate) struct Session {
     /// The user turned off checking for updates, which is on by default.
     #[serde(default, deserialize_with = "lenient")]
     pub no_update_checks: bool,
+    /// Quitting asks first; off by default.
+    #[serde(default, deserialize_with = "lenient")]
+    pub confirm_quit: bool,
     /// A release the user chose to skip; newer ones are still offered.
     #[serde(default, deserialize_with = "lenient")]
     pub skipped_version: Option<String>,

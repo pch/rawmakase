@@ -121,6 +121,11 @@ pub(crate) struct Editor {
     importing: Option<std::sync::Arc<crate::app::presets::bulk_import::ImportProgress>>,
     profile_download: crate::app::develop::profile_download::Downloads,
     close_confirm: bool,
+    /// Preferences > General's Ask before quitting.
+    confirm_quit: bool,
+    /// The Quit RAWmakase? question is showing; `quit_confirmed` once answered Quit.
+    quit_asked: bool,
+    quit_confirmed: bool,
     /// The close was refused only to let work finish (an export, Sync Settings, a
     /// folder change, a command output): it is asked for again once that is done.
     close_after_work: bool,
@@ -462,6 +467,9 @@ impl Editor {
                 session.dismissed_community_profiles.clone(),
             ),
             close_confirm: false,
+            confirm_quit: session.confirm_quit,
+            quit_asked: false,
+            quit_confirmed: false,
             close_after_work: false,
             quit_by: None,
             close_anyway: false,
@@ -524,6 +532,7 @@ impl Editor {
                 monitor_srgb: self.view.monitor.session_srgb(),
                 panels: self.panels,
                 no_update_checks: !self.updates.automatic,
+                confirm_quit: self.confirm_quit,
                 skipped_version: self.updates.skipped.clone(),
                 theme: self.themes.chosen().flatten(),
                 theme_chosen: self.themes.chosen().is_some(),

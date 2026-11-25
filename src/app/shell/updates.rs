@@ -254,7 +254,9 @@ impl Editor {
         }
         if install {
             // The helper waits for this process to exit, then installs and
-            // relaunches. Quitting goes through the usual close, which saves.
+            // relaunches. Quitting goes through the usual close, which saves;
+            // Restart to Update was the answer, so Ask before quitting doesn't ask.
+            self.quit_confirmed = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }

@@ -35,6 +35,7 @@ impl Editor {
             || self.collection_dialog_open()
             || self.merge_hdr.dialog_open()
             || self.edit_in.asking.is_some()
+            || self.quit_asked
     }
     /// Carries out what the Library asked for this frame, in the order it asked
     /// (`library::outbox`). A request that opens a window (Remove Copy, Remove Folder,
@@ -2157,16 +2158,32 @@ impl Editor {
     fn save_when_due(&mut self, ctx: &egui::Context) {
         self.autosave(ctx);
         // For a quit the close guard doesn't see (the Dock, logging out).
-        crate::platform::quit::set_work_pending(self.quitting_would_cut_off_work());
+        // Ask before quitting sends a Dock quit or a logout through the close
+        // guard too, so it asks, and never past a question already open.
+        crate::platform::quit::set_work_pending(
+            self.quitting_would_cut_off_work() || self.confirm_quit,
+        );
         if let Some(due) = self.document.edit.save_state().due_in() {
             // Just after it is due, so the frame finds it ready.
             ctx.request_repaint_after(due + Duration::from_millis(10));
         }
     }
+    /// Keep editing, in the pending work's window: the close is given up, and
+    /// the next one asks again if Ask before quitting is on.
+    pub(in crate::app) fn keep_editing(&mut self) {
+        self.close_confirm = false;
+        self.close_after_work = false;
+        self.quit_confirmed = false;
+    }
     pub(in crate::app) fn pending_work(&mut self, ctx: &egui::Context) {
         // After this pass's edits, which `background` ran before.
         self.save_when_due(ctx);
-        if ctx.input(|i| i.viewport().close_requested()) {
+        let closing = ctx.input(|i| i.viewport().close_requested());
+        // Ask before quitting, when chosen: before the guard below saves anything.
+        if closing && self.confirm_quit && !self.quit_confirmed && !self.close_anyway {
+            refuse_close(ctx);
+            self.quit_asked = true;
+        } else if closing {
             let until = Instant::now() + crate::app::shell::exit::DEADLINE;
             let anyway = std::mem::take(&mut self.close_anyway);
             // A file operation stops after the photo under way; closing
@@ -2190,6 +2207,23 @@ impl Editor {
                 self.close_after_work = flushed != Some(Flushed::Failed);
             }
         }
+        if self.quit_asked
+            && let Some(quit) = crate::app::ui::widgets::confirm_modal(
+                ctx,
+                "confirm-quit",
+                "Quit RAWmakase?",
+                "Edits are saved before it closes.",
+                true,
+                &[("Cancel", false), ("Quit", true)],
+                false,
+            )
+        {
+            self.quit_asked = false;
+            if quit {
+                self.quit_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
         if self.close_after_work && self.closing_waits_for().is_none() && !self.autosave.busy() {
             self.close_confirm = false;
             self.close_after_work = false;
@@ -2208,8 +2242,7 @@ impl Editor {
                     "Edits could not be saved. Retry or save a preset before closing.".into()
                 });
                 if ui.button("Keep editing").clicked() {
-                    self.close_confirm = false;
-                    self.close_after_work = false;
+                    self.keep_editing();
                 }
                 // What only runs without its own way to stop it: closing anyway
                 // must stay possible should it stall on a network share.

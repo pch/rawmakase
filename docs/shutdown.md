@@ -219,6 +219,15 @@ that fails, restoring a minimized window to show its question. With nothing
 pending it lets the quit go at once, as before. A logout the app cancels this way stops, and
 macOS says the app interrupted it.
 
+With Preferences > General's Ask before quitting on, the close guard first asks
+"Quit RAWmakase?" and refuses the close until it is answered, before it saves or
+stops anything. Cancel, or Escape, keeps the window open and the next close asks
+again; Quit closes the window again, and that close goes through the guard as
+before. Keep editing in the pending work's window gives up a close answered Quit,
+so the next one asks again. With it on, a quit from the Dock or a logout counts as
+pending work above, so it closes the window and asks too; a logout stops until it
+is answered. Restart to Update closes without asking: choosing it is the answer.
+
 ## File operations
 
 `catalog::file_ops` runs a confirmed operation on the thread that calls it (in the
