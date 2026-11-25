@@ -307,18 +307,13 @@ impl RuleStats {
             self.lin_mean - self.mean,
         ]
     }
-    /// Standardised 32-feature vector for the first ensemble (`[28 hist, top, q50, mean, x]`).
+    /// Standardised 28-feature exposure-invariant vector for the first ensemble
+    /// (`Shadows +100` and `Highlights −100`, without `BOTTOM_GAP` clamping). Keeping
+    /// absolute levels out of the first ensemble avoids extrapolating in HDR where
+    /// `top` exceeds the SDR training range.
     fn features_first_z(&self, x: f32) -> [f32; FEATURES] {
         let f = self.features(x, self.bot);
-        let absolute = [self.top, self.q50, self.mean, x];
-        std::array::from_fn(|i| {
-            let v = if i < HIST_FEATURES {
-                f[i]
-            } else {
-                absolute[i - HIST_FEATURES]
-            };
-            (v - MU[i]) / SD[i]
-        })
+        std::array::from_fn(|i| (f[i] - MU[i]) / SD[i])
     }
     /// Standardised 32-feature vector for the second ensemble (`[28 hist, top, q50, mean, x]`),
     /// with the bottom held within [`BOTTOM_GAP`] of the 10th percentile.

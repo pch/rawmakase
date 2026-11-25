@@ -416,65 +416,112 @@ impl CurveSet {
                 local_tone,
             )
         });
-        if (r.shadows != 0. || local_tone)
+        let shift_dark = r.shadows != 0. || local_tone;
+        let shift_white = r.highlights != 0. && !r.hdr.is_active() && !small.metadata.is_rendered();
+        if (shift_dark || shift_white)
             && let (Some(map), Some(base)) = (&lut.local, &base)
         {
-            // Camera Raw keys its default black on the photo's 0.1th percentile as
-            // Shadows leaves it, not as it finds it, so the per-channel black response
-            // follows the post-Shadows dark level for both positive and negative
-            // Shadows. Masks select this response locally; an unmasked pixel keeps
-            // the global key.
             let levels = base.lum();
             let sw = small.width as usize;
-            let active: Vec<usize> = match crate::develop::local_tone::active_crop_rect(&small) {
-                Some([x0, y0, x1, y1]) => (y0..y1)
-                    .flat_map(|y| (x0..x1).map(move |x| y * sw + x))
-                    .collect(),
-                None => (0..levels.len()).collect(),
-            };
-            let q001 = |mut vals: Vec<f32>| {
-                if vals.is_empty() {
-                    return 0.;
-                }
-                let k = ((vals.len() - 1) as f32 * 0.001) as usize;
-                vals.select_nth_unstable_by(k, f32::total_cmp);
-                vals[k]
-            };
-            let pre: Vec<f32> = active
-                .iter()
-                .map(|&i| crate::develop::local_tone::level(levels[i]))
-                .collect();
-            let q_pre = q001(pre.clone());
-            let shift = |shadows: f32, highlights: f32| {
-                if shadows == 0. {
-                    return 0.;
-                }
-                let post: Vec<f32> = active
+            let mut adjusted = lut.measures;
+            let mut mask_keys = None;
+            if shift_dark {
+                // Camera Raw keys its default black on the photo's 0.1th percentile as
+                // Shadows leaves it, not as it finds it, so the per-channel black response
+                // follows the post-Shadows dark level for both positive and negative
+                // Shadows. Masks select this response locally; an unmasked pixel keeps
+                // the global key.
+                let active: Vec<usize> = match crate::develop::local_tone::active_crop_rect(&small)
+                {
+                    Some([x0, y0, x1, y1]) => (y0..y1)
+                        .flat_map(|y| (x0..x1).map(move |x| y * sw + x))
+                        .collect(),
+                    None => (0..levels.len()).collect(),
+                };
+                let q001 = |mut vals: Vec<f32>| {
+                    if vals.is_empty() {
+                        return 0.;
+                    }
+                    let k = ((vals.len() - 1) as f32 * 0.001) as usize;
+                    vals.select_nth_unstable_by(k, f32::total_cmp);
+                    vals[k]
+                };
+                let pre: Vec<f32> = active
+                    .iter()
+                    .map(|&i| crate::develop::local_tone::level(levels[i]))
+                    .collect();
+                let q_pre = q001(pre.clone());
+                let shift = |shadows: f32, highlights: f32| {
+                    if shadows == 0. {
+                        return 0.;
+                    }
+                    let post: Vec<f32> = active
+                        .par_iter()
+                        .zip(&pre)
+                        .map(|(&i, &l_pre)| {
+                            let y = levels[i];
+                            let x = ((i % sw) as f32 + 0.5) / map.scale[0] - 0.5;
+                            let yy = ((i / sw) as f32 + 0.5) / map.scale[1] - 0.5;
+                            // Divide out the highlights-only gain so the shift vanishes
+                            // continuously as shadows -> 0 while capturing both Shadows and
+                            // any Shadows+Highlights pair interaction when shadows != 0.
+                            let g = (map.gain_with(x, yy, y, [shadows, highlights, 0.])
+                                / map.gain_with(x, yy, y, [0., highlights, 0.]))
+                            .log2();
+                            l_pre + g
+                        })
+                        .collect();
+                    q001(post) - q_pre
+                };
+                adjusted.dark += shift(r.shadows, r.highlights);
+                // One row for each tenth of a mask's total Shadows, −100 to +100.
+                mask_keys = local_tone.then(|| {
+                    std::array::from_fn(|i| {
+                        lut.measures.dark_key(r.exposure)
+                            + shift((i as f32 - 10.) / 10., r.highlights)
+                    })
+                });
+            }
+            if shift_white {
+                // Camera Raw keys `GlobalTone`'s white point W* (and white3 top) on the
+                // photo's 128 px maximum as global Highlights leaves it, not as it finds
+                // it. Masked Highlights leaves the global white point untouched.
+                let make_camera = || as_shot_camera(&small, r);
+                let camera = match &measured {
+                    Some(m) => m.as_shot(make_camera),
+                    None => Arc::new(make_camera()),
+                };
+                let divide_base = r.shadows != 0. || map.clarity.is_some();
+                let post_camera: Vec<[f32; 3]> = camera
                     .par_iter()
-                    .zip(&pre)
-                    .map(|(&i, &l_pre)| {
+                    .enumerate()
+                    .map(|(i, c)| {
                         let y = levels[i];
                         let x = ((i % sw) as f32 + 0.5) / map.scale[0] - 0.5;
                         let yy = ((i / sw) as f32 + 0.5) / map.scale[1] - 0.5;
-                        // Divide out the highlights-only gain so the shift vanishes
-                        // continuously as shadows -> 0 while capturing both Shadows and
-                        // any Shadows+Highlights pair interaction when shadows != 0.
-                        let g = (map.gain_with(x, yy, y, [shadows, highlights, 0.])
-                            / map.gain_with(x, yy, y, [0., highlights, 0.]))
-                        .log2();
-                        l_pre + g
+                        // Divide out the Shadows-only (and Clarity) gain so post-Highlights
+                        // max stays continuous as highlights -> 0 while capturing any pair
+                        // interaction when both sliders are set.
+                        let g = if divide_base {
+                            map.gain_with(x, yy, y, [r.shadows, r.highlights, 0.])
+                                / map.gain_with(x, yy, y, [r.shadows, 0., 0.])
+                        } else {
+                            map.gain_with(x, yy, y, [0., r.highlights, 0.])
+                        };
+                        [c[0] * g, c[1] * g, c[2] * g]
                     })
                     .collect();
-                q001(post) - q_pre
-            };
-            let mut adjusted = lut.measures;
-            adjusted.dark += shift(r.shadows, r.highlights);
-            // One row for each tenth of a mask's total Shadows, −100 to +100.
-            let mask_keys = local_tone.then(|| {
-                std::array::from_fn(|i| {
-                    lut.measures.dark_key(r.exposure) + shift((i as f32 - 10.) / 10., r.highlights)
-                })
-            });
+                let post_max = box_reduce(
+                    &post_camera,
+                    small.width,
+                    small.height,
+                    crate::develop::scene_tone::MAX_EDGE,
+                )
+                .into_iter()
+                .flatten()
+                .fold(f32::MIN_POSITIVE, f32::max);
+                adjusted.max = post_max.log2().min(adjusted.sensor_white);
+            }
             let haze = lut.scene.haze.take();
             lut.scene = crate::develop::scene_tone::SceneTone::new(r, &adjusted, haze);
             if let Some(keys) = mask_keys {
@@ -494,6 +541,16 @@ impl CurveSet {
                 .flat_map(f32::to_le_bytes)
                 .collect();
             let _ = std::fs::write(format!("{path}.white"), bytes);
+            let measures: Vec<u8> = [
+                lut.measures.sensor_white,
+                lut.measures.max,
+                lut.measures.dark,
+                lut.measures.p99,
+            ]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect();
+            let _ = std::fs::write(format!("{path}.measures"), measures);
         }
         lut
     }
@@ -707,27 +764,14 @@ pub(super) fn photo_measures(
     // profile's matrices follow the white (Temp, and Tint for a profile without forward
     // matrices: `CameraProfile::camera_matrix_at`), so its as-shot one is used too.
     let metadata = &small.metadata;
-    let [temperature, tint] = r
-        .profile
-        .as_ref()
-        .and_then(|p| p.as_shot_white_balance(metadata))
-        .unwrap_or([r.temperature, r.tint]);
-    let as_shot = Recipe {
-        wb: [1.; 3],
-        incremental_temperature: 0.,
-        incremental_tint: 0.,
-        temperature,
-        tint,
-        ..base
-    };
-    let shot_camera = super::camera_stage(metadata, &as_shot);
+    let (as_shot, shot_camera, base_lut) = as_shot_stage(metadata, r);
     let camera: Vec<[f32; 3]> = small
         .pixels
         .par_iter()
         .map(|p| {
             exposure_stage(
-                scene_color(*p, &as_shot, &lut, shot_camera, None),
-                &lut,
+                scene_color(*p, &as_shot, &base_lut, shot_camera, None),
+                &base_lut,
                 None,
             )
         })
@@ -792,8 +836,8 @@ pub(super) fn photo_measures(
         .map(|c| metadata.wb[c].max(1e-3))
         .fold(0f32, f32::max);
     let white = crate::develop::scene_tone::luminance(exposure_stage(
-        scene_color([clip; 3], &as_shot, &lut, shot_camera, None),
-        &lut,
+        scene_color([clip; 3], &as_shot, &base_lut, shot_camera, None),
+        &base_lut,
         None,
     ));
     // A rendered file's white curve is Camera Raw's default rendering at keys 0, which
@@ -824,6 +868,46 @@ pub(super) fn photo_haze(
     };
     let scene = measured_scene(&small, &base, &CurveSet::new(&base), camera);
     crate::develop::scene_tone::Haze::of(&scene, small.width as usize, small.height as usize)
+}
+/// The recipe, camera stage and curves at as-shot white balance and Exposure 0, shared
+/// by [`photo_measures`] and post-Highlights maximum measurement.
+fn as_shot_stage(metadata: &Metadata, r: &Recipe) -> (Recipe, Camera, CurveSet) {
+    let base = Recipe {
+        exposure: 0.,
+        ..r.clone()
+    };
+    let lut = CurveSet::new(&base);
+    let [temperature, tint] = r
+        .profile
+        .as_ref()
+        .and_then(|p| p.as_shot_white_balance(metadata))
+        .unwrap_or([r.temperature, r.tint]);
+    let as_shot = Recipe {
+        wb: [1.; 3],
+        incremental_temperature: 0.,
+        incremental_tint: 0.,
+        temperature,
+        tint,
+        ..base
+    };
+    let shot_camera = super::camera_stage(metadata, &as_shot);
+    (as_shot, shot_camera, lut)
+}
+/// The measurement copy `small` at the scene tone stage's input with as-shot white
+/// balance and Exposure 0.
+fn as_shot_camera(small: &CameraImage, r: &Recipe) -> Vec<[f32; 3]> {
+    let (as_shot, shot_camera, lut) = as_shot_stage(&small.metadata, r);
+    small
+        .pixels
+        .par_iter()
+        .map(|p| {
+            exposure_stage(
+                scene_color(*p, &as_shot, &lut, shot_camera, None),
+                &lut,
+                None,
+            )
+        })
+        .collect()
 }
 /// The measurement copy `small` at the scene tone stage's input for `base` (the recipe
 /// with Exposure 0) and its curves.
@@ -1076,17 +1160,26 @@ mod tests {
             };
             let cam = camera_stage(&im.metadata, &r);
             let lut = CurveSet::for_image(Source::new(&im), &r, cam, false);
-            // Probe a deep shadow pixel through default_black (`GlobalTone::apply`).
-            lut.scene.global.apply([(-10.0f32).exp2(); 3])[0]
+            // Probe a deep shadow pixel through default_black (`GlobalTone::apply`),
+            // alongside the default_black LUT samples directly.
+            (
+                lut.scene.global.apply([(-10.0f32).exp2(); 3])[0],
+                lut.scene.global.default_black_samples().map(|s| s.to_vec()),
+            )
         };
-        let def = eval(0., 0.);
-        let h_only = eval(0., 1.);
-        let tiny_s_with_h = eval(1e-4, 1.);
-        let s_only = eval(1., 0.);
-        let both_up = eval(1., 1.);
-        // Highlights alone does not shift default_black; tiny Shadows + Highlights stays
-        // continuous with Highlights alone (no jump at shadows = 0).
-        assert_eq!(h_only, def);
+        let (def, def_black) = eval(0., 0.);
+        let (h_only, h_only_black) = eval(0., 1.);
+        let (tiny_s_with_h, _) = eval(1e-4, 1.);
+        let (s_only, _) = eval(1., 0.);
+        let (both_up, _) = eval(1., 1.);
+        // Highlights alone does not shift default_black (though post-Highlights max may
+        // shift white3.bin's row slightly); tiny Shadows + Highlights stays continuous
+        // with Highlights alone (no jump at shadows = 0).
+        assert_eq!(h_only_black, def_black);
+        assert!(
+            (h_only - def).abs() < 2e-5,
+            "unexpected deep-shadow drift under H+100 alone: def={def} h_only={h_only}"
+        );
         assert!(
             (tiny_s_with_h - h_only).abs() < 1e-4,
             "jump at shadows -> 0: h_only={h_only} tiny={tiny_s_with_h}"
@@ -1096,6 +1189,167 @@ mod tests {
         assert!(
             (both_up - s_only).abs() > 1e-5,
             "pair dark_key did not move from S-only: s_only={s_only} both_up={both_up}"
+        );
+    }
+
+    /// Global Highlights moves `GlobalTone`'s white point W* with the post-Highlights
+    /// 128 px maximum: `H−100` lowers W* (less shoulder compression at bright scene
+    /// values), `H+100` raises W* up to `sensor_white` (capped there), the response is
+    /// continuous as `highlights -> 0` (alone, with Shadows, and with Clarity), and
+    /// Shadows-only, masked-only Highlights, HDR and rendered files stay untouched.
+    #[test]
+    fn post_highlights_white_point_moves_with_global_highlights_and_respects_invariants() {
+        let make_image = |bright: f32, source: rawmakase_model::camera_data::Source| {
+            let (w, h) = (64u32, 64u32);
+            let pixels: Vec<[f32; 3]> = (0..w * h)
+                .map(|i| {
+                    let x = (i % w) as f32 / w as f32;
+                    let y = (i / w) as f32 / h as f32;
+                    let tex = 1. + 0.08 * ((i * 37 % 17) as f32 / 17. - 0.5);
+                    let v = if x > 0.65 && y > 0.65 {
+                        bright * tex
+                    } else {
+                        (-6. + 3. * x).exp2() * tex
+                    };
+                    [v; 3]
+                })
+                .collect();
+            CameraImage {
+                width: w,
+                height: h,
+                recovered: Default::default(),
+                pixels: pixels.into(),
+                metadata: Metadata {
+                    source,
+                    wb: [1., 1., 1.],
+                    matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+                    ..Default::default()
+                },
+                fast: false,
+                scale_factor: 1.,
+                scale_clipped: 0,
+                hdr: Default::default(),
+            }
+        };
+        let white_at = |im: &CameraImage, r: &Recipe, local_tone: bool| {
+            let cam = camera_stage(&im.metadata, r);
+            let lut = CurveSet::for_image(Source::new(im), r, cam, local_tone);
+            // Output at scene 0.8 (inside the shoulder when W* > 1) and gpu_keys()[0] (top).
+            (
+                lut.scene.global.white_curve(0.8),
+                lut.scene.global.gpu_keys()[0],
+            )
+        };
+
+        // Case 1: baseline +2 EV (sensor_white = 4.0), bright patch at 0.50 (scene = 2.0 -> W* = 4.0).
+        // H−100 pulls bright patch down, lowering W* and lifting white_curve(0.8) toward linear.
+        let im_hi = make_image(0.50, rawmakase_model::camera_data::Source::Raw);
+        let base_r = Recipe {
+            camera_exposure: 2.,
+            ..Default::default()
+        };
+        let (def_y, def_top) = white_at(&im_hi, &base_r, false);
+        let (h_down_y, h_down_top) = white_at(
+            &im_hi,
+            &Recipe {
+                highlights: -1.,
+                ..base_r.clone()
+            },
+            false,
+        );
+        assert!(
+            h_down_top < def_top - 0.3 && h_down_y > def_y + 0.02,
+            "H-100 should lower top/W* and lift white_curve(0.8): def=({def_y}, {def_top}) h-100=({h_down_y}, {h_down_top})"
+        );
+
+        // Shadows-only and masked-only Highlights leave white_curve untouched.
+        let (s_only_y, s_only_top) = white_at(
+            &im_hi,
+            &Recipe {
+                shadows: 1.,
+                ..base_r.clone()
+            },
+            false,
+        );
+        assert_eq!(s_only_top, def_top);
+        assert_eq!(s_only_y, def_y);
+        let (mask_only_y, mask_only_top) = white_at(&im_hi, &base_r, true);
+        assert_eq!(mask_only_top, def_top);
+        assert_eq!(mask_only_y, def_y);
+
+        // Continuity as highlights -> 0 (alone, with Shadows, and with Clarity).
+        let (tiny_h_y, tiny_h_top) = white_at(
+            &im_hi,
+            &Recipe {
+                highlights: -1e-4,
+                ..base_r.clone()
+            },
+            false,
+        );
+        assert!(
+            (tiny_h_top - def_top).abs() < 1e-3 && (tiny_h_y - def_y).abs() < 1e-4,
+            "discontinuity at h -> 0: def=({def_y}, {def_top}) tiny=({tiny_h_y}, {tiny_h_top})"
+        );
+        let mut r_sc = Recipe {
+            shadows: 0.8,
+            ..base_r.clone()
+        };
+        r_sc.effects.clarity = 0.7;
+        let (sc_y, sc_top) = white_at(&im_hi, &r_sc, false);
+        let (sc_tiny_y, sc_tiny_top) = white_at(
+            &im_hi,
+            &Recipe {
+                highlights: -1e-4,
+                ..r_sc
+            },
+            false,
+        );
+        assert!(
+            (sc_tiny_top - sc_top).abs() < 1e-3 && (sc_tiny_y - sc_y).abs() < 1e-4,
+            "discontinuity at h -> 0 with Shadows+Clarity: sc=({sc_y}, {sc_top}) tiny=({sc_tiny_y}, {sc_tiny_top})"
+        );
+
+        // Case 2: dim scene (baseline +2 EV -> sensor_white = 4.0, bright = 0.16 -> scene = 0.64 -> W* ≈ 1.3).
+        // H+100 lifts the bright patch, raising top/W* up toward sensor_white (and capping at sensor_white = 2.0 log2).
+        let im_dim = make_image(0.16, rawmakase_model::camera_data::Source::Raw);
+        let (dim_def_y, dim_def_top) = white_at(&im_dim, &base_r, false);
+        let (dim_up_y, dim_up_top) = white_at(
+            &im_dim,
+            &Recipe {
+                highlights: 1.,
+                ..base_r.clone()
+            },
+            false,
+        );
+        assert!(
+            dim_up_top > dim_def_top + 0.3
+                && dim_up_top <= 2. + 1e-3
+                && dim_up_y < dim_def_y - 0.01,
+            "H+100 should raise top/W* capped at sensor_white: def=({dim_def_y}, {dim_def_top}) h+100=({dim_up_y}, {dim_up_top})"
+        );
+
+        // Case 3: HDR and rendered files keep their global white curve unchanged under Highlights.
+        let mut r_hdr = Recipe {
+            highlights: -1.,
+            ..base_r.clone()
+        };
+        r_hdr.hdr.enabled = true;
+        let mut r_hdr_def = base_r;
+        r_hdr_def.hdr.enabled = true;
+        assert_eq!(
+            white_at(&im_hi, &r_hdr, false),
+            white_at(&im_hi, &r_hdr_def, false)
+        );
+
+        let im_ren = make_image(0.50, rawmakase_model::camera_data::Source::Rendered);
+        let ren_def = Recipe::default();
+        let ren_hl = Recipe {
+            highlights: -1.,
+            ..Default::default()
+        };
+        assert_eq!(
+            white_at(&im_ren, &ren_hl, false),
+            white_at(&im_ren, &ren_def, false)
         );
     }
 }

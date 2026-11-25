@@ -35,6 +35,9 @@ pub(crate) struct Measured {
     /// The copy's camera color (white balance, the profile's matrix and HueSatMap,
     /// calibration), which the map's base exposes.
     colors: std::sync::OnceLock<std::sync::Arc<Vec<[f32; 3]>>>,
+    /// The copy's linear scene RGB at as-shot white balance and Exposure 0, reused
+    /// across Highlights slider edits to measure the post-Highlights maximum.
+    as_shot: std::sync::OnceLock<std::sync::Arc<Vec<[f32; 3]>>>,
 }
 impl Measured {
     pub(crate) fn new(measures: PhotoMeasures) -> Self {
@@ -44,6 +47,7 @@ impl Measured {
             pivots: Kept::default(),
             maps: Kept::default(),
             colors: Default::default(),
+            as_shot: Default::default(),
         }
     }
     /// The copy's camera color, made by `make` unless kept. Not initialised in place: a
@@ -58,6 +62,18 @@ impl Measured {
         }
         let colors = std::sync::Arc::new(make());
         self.colors.get_or_init(|| colors).clone()
+    }
+    /// The copy's linear scene RGB at as-shot white balance and Exposure 0, made by
+    /// `make` unless kept.
+    pub(crate) fn as_shot(
+        &self,
+        make: impl FnOnce() -> Vec<[f32; 3]>,
+    ) -> std::sync::Arc<Vec<[f32; 3]>> {
+        if let Some(c) = self.as_shot.get() {
+            return c.clone();
+        }
+        let colors = std::sync::Arc::new(make());
+        self.as_shot.get_or_init(|| colors).clone()
     }
     /// How many pivots and map bases are kept.
     #[cfg(test)]
