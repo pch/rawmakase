@@ -548,6 +548,9 @@ impl Editor {
         } else {
             LayoutEdit::Settled
         });
+        if !busy {
+            self.remember_zoom_level();
+        }
         // Last, so a message from anything above shows this frame, over it all.
         self.take_library_messages();
         crate::app::shell::lights::paint(
@@ -614,6 +617,15 @@ impl Editor {
             .session
             .remember_place(place, shown, layout == LayoutEdit::Changing)
         {
+            let _ = self.save_session();
+        }
+    }
+    /// Saves the session when the zoom level a click zooms to changed. Called
+    /// once a drag ends, so the slider doesn't write it on every frame.
+    pub(in crate::app) fn remember_zoom_level(&mut self) {
+        let level = self.view.zoom.level;
+        if self.session.zoom_level.unwrap_or(1.) != level {
+            self.session.zoom_level = Some(level);
             let _ = self.save_session();
         }
     }

@@ -377,6 +377,7 @@ impl Editor {
                 backdrop: crate::app::view::backdrop::Backdrop::from_key(
                     session.backdrop.as_deref(),
                 ),
+                zoom: crate::app::view::navigator::Zoom::from_session(session.zoom_level),
                 crop_guides: crate::app::develop::tools::crop_tool::CropGuides::from_session(
                     &session.crop_guides,
                 ),

@@ -88,6 +88,17 @@ impl Default for Zoom {
     }
 }
 impl Zoom {
+    /// Fitted, with `level` from the session as the level a click zooms to:
+    /// 100% when there is none, and within the levels a step reaches.
+    pub(in crate::app) fn from_session(level: Option<f32>) -> Self {
+        let level = level
+            .filter(|l| l.is_finite() && *l > 0.)
+            .map_or(1., |l| l.clamp(MIN_LEVEL, MAX_LEVEL));
+        Self {
+            level,
+            ..Self::default()
+        }
+    }
     /// Screen rectangle of a whole photo of `size` image pixels laid out in `area`:
     /// fitted in Fit, otherwise `level` screen pixels per image pixel around `pan`,
     /// centred when smaller than `area`. `ppp` is pixels per point.
@@ -551,7 +562,9 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         ctx.all_styles_mut(|s| s.animation_time = 0.);
-        let mut editor = Editor::with_context(&ctx, None, Default::default(), None);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("session.json");
+        let mut editor = Editor::with_context(&ctx, None, Default::default(), Some(file.clone()));
         editor.module = crate::app::Module::Develop;
         editor.document.set_image(crate::app::testing::blue_image());
         // Large enough a view that the photo fits above 12.5%.
@@ -604,6 +617,31 @@ mod tests {
                 assert_eq!(zoom.level, level, "{pick}");
             }
         }
+        // The level chosen is kept with the session, fitted or not: the next
+        // launch opens at Fit, and a click on the photo zooms to it.
+        editor.remember_zoom_level();
+        let saved: crate::app::preferences::session::Session =
+            serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(saved.zoom_level, Some(0.125));
+        let reopened = Editor::with_context(&ctx, None, saved, None);
+        assert_eq!(reopened.view.zoom.level, 0.125);
+        assert!(!reopened.view.zoom.on);
+    }
+
+    /// A saved level reads back within the levels a step reaches; none, or
+    /// one that is no level, is 100%.
+    #[test]
+    fn a_saved_zoom_level_reads_back_within_reach() {
+        use super::Zoom;
+        let level = |l| Zoom::from_session(l).level;
+        assert_eq!(level(Some(0.5)), 0.5);
+        assert_eq!(level(None), 1.);
+        assert_eq!(level(Some(f32::NAN)), 1.);
+        assert_eq!(level(Some(-2.)), 1.);
+        assert_eq!(level(Some(0.)), 1.);
+        assert_eq!(level(Some(1e9)), 16.);
+        assert_eq!(level(Some(1e-9)), 1. / 16.);
+        assert!(!Zoom::from_session(Some(0.5)).on);
     }
 
     /// The zoom controls as a photo's toolbar draws them, at Fit, 50% and 1600%,

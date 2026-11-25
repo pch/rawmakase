@@ -208,6 +208,15 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub backdrop: Option<String>,
+    /// The zoom level a click on the photo zooms to, in screen pixels per
+    /// image pixel (1 is 100%): the level last chosen, zoomed in or not. None
+    /// is 100%.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub zoom_level: Option<f32>,
     /// The Crop tool's guide overlay.
     #[serde(default, deserialize_with = "lenient")]
     pub crop_guides: CropGuideLayout,
@@ -405,6 +414,8 @@ pub(in crate::app) struct SessionState {
     pub(in crate::app) sync_groups: Option<crate::model::settings_groups::GroupSelection>,
     pub(in crate::app) auto_sync: bool,
     pub(in crate::app) first_conversion: crate::app::develop::treatment::FirstConversion,
+    /// The zoom level, as last saved; see [`Session::zoom_level`].
+    pub(in crate::app) zoom_level: Option<f32>,
 }
 
 impl SessionState {
@@ -438,6 +449,7 @@ impl SessionState {
             } else {
                 crate::app::develop::treatment::FirstConversion::AutoMix
             },
+            zoom_level: session.zoom_level,
         }
     }
     /// Where the session is written, if anywhere.
@@ -506,6 +518,7 @@ impl SessionState {
                     self.copy_groups
                         .contains(crate::model::settings_groups::SettingGroup::HighDynamicRange),
                 ),
+                zoom_level: self.zoom_level,
                 unknown: self.unknown.clone(),
                 ..owned
             },
