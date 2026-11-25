@@ -128,15 +128,22 @@ pub fn model_tag() -> String {
 /// The key of a finished result of the installed model for the file `file` names, run
 /// on any provider, when `cache` has one: what a Library preview of the photo shows.
 pub fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<String> {
-    [
-        Provider::Cpu,
-        Provider::Cuda,
-        Provider::CoreML,
-        Provider::NeuralEngine,
-    ]
-    .into_iter()
-    .map(|provider| key_of(file, provider))
-    .find(|key| cache.contains(key))
+    // The Neural Engine runs on Apple platforms alone: elsewhere it has no results to
+    // look for.
+    let providers: &[Provider] = if cfg!(target_vendor = "apple") {
+        &[
+            Provider::Cpu,
+            Provider::Cuda,
+            Provider::CoreML,
+            Provider::NeuralEngine,
+        ]
+    } else {
+        &[Provider::Cpu, Provider::Cuda, Provider::CoreML]
+    };
+    providers
+        .iter()
+        .map(|provider| key_of(file, *provider))
+        .find(|key| cache.contains(key))
 }
 
 /// `sink`, handed a result (partial or final) only while the file at `path` is still
