@@ -3361,6 +3361,20 @@ fn loupe_zooms_at_the_navigator_levels_and_prepares_the_next_photo() -> Result<(
     frame(&mut library, &mut zoom);
     let (_, rect) = library.loupe.regions.region.clone().unwrap();
     assert_eq!([rect[0], rect[1]], [0., 0.]);
+    assert!(
+        library
+            .loupe_minimap()
+            .and_then(|(_, shown)| shown)
+            .is_some()
+    );
+    // Zoomed out below Fit the whole photo shows: the minimap outlines no part.
+    zoom.set(0.125);
+    frame(&mut library, &mut zoom);
+    library.loupe.regions.wait(&ctx);
+    frame(&mut library, &mut zoom);
+    let (_, rect) = library.loupe.regions.region.clone().unwrap();
+    assert_eq!(rect, [0., 0., 1., 1.]);
+    assert_eq!(library.loupe_minimap().and_then(|(_, shown)| shown), None);
     zoom.set(0.);
     frame(&mut library, &mut zoom);
     assert!(library.loupe.regions.region.is_none());

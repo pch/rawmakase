@@ -35,12 +35,30 @@ const STEP: f32 = std::f32::consts::SQRT_2;
 pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
     const NEAR: f32 = 1e-3;
     let next = if up { current * STEP } else { current / STEP };
-    if (current < 1. - NEAR && next > 1. + NEAR) || (current > 1. + NEAR && next < 1. - NEAR) {
-        return 1.;
-    }
+    let at_100 = if up {
+        current < 1. - NEAR && next > 1. + NEAR
+    } else {
+        current > 1. + NEAR && next < 1. - NEAR
+    };
     let below_fit = current < fit * (1. - NEAR);
-    if next <= fit * (1. + NEAR) && (up || !below_fit) {
-        return 0.;
+    let at_fit = if up {
+        below_fit && next >= fit * (1. - NEAR)
+    } else {
+        !below_fit && next <= fit * (1. + NEAR)
+    };
+    // A step reaching both stops at the nearer one it moves to: going in, the
+    // lower; going out, Fit when it lies between, and 100% from a level
+    // already at Fit's size.
+    let fit_first = if up {
+        fit < 1.
+    } else {
+        fit > 1. && current > fit * (1. + NEAR)
+    };
+    match (at_100, at_fit) {
+        (true, true) => return if fit_first { 0. } else { 1. },
+        (true, false) => return 1.,
+        (false, true) => return 0.,
+        (false, false) => {}
     }
     // At a limit, a step stays put rather than going the other way.
     let next = next.clamp(MIN_LEVEL.min(fit), max_level(fit));
@@ -70,6 +88,17 @@ impl Default for Zoom {
     }
 }
 impl Zoom {
+    /// Fitted, with `level` from the session as the level a click zooms to:
+    /// 100% when there is none, and within the levels a step reaches.
+    pub(in crate::app) fn from_session(level: Option<f32>) -> Self {
+        let level = level
+            .filter(|l| l.is_finite() && *l > 0.)
+            .map_or(1., |l| l.clamp(MIN_LEVEL, MAX_LEVEL));
+        Self {
+            level,
+            ..Self::default()
+        }
+    }
     /// Screen rectangle of a whole photo of `size` image pixels laid out in `area`:
     /// fitted in Fit, otherwise `level` screen pixels per image pixel around `pan`,
     /// centred when smaller than `area`. `ppp` is pixels per point.
@@ -257,19 +286,50 @@ impl Photo {
     }
 }
 
+/// The zoom levels the slider's menu offers besides Fit, as Lightroom's
+/// Navigator menu does. 12.5% and 25% are below Fit for most photos, which
+/// leaves room around the frame.
+const PRESETS: [(f32, &str); 8] = [
+    (0.125, "12.5%"),
+    (0.25, "25%"),
+    (0.5, "50%"),
+    (1., "100%"),
+    (2., "200%"),
+    (4., "400%"),
+    (8., "800%"),
+    (16., "1600%"),
+];
+
+/// A level chosen on the zoom slider; 0 is Fit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::app) enum ZoomChoice {
+    /// Dragged or stepped: the photo follows at once, as an eased zoom would
+    /// trail behind every move of the knob.
+    Moved(f32),
+    /// Picked from the level's menu: eased, as the zoom keys are.
+    Picked(f32),
+}
+impl ZoomChoice {
+    pub(in crate::app) fn level(self) -> f32 {
+        match self {
+            Self::Moved(l) | Self::Picked(l) => l,
+        }
+    }
+}
+
 /// The zoom slider, in a toolbar button's shape `height` high: `−`, a track from
-/// Fit to 1600% on a log scale, `+`, and the level shown. `zoom` is on a photo
-/// that fits at `fit` screen pixels per image pixel (a nominal level until the
-/// photo's size is known). Returns the level chosen, 0 for Fit.
+/// Fit to 1600% on a log scale, `+`, and the level shown, which opens a menu of
+/// Fit and [`PRESETS`]. `zoom` is on a photo that fits at `fit` screen pixels
+/// per image pixel (a nominal level until the photo's size is known).
 pub(in crate::app) fn zoom_slider(
     ui: &mut egui::Ui,
     zoom: Zoom,
     fit: Option<f32>,
     width: f32,
     height: f32,
-) -> Option<f32> {
+) -> Option<ZoomChoice> {
     const BUTTON: f32 = 20.;
-    const LABEL: f32 = 36.;
+    const LABEL: f32 = 52.;
     let palette = theme::palette(ui.ctx());
     let fit = fit.filter(|f| f.is_finite() && *f > 0.).unwrap_or(0.1);
     let max = max_level(fit);
@@ -301,6 +361,8 @@ pub(in crate::app) fn zoom_slider(
     };
     let out = button(ui, minus, "zoom-out").on_hover_text("Zoom out · Cmd+-");
     let into = button(ui, plus, "zoom-in").on_hover_text("Zoom in · Cmd+=");
+    let menu = button(ui, label.with_max_x(outer.right()), "zoom-level");
+    menu.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Zoom level"));
     let drag = ui
         .interact(
             track.expand2(Vec2::new(8., 10.)),
@@ -310,10 +372,10 @@ pub(in crate::app) fn zoom_slider(
         .on_hover_text("Zoom · Cmd+1 fits, Cmd+0 is 100%");
     let mut chosen = None;
     if out.clicked() {
-        chosen = Some(stepped(current, fit, false));
+        chosen = Some(ZoomChoice::Moved(stepped(current, fit, false)));
     }
     if into.clicked() {
-        chosen = Some(stepped(current, fit, true));
+        chosen = Some(ZoomChoice::Moved(stepped(current, fit, true)));
     }
     if (drag.dragged() || drag.clicked())
         && let Some(p) = drag.interact_pointer_pos()
@@ -321,14 +383,38 @@ pub(in crate::app) fn zoom_slider(
         let t = ((p.x - track.left()) / track.width()).clamp(0., 1.);
         // 100% is easy to hit: the knob holds there for a few points.
         let at_100 = fit < 1. && (track.left() + to_t(1.) * track.width() - p.x).abs() < 4.;
-        chosen = Some(if t <= 0.005 {
+        chosen = Some(ZoomChoice::Moved(if t <= 0.005 {
             0.
         } else if at_100 {
             1.
         } else {
             from_t(t)
-        });
+        }));
     }
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&menu));
+    let menu_hovered = menu.hovered() || open;
+    let menu = if open {
+        menu
+    } else {
+        menu.on_hover_text("Zoom level")
+    };
+    egui::Popup::menu(&menu).show(|ui| {
+        crate::app::ui::widgets::menu_width(ui, 120.);
+        ui.spacing_mut().item_spacing.y = 0.;
+        let near = |level: f32| zoom.on && (zoom.level / level - 1.).abs() < 1e-3;
+        if crate::app::ui::widgets::menu_item(ui, "Fit", "", true, !zoom.on) {
+            chosen = Some(ZoomChoice::Picked(0.));
+            ui.close();
+        }
+        crate::app::ui::widgets::menu_separator(ui);
+        for (level, name) in PRESETS {
+            if crate::app::ui::widgets::menu_item(ui, name, "", true, near(level)) {
+                chosen = Some(ZoomChoice::Picked(level));
+                ui.close();
+            }
+        }
+    });
+    let chosen_level = chosen.map(ZoomChoice::level);
     let painter = ui.painter();
     let stroke = |hovered: bool| {
         Stroke::new(
@@ -351,7 +437,7 @@ pub(in crate::app) fn zoom_slider(
         [c - Vec2::new(0., d), c + Vec2::new(0., d)],
         stroke(into.hovered()),
     );
-    let shown = chosen.map_or(current, |l| if l == 0. { fit } else { l });
+    let shown = chosen_level.map_or(current, |l| if l == 0. { fit } else { l });
     let x = track.left() + to_t(shown) * track.width();
     painter.rect_filled(track, 2., palette.tone(Tone::OUTLINE));
     painter.rect_filled(
@@ -371,19 +457,34 @@ pub(in crate::app) fn zoom_slider(
         );
     }
     painter.circle_filled(Pos2::new(x, track.center().y), 6., Color32::WHITE);
-    let text = if chosen.map_or(!zoom.on, |l| l == 0.) {
+    let text = if chosen_level.map_or(!zoom.on, |l| l == 0.) {
         "Fit".to_owned()
     } else {
-        format!("{:.0}%", shown * 100.)
+        level_text(shown)
     };
     painter.text(
         label.left_center() + Vec2::new(4., 0.),
         egui::Align2::LEFT_CENTER,
-        text,
+        format!("{text} ▾"),
         egui::FontId::proportional(text::SMALL),
-        palette.tone(Tone::LABEL),
+        palette.tone(if menu_hovered {
+            Tone::STRONG
+        } else {
+            Tone::LABEL
+        }),
     );
     chosen
+}
+
+/// A level as the slider names it: whole percent, or a tenth below 20%, where
+/// whole percent would round 12.5% to 13%.
+fn level_text(level: f32) -> String {
+    let percent = level * 100.;
+    if percent < 19.95 && (percent * 10.).round() % 10. != 0. {
+        format!("{percent:.1}%")
+    } else {
+        format!("{percent:.0}%")
+    }
 }
 
 #[cfg(test)]
@@ -407,7 +508,19 @@ mod tests {
         assert_eq!(stepped(2., 2., false), 0.);
         assert_eq!(stepped(1.2, 1.2, false), 1.);
         assert!((stepped(1., 1.2, false) - 1. / std::f32::consts::SQRT_2).abs() < 1e-5);
-        assert_eq!(stepped(1., 1.2, true), std::f32::consts::SQRT_2);
+        // Zooming in from below Fit steps on and stops at Fit, not past it
+        // nor straight to it.
+        assert_eq!(stepped(1., 1.2, true), 0.);
+        let up = |l: f32, fit| stepped(l, fit, true);
+        assert!((up(0.125, 0.5) - 0.125 * std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert_eq!(up(0.25, 0.3), 0.);
+        assert!((up(0.125, 2.) - 0.125 * std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert_eq!(up(0.8, 2.), 1.);
+        // Fit below 100%, both within the step: Fit comes first going in,
+        // 100% going out.
+        assert_eq!(up(0.8, 0.9), 0.);
+        assert_eq!(stepped(1.1, 0.9, false), 1.);
+        assert_eq!(stepped(1.3, 1.2, false), 0.);
         assert_eq!(stepped(0.07, 1.2, false), 1. / 16.);
         // A large photo stops at Fit, whether zoomed in at it or above it.
         assert_eq!(stepped(0.2, 0.2, false), 0.);
@@ -437,6 +550,187 @@ mod tests {
                 level *= 1.19;
             }
         }
+    }
+
+    /// The level beside the slider opens a menu of Fit and preset levels,
+    /// some below Fit, and picking one zooms the photo to it.
+    #[test]
+    fn the_zoom_level_opens_a_menu_of_levels() {
+        use crate::app::Editor;
+        use crate::app::testing::{centre, labelled};
+        use eframe::egui::{self, Pos2, Rect, Vec2};
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        ctx.all_styles_mut(|s| s.animation_time = 0.);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("session.json");
+        let mut editor = Editor::with_context(&ctx, None, Default::default(), Some(file.clone()));
+        editor.module = crate::app::Module::Develop;
+        editor.document.set_image(crate::app::testing::blue_image());
+        // Large enough a view that the photo fits above 12.5%.
+        editor.view.viewport = Vec2::new(1000., 800.);
+        let frame = |editor: &mut Editor, events: Vec<egui::Event>| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(500., 300.))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        editor.zoom_controls(ui, 32.)
+                    });
+                },
+            );
+            output.textures_delta.clear();
+            output
+                .platform_output
+                .accesskit_update
+                .expect("accessibility is on")
+        };
+        let click = |editor: &mut Editor, label: &str| {
+            let tree = frame(editor, vec![]);
+            let at = centre(labelled(&tree, label).unwrap_or_else(|| panic!("{label} shown")));
+            for pressed in [true, false] {
+                frame(
+                    editor,
+                    vec![
+                        egui::Event::PointerMoved(at),
+                        egui::Event::PointerButton {
+                            pos: at,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+        };
+        let fit = editor.fit_level().expect("the photo's size is known");
+        assert!(fit > 0.125, "fits at {fit}");
+        for (pick, level) in [("50%", Some(0.5)), ("12.5%", Some(0.125)), ("Fit", None)] {
+            click(&mut editor, "Zoom level");
+            click(&mut editor, pick);
+            let zoom = editor.view.zoom;
+            assert_eq!(zoom.on, level.is_some(), "{pick}");
+            if let Some(level) = level {
+                assert_eq!(zoom.level, level, "{pick}");
+            }
+        }
+        // The level chosen is kept with the session, fitted or not: the next
+        // launch opens at Fit, and a click on the photo zooms to it.
+        editor.remember_zoom_level();
+        let saved: crate::app::preferences::session::Session =
+            serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(saved.zoom_level, Some(0.125));
+        let reopened = Editor::with_context(&ctx, None, saved, None);
+        assert_eq!(reopened.view.zoom.level, 0.125);
+        assert!(!reopened.view.zoom.on);
+        // The first frame draws it as it was: nothing to render again.
+        assert_eq!(reopened.view.zoom_key, (false, 0.125));
+        // A saved level out of reach reads back within it and isn't written
+        // again until the zoom changes; an unreadable one reads as 100%.
+        for (saved, read) in [(Some(20.), 16.), (Some(-2.), 1.), (Some(f32::NAN), 1.)] {
+            let session = crate::app::preferences::session::Session {
+                zoom_level: saved,
+                ..Default::default()
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("session.json");
+            let mut editor = Editor::with_context(&ctx, None, session, Some(file.clone()));
+            assert_eq!(editor.view.zoom.level, read, "{saved:?}");
+            editor.remember_zoom_level();
+            assert!(!file.exists(), "{saved:?} written again unchanged");
+        }
+    }
+
+    /// A saved level reads back within the levels a step reaches; none, or
+    /// one that is no level, is 100%.
+    #[test]
+    fn a_saved_zoom_level_reads_back_within_reach() {
+        use super::Zoom;
+        let level = |l| Zoom::from_session(l).level;
+        assert_eq!(level(Some(0.5)), 0.5);
+        assert_eq!(level(None), 1.);
+        assert_eq!(level(Some(f32::NAN)), 1.);
+        assert_eq!(level(Some(-2.)), 1.);
+        assert_eq!(level(Some(0.)), 1.);
+        assert_eq!(level(Some(1e9)), 16.);
+        assert_eq!(level(Some(1e-9)), 1. / 16.);
+        assert!(!Zoom::from_session(Some(0.5)).on);
+    }
+
+    /// The zoom controls as a photo's toolbar draws them, at Fit, 50% and 1600%,
+    /// each with the level's menu closed and open, for `RAWMAKASE_UI_SHOTS`
+    /// ([`crate::app::ui::shots`]). The menu opens on a click, which a shot
+    /// can't make, so it is drawn here.
+    #[test]
+    fn shots_of_the_zoom_level_menu() {
+        use crate::app::Editor;
+        use eframe::egui::{self, Vec2};
+        use egui_kittest::kittest::Queryable;
+        let Some(dir) = std::env::var_os("RAWMAKASE_UI_SHOTS").map(std::path::PathBuf::from) else {
+            return;
+        };
+        for (name, level, open) in [
+            ("zoom-fit", 0., false),
+            ("zoom-fit-menu", 0., true),
+            ("zoom-50", 0.5, false),
+            ("zoom-12-menu", 0.125, true),
+            ("zoom-1600", 16., false),
+        ] {
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(Vec2::new(520., 360.))
+                .with_pixels_per_point(2.)
+                .wgpu()
+                .build_ui_state(
+                    |ui, editor: &mut Option<Editor>| {
+                        let editor = editor.get_or_insert_with(|| {
+                            let text = fastframe_text::detect();
+                            crate::app::install_fonts(ui.ctx(), &text);
+                            crate::app::ui::icons::install(ui.ctx());
+                            let mut e =
+                                Editor::with_context(ui.ctx(), None, Default::default(), None);
+                            e.module = crate::app::Module::Develop;
+                            e.view.last_fit = Some(0.2);
+                            e.view.zoom.set(level);
+                            e
+                        });
+                        let palette = crate::app::ui::theme::palette(ui.ctx());
+                        egui::Panel::bottom("toolbar")
+                            .frame(crate::app::develop::toolbar::photo_toolbar_frame(&palette))
+                            .show_separator_line(false)
+                            .show(ui, |ui| {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| editor.zoom_controls(ui, 32.),
+                                );
+                            });
+                    },
+                    None,
+                );
+            harness.run_steps(4);
+            if open {
+                harness.get_by_label("Zoom level").click();
+                harness.run_steps(4);
+            }
+            let image = harness.render().expect("wgpu could not draw the shot");
+            std::fs::create_dir_all(&dir).expect("the shots folder");
+            image
+                .save(dir.join(format!("{name}.png")))
+                .expect("the shot");
+        }
+    }
+
+    #[test]
+    fn levels_are_named_in_whole_percent_but_below_20() {
+        use super::level_text;
+        assert_eq!(level_text(0.125), "12.5%");
+        assert_eq!(level_text(0.25), "25%");
+        assert_eq!(level_text(0.2), "20%");
+        assert_eq!(level_text(1. / 3.), "33%");
+        assert_eq!(level_text(0.1), "10%");
+        assert_eq!(level_text(16.), "1600%");
     }
 
     /// A minimap drag eases the view to where it points, frame by frame, and

@@ -462,7 +462,7 @@ impl Library {
         self.loupe.view
     }
     /// What the minimap shows for a photo in the Loupe's own view: its
-    /// preview, and the part in view when zoomed.
+    /// preview, and the part in view when zoomed and not all of it shows.
     pub(in crate::app) fn loupe_minimap(
         &self,
     ) -> Option<(crate::app::view::navigator::Photo, Option<[f32; 4]>)> {
@@ -487,7 +487,8 @@ impl Library {
             .region
             .as_ref()
             .filter(|_| self.loupe.regions.photo == Some(photo.id))
-            .map(|(_, rect)| *rect);
+            .map(|(_, rect)| *rect)
+            .filter(|[_, _, w, h]| *w < 1. || *h < 1.);
         let photo =
             crate::app::view::navigator::Photo::turned(texture.id(), texture.size_vec2(), 0);
         Some((photo, shown))

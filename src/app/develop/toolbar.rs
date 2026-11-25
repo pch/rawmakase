@@ -321,12 +321,12 @@ impl Editor {
         let slider = ui.allocate_ui(Vec2::new(width, height), |ui| {
             crate::app::view::navigator::zoom_slider(ui, self.view.zoom, fit, width, height)
         });
-        if let Some(level) = slider.inner {
-            self.set_zoom(level);
-            // The photo follows the knob at once: an eased zoom would trail behind
-            // every move of it.
-            self.view.zoom_key = (self.view.zoom.on, self.view.zoom.level);
-            self.view.zoom_anim = None;
+        if let Some(choice) = slider.inner {
+            self.set_zoom(choice.level());
+            if let crate::app::view::navigator::ZoomChoice::Moved(_) = choice {
+                self.view.zoom_key = (self.view.zoom.on, self.view.zoom.level);
+                self.view.zoom_anim = None;
+            }
         }
         self.magnifier_controls(
             ui,
@@ -540,7 +540,7 @@ pub(in crate::app) fn photo_toolbar_frame(palette: &theme::Palette) -> egui::Fra
 /// Narrower than this, the toolbar's Before button shows its icon alone.
 const NARROW_TOOLBAR: f32 = 1000.;
 /// The zoom slider's least and greatest widths in the toolbar.
-const ZOOM_SLIDER: (f32, f32) = (176., 220.);
+const ZOOM_SLIDER: (f32, f32) = (192., 236.);
 const PHOTO_MENU_WIDTH: f32 = 82.;
 /// Reference View's button, its layouts' buttons and its lock's, which the
 /// toolbar and the photo menu share.

@@ -353,13 +353,17 @@ impl Editor {
             ctx.clone(),
             crate::catalog::preview_cache::PreviewCache::path(),
         );
-        let session_state = crate::app::preferences::session::SessionState::new(
+        let mut session_state = crate::app::preferences::session::SessionState::new(
             &session,
             session_file,
             place.clone(),
             onboarding_done,
             copy_groups.unwrap_or_default(),
         );
+        let zoom = crate::app::view::navigator::Zoom::from_session(session.zoom_level);
+        // The level as read, so a saved level out of reach or unreadable is
+        // written again only once the zoom changes.
+        session_state.zoom_level = session.zoom_level.map(|_| zoom.level);
         let mut app = Self {
             #[cfg(target_os = "macos")]
             native_menu: false,
@@ -382,6 +386,10 @@ impl Editor {
                 backdrop: crate::app::view::backdrop::Backdrop::from_key(
                     session.backdrop.as_deref(),
                 ),
+                zoom,
+                // The level the view last drew at, so the first frame doesn't
+                // take the restored level for a change and render again.
+                zoom_key: (zoom.on, zoom.level),
                 crop_guides: crate::app::develop::tools::crop_tool::CropGuides::from_session(
                     &session.crop_guides,
                 ),
