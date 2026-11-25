@@ -928,6 +928,15 @@ fn red(x: u32, y: u32) -> u8 {
 /// Sends a mask request with its buffers, as the app will: the image
 /// rendered into an input, the coverage an output.
 fn send_mask(session: &mut Session, generator: &str) -> Result<u64, RemoteError> {
+    send_mask_by(session, generator, later(60_000))
+}
+
+/// [`send_mask`], due by `deadline`.
+fn send_mask_by(
+    session: &mut Session,
+    generator: &str,
+    deadline: Instant,
+) -> Result<u64, RemoteError> {
     let mut buffers = session.buffers();
     let image = buffers.input(u64::from(WIDTH * HEIGHT * 3), |bytes| {
         for (i, pixel) in bytes.chunks_mut(3).enumerate() {
@@ -940,7 +949,7 @@ fn send_mask(session: &mut Session, generator: &str) -> Result<u64, RemoteError>
         "mask.generate",
         mask_params(generator, image, coverage),
         buffers,
-        later(60_000),
+        deadline,
     )
 }
 
@@ -1193,6 +1202,13 @@ fn a_lease_past_its_grace_hangs_the_program_up() {
         let mut seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
         assert!(cancelled.elapsed() >= Duration::from_millis(300));
         assert!(session.is_hung());
+        // The app cancelled it: the program may only have been finishing a
+        // long step, and the hang-up says so.
+        let after_cancel = seen.iter().find_map(|u| match u {
+            Update::Hung { after_cancel, .. } => Some(*after_cancel),
+            _ => None,
+        });
+        assert_eq!(after_cancel, Some(true));
         assert_eq!(
             session
                 .request("command.run", json!({"command": "echo"}), later(1_000))
@@ -1218,6 +1234,38 @@ fn a_lease_past_its_grace_hangs_the_program_up() {
                 .count(),
             1
         );
+    }
+    settles(baseline);
+}
+
+/// A request past its deadline whose buffers the program keeps past their
+/// grace hangs it up as one the app cancelled does, but not as only
+/// cancelled: the program was too slow, not told to stop by the user.
+#[test]
+fn a_lease_past_its_deadline_and_grace_hangs_up_as_too_slow() {
+    let _guard = exclusive();
+    let dir = tempfile::tempdir().unwrap();
+    let baseline = baseline();
+    {
+        let options = SessionOptions {
+            cancel_grace: Duration::from_millis(100),
+            lease_grace: Duration::from_millis(300),
+            ..SessionOptions::default()
+        };
+        let mut session = masks_session(dir.path(), options);
+        let stuck = send_mask_by(&mut session, "stubborn", later(500)).unwrap();
+        started(&mut session, stuck);
+        let mut seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
+        assert_eq!(
+            reply_of(&seen, stuck).unwrap().unwrap_err().code,
+            ErrorCode::Deadline
+        );
+        let after_cancel = seen.iter().find_map(|u| match u {
+            Update::Hung { after_cancel, .. } => Some(*after_cancel),
+            _ => None,
+        });
+        assert_eq!(after_cancel, Some(false));
+        seen.extend(until_gone(&mut session));
     }
     settles(baseline);
 }
@@ -1276,10 +1324,15 @@ fn descriptors_a_program_sends_are_closed_and_hang_it_up() {
             Session::spawn(&launch(dir.path(), "fds"), SessionOptions::default()).unwrap();
         let seen = poll_until(&mut session, |u| matches!(u, Update::Hung { .. }));
         let reason = seen.iter().find_map(|u| match u {
-            Update::Hung { reason } => Some(reason.clone()),
+            Update::Hung {
+                reason,
+                after_cancel,
+            } => Some((reason.clone(), *after_cancel)),
             _ => None,
         });
-        assert!(reason.unwrap().contains("handle"));
+        let (reason, after_cancel) = reason.unwrap();
+        assert!(reason.contains("handle"));
+        assert!(!after_cancel, "a protocol fault");
         until_gone(&mut session);
     }
     settles(baseline);

@@ -49,7 +49,9 @@
 //! adopted), or when it sends the app a handle. The session then kills the
 //! unit, fails every request still pending once with `exited`, keeps the
 //! outcomes already handed over, refuses new requests, and keeps the leases
-//! counted until the unit has ended.
+//! counted until the unit has ended. The hang-up says whether its only cause
+//! was leases of requests the app cancelled within their deadline, which a
+//! program still finishing a long step of that work would also cause.
 use crate::process::{self, Unit};
 use crate::shm::{Buffers, Ledger, Passing, Returned};
 use rawmakase_extension_protocol::framing::LineReader;
@@ -231,6 +233,12 @@ pub enum Update {
     Hung {
         /// Why.
         reason: String,
+        /// The only cause was buffers held past their grace by requests the
+        /// app cancelled with [`Session::cancel`]: the program may only have
+        /// been finishing a long step of work it was told to stop, not have
+        /// broken anything. A request past its deadline, or a protocol fault,
+        /// makes this false.
+        after_cancel: bool,
     },
     /// The channel closed: the program exited, or closed its end. Comes once,
     /// after every reply that arrived and the failure of every request left.
@@ -259,6 +267,9 @@ struct Lingering {
     buffers: Buffers,
     /// Past this with no reply, the program is hung.
     until: Instant,
+    /// The app cancelled the request ([`Session::cancel`]); otherwise it
+    /// passed its deadline, or the channel closed before its reply.
+    cancelled: bool,
 }
 
 /// What the reader saw a leased request answered with.
@@ -599,9 +610,16 @@ impl Session {
     }
 
     /// Keeps a settled request's buffers until the program answers it.
-    fn linger(&mut self, id: u64, buffers: Buffers, now: Instant) {
+    fn linger(&mut self, id: u64, buffers: Buffers, now: Instant, cancelled: bool) {
         let until = now + self.lease_grace;
-        self.lingering.insert(id, Lingering { buffers, until });
+        self.lingering.insert(
+            id,
+            Lingering {
+                buffers,
+                until,
+                cancelled,
+            },
+        );
     }
 
     /// Sends an event.
@@ -626,7 +644,9 @@ impl Session {
             return false;
         };
         if let Some(buffers) = pending.buffers {
-            self.linger(id, buffers, Instant::now());
+            // One already past its deadline was cancelled by the session
+            // first: the program was too slow, whoever cancels it now.
+            self.linger(id, buffers, Instant::now(), !pending.expired);
         }
         let _ = self.send(&Message::Cancel { id });
         true
@@ -701,7 +721,7 @@ impl Session {
                     // Nothing more will answer it: the lease waits for the
                     // unit to end, at most the grace.
                     if let Some(buffers) = pending.buffers {
-                        self.linger(id, buffers, now);
+                        self.linger(id, buffers, now, false);
                     }
                     updates.push(exited(id, pending.method));
                 }
@@ -710,16 +730,26 @@ impl Session {
             }
         }
         if !self.hung {
-            if self.lingering.values().any(|l| l.until <= now) {
+            let faulted = hang.is_some();
+            let mut overdue = self
+                .lingering
+                .values()
+                .filter(|l| l.until <= now)
+                .peekable();
+            let late = overdue.peek().is_some();
+            let only_cancelled = overdue.all(|l| l.cancelled);
+            if late {
                 hang.get_or_insert_with(|| {
                     "it didn't answer a cancelled request whose buffers it held".into()
                 });
             }
-            if self.fault.load(Ordering::SeqCst) {
+            let handle = self.fault.load(Ordering::SeqCst);
+            if handle {
                 hang.get_or_insert_with(|| "it sent the app a handle".into());
             }
             if let Some(reason) = hang {
-                self.hang_up(reason, &mut updates);
+                let after_cancel = late && only_cancelled && !faulted && !handle;
+                self.hang_up(reason, after_cancel, &mut updates);
             }
         }
         // The program is gone: whatever it held is free, and nothing more
@@ -759,7 +789,7 @@ impl Session {
         for id in expired {
             let pending = self.pending.remove(&id).expect("listed above");
             if let Some(buffers) = pending.buffers {
-                self.linger(id, buffers, now);
+                self.linger(id, buffers, now, false);
             }
             updates.push(deadline_failure(id, pending.method));
         }
@@ -833,7 +863,7 @@ impl Session {
 
     /// Enters Hung: kills the unit, fails every pending request once with
     /// `exited`, and keeps every lease until the unit has ended.
-    fn hang_up(&mut self, reason: String, updates: &mut Vec<Update>) {
+    fn hang_up(&mut self, reason: String, after_cancel: bool, updates: &mut Vec<Update>) {
         self.hung = true;
         self.unit.kill();
         let mut left: Vec<_> = self.pending.drain().collect();
@@ -845,7 +875,10 @@ impl Session {
         self.held
             .extend(self.lingering.drain().map(|(_, lease)| lease.buffers));
         self.leased_set().clear();
-        updates.push(Update::Hung { reason });
+        updates.push(Update::Hung {
+            reason,
+            after_cancel,
+        });
     }
 
     fn take(&mut self, message: Message, updates: &mut Vec<Update>, hang: &mut Option<String>) {

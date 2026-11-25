@@ -22,7 +22,9 @@
 //!   programs' requests through the editor (see `editor.rs`). A program the
 //!   session hangs up ([`Update::Hung`]: it broke the protocol, or held a
 //!   cancelled request's buffers too long) counts as a crash, as an
-//!   unexpected exit does.
+//!   unexpected exit does, unless all it did was keep the buffers of
+//!   requests the app cancelled: a model step can outlast the grace, and
+//!   the user's cancels shouldn't add up to a Failed extension.
 //! - Each extension keeps one [`Ledger`] for its whole time in the host, given
 //!   to every session of its program: the shared-memory budget is the
 //!   extension's, so a restarted program can't allocate while its
@@ -644,6 +646,10 @@ pub(in crate::app) struct Host {
     /// The size of each session's queues, smaller in a test.
     #[cfg(test)]
     queue: usize,
+    /// How long a cancelled request's buffers may stay with the program,
+    /// shorter in a test.
+    #[cfg(test)]
+    lease_grace: Duration,
 }
 
 impl Default for Host {
@@ -698,6 +704,8 @@ impl Host {
             bundled_override: Vec::new(),
             #[cfg(test)]
             queue: session::QUEUE,
+            #[cfg(test)]
+            lease_grace: session::LEASE_GRACE,
         }
     }
     /// A host of `data_dir` whose programs all start as `program` (its
@@ -718,6 +726,12 @@ impl Host {
         };
         host.reload();
         host
+    }
+    /// Programs started from now on are hung up `grace` after keeping a
+    /// cancelled request's buffers.
+    #[cfg(test)]
+    pub(in crate::app) fn set_lease_grace(&mut self, grace: Duration) {
+        self.lease_grace = grace;
     }
     /// A host of `data_dir` whose bundled extension `id` starts as
     /// `program`, with sessions' queues of `queue` messages; the other
@@ -1677,6 +1691,8 @@ impl Host {
             ledger: e.ledger.clone(),
             #[cfg(test)]
             queue: self.queue,
+            #[cfg(test)]
+            lease_grace: self.lease_grace,
             ..SessionOptions::default()
         };
         let mut session = match Session::spawn(&launch, options) {
@@ -2599,11 +2615,25 @@ impl Host {
                 // else waits on it fails too, and it counts as a crash, as an
                 // unexpected exit does; the session goes, and with it the busy
                 // state. Its leases stay counted until the unit has ended.
-                Update::Hung { reason } => {
-                    let why = format!("{} stopped responding and was ended: {reason}", e.name());
+                // A program that only kept working on what the app cancelled
+                // is ended for its buffers, but isn't counted: it starts
+                // again for the next request.
+                Update::Hung {
+                    reason,
+                    after_cancel,
+                } => {
                     let mut stopped = Self::end(e, ErrorCode::Exited);
                     outcomes.append(&mut stopped);
-                    Self::crashed(e, why);
+                    if after_cancel {
+                        e.error(format!(
+                            "{} was ended to free what it held after a cancel: {reason}",
+                            e.name()
+                        ));
+                    } else {
+                        let why =
+                            format!("{} stopped responding and was ended: {reason}", e.name());
+                        Self::crashed(e, why);
+                    }
                     break;
                 }
             }
