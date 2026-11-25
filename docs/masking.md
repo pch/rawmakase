@@ -107,9 +107,11 @@ model's; removing the sky model removes it.
   16:9 and square photos (the long edge at 1024 px, the short one with a pixel either side),
   sharing one copy of the weights. A photo of another shape, a panorama for one, is selected
   on the CPU as before.
-- **Fallbacks.** A model that can't be made, a load that outlasts a minute, or a Core ML
-  error lets go of the converted model for the rest of the session: that photo and the later
-  ones are selected on the CPU. Older macOS and Intel Macs use the CPU.
+- **Fallbacks.** A model that can't be made or a Core ML error lets go of the converted
+  model until the sky model is loaded again: that photo and the later ones are selected on the
+  CPU. A load that outlasts a minute does the same until the extension's program restarts
+  (with the app), since the next would likely hang too. Older macOS and Intel Macs use the
+  CPU.
 - **Same result.** On the conversion's check (macOS's desktop pictures) the sky's
   probabilities stay within 0.017 of the CPU's, 0.002 on average. On 42 photos with sky, the
   masks agree with the CPU's at IoU 0.9998 (median), 0.991 at worst. A raster records the

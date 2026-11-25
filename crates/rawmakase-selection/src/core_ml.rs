@@ -14,7 +14,7 @@
 //!
 //! Core ML can't take UperNet at a size known only when it runs (its pyramid pooling
 //! and its upsampling need it), so the program has one function per input size
-//! ([`FUNCTIONS`]): the long edge at [`SKY`]'s, and the short one for 3:2, 4:3 and 16:9
+//! ([`functions`]): the long edge at [`SKY`]'s, and the short one for 3:2, 4:3 and 16:9
 //! photos with one pixel either side, both ways round, and square ones. The functions
 //! share one copy of the weights. A photo of another shape is selected on the CPU.
 //! Functions need macOS 15 ([`supported`]).

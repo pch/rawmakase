@@ -87,7 +87,7 @@ impl Sky {
     pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<SkySession, InferenceError> {
         let (network, provider) = Self::network(dir, options)?;
         Ok(SkySession {
-            network: Some(network),
+            network: Some((network, provider)),
             provider,
             last: None,
             dir: dir.to_path_buf(),
@@ -153,9 +153,9 @@ impl Sky {
 
 /// The loaded sky model. One run at a time; dropping it releases the model's memory.
 pub struct SkySession {
-    /// ONNX Runtime's session: opened when the session is, or, beside the converted model,
-    /// when a photo first needs it.
-    network: Option<OrtSession>,
+    /// ONNX Runtime's session and the provider it accepted: opened when the session is, or,
+    /// beside the converted model, when a photo first needs it.
+    network: Option<(OrtSession, Provider)>,
     provider: Provider,
     last: Option<SkyTimings>,
     /// The model's folder and the options ONNX Runtime's session is opened with.
@@ -288,11 +288,10 @@ impl SkySession {
         cancel: Cancel<'_>,
     ) -> Result<(Vec<f32>, kinds::Kinds), InferenceError> {
         if self.network.is_none() {
-            let (network, provider) = Sky::network(&self.dir, &self.options)?;
-            self.network = Some(network);
-            self.provider = provider;
+            self.network = Some(Sky::network(&self.dir, &self.options)?);
         }
-        let network = self.network.as_mut().expect("opened above");
+        let (network, provider) = self.network.as_mut().expect("opened above");
+        self.provider = *provider;
         guarded(cancel, |options| {
             let input =
                 TensorRef::from_array_view(([1usize, 3, height, width], tensor)).map_err(failed)?;
@@ -725,6 +724,34 @@ fn panoptic_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On a Mac that runs the converted model, an installed sky model of the right size whose
+    /// contents aren't RAWmakase's: the GPU refuses to make the model from it and lets go of
+    /// it, and the photo goes to ONNX Runtime, which can't read it either.
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn a_converted_model_that_cant_be_made_leaves_the_photo_to_the_cpu() {
+        if !crate::core_ml::supported() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let file = std::fs::File::create(dir.path().join(SKY.file.name)).unwrap();
+        file.set_len(SKY.file.size_bytes).unwrap();
+        let mut session = Sky::load_on_gpu(dir.path(), &LoadOptions::default()).unwrap();
+        assert_eq!(session.provider(), Provider::CoreML);
+        let photo = RgbImage {
+            width: 1536,
+            height: 1024,
+            data: vec![128; 1536 * 1024 * 3],
+        };
+        assert!(session.select(&photo, Cancel::NEVER).is_err());
+        assert!(session.gpu.is_none(), "the converted model is let go of");
+        assert!(
+            session.network.is_none(),
+            "ONNX Runtime couldn't open it either"
+        );
+        assert!(!crate::core_ml::folder(dir.path()).join("NOTICE").exists());
+    }
 
     #[test]
     fn the_sky_class_scores_are_one_image_on_a_quarter_grid() {
