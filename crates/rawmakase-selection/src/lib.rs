@@ -4,7 +4,7 @@
 //! image to tensor and matte to coverage mappings ([`process`]), reading the
 //! panoptic model's answer ([`panoptic`]), automatic Subject and Sky from what the
 //! models said ([`auto`]), edge refinement ([`refine`]) and the models' sessions
-//! ([`runtime`]). Callers pass an 8-bit sRGB [`RgbImage`] and get 8-bit
+//! ([`runtime`]), with Sky's model converted for Core ML on Apple platforms (`core_ml`). Callers pass an 8-bit sRGB [`RgbImage`] and get 8-bit
 //! [`Coverage`] back in the same frame. It knows no edit, catalog, renderer,
 //! decoder or extension host.
 //!
@@ -17,6 +17,8 @@
 //! identity belong to the callers.
 
 pub mod auto;
+#[cfg(target_vendor = "apple")]
+pub mod core_ml;
 mod kinds;
 pub mod manifest;
 mod onnx_patch;

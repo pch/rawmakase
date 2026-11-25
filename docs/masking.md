@@ -61,7 +61,10 @@ left, in order, with the finished ones ticked: download the models.
   again. Sky is the slower one: on the 8-core AMD Ryzen 7 5800X3D it was measured on, the
   model and the edge took 4.4 seconds a photo on average over 138 photos (median 4.6 s,
   at most 6.0 s), the photo's render not included; where a tree crown or a lattice calls
-  for the colors' edge, that is about 0.6 s of it.
+  for the colors' edge, that is about 0.6 s of it. On Apple Silicon Macs with macOS 15 or
+  later, Sky's network runs on the GPU instead, from a half-precision Core ML form of the
+  same model ([below](#select-sky-on-apples-gpu)): on an M4 Pro, 0.5 s a photo against
+  3.3 s on its CPU (median over 12 photos).
 - **Catalog only.** The result is a raster stored in the catalog, so it needs a catalog
   photo. Every catalog keeps rasters: one of an earlier format is upgraded when it opens
   (see [catalogs](catalogs.md)).
@@ -83,6 +86,38 @@ left, in order, with the finished ones ticked: download the models.
   can be taken for a night sky, a sea lost in haze for sky, and a thin blown-out gap of
   sky can be missed. Near a crown or a lattice, a pale fence, a wet rail in fog or the
   lower part of a trunk can take some of the sky's coverage.
+
+
+### Select Sky on Apple's GPU
+
+ONNX Runtime's CoreML provider can't run Sky's network on the GPU (it fails to build it
+there, and splits it into pieces that run no faster than the CPU), so on Apple Silicon
+with macOS 15 or later the AI masks extension runs a Core ML form of it directly
+(`rawmakase_selection::core_ml`, through `rawmakase_inference::core_ml`). Nothing more is
+downloaded: the repository holds the program, which has no weights
+(`crates/rawmakase-selection/models/core-ml`, written by
+`scripts/models/convert_sky_coreml.py`), and the extension makes the weights from the
+installed `upernet-convnext-base-sky-fp16.onnx` the first time Sky runs. Every weight is one
+of that file's tensors in half precision, as it is or transposed; the result is checked by
+SHA-256. It is compiled for the Mac once and kept in a `core-ml` folder inside the sky
+model's; removing the sky model removes it.
+
+- **One function per input size.** Core ML can't take the network at a size known only
+  when it runs, so the program has one for each of the sizes Select Sky feeds 3:2, 4:3,
+  16:9 and square photos (the long edge at 1024 px, the short one with a pixel either side),
+  sharing one copy of the weights. A photo of another shape, a panorama for one, is selected
+  on the CPU as before.
+- **Fallbacks.** A model that can't be made, a load that outlasts a minute, or a Core ML
+  error lets go of the converted model for the rest of the session: that photo and the later
+  ones are selected on the CPU. Older macOS and Intel Macs use the CPU.
+- **Same result.** On the conversion's check (macOS's desktop pictures) the sky's
+  probabilities stay within 0.017 of the CPU's, 0.002 on average. On 42 photos with sky, the
+  masks agree with the CPU's at IoU 0.9998 (median), 0.991 at worst. A raster records the
+  same model as on the CPU, as it does when the remote worker answers with CUDA or CoreML.
+- **Measured** on an M4 Pro, 12 photos at the 1280 px the app renders for a selection: the
+  whole selection (network and edge) 0.50 s median (0.28–0.60 s) against 3.32 s
+  (3.00–3.69 s) on the CPU. The first selection after Sky is installed takes about 4 s,
+  making and compiling the model; the first after the app starts, about 0.7 s.
 
 ## Using it
 

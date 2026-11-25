@@ -31,7 +31,6 @@
 use crate::core_ml::{self, Converted, Model, Units, onnx};
 use crate::denoise::TileModel;
 use crate::{InferenceError, RAWNIND};
-use objc2_foundation::{NSOperatingSystemVersion, NSProcessInfo};
 use rawmakase_cancel::Cancel;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -89,16 +88,7 @@ pub fn stalled() -> bool {
 /// Preferences shows the choice.
 pub fn supported() -> bool {
     static SUPPORTED: OnceLock<bool> = OnceLock::new();
-    *SUPPORTED.get_or_init(|| {
-        cfg!(target_arch = "aarch64")
-            && NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(
-                NSOperatingSystemVersion {
-                    majorVersion: if cfg!(target_os = "macos") { 14 } else { 17 },
-                    minorVersion: 0,
-                    patchVersion: 0,
-                },
-            )
-    })
+    *SUPPORTED.get_or_init(|| cfg!(target_arch = "aarch64") && core_ml::os_at_least(14, 17))
 }
 
 /// Where the converted model is made, for [`RAWNIND`] installed in `dir`.
@@ -255,7 +245,7 @@ fn weights_with(onnx: &[u8], scales: &str) -> Result<Vec<u8>, InferenceError> {
             .get(name)
             .ok_or_else(|| invalid(format!("AI Denoise's model has no tensor {name}")))?;
         let count: usize = tensor.dims.iter().product();
-        if tensor.data.len() != count * 4 {
+        if tensor.half || tensor.data.len() != count * 4 {
             return Err(invalid(format!("{name} holds the wrong number of bytes")));
         }
         let mut exps = Vec::new();

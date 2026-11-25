@@ -3,7 +3,7 @@
 
 use rawmakase_cancel::Cancel;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use ort::session::Session as OrtSession;
@@ -85,6 +85,45 @@ pub struct Sky;
 impl Sky {
     /// Opens the runtime as [`Subject::load_with`] does and the sky model in folder `dir`.
     pub fn load_with(dir: &Path, options: &LoadOptions) -> Result<SkySession, InferenceError> {
+        let (network, provider) = Self::network(dir, options)?;
+        Ok(SkySession {
+            network: Some(network),
+            provider,
+            last: None,
+            dir: dir.to_path_buf(),
+            options: options.clone(),
+            #[cfg(target_vendor = "apple")]
+            gpu: None,
+        })
+    }
+
+    /// The sky model in folder `dir` on Apple Silicon's GPU, converted for Core ML
+    /// ([`crate::core_ml`]), where this computer can run it; elsewhere as
+    /// [`Sky::load_with`]. A photo whose input size the converted model has no function for
+    /// is selected with ONNX Runtime as [`Sky::load_with`] would, opened with `options`
+    /// when first needed, and so is every photo after the converted model failed.
+    pub fn load_on_gpu(dir: &Path, options: &LoadOptions) -> Result<SkySession, InferenceError> {
+        #[cfg(target_vendor = "apple")]
+        if crate::core_ml::supported() {
+            check_files(dir, &sky_files())?;
+            return Ok(SkySession {
+                network: None,
+                provider: Provider::CoreML,
+                last: None,
+                dir: dir.to_path_buf(),
+                options: options.clone(),
+                gpu: Some(crate::core_ml::CoreMlSky::new(dir)),
+            });
+        }
+        Self::load_with(dir, options)
+    }
+
+    /// ONNX Runtime's session of the sky model in folder `dir`, and the provider it
+    /// accepted.
+    fn network(
+        dir: &Path,
+        options: &LoadOptions,
+    ) -> Result<(OrtSession, Provider), InferenceError> {
         let environment = load_runtime_with(options)?;
         check_files(dir, &sky_files())?;
         let threads = options.threads.unwrap_or_else(default_threads).max(1);
@@ -108,19 +147,23 @@ impl Sky {
         .map_err(|_| {
             InferenceError::Failed("ONNX Runtime panicked while loading the model".into())
         })??;
-        Ok(SkySession {
-            network,
-            provider,
-            last: None,
-        })
+        Ok((network, provider))
     }
 }
 
 /// The loaded sky model. One run at a time; dropping it releases the model's memory.
 pub struct SkySession {
-    network: OrtSession,
+    /// ONNX Runtime's session: opened when the session is, or, beside the converted model,
+    /// when a photo first needs it.
+    network: Option<OrtSession>,
     provider: Provider,
     last: Option<SkyTimings>,
+    /// The model's folder and the options ONNX Runtime's session is opened with.
+    dir: PathBuf,
+    options: LoadOptions,
+    /// The converted model on the GPU ([`Sky::load_on_gpu`]), until it fails.
+    #[cfg(target_vendor = "apple")]
+    gpu: Option<crate::core_ml::CoreMlSky>,
 }
 
 /// Where the time of one [`SkySession::select`] went.
@@ -140,7 +183,9 @@ pub struct SkyTimings {
 }
 
 impl SkySession {
-    /// The provider the runtime accepted, as [`Session::provider`].
+    /// The provider the runtime accepted, as [`Session::provider`]. Beside the converted
+    /// model ([`Sky::load_on_gpu`]), the one the last selection ran on:
+    /// [`Provider::CoreML`] for the converted model on the GPU.
     pub fn provider(&self) -> Provider {
         self.provider
     }
@@ -164,10 +209,93 @@ impl SkySession {
         let (width, height) = sky_input_size(image.width, image.height);
         let tensor = process::preprocess_sized(image, width, height, SKY.mean, SKY.std)?;
         cancelled(cancel)?;
-        let network = &mut self.network;
-        let (probability, kinds) = guarded(cancel, |options| {
-            let input = TensorRef::from_array_view(([1usize, 3, height, width], &tensor[..]))
-                .map_err(failed)?;
+        let answered = match self.on_gpu(&tensor, width, height) {
+            Some(answer) => {
+                cancelled(cancel)?;
+                Some(answer?)
+            }
+            None => None,
+        };
+        let (probability, kinds) = match answered {
+            Some(answer) => answer,
+            None => self.on_cpu(&tensor, width, height, cancel)?,
+        };
+        let modelled = Instant::now();
+        let (coverage, modes) =
+            auto::sky_with_modes(image, &probability, width, height, &kinds, cancel)?;
+        self.last = Some(SkyTimings {
+            model: modelled - started,
+            edge: modelled.elapsed(),
+            modes: modes.took,
+            sparse: modes.sparse,
+            dense: modes.dense,
+        });
+        Ok(coverage)
+    }
+
+    /// The converted model's answer for `tensor`, an input of `width` x `height`: the sky's
+    /// probability and the classes read from the class scores. `None` when there is no
+    /// converted model or it has no function for the size; a failure lets go of it, so this
+    /// photo and the later ones are selected on the CPU.
+    #[cfg(target_vendor = "apple")]
+    fn on_gpu(
+        &mut self,
+        tensor: &[f32],
+        width: usize,
+        height: usize,
+    ) -> Option<Result<(Vec<f32>, kinds::Kinds), InferenceError>> {
+        let gpu = self.gpu.as_mut()?;
+        if !crate::core_ml::CoreMlSky::fits(width, height) {
+            return None;
+        }
+        let answer = gpu.run(tensor, width, height).and_then(|answer| {
+            let shape = answer.scores_shape.map(|d| d as i64);
+            let (classes, grid_width, grid_height) = logits_grid(&shape, width, height)?;
+            Ok((
+                answer.probability,
+                kinds::kinds(&answer.scores, classes, grid_width, grid_height)?,
+            ))
+        });
+        match answer {
+            Ok(answer) => {
+                self.provider = Provider::CoreML;
+                Some(Ok(answer))
+            }
+            Err(_) => {
+                self.gpu = None;
+                None
+            }
+        }
+    }
+
+    #[cfg(not(target_vendor = "apple"))]
+    fn on_gpu(
+        &mut self,
+        _: &[f32],
+        _: usize,
+        _: usize,
+    ) -> Option<Result<(Vec<f32>, kinds::Kinds), InferenceError>> {
+        None
+    }
+
+    /// ONNX Runtime's answer for `tensor`, as [`SkySession::on_gpu`]'s, its session opened
+    /// first when it is not yet.
+    fn on_cpu(
+        &mut self,
+        tensor: &[f32],
+        width: usize,
+        height: usize,
+        cancel: Cancel<'_>,
+    ) -> Result<(Vec<f32>, kinds::Kinds), InferenceError> {
+        if self.network.is_none() {
+            let (network, provider) = Sky::network(&self.dir, &self.options)?;
+            self.network = Some(network);
+            self.provider = provider;
+        }
+        let network = self.network.as_mut().expect("opened above");
+        guarded(cancel, |options| {
+            let input =
+                TensorRef::from_array_view(([1usize, 3, height, width], tensor)).map_err(failed)?;
             let outputs = network
                 .run_with_options(ort::inputs!["pixel_values" => input], options)
                 .map_err(failed)?;
@@ -191,18 +319,7 @@ impl SkySession {
                 probability,
                 kinds::kinds(logits, classes, grid_width, grid_height)?,
             ))
-        })?;
-        let modelled = Instant::now();
-        let (coverage, modes) =
-            auto::sky_with_modes(image, &probability, width, height, &kinds, cancel)?;
-        self.last = Some(SkyTimings {
-            model: modelled - started,
-            edge: modelled.elapsed(),
-            modes: modes.took,
-            sparse: modes.sparse,
-            dense: modes.dense,
-        });
-        Ok(coverage)
+        })
     }
 }
 
@@ -229,7 +346,7 @@ fn logits_grid(
 
 /// What the sky model is fed for a photo of `width` x `height`: scaled to the long edge,
 /// its proportions kept, unless that would leave a side too short for the network.
-fn sky_input_size(width: usize, height: usize) -> (usize, usize) {
+pub(crate) fn sky_input_size(width: usize, height: usize) -> (usize, usize) {
     let scale = SKY.long_edge as f64 / width.max(height) as f64;
     let side = |v: usize| ((v as f64 * scale).round() as usize).max(SKY.min_side);
     (side(width), side(height))

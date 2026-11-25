@@ -27,7 +27,10 @@ use objc2_core_ml::{
     MLComputeUnits, MLDictionaryFeatureProvider, MLFeatureProvider, MLFeatureValue, MLModel,
     MLModelConfiguration, MLModelCreatorDefinedKey, MLMultiArray, MLMultiArrayDataType,
 };
-use objc2_foundation::{NSArray, NSDictionary, NSError, NSInteger, NSNumber, NSString, NSURL};
+use objc2_foundation::{
+    NSArray, NSDictionary, NSError, NSInteger, NSNumber, NSOperatingSystemVersion, NSProcessInfo,
+    NSString, NSURL,
+};
 use sha2::{Digest, Sha256};
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -103,6 +106,19 @@ impl Model {
     ) -> Result<Vec<Vec<f32>>, InferenceError> {
         predict(&self.0, input, shape, fill, outputs)
     }
+}
+
+/// Whether this is macOS `macos` or later, or iOS and iPadOS `ios` or later elsewhere.
+pub fn os_at_least(macos: isize, ios: isize) -> bool {
+    NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion {
+        majorVersion: if cfg!(target_os = "macos") {
+            macos
+        } else {
+            ios
+        },
+        minorVersion: 0,
+        patchVersion: 0,
+    })
 }
 
 /// The SHA-256 of `bytes`, in hex.

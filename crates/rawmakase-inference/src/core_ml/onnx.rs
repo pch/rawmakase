@@ -3,9 +3,11 @@
 use crate::InferenceError;
 use std::collections::HashMap;
 
-/// A float tensor of an ONNX model: its shape and its little-endian `f32` bytes.
+/// A float tensor of an ONNX model: its shape and its little-endian bytes, `f32`s or, when
+/// `half`, `f16`s.
 pub struct Tensor<'a> {
     pub dims: Vec<usize>,
+    pub half: bool,
     pub data: &'a [u8],
 }
 
@@ -17,14 +19,15 @@ pub(crate) const TENSOR_DATA_TYPE: u64 = 2;
 pub(crate) const TENSOR_NAME: u64 = 8;
 pub(crate) const TENSOR_RAW_DATA: u64 = 9;
 pub(crate) const TENSOR_DATA_LOCATION: u64 = 14;
-/// `TensorProto.DataType.FLOAT`.
+/// `TensorProto.DataType.FLOAT` and `FLOAT16`.
 pub(crate) const FLOAT: u64 = 1;
+pub(crate) const FLOAT16: u64 = 10;
 pub(crate) const VARINT: u64 = 0;
 pub(crate) const FIXED64: u64 = 1;
 pub(crate) const DELIMITED: u64 = 2;
 pub(crate) const FIXED32: u64 = 5;
 
-/// The float tensors stored in the ONNX model `onnx` (a serialized `ModelProto`) with
+/// The single- and half-precision tensors stored in the ONNX model `onnx` (a serialized `ModelProto`) with
 /// their data inline, by name. Only those fields are read; nothing is copied.
 pub fn initializers(onnx: &[u8]) -> Result<HashMap<&str, Tensor<'_>>, InferenceError> {
     let mut out = HashMap::new();
@@ -36,8 +39,8 @@ pub fn initializers(onnx: &[u8]) -> Result<HashMap<&str, Tensor<'_>>, InferenceE
             .into_iter()
             .filter(|f| f.number == GRAPH_INITIALIZER && f.wire == DELIMITED)
         {
-            let (mut dims, mut float, mut name, mut data, mut external) =
-                (Vec::new(), false, None, None, false);
+            let (mut dims, mut kind, mut name, mut data, mut external) =
+                (Vec::new(), None, None, None, false);
             for field in fields(init.body)? {
                 match (field.number, field.wire) {
                     (TENSOR_DIMS, VARINT) => dims.push(usize::try_from(field.value).unwrap_or(0)),
@@ -48,15 +51,20 @@ pub fn initializers(onnx: &[u8]) -> Result<HashMap<&str, Tensor<'_>>, InferenceE
                             dims.push(usize::try_from(d).unwrap_or(0));
                         }
                     }
-                    (TENSOR_DATA_TYPE, VARINT) => float = field.value == FLOAT,
+                    (TENSOR_DATA_TYPE, VARINT) => kind = Some(field.value),
                     (TENSOR_NAME, DELIMITED) => name = std::str::from_utf8(field.body).ok(),
                     (TENSOR_RAW_DATA, DELIMITED) => data = Some(field.body),
                     (TENSOR_DATA_LOCATION, VARINT) => external = field.value != 0,
                     _ => {}
                 }
             }
-            if let (Some(name), Some(data), true, false) = (name, data, float, external) {
-                out.insert(name, Tensor { dims, data });
+            let half = match kind {
+                Some(FLOAT) => false,
+                Some(FLOAT16) => true,
+                _ => continue,
+            };
+            if let (Some(name), Some(data), false) = (name, data, external) {
+                out.insert(name, Tensor { dims, half, data });
             }
         }
     }
