@@ -942,9 +942,11 @@ pub(crate) fn family_t(f: &Family, s: f32, key: f32, base: f32, tb: f32) -> f32 
     let (y0, y1) = (t0.map_or(0., bin), t1.map_or(0., bin));
     y0 + (y1 - y0) * w
 }
-/// The measured families for `develop.wgsl`: Shadows, Highlights, Dehaze and positive
-/// Shadows' detail and region tables, each its 6 × 48 table values, `lo` and `hi`, its
-/// six slider positions, then its six tails.
+/// The measured families for `develop.wgsl`: Shadows (0), Highlights (1), a slot-2
+/// placeholder (`local_tone_data::DEHAZE`, no longer rendered since Dehaze moved to
+/// `scene_tone::haze`, kept here so slots 3 and 4 keep their shader indices), and
+/// positive Shadows' detail (3) and region (4) tables, each its 6 × 48 table values,
+/// `lo` and `hi`, its six slider positions, then its six tails.
 pub(crate) fn gpu_families() -> Vec<f32> {
     let mut out = Vec::new();
     for f in [

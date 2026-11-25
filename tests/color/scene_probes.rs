@@ -89,6 +89,108 @@ fn dehaze_with_reduced_highlights_keeps_the_sky_nonblack() {
     }
 }
 
+/// #600: a sharp step edge shifted across a 512 px measurement-grid cell must neither
+/// raise a bright-side halo (sharp ring or broad cross-edge leak on a high-contrast step)
+/// nor clip dark pixels beside the edge under Dehaze ±100. A brighter haze strip at the
+/// far right sets the airlight above `bright`, so density leaking from the dark side
+/// across the edge produces a measurable bright rim on the bright side.
+#[test]
+fn dehaze_shifted_step_edge_has_no_bright_rim_or_dark_clipping() {
+    let (w, h) = (2048u32, 128u32);
+    // (dark, bright, air_strip, max broad halo ev(x0+dx) - ev(x0+300) for dx in 4..64)
+    for (dark, bright, air_strip, max_broad) in [
+        (0.05, 0.40, 0.90, 1.60),
+        (0.01, 0.40, 0.90, 1.00),
+        (0.005, 0.04, 0.25, 1.75),
+    ] {
+        for shift in [0u32, 1, 2, 3] {
+            let x0 = 1024 + shift;
+            let scene: Vec<[f64; 3]> = (0..w * h)
+                .map(|i| {
+                    let x = i % w;
+                    let v = if x >= w - 64 {
+                        air_strip
+                    } else if x < x0 {
+                        dark
+                    } else {
+                        bright
+                    };
+                    [v; 3]
+                })
+                .collect();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("dehaze-edge.dng");
+            std::fs::write(
+                &path,
+                dng::write_probe_black_render(w, h, &scene, 0., dng::BlackRender::None),
+            )
+            .unwrap();
+            let im = develop(&path);
+            let profiles = embedded_profiles(&im);
+            let row = (h / 2) as usize;
+            let render = |dehaze: i32| {
+                scene_output(
+                    &im,
+                    &profiles,
+                    &xmp(&ProbeCase {
+                        probe: String::new(),
+                        settings: BTreeMap::from([("Dehaze".into(), dehaze.to_string())]),
+                        mask: BTreeMap::new(),
+                        camera_raw: Vec::new(),
+                    }),
+                )
+            };
+            let base = render(0);
+            for dehaze in [100, -100] {
+                let out = render(dehaze);
+                let ev = |x: u32| {
+                    let i = row * w as usize + x as usize;
+                    let y0 = base.pixels[i][1].max(1e-8);
+                    let y1 = out.pixels[i][1].max(1e-8);
+                    (y1 / y0).log2()
+                };
+                let far_b = ev(x0 + 300);
+                let far_d = ev(x0 - 300);
+                // Bright side outside the 1-cell bilinear transition stays free of both a
+                // sharp silhouette halo ring (dx = 4..24 vs dx = 24; +1.3..+2.0 EV under
+                // the old self-guided filter) and a broad cross-edge leak relative to the
+                // far bright field (especially on the 5-stop 0.01/0.40 step, where a plain
+                // Gaussian leaks across the edge).
+                let shoulder = ev(x0 + 24);
+                for dx in 4..24 {
+                    let ring = ev(x0 + dx) - shoulder;
+                    assert!(
+                        ring < 0.25,
+                        "Dehaze {dehaze} ({dark}/{bright}/{air_strip}, shift {shift}) bright halo +{dx}px: {ring:+.3} EV"
+                    );
+                }
+                for dx in 4..64 {
+                    let broad = ev(x0 + dx) - far_b;
+                    assert!(
+                        broad < max_broad,
+                        "Dehaze {dehaze} ({dark}/{bright}/{air_strip}, shift {shift}) broad halo +{dx}px: {broad:+.3} EV"
+                    );
+                }
+                // Dark side right next to the edge never clips to black or dips sharply below far dark.
+                for dx in 1..=32 {
+                    let x = x0 - dx;
+                    let i = row * w as usize + x as usize;
+                    assert!(
+                        out.pixels[i][1] > 1e-6,
+                        "Dehaze {dehaze} ({dark}/{bright}/{air_strip}, shift {shift}) dark clip -{dx}px: {:?}",
+                        out.pixels[i]
+                    );
+                    let dip = ev(x) - far_d;
+                    assert!(
+                        dip > -0.25 && dip < 0.25,
+                        "Dehaze {dehaze} ({dark}/{bright}/{air_strip}, shift {shift}) dark edge -{dx}px: {dip:+.3} EV"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn clarity_does_not_spread_a_bright_rail_into_its_dark_background() {
     // Issue #601: a high-resolution edge crosses the 512px measurement grid.

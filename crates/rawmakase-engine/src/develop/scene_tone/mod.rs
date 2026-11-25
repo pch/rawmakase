@@ -26,11 +26,10 @@ pub(crate) fn luminance(p: [f32; 3]) -> f32 {
 /// A render's scene tone stage, prepared from its recipe and the photo's measures.
 pub(crate) struct SceneTone {
     pub(crate) global: GlobalTone,
-    /// Dehaze and the level negative Dehaze's response is relative to (log2).
+    /// Global Dehaze slider amount (−1 to 1).
     pub(crate) dehaze: f32,
-    pub(crate) dehaze_key: f32,
-    /// Positive Dehaze's haze model, when the recipe or a mask has positive Dehaze
-    /// ([`needs_haze`]); without it positive Dehaze leaves the pixel alone.
+    /// Dehaze's haze model, when the recipe or a mask has non-zero Dehaze
+    /// ([`needs_haze`]); without it Dehaze leaves the pixel alone.
     pub(crate) haze: Option<Dehazing>,
     /// Whether this is an HDR master's stage, whose masks' Dehaze is
     /// [`hdr_mask_dehaze`]'s.
@@ -48,13 +47,13 @@ pub(crate) fn hdr_mask_dehaze(d: f32) -> f32 {
     let t = (d - HDR_MASK_DEHAZE_FROM) / (1. - HDR_MASK_DEHAZE_FROM);
     d * (1. + HDR_MASK_DEHAZE_GAIN * t.clamp(0., 1.))
 }
-/// Whether a render of `r` removes haze somewhere: positive Dehaze, globally or in an
-/// active mask (a mask's Dehaze adds to the recipe's).
+/// Whether a render of `r` applies Dehaze somewhere: non-zero Dehaze, globally or in
+/// an active mask (a mask's Dehaze adds to the recipe's).
 pub(crate) fn needs_haze(r: &Recipe) -> bool {
-    r.effects.dehaze > 0.
+    r.effects.dehaze != 0.
         || r.masks
             .iter()
-            .any(|m| m.is_active() && m.adjust.dehaze > 0.)
+            .any(|m| m.is_active() && m.adjust.dehaze != 0.)
 }
 impl SceneTone {
     pub(crate) fn new(r: &Recipe, measures: &PhotoMeasures, haze: Option<Dehazing>) -> Self {
@@ -73,7 +72,6 @@ impl SceneTone {
                     black_point,
                 ),
                 dehaze: r.effects.dehaze,
-                dehaze_key: measures.p99 + r.exposure,
                 haze,
                 hdr: true,
             };
@@ -93,7 +91,6 @@ impl SceneTone {
                 black_point,
             ),
             dehaze: r.effects.dehaze,
-            dehaze_key: measures.p99 + r.exposure,
             haze,
             hdr: false,
         }
@@ -133,20 +130,14 @@ impl SceneTone {
                 )
             })
         } else if dehaze < 0. {
-            // Each channel by its level relative to the photo's bright end.
-            pro.map(|v| {
-                if v > 0. {
-                    let level = crate::develop::local_tone::level(v);
-                    v * crate::develop::local_tone::family(
-                        &crate::develop::local_tone_data::DEHAZE,
-                        dehaze,
-                        self.dehaze_key,
-                        level,
-                    )
-                    .exp2()
-                } else {
-                    v
-                }
+            let strength = haze::neg_strength(-dehaze);
+            self.haze.as_ref().map_or(pro, |haze| {
+                haze.apply_negative(
+                    pro,
+                    strength,
+                    pos,
+                    tone_gain * local.map_or(1., |d| d[slot::EXPOSURE].exp2()),
+                )
             })
         } else {
             pro
@@ -178,12 +169,12 @@ mod tests {
         for s in [0., 0.2, 0.5, 1.] {
             assert_eq!(haze::omega_hdr(s), haze::omega(s));
         }
-        assert!((haze::omega_hdr(1.1) - 0.975).abs() < 1e-6);
+        assert!((haze::omega_hdr(1.1) - 0.964).abs() < 1e-5);
         assert_eq!(haze::omega(1.1), haze::omega(1.));
     }
     /// A mask's Dehaze adds to the recipe's: positive sums remove the photo's haze as
-    /// the global slider at the sum does, negative ones use the measured tables, and a
-    /// mask cancelling the slider leaves the pixel alone.
+    /// the global slider at the sum does, negative ones add haze with the same model, and
+    /// a mask cancelling the slider leaves the pixel alone.
     #[test]
     fn mask_dehaze_sums_with_the_global_slider() {
         let (w, h) = (40usize, 30usize);
@@ -193,7 +184,7 @@ mod tests {
                 [v + 0.3, v + 0.32, v + 0.38]
             })
             .collect();
-        let haze = std::sync::Arc::new(Haze::of(&scene, w, h));
+        let haze = std::sync::Arc::new(Haze::of(&scene, &scene, w, h));
         let measures = PhotoMeasures::default();
         let tone = |dehaze: f32| {
             let mut r = Recipe::default();

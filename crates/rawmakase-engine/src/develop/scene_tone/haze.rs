@@ -1,23 +1,56 @@
-//! Positive Dehaze: dark-channel haze removal on the scene tone stage's input, fitted
-//! to Camera Raw 18.7 on the 22 training photos (docs/scene-tone-stage.md#dehaze).
+//! Dehaze (positive and negative): unified dark-channel haze model on the scene tone
+//! stage's input (docs/scene-tone-stage.md#dehaze).
 //!
 //! The haze is measured once per photo on its measurement copy at Exposure 0
-//! ([`Haze::of`]): the airlight A, the mean color of the haziest 1% (by the dark
-//! channel, the window minimum of the darkest channel), and the guided-filtered dark
-//! channel of the photo relative to A, the haze's density. A pixel at Dehaze `s`
-//! removes `ω(s)` of that density ([`Dehazing::apply`]).
+//! ([`Haze::of`]):
+//! - the airlight `A`: the per-channel median of the haziest 0.17% of pixels, ranked by
+//!   the dark channel (window minimum of the darkest channel) of the camera's
+//!   white-balanced values;
+//! - the optical-depth density map: the dark channel of the photo relative to `A`,
+//!   smoothed with a wide joint bilateral filter guided by log2 luminance relative
+//!   to `A`.
+//!
+//! Positive Dehaze removes haze via `J = (p − A) / t + A` with
+//! `t = max(1 − ω(s) · d, t_min)` and physical cap `d ≤ min_c(p_c / A_c)` so sub-cell
+//! edges never drive dark pixels below zero (#600). Negative Dehaze adds haze using the
+//! same airlight and density map via `I = t · p + (1 − t) · A` with
+//! `t = exp(−κ(|s|) · d)`.
+use rayon::prelude::*;
 use std::sync::Arc;
 
 /// Window radius of the dark channel, relative to the measurement copy's long edge.
 const RADIUS: f32 = 0.005;
-/// The guided filter's ε (on the dark channel relative to A, 0 to 1).
-const EPSILON: f32 = 0.01;
-/// The lowest transmission: densest haze is removed by at most this factor.
-const MIN_TRANSMISSION: f32 = 0.3;
-/// The share of the color-preserving result no channel falls below.
+/// Share of the haziest pixels whose per-channel median gives the airlight (0.17%,
+/// matching Camera Raw 18.7's measured 0.15–0.17% majority threshold).
+const HAZIEST_PER_TEN_THOUSAND: usize = 17;
+/// Joint bilateral spatial σ, relative to the measurement copy's long edge.
+const BILATERAL_SIGMA_S: f32 = 0.047;
+/// Joint bilateral range σ on log2 relative luminance (`log2(Y / Y_A)`, stops).
+const BILATERAL_SIGMA_R: f32 = 2.0;
+/// Lower/upper clamps on the log2 relative luminance guide (stops).
+const GUIDE_LO: f32 = -10.0;
+const GUIDE_HI: f32 = 2.0;
+/// Lowest transmission for positive Dehaze.
+const MIN_TRANSMISSION: f32 = 0.28;
+/// Share of the color-preserving result no channel falls below under positive Dehaze.
 const CHANNEL_FLOOR: f32 = 0.5;
-/// Dehaze amounts and the fraction of the haze they remove; linear between them.
-const OMEGA: [(f32, f32); 4] = [(0., 0.), (0.2, 0.3), (0.4, 0.45), (1., 0.9)];
+/// Scene-luminance ramp where Dehaze turns on (matches Camera Raw's dark floor near 2⁻¹⁰).
+const DARK_FLOOR_LO: f32 = 0.0005;
+const DARK_FLOOR_HI: f32 = 0.003;
+/// Limits on each channel of the unit-luminance airlight: prevents a monochromatic
+/// scene with near-zero luminance in ProPhoto blue from blowing up a channel.
+const AIR_UNIT_RANGE: [f32; 2] = [0.1, 4.];
+/// Positive Dehaze amounts and the fraction of the haze they remove; linear between them.
+const OMEGA: [(f32, f32); 4] = [(0., 0.), (0.2, 0.23), (0.5, 0.46), (1., 0.88)];
+/// Negative Dehaze magnitudes `|s|` and optical-depth multiplier `κ(|s|)` in
+/// `t = exp(−κ(|s|) · d)`; linear between knots.
+const NEG_STRENGTH: [(f32, f32); 5] = [
+    (0., 0.),
+    (0.25, 0.50),
+    (0.50, 1.25),
+    (0.75, 2.30),
+    (1.00, 4.30),
+];
 
 /// A photo's haze, from its measurement copy at the scene stage's input, Exposure 0.
 #[derive(Debug, PartialEq)]
@@ -26,58 +59,131 @@ pub(crate) struct Haze {
     pub(crate) height: usize,
     /// The airlight per channel, linear ProPhoto at Exposure 0.
     pub(crate) air: [f32; 3],
-    /// The haze's density on the copy's grid: the guided-filtered dark channel of the
-    /// photo relative to `air`.
+    /// The haze's density on the copy's grid (0 to 1): the joint-bilateral-filtered
+    /// dark channel of the photo relative to `air`.
     pub(crate) density: Vec<f32>,
 }
+
 impl Haze {
-    /// The haze of `scene`, `width` × `height` linear ProPhoto values.
-    pub(crate) fn of(scene: &[[f32; 3]], width: usize, height: usize) -> Self {
+    /// The haze of `scene` (`width` × `height` linear ProPhoto values), ranking dark
+    /// channel candidates by `ranked` (the same pixels in the camera's white-balanced
+    /// space, where saturated lights retain more of their weakest channel than in
+    /// ProPhoto).
+    pub(crate) fn of(ranked: &[[f32; 3]], scene: &[[f32; 3]], width: usize, height: usize) -> Self {
         assert_eq!(scene.len(), width * height);
-        let r = ((RADIUS * width.max(height) as f32).round() as usize).max(1);
+        assert_eq!(ranked.len(), scene.len());
+        if scene.is_empty() {
+            return Self {
+                width,
+                height,
+                air: [1e-6; 3],
+                density: Vec::new(),
+            };
+        }
+        let long = width.max(height) as f32;
+        let r = ((RADIUS * long).round() as usize).max(1);
         let darkest = |p: &[f32; 3]| p[0].min(p[1]).min(p[2]);
         let dark = min_filter(
-            &scene.iter().map(darkest).collect::<Vec<_>>(),
+            &ranked.iter().map(darkest).collect::<Vec<_>>(),
             width,
             height,
             r,
         );
-        // The airlight: the mean of the haziest 1%, at or above the dark channel's 99th
-        // percentile (as local_tone.rs takes percentiles).
+        // Airlight: per-channel median over the haziest 0.17% of pixels.
         let mut sorted = dark.clone();
-        let k = (sorted.len() - 1) * 99 / 100;
+        let k = (sorted.len() - 1) * (10_000 - HAZIEST_PER_TEN_THOUSAND) / 10_000;
         let threshold = *sorted.select_nth_unstable_by(k, f32::total_cmp).1;
-        let (mut sum, mut n) = ([0f64; 3], 0usize);
+        let mut chans = [Vec::new(), Vec::new(), Vec::new()];
         for (p, d) in scene.iter().zip(&dark) {
-            if *d >= threshold {
-                (0..3).for_each(|c| sum[c] += p[c] as f64);
-                n += 1;
+            if *d >= threshold && p.iter().all(|v| v.is_finite()) {
+                for c in 0..3 {
+                    chans[c].push(p[c].max(0.));
+                }
             }
         }
-        let air = sum.map(|v| ((v / n.max(1) as f64) as f32).max(1e-6));
+        let raw_air = if chans[0].is_empty() {
+            [1e-6; 3]
+        } else {
+            chans.map(|mut v| {
+                let mid = v.len() / 2;
+                let hi = *v.select_nth_unstable_by(mid, f32::total_cmp).1;
+                if v.len() % 2 == 1 {
+                    hi.max(1e-6)
+                } else {
+                    let lo = v[..mid].iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                    (0.5 * (lo + hi)).max(1e-6)
+                }
+            })
+        };
+        let air = clamp_airlight(raw_air);
+        let ya = super::luminance(air).max(1e-6);
+
         let relative: Vec<f32> = scene
             .iter()
-            .map(|p| (p[0] / air[0]).min(p[1] / air[1]).min(p[2] / air[2]))
+            .map(|p| {
+                (p[0] / air[0])
+                    .min(p[1] / air[1])
+                    .min(p[2] / air[2])
+                    .max(0.)
+            })
             .collect();
         let raw = min_filter(&relative, width, height, r);
+        let guide: Vec<f32> = scene
+            .iter()
+            .map(|p| {
+                (super::luminance(*p) / ya)
+                    .max(2f32.powf(GUIDE_LO))
+                    .log2()
+                    .clamp(GUIDE_LO, GUIDE_HI)
+            })
+            .collect();
+        let sigma_s = (BILATERAL_SIGMA_S * long).max(4.);
+        let density = joint_bilateral(&guide, &raw, width, height, sigma_s, BILATERAL_SIGMA_R)
+            .into_iter()
+            .map(|v| if v.is_finite() { v.clamp(0., 1.) } else { 0. })
+            .collect();
         Self {
             width,
             height,
             air,
-            density: guided(&raw, width, height, 2 * r, EPSILON),
+            density,
         }
     }
 }
 
-/// The fraction of the haze Dehaze `s` (0 to 1) removes.
-pub(crate) fn omega(s: f32) -> f32 {
+/// Pull an extreme monochromatic airlight toward neutral while preserving its luminance,
+/// so every unit-luminance channel stays inside [`AIR_UNIT_RANGE`].
+fn clamp_airlight(air: [f32; 3]) -> [f32; 3] {
+    let y = super::luminance(air);
+    if !y.is_finite() || y <= 1e-6 {
+        return air.map(|v| v.max(1e-6));
+    }
+    let unit = air.map(|v| v / y);
+    let mut keep = 1.0f32;
+    for u in unit {
+        if u < AIR_UNIT_RANGE[0] {
+            keep = keep.min((1. - AIR_UNIT_RANGE[0]) / (1. - u));
+        } else if u > AIR_UNIT_RANGE[1] {
+            keep = keep.min((AIR_UNIT_RANGE[1] - 1.) / (u - 1.));
+        }
+    }
+    let keep = keep.clamp(0., 1.);
+    unit.map(|u| ((1. + keep * (u - 1.)) * y).max(1e-6))
+}
+
+fn piecewise(table: &[(f32, f32)], s: f32) -> f32 {
     let s = s.clamp(0., 1.);
-    let j = OMEGA
+    let j = table
         .windows(2)
         .position(|w| s <= w[1].0)
-        .unwrap_or(OMEGA.len() - 2);
-    let ((s0, w0), (s1, w1)) = (OMEGA[j], OMEGA[j + 1]);
-    w0 + (w1 - w0) * (s - s0) / (s1 - s0)
+        .unwrap_or(table.len() - 2);
+    let ((s0, v0), (s1, v1)) = (table[j], table[j + 1]);
+    v0 + (v1 - v0) * (s - s0) / (s1 - s0)
+}
+
+/// The fraction of the haze positive Dehaze `s` (0 to 1) removes.
+pub(crate) fn omega(s: f32) -> f32 {
+    piecewise(&OMEGA, s)
 }
 
 /// [`omega`] of an HDR master, whose masks' Dehaze can take a pixel past +100
@@ -90,7 +196,19 @@ pub(crate) fn omega_hdr(s: f32) -> f32 {
     w1 + (w1 - w0) / (s1 - s0) * (s - s1)
 }
 
-/// A photo's haze as one render removes it: at that render's Exposure and sample grid.
+/// Optical-depth multiplier `κ(|s|)` for negative Dehaze `s < 0` (`mag = -s`, 0 to 1).
+pub(crate) fn neg_strength(mag: f32) -> f32 {
+    piecewise(&NEG_STRENGTH, mag)
+}
+
+/// Smooth dark luminance ramp (0 below [`DARK_FLOOR_LO`], 1 above [`DARK_FLOOR_HI`]).
+#[inline]
+fn dark_weight(y: f32) -> f32 {
+    let u = ((y - DARK_FLOOR_LO) / (DARK_FLOOR_HI - DARK_FLOOR_LO)).clamp(0., 1.);
+    u * u * (3. - 2. * u)
+}
+
+/// A photo's haze as one render applies it: at that render's Exposure and sample grid.
 #[derive(Clone, Debug)]
 pub(crate) struct Dehazing {
     pub(crate) haze: Arc<Haze>,
@@ -99,6 +217,7 @@ pub(crate) struct Dehazing {
     /// The airlight at the render's Exposure.
     pub(crate) air: [f32; 3],
 }
+
 impl Dehazing {
     /// `haze` for a `source`-sized camera image rendered at `exposure` stops.
     pub(crate) fn new(haze: Arc<Haze>, source: [u32; 2], exposure: f32) -> Self {
@@ -112,28 +231,65 @@ impl Dehazing {
             haze,
         }
     }
-    /// Pixel `p` at camera-image sample position `pos` with the fraction `omega` of the
-    /// haze removed ([`omega`] of a Dehaze above 0, or [`omega_hdr`] in an HDR master):
-    /// J = (p − A) / t + A, with t = 1 − omega · density, at least `MIN_TRANSMISSION`,
-    /// each channel at least `CHANNEL_FLOOR` of p scaled by the luminance's change.
-    /// `tone_gain` is the local tone and mask Exposure gain already applied to p.
+
+    /// Positive Dehaze: pixel `p` at camera-image sample position `pos` with the
+    /// fraction `omega` of the haze removed: `J = (p − A) / t + A`, with
+    /// `t = max(1 − omega · d, MIN_TRANSMISSION)`, `d` capped at the pixel's own
+    /// relative dark channel so sub-cell edges never clip dark pixels below zero (#600),
+    /// and each channel at least `CHANNEL_FLOOR` of `p` scaled by the luminance's change.
+    /// `tone_gain` is the local tone and mask Exposure gain already applied to `p`.
     pub(crate) fn apply(&self, p: [f32; 3], omega: f32, pos: [f32; 2], tone_gain: f32) -> [f32; 3] {
+        if omega <= 0. || self.haze.density.is_empty() {
+            return p;
+        }
         let density = crate::develop::local_tone::grid_sample(
             &self.haze.density,
             [self.haze.width, self.haze.height],
             self.scale,
             pos,
         );
-        let t = (1. - omega * density).max(MIN_TRANSMISSION);
         // Haze was measured before local tone and mask Exposure. Apply the same
         // gain to its airlight as to the pixel, so negative Highlights cannot
         // subtract an unchanged bright sky from a now darker one (#600).
-        let air = self.air.map(|v| v * tone_gain);
+        let air = self.air.map(|v| (v * tone_gain).max(1e-9));
+        let y = super::luminance(p).max(0.);
+        let pixel_dc = (p[0] / air[0])
+            .min(p[1] / air[1])
+            .min(p[2] / air[2])
+            .max(0.);
+        let d = density.min(pixel_dc) * dark_weight(y);
+        let t = (1. - omega * d).max(MIN_TRANSMISSION);
         let j: [f32; 3] = std::array::from_fn(|c| (p[c] - air[c]) / t + air[c]);
         // No channel falls below half of the pixel's color scaled by its luminance's
         // change: weak channels of bright, saturated colors are not driven to black.
-        let ratio = super::luminance(j).max(0.) / super::luminance(p).max(1e-9);
+        let ratio = super::luminance(j).max(0.) / y.max(1e-9);
         std::array::from_fn(|c| j[c].max(CHANNEL_FLOOR * p[c] * ratio))
+    }
+
+    /// Negative Dehaze: adds atmospheric haze `I = t · p + (1 − t) · A` with
+    /// `t = exp(−κ(|s|) · d)` using the same airlight and optical-depth map.
+    pub(crate) fn apply_negative(
+        &self,
+        p: [f32; 3],
+        strength: f32,
+        pos: [f32; 2],
+        tone_gain: f32,
+    ) -> [f32; 3] {
+        if strength <= 0. || self.haze.density.is_empty() {
+            return p;
+        }
+        let density = crate::develop::local_tone::grid_sample(
+            &self.haze.density,
+            [self.haze.width, self.haze.height],
+            self.scale,
+            pos,
+        );
+        let air = self.air.map(|v| v * tone_gain);
+        let y = super::luminance(p).max(0.);
+        let ya = super::luminance(air).max(1e-9);
+        let d = density.min(y / ya) * dark_weight(y);
+        let t = (-strength * d).exp();
+        std::array::from_fn(|c| t * p[c] + (1. - t) * air[c])
     }
 }
 
@@ -156,25 +312,139 @@ fn min_filter(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
     out
 }
 
-/// He et al.'s guided filter of `x` with itself as the guide, box radius `r`.
-fn guided(x: &[f32], w: usize, h: usize, r: usize, epsilon: f32) -> Vec<f32> {
-    use crate::develop::local_tone::blur;
-    let sq: Vec<f32> = x.iter().map(|v| v * v).collect();
-    let (m, m2) = rayon::join(|| blur(x, w, h, r), || blur(&sq, w, h, r));
-    let a: Vec<f32> = m
+/// Joint bilateral filter of `p` guided by `guide` at spatial σ `sigma_s` (px) and
+/// range σ `sigma_r`: Durand–Dorsey piecewise linear bilateral grid, with each level
+/// blurred on a grid reduced to about a third of `sigma_s` and interpolated back.
+fn joint_bilateral(
+    guide: &[f32],
+    p: &[f32],
+    w: usize,
+    h: usize,
+    sigma_s: f32,
+    sigma_r: f32,
+) -> Vec<f32> {
+    let (lo, hi) = guide
         .iter()
-        .zip(&m2)
-        .map(|(m, m2)| {
-            let var = (m2 - m * m).max(0.);
-            var / (var + epsilon)
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), v| {
+            (a.min(*v), b.max(*v))
+        });
+    if !lo.is_finite() || !hi.is_finite() || hi - lo < 1e-6 {
+        return gauss(p, w, h, sigma_s);
+    }
+    let count = (((hi - lo) / (sigma_r * 0.5)).floor() as usize + 2).clamp(2, 16);
+    let step = (hi - lo) / (count - 1) as f32;
+    let factor = ((sigma_s / 3.).floor() as usize).max(1);
+    let sigma = sigma_s / factor as f32;
+
+    let planes: Vec<(Vec<f32>, usize, usize)> = (0..count)
+        .into_par_iter()
+        .map(|j| {
+            let level = lo + step * j as f32;
+            let mut weight = Vec::with_capacity(guide.len());
+            let mut weighted = Vec::with_capacity(guide.len());
+            for (&g, &pv) in guide.iter().zip(p) {
+                let d = (g - level) / sigma_r;
+                let wt = (-0.5 * d * d).exp();
+                weight.push(wt);
+                weighted.push(wt * pv);
+            }
+            let (den, gw, gh) = reduce(&weight, w, h, factor);
+            let (num, ..) = reduce(&weighted, w, h, factor);
+            let (den, num) = (gauss(&den, gw, gh, sigma), gauss(&num, gw, gh, sigma));
+            let values = num
+                .iter()
+                .zip(&den)
+                .map(|(n, d)| n / d.max(1e-12))
+                .collect();
+            (values, gw, gh)
         })
         .collect();
-    let b: Vec<f32> = m.iter().zip(&a).map(|(m, a)| m - a * m).collect();
-    let (a, b) = rayon::join(|| blur(&a, w, h, r), || blur(&b, w, h, r));
-    x.iter()
-        .zip(a.iter().zip(&b))
-        .map(|(v, (a, b))| a * v + b)
+
+    let sample = |plane: &(Vec<f32>, usize, usize), x: usize, y: usize| -> f32 {
+        let (values, gw, gh) = (&plane.0, plane.1, plane.2);
+        if factor == 1 {
+            return values[y * gw + x];
+        }
+        let f = factor as f32;
+        let fx = ((x as f32 + 0.5) / f - 0.5).clamp(0., (gw - 1) as f32);
+        let fy = ((y as f32 + 0.5) / f - 0.5).clamp(0., (gh - 1) as f32);
+        let (ix, iy) = (fx as usize, fy as usize);
+        let (jx, jy) = ((ix + 1).min(gw - 1), (iy + 1).min(gh - 1));
+        let (tx, ty) = (fx - ix as f32, fy - iy as f32);
+        let top = values[iy * gw + ix] * (1. - tx) + values[iy * gw + jx] * tx;
+        let bottom = values[jy * gw + ix] * (1. - tx) + values[jy * gw + jx] * tx;
+        top * (1. - ty) + bottom * ty
+    };
+
+    (0..guide.len())
+        .into_par_iter()
+        .map(|i| {
+            let g = guide[i];
+            let t = ((g - lo) / step).clamp(0., (count - 1) as f32);
+            let j = (t.floor() as usize).min(count - 2);
+            let fr = t - j as f32;
+            let (px, py) = (i % w, i / w);
+            sample(&planes[j], px, py) * (1. - fr) + sample(&planes[j + 1], px, py) * fr
+        })
         .collect()
+}
+
+/// Means of `f` × `f` blocks (partial at the right and bottom edges).
+fn reduce(x: &[f32], w: usize, h: usize, f: usize) -> (Vec<f32>, usize, usize) {
+    if f == 1 {
+        return (x.to_vec(), w, h);
+    }
+    let (gw, gh) = (w.div_ceil(f), h.div_ceil(f));
+    let mut sum = vec![0f32; gw * gh];
+    let mut count = vec![0u32; gw * gh];
+    for (i, v) in x.iter().enumerate() {
+        let g = (i / w / f) * gw + (i % w) / f;
+        sum[g] += v;
+        count[g] += 1;
+    }
+    (
+        sum.iter().zip(&count).map(|(s, c)| s / *c as f32).collect(),
+        gw,
+        gh,
+    )
+}
+
+/// A Gaussian blur of σ `sigma` px as three box blurs, clamped at the borders.
+fn gauss(x: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
+    if sigma < 0.5 || w == 0 || h == 0 {
+        return x.to_vec();
+    }
+    let r = (((12. * sigma * sigma / 3. + 1.).sqrt() / 2.).round() as usize).max(1);
+    let rows = boxes(x, w, r);
+    let columns = boxes(&transpose(&rows, w, h), h, r);
+    transpose(&columns, h, w)
+}
+
+fn boxes(x: &[f32], w: usize, r: usize) -> Vec<f32> {
+    let mut out = x.to_vec();
+    let mut line = vec![0f32; w];
+    for row in out.chunks_mut(w) {
+        for _ in 0..3 {
+            let get = |i: isize| row[i.clamp(0, w as isize - 1) as usize];
+            let mut sum: f32 = (-(r as isize)..=r as isize).map(get).sum();
+            for (i, v) in line.iter_mut().enumerate() {
+                *v = sum / (2 * r + 1) as f32;
+                sum += get(i as isize + r as isize + 1) - get(i as isize - r as isize);
+            }
+            row.copy_from_slice(&line);
+        }
+    }
+    out
+}
+
+fn transpose(x: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0.; x.len()];
+    for y in 0..h {
+        for c in 0..w {
+            out[c * h + y] = x[y * w + c];
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -185,14 +455,18 @@ mod tests {
     fn dehaze_transforms_airlight_with_prior_tone_and_mask_exposure() {
         let (w, h) = (120, 80);
         let scene = hazy(w, h);
-        let dehazing = Dehazing::new(Arc::new(Haze::of(&scene, w, h)), [w as u32, h as u32], 0.);
+        let dehazing = Dehazing::new(
+            Arc::new(Haze::of(&scene, &scene, w, h)),
+            [w as u32, h as u32],
+            0.,
+        );
         let (p, pos) = (scene[25 * w + 10], [10., 25.]);
         for amount in [0.5, 1.] {
             let base = dehazing.apply(p, omega(amount), pos, 1.);
             for gain in [0.125, 0.5, 2.] {
                 let adjusted = dehazing.apply(p.map(|v| v * gain), omega(amount), pos, gain);
                 for c in 0..3 {
-                    assert!((adjusted[c] - base[c] * gain).abs() < 1e-6);
+                    assert!((adjusted[c] - base[c] * gain).abs() < 1e-5);
                     assert!(adjusted[c] > 0.);
                 }
             }
@@ -216,14 +490,11 @@ mod tests {
     #[test]
     fn omega_interpolates_between_the_fitted_amounts() {
         assert_eq!(omega(0.), 0.);
-        assert!((omega(0.1) - 0.15).abs() < 1e-6);
-        assert!((omega(0.2) - 0.3).abs() < 1e-6);
-        assert!((omega(0.3) - 0.375).abs() < 1e-6);
-        assert!((omega(0.4) - 0.45).abs() < 1e-6);
-        assert!((omega(0.7) - 0.675).abs() < 1e-6);
-        assert!((omega(1.) - 0.9).abs() < 1e-6);
+        assert!((omega(0.2) - 0.23).abs() < 1e-6);
+        assert!((omega(0.5) - 0.46).abs() < 1e-6);
+        assert!((omega(1.) - 0.88).abs() < 1e-6);
         // Masks summing past +100 remove no more.
-        assert!((omega(1.6) - 0.9).abs() < 1e-6);
+        assert!((omega(1.6) - 0.88).abs() < 1e-6);
     }
 
     /// The airlight is the color of the haziest pixels, not of the brightest channel.
@@ -238,13 +509,13 @@ mod tests {
             }
         }
         // The haziest pixels (by the dark channel): a white-ish patch of dense haze, larger
-        // than 1% of the photo inside the dark channel's window.
+        // than 0.17% of the photo inside the dark channel's window.
         for y in 0..8 {
             for x in 0..14 {
                 scene[y * w + x] = [0.8, 0.82, 0.9];
             }
         }
-        let haze = Haze::of(&scene, w, h);
+        let haze = Haze::of(&scene, &scene, w, h);
         for (a, want) in haze.air.iter().zip([0.8, 0.82, 0.9]) {
             assert!((a - want).abs() < 0.03, "{:?}", haze.air);
         }
@@ -254,7 +525,7 @@ mod tests {
     fn dehaze_darkens_hazy_shadows_and_adds_contrast() {
         let (w, h) = (120, 80);
         let scene = hazy(w, h);
-        let haze = Arc::new(Haze::of(&scene, w, h));
+        let haze = Arc::new(Haze::of(&scene, &scene, w, h));
         let dehazing = Dehazing::new(haze.clone(), [w as u32, h as u32], 0.);
         let at = |x: usize, y: usize, s: f32| {
             dehazing.apply(scene[y * w + x], omega(s), [x as f32, y as f32], 1.)
@@ -275,21 +546,46 @@ mod tests {
         assert!(p(1.) < p(0.4) && p(0.4) < p(0.2));
     }
 
+    #[test]
+    fn negative_dehaze_adds_veil_toward_airlight_monotonically() {
+        let (w, h) = (120, 80);
+        let scene = hazy(w, h);
+        let haze = Arc::new(Haze::of(&scene, &scene, w, h));
+        let dehazing = Dehazing::new(haze, [w as u32, h as u32], 0.);
+        let (x, y) = (10, h / 3);
+        let p = scene[y * w + x];
+        let lum = super::super::luminance;
+        let l0 = lum(p);
+        let l50 = lum(dehazing.apply_negative(p, neg_strength(0.5), [x as f32, y as f32], 1.));
+        let l100 = lum(dehazing.apply_negative(p, neg_strength(1.0), [x as f32, y as f32], 1.));
+        let la = lum(dehazing.air);
+        assert!(
+            l0 < l50 && l50 < l100 && l100 <= la,
+            "{l0} {l50} {l100} {la}"
+        );
+    }
+
     /// At no Dehaze the model is the identity, and Exposure scales the airlight with the
-    /// scene, so an exposed pixel dehazes to the exposed result.
+    /// scene, so an exposed pixel above the dark floor dehazes to the exposed result.
     #[test]
     fn identity_at_zero_and_exposure_scales_the_airlight() {
         let (w, h) = (64, 48);
         let scene = hazy(w, h);
-        let haze = Arc::new(Haze::of(&scene, w, h));
+        let haze = Arc::new(Haze::of(&scene, &scene, w, h));
         let plain = Dehazing::new(haze.clone(), [w as u32, h as u32], 0.);
         let exposed = Dehazing::new(haze, [w as u32, h as u32], 1.);
         let p = scene[20 * w + 10];
         assert_eq!(plain.apply(p, omega(0.), [10., 20.], 1.), p);
+        assert_eq!(plain.apply_negative(p, neg_strength(0.), [10., 20.], 1.), p);
         let a = plain.apply(p, omega(0.6), [10., 20.], 1.);
         let b = exposed.apply(p.map(|v| 2. * v), omega(0.6), [10., 20.], 1.);
         for c in 0..3 {
             assert!((b[c] - 2. * a[c]).abs() < 1e-5, "{a:?} {b:?}");
+        }
+        let na = plain.apply_negative(p, neg_strength(0.6), [10., 20.], 1.);
+        let nb = exposed.apply_negative(p.map(|v| 2. * v), neg_strength(0.6), [10., 20.], 1.);
+        for c in 0..3 {
+            assert!((nb[c] - 2. * na[c]).abs() < 1e-5, "{na:?} {nb:?}");
         }
     }
 

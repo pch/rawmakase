@@ -33,10 +33,9 @@ pub(crate) mod slot {
         // `GlobalTone::gpu_keys`.
         SCENE_TABLES: 1,
         SCENE_KEYS: 6,
-        // Dehaze and the level negative Dehaze's response is relative to
-        // (`SceneTone::dehaze_key`).
-        DEHAZE: 2,
-        // Positive Dehaze's haze (`scene_tone::Dehazing`): its density's table, or -1, the
+        // Global Dehaze slider amount (`SceneTone::dehaze`).
+        DEHAZE: 1,
+        // Dehaze's haze model (`scene_tone::Dehazing`): its density's table, or -1, the
         // grid's size and scale, then the airlight at the render's Exposure.
         HAZE: 5,
         HAZE_AIR: 3,
@@ -574,7 +573,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::SCENE_BLACKS, &[blacks]);
     p.set(slot::SCENE_KEYS, &global.gpu_keys());
     p.set(slot::SCENE_TABLES, &[-1.]);
-    p.set(slot::DEHAZE, &[lut.scene.dehaze, lut.scene.dehaze_key]);
+    p.set(slot::DEHAZE, &[lut.scene.dehaze]);
     match &lut.scene.haze {
         Some(h) => {
             let density = p.push(h.haze.density.iter().copied());
