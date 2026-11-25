@@ -2163,6 +2163,13 @@ impl Editor {
             ctx.request_repaint_after(due + Duration::from_millis(10));
         }
     }
+    /// Keep editing, in the pending work's window: the close is given up, and
+    /// the next one asks again if Ask before quitting is on.
+    pub(in crate::app) fn keep_editing(&mut self) {
+        self.close_confirm = false;
+        self.close_after_work = false;
+        self.quit_confirmed = false;
+    }
     pub(in crate::app) fn pending_work(&mut self, ctx: &egui::Context) {
         // After this pass's edits, which `background` ran before.
         self.save_when_due(ctx);
@@ -2230,8 +2237,7 @@ impl Editor {
                     "Edits could not be saved. Retry or save a preset before closing.".into()
                 });
                 if ui.button("Keep editing").clicked() {
-                    self.close_confirm = false;
-                    self.close_after_work = false;
+                    self.keep_editing();
                 }
                 // What only runs without its own way to stop it: closing anyway
                 // must stay possible should it stall on a network share.
