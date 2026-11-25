@@ -1186,7 +1186,7 @@ fn the_minimap_turns_its_picture_from_before_a_turn() {
 }
 
 /// At 100%, a flip leaves the region rendered before it drawn, as before
-/// turns were drawn: only a turn holds it back.
+/// turns were drawn: only a turn holds it back, with a flip or without.
 #[test]
 fn a_flip_leaves_the_region_drawn() {
     let ctx = egui::Context::default();
@@ -1255,6 +1255,20 @@ fn a_flip_leaves_the_region_drawn() {
             .iter()
             .any(|s| matches!(&s.shape, egui::epaint::Shape::Mesh(m) if m.texture_id == region)),
         "the region from before the flip is still drawn"
+    );
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    let output = frame(&mut e);
+    assert!(
+        !output
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape, egui::epaint::Shape::Mesh(m) if m.texture_id == region)),
+        "a turn as well holds the region back"
     );
 }
 

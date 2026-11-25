@@ -120,17 +120,18 @@ impl Editor {
                 p.size_vec2(),
                 turns(p.orientation),
             )),
-            None => self
-                .library
-                .as_ref()
-                .and_then(|l| l.thumbnail(self.document.catalog_photo?))
-                .map(|t| {
-                    navigator::Photo::turned(
-                        t.id(),
-                        t.size_vec2(),
-                        turns(self.preview.opened_orientation),
-                    )
-                }),
+            None => self.library.as_ref().and_then(|l| {
+                let id = self.document.catalog_photo?;
+                let t = l.thumbnail(id)?;
+                // An edited thumbnail shows the edit the photo opened with; the
+                // camera's preview, none.
+                let then = if l.has_edited_thumbnail(id) {
+                    self.preview.opened_orientation
+                } else {
+                    Some(Orientation::of(&Default::default()))
+                };
+                Some(navigator::Photo::turned(t.id(), t.size_vec2(), turns(then)))
+            }),
         };
         (photo, shown)
     }
@@ -456,12 +457,13 @@ impl Editor {
             .then(|| texture.orientation?.turns_to(shown))
             .flatten()
             .unwrap_or(0);
-        // A change of flips alone is drawn as before.
-        let region_turns = region_texture
-            .as_ref()
-            .and_then(|r| r.orientation?.turns_to(shown))
+        // A turn holds back a region rendered before it, a turn and a flip
+        // together included; a change of flips alone is drawn as before.
+        let region_then = region_texture.as_ref().and_then(|r| r.orientation);
+        let region_turned = region_then.is_some_and(|then| then.turns % 4 != shown.turns % 4);
+        let region_turns = region_then
+            .and_then(|then| then.turns_to(shown))
             .unwrap_or(0);
-        let region_turned = region_turns != 0;
         let mut gpu_whole = false;
         if self.preview.texture.is_some() {
             let hdr = gpu_hdr(&texture);
@@ -491,12 +493,13 @@ impl Editor {
                 clipped.add(turned_image(id, at, turns));
             }
         }
-        // A region rendered before a turn, with no whole render to show instead,
-        // is drawn turned where it now sits until the one for the turn lands.
+        // A region rendered before a turn (and no flip), with no whole render to
+        // show instead, is drawn turned where it now sits until the one for the
+        // turn lands.
         if let (Some(region), Some(at), true, None) = (
             &region_texture,
             region_rect,
-            region_turned,
+            region_turns != 0,
             self.preview.texture.as_ref(),
         ) {
             let n = [
