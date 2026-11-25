@@ -1114,6 +1114,23 @@ impl Editor {
         if default {
             self.move_decode_cache(None);
         }
+        if crate::ai_denoise::neural_engine_offered() {
+            gap(ui);
+            group(ui, "AI Denoise");
+            form_row(ui, "", |ui| {
+                let mut on = self.ai_denoise.neural_engine();
+                if ui.checkbox(&mut on, "Use the Neural Engine").changed() {
+                    self.ai_denoise.set_neural_engine(on);
+                    let _ = self.save_session();
+                }
+            });
+            form_row(ui, "", |ui| {
+                hint(
+                    ui,
+                    "Runs AI Denoise on this Mac's Neural Engine instead of the GPU: faster, in half precision. The first time, RAWmakase converts the AI Denoise model for it, in a few seconds. Photos denoised before are denoised again.",
+                );
+            });
+        }
         gap(ui);
         group(ui, "Thumbnail cache");
         let thumbnail_budget = crate::catalog::preview_cache::thumbnail_budget();
@@ -1734,6 +1751,8 @@ mod tests {
         for (name, tab) in [
             ("preferences-catalog", Tab::Catalog),
             ("preferences-performance", Tab::Performance),
+            // AI Denoise on the Neural Engine chosen (shown on Apple Silicon only).
+            ("preferences-performance-neural-engine", Tab::Performance),
             ("preferences-display", Tab::Display),
             ("preferences-external-editing-empty", Tab::ExternalEditing),
             ("preferences-profiles", Tab::Profiles),
@@ -1744,6 +1763,9 @@ mod tests {
                 name,
                 Vec2::new(1100., 900.),
                 move |e, _| {
+                    if name == "preferences-performance-neural-engine" {
+                        e.ai_denoise.set_neural_engine(true);
+                    }
                     if tab == Tab::Profiles {
                         e.raw_defaults = std::sync::Arc::new(DevelopDefaults::with_presets(
                             RawDefaults {

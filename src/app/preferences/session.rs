@@ -258,6 +258,14 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub one_to_one_discard_days: Option<u32>,
+    /// Preferences > Performance > AI Denoise: run it on the Neural Engine (Apple
+    /// Silicon). Off unless chosen; a release before it ignores the field.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub ai_denoise_neural_engine: bool,
     /// Preferences > External Editing: the programs Edit In opens photos in,
     /// in the order the user put them; the first is Cmd+E's.
     #[serde(
@@ -603,6 +611,24 @@ mod raw_defaults_tests {
         // Saved again, it is RAWmakase's.
         let saved = serde_json::to_value(&session).unwrap();
         assert_eq!(saved["demosaic"], "Rawmakase");
+    }
+
+    #[test]
+    fn the_neural_engine_choice_round_trips_and_is_off_unless_chosen() {
+        let old: Session = serde_json::from_str(r#"{"last_path":null,"monitor":null}"#).unwrap();
+        assert!(!old.ai_denoise_neural_engine);
+        let off = serde_json::to_string(&Session::default()).unwrap();
+        assert!(!off.contains("ai_denoise_neural_engine"), "{off}");
+        let on = Session {
+            ai_denoise_neural_engine: true,
+            ..Default::default()
+        };
+        let back: Session = serde_json::from_str(&serde_json::to_string(&on).unwrap()).unwrap();
+        assert!(back.ai_denoise_neural_engine);
+        // A value another release wrote that isn't a boolean leaves it off.
+        let odd: Session =
+            serde_json::from_str(r#"{"last_path":null,"ai_denoise_neural_engine":"yes"}"#).unwrap();
+        assert!(!odd.ai_denoise_neural_engine);
     }
 
     #[test]
