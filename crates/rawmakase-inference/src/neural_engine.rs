@@ -30,6 +30,7 @@
 //! on ([`tidy`]).
 use crate::denoise::TileModel;
 use crate::{InferenceError, RAWNIND};
+use block2::StackBlock;
 use objc2::AnyThread;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::{AnyObject, ProtocolObject};
@@ -38,13 +39,16 @@ use objc2_core_ml::{
     MLModelConfiguration, MLModelCreatorDefinedKey, MLMultiArray, MLMultiArrayDataType,
 };
 use objc2_foundation::{
-    NSArray, NSDictionary, NSError, NSNumber, NSOperatingSystemVersion, NSProcessInfo, NSString,
-    NSURL,
+    NSArray, NSDictionary, NSError, NSInteger, NSNumber, NSOperatingSystemVersion, NSProcessInfo,
+    NSString, NSURL,
 };
 use rawmakase_cancel::Cancel;
 use sha2::{Digest, Sha256};
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -66,11 +70,14 @@ const WEIGHTS_BYTES: usize = 15_524_504;
 pub const FOLDER: &str = "neural-engine";
 
 /// What the conversion changed, after [`RAWNIND`]'s credit, written beside the converted
-/// model (CC BY 4.0 asks that changes be indicated).
-pub const CHANGES: &str = "Changes: converted for Apple's Neural Engine to a half-precision \
-Core ML model, made on this computer from model_bayer.onnx with the program and scales of \
-scripts/models/convert_denoise_ane.py: each convolution's weights and bias multiplied by powers \
-of two so its values fit half precision, the weights then rounded to half precision.";
+/// model (CC BY 4.0 asks that changes be indicated). The credit says the ONNX model's
+/// weights are unchanged; this says how the copy in this folder differs from it.
+pub const CHANGES: &str = "The model in this folder is changed from that ONNX model: \
+RAWmakase made it on this computer from model_bayer.onnx, for Apple's Neural Engine, as a \
+half-precision Core ML model with the program and scales of \
+scripts/models/convert_denoise_ane.py. Each convolution's weights and bias are multiplied by \
+powers of two so its values fit half precision, and the weights are then rounded to half \
+precision.";
 
 /// How long making, compiling and loading the model for the Neural Engine may take. The
 /// first load makes the weights and compiles the network twice (the package for this
@@ -149,7 +156,7 @@ impl NeuralDenoiser {
                 // A compiled model kept from an earlier load that won't load now is made
                 // again, once: a crash while it was written, or damage since.
                 Err(_) if kept => {
-                    let _ = std::fs::remove_dir_all(&target);
+                    discard(&dir, &target);
                     load(&compiled(&onnx, &dir, &target)?, units).map(Loaded)
                 }
                 Err(e) => Err(e),
@@ -244,7 +251,7 @@ fn compiled(onnx: &Path, dir: &Path, target: &Path) -> Result<PathBuf, Inference
     tidy(dir, &target);
     std::fs::write(
         dir.join("NOTICE"),
-        format!("{}\n{CHANGES}\n", RAWNIND.attribution),
+        format!("{}\n\n{CHANGES}\n", RAWNIND.attribution),
     )
     .map_err(|e| io("the Neural Engine model's notice", e))?;
     let work = tempfile_in(dir).map_err(|e| io("a folder to compile in", e))?;
@@ -257,20 +264,60 @@ fn compiled(onnx: &Path, dir: &Path, target: &Path) -> Result<PathBuf, Inference
         .map_err(|e| io("the package", e));
     drop(weights);
     let result = written.and_then(|()| compile(&package)).and_then(|from| {
-        // Into place in one step: a load running at the same time sees all of it or
-        // none. Another load may have put it there first; its copy is as good.
         let staged = work.join("compiled.mlmodelc");
         let copied = copy_dir(&from, &staged).map_err(|e| io("the compiled model", e));
         let _ = std::fs::remove_dir_all(&from);
         copied?;
-        match std::fs::rename(&staged, &target) {
-            Ok(()) => Ok(target.clone()),
-            Err(_) if target.join("coremldata.bin").is_file() => Ok(target.clone()),
-            Err(e) => Err(io("the compiled model", e)),
-        }
+        publish(&staged, &target, &work)
+            .map(|()| target.clone())
+            .map_err(|e| io("the compiled model", e))
     });
     let _ = std::fs::remove_dir_all(&work);
     result
+}
+
+/// Removes the compiled model `target` in `dir`: first moved aside in one step, so no
+/// folder is left under its name if the removal is cut short. What is moved aside is a
+/// work folder, which [`tidy`] removes later if this doesn't. Only when no work folder
+/// can be made is `target` removed where it is.
+fn discard(dir: &Path, target: &Path) {
+    match tempfile_in(dir) {
+        Ok(aside) => {
+            // Gone already (another load discarded it), or moved: either way the work
+            // folder goes, never a model another load may have put there since.
+            let _ = std::fs::rename(target, aside.join("removed"));
+            let _ = std::fs::remove_dir_all(&aside);
+        }
+        Err(_) => {
+            let _ = std::fs::remove_dir_all(target);
+        }
+    }
+}
+
+/// Moves the compiled model `staged` to `target` in one step: a load running at the same
+/// time sees all of it or none. Another load may have put one there first; its copy is
+/// as good. A folder without `coremldata.bin` under `target`'s name is what a removal cut
+/// short leaves: it is moved into `work`, the caller's work folder, and replaced; one
+/// another load moved away first is not missed.
+fn publish(staged: &Path, target: &Path, work: &Path) -> std::io::Result<()> {
+    let complete = || target.join("coremldata.bin").is_file();
+    let mut last = None;
+    for attempt in 0..3 {
+        match std::fs::rename(staged, target) {
+            Ok(()) => return Ok(()),
+            Err(_) if complete() => return Ok(()),
+            Err(e) if !target.exists() => last = Some(e),
+            Err(e) => {
+                last = Some(e);
+                match std::fs::rename(target, work.join(format!("unfinished-{attempt}"))) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("the compiled model was not moved")))
 }
 
 /// The converted model's weights file, made from `onnx`, the bytes of [`RAWNIND`]'s ONNX
@@ -595,10 +642,6 @@ fn metadata(model: &MLModel, key: &str) -> Result<String, InferenceError> {
 /// Runs `model` on one `f32` input of `shape`, written by `fill`, and answers its
 /// `output` (which must be `expected` in shape) as contiguous `f32`s, each multiplied
 /// by `scale`.
-// `dataPointer` is deprecated for `getMutableBytesWithHandler`, which lends the bytes to
-// a block. The arrays here are made or answered for this call alone and read at once, on
-// this thread, so the pointer is as safe and simpler.
-#[allow(deprecated)]
 fn predict(
     model: &MLModel,
     input: &str,
@@ -619,15 +662,7 @@ fn predict(
             )
         }
         .map_err(|e| failed(&e))?;
-        let count = shape.iter().product();
-        let values = unsafe { array.dataPointer() }.cast::<f32>().as_ptr();
-        // SAFETY: a new array of this shape is contiguous `f32`s, as many as the shape
-        // holds, which Core ML leaves uninitialized: they are zeroed before they are seen
-        // as a slice.
-        fill(unsafe {
-            std::ptr::write_bytes(values, 0, count);
-            std::slice::from_raw_parts_mut(values, count)
-        });
+        write(&array, shape.iter().product(), fill)?;
         let value = unsafe { MLFeatureValue::featureValueWithMultiArray(&array) };
         let key = NSString::from_str(input);
         let features =
@@ -651,20 +686,95 @@ fn predict(
     })
 }
 
+/// The values of `array`, a new single-precision array of `count` values, written by
+/// `fill`. Core ML lends the bytes for as long as `fill` runs; they are refused unless
+/// they are `count` contiguous values.
+fn write(
+    array: &MLMultiArray,
+    count: usize,
+    fill: impl FnOnce(&mut [f32]),
+) -> Result<(), InferenceError> {
+    let shape = shape(array)?;
+    let bytes_needed = count.checked_mul(4);
+    let fill = Cell::new(Some(fill));
+    let done = Cell::new(false);
+    let (fill, done, shape) = (&fill, &done, &shape);
+    // Core ML may switch the array to another buffer for this call: the strides it
+    // passes are the ones that hold.
+    let block = StackBlock::new(
+        move |bytes: NonNull<c_void>, size: NSInteger, strides: NonNull<NSArray<NSNumber>>| {
+            let values = bytes.cast::<f32>().as_ptr();
+            // SAFETY: Core ML passes the array's strides, valid while this block runs.
+            let strides = sizes(unsafe { strides.as_ref() }, "strides");
+            let contiguous = strides.is_ok_and(|s| row_major(&s, shape));
+            let fits = bytes_needed
+                .zip(usize::try_from(size).ok())
+                .is_some_and(|(needed, size)| size >= needed);
+            if let (true, true, true, Some(fill)) =
+                (contiguous, fits, values.is_aligned(), fill.take())
+            {
+                // SAFETY: Core ML lends `size` bytes, aligned for `f32` and holding at
+                // least `count` contiguous ones (checked above), for as long as this
+                // block runs, to this block alone. A new array leaves them
+                // uninitialized: they are zeroed before they are seen as a slice.
+                fill(unsafe {
+                    std::ptr::write_bytes(values, 0, count);
+                    std::slice::from_raw_parts_mut(values, count)
+                });
+                done.set(true);
+            }
+        },
+    );
+    unsafe { array.getMutableBytesWithHandler(&block) };
+    if done.get() {
+        Ok(())
+    } else {
+        Err(InferenceError::Failed(
+            "Core ML lent no room for the model's input".into(),
+        ))
+    }
+}
+
+/// `array`'s shape.
+fn shape(array: &MLMultiArray) -> Result<Vec<usize>, InferenceError> {
+    sizes(&*unsafe { array.shape() }, "shape")
+}
+
+/// `array`'s strides, in values.
+fn strides(array: &MLMultiArray) -> Result<Vec<usize>, InferenceError> {
+    sizes(&*unsafe { array.strides() }, "strides")
+}
+
+/// `list` as sizes, refused when one is negative.
+fn sizes(list: &NSArray<NSNumber>, what: &str) -> Result<Vec<usize>, InferenceError> {
+    list.iter()
+        .map(|n| usize::try_from(n.integerValue()))
+        .collect::<Result<_, _>>()
+        .map_err(|_| InferenceError::OutputInvalid(format!("the array's {what} are negative")))
+}
+
+/// Whether `strides` are those of contiguous values of `shape`, the last dimension fastest.
+fn row_major(strides: &[usize], shape: &[usize]) -> bool {
+    let mut next = 1;
+    strides.len() == shape.len()
+        && strides.iter().zip(shape).rev().all(|(&stride, &n)| {
+            let ok = stride == next || n == 1;
+            next *= n;
+            ok
+        })
+}
+
 /// `array`, which must be `expected` in shape, as contiguous `f32`s times `scale`. The
-/// Neural Engine answers in half precision and may pad rows: read by the strides.
-#[allow(deprecated)] // `dataPointer`: see `predict`.
+/// Neural Engine answers in half precision and may pad rows: read by the strides, from
+/// the bytes Core ML lends, each value's offset checked against their length.
 fn read(array: &MLMultiArray, expected: &[usize], scale: f32) -> Result<Vec<f32>, InferenceError> {
-    let numbers = |list: Retained<NSArray<NSNumber>>| -> Vec<usize> {
-        list.iter().map(|n| n.as_usize()).collect()
-    };
-    let shape = numbers(unsafe { array.shape() });
+    let shape = shape(array)?;
     if shape != expected || shape.contains(&0) {
         return Err(InferenceError::OutputInvalid(format!(
             "the model answered with shape {shape:?}, expected {expected:?}"
         )));
     }
-    let strides = numbers(unsafe { array.strides() });
+    let strides = strides(array)?;
     if strides.len() != shape.len() {
         return Err(InferenceError::OutputInvalid(format!(
             "the model answered {} strides for {} dimensions",
@@ -672,52 +782,87 @@ fn read(array: &MLMultiArray, expected: &[usize], scale: f32) -> Result<Vec<f32>
             shape.len()
         )));
     }
-    // The last value's offset, plus one: how far the strides reach.
-    let len = shape
-        .iter()
-        .zip(&strides)
-        .map(|(n, s)| (n - 1) * s)
-        .sum::<usize>()
-        + 1;
-    let (inner, inner_stride) = (shape[shape.len() - 1], strides[strides.len() - 1]);
-    let rows = shape[..shape.len() - 1].iter().product::<usize>();
-    // Each row's offset: its index written out over the outer dimensions.
-    let row_offset = |mut row: usize| -> usize {
-        let mut offset = 0;
-        for d in (0..shape.len() - 1).rev() {
-            offset += (row % shape[d]) * strides[d];
-            row /= shape[d];
-        }
-        offset
-    };
-    let base = unsafe { array.dataPointer() };
-    let mut out = Vec::with_capacity(rows * inner);
-    match unsafe { array.dataType() } {
-        MLMultiArrayDataType::Float16 => {
-            // SAFETY: the array holds `len` half-precision values by its own strides.
-            let data =
-                unsafe { std::slice::from_raw_parts(base.cast::<half::f16>().as_ptr(), len) };
-            for row in 0..rows {
-                let start = row_offset(row);
-                out.extend((0..inner).map(|x| data[start + x * inner_stride].to_f32() * scale));
-            }
-        }
-        MLMultiArrayDataType::Float32 => {
-            // SAFETY: as above, single precision.
-            let data = unsafe { std::slice::from_raw_parts(base.cast::<f32>().as_ptr(), len) };
-            for row in 0..rows {
-                let start = row_offset(row);
-                out.extend((0..inner).map(|x| data[start + x * inner_stride] * scale));
-            }
-        }
+    let width = match unsafe { array.dataType() } {
+        MLMultiArrayDataType::Float16 => 2,
+        MLMultiArrayDataType::Float32 => 4,
         other => {
             return Err(InferenceError::OutputInvalid(format!(
                 "the model answered in data type {}",
                 other.0
             )));
         }
-    }
-    Ok(out)
+    };
+    // The last value's offset, plus one: how many values the strides reach.
+    let reach = shape.iter().zip(&strides).try_fold(1usize, |at, (n, s)| {
+        (n - 1).checked_mul(*s)?.checked_add(at)
+    });
+    let last = shape.len() - 1;
+    let (inner, inner_stride) = (shape[last], strides[last]);
+    let rows: usize = shape[..last].iter().product();
+    // Each row's offset: its index written out over the outer dimensions.
+    let row_offset = |mut row: usize| -> usize {
+        let mut offset = 0;
+        for d in (0..last).rev() {
+            offset += (row % shape[d]) * strides[d];
+            row /= shape[d];
+        }
+        offset
+    };
+    let out: Cell<Option<Result<Vec<f32>, InferenceError>>> = Cell::new(None);
+    let out_ref = &out;
+    let block = StackBlock::new(move |bytes: NonNull<c_void>, size: NSInteger| {
+        let lent = usize::try_from(size).unwrap_or(0);
+        let fits = reach
+            .and_then(|r| r.checked_mul(width))
+            .is_some_and(|b| b <= lent);
+        if !fits {
+            out_ref.set(Some(Err(InferenceError::OutputInvalid(format!(
+                "the model's answer holds {lent} bytes, fewer than its strides reach"
+            )))));
+            return;
+        }
+        let base = bytes.cast::<u8>().as_ptr();
+        // A row of contiguous values is read as one slice: it holds no padding.
+        let rows_whole = inner_stride == 1 && base.align_offset(width) == 0;
+        let mut values = Vec::with_capacity(rows * inner);
+        for row in 0..rows {
+            let start = row_offset(row);
+            // SAFETY: every value read is at an offset below `reach` values of `width`
+            // bytes, which fit in the `size` bytes Core ML lends for as long as this
+            // block runs. A row is seen as a slice only when its values are contiguous
+            // and aligned, so the slice holds them alone, never the padding between
+            // rows; otherwise each value is read on its own.
+            unsafe {
+                let at = base.add(start * width);
+                match (width, rows_whole) {
+                    (2, true) => values.extend(
+                        std::slice::from_raw_parts(at.cast::<half::f16>(), inner)
+                            .iter()
+                            .map(|v| v.to_f32() * scale),
+                    ),
+                    (_, true) => values.extend(
+                        std::slice::from_raw_parts(at.cast::<f32>(), inner)
+                            .iter()
+                            .map(|v| v * scale),
+                    ),
+                    (2, false) => values.extend((0..inner).map(|x| {
+                        let v = at.add(x * inner_stride * 2).cast::<u16>().read_unaligned();
+                        half::f16::from_bits(v).to_f32() * scale
+                    })),
+                    (_, false) => values.extend((0..inner).map(|x| {
+                        at.add(x * inner_stride * 4).cast::<f32>().read_unaligned() * scale
+                    })),
+                }
+            }
+        }
+        out_ref.set(Some(Ok(values)));
+    });
+    unsafe { array.getBytesWithHandler(&block) };
+    out.take().unwrap_or_else(|| {
+        Err(InferenceError::OutputInvalid(
+            "Core ML lent none of the model's answer".into(),
+        ))
+    })
 }
 
 /// `load` on a thread of its own, given up after `limit`: Core ML's load cannot be

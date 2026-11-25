@@ -26,7 +26,9 @@ half = "2.7"
 # The converted model's weights are checked against the conversion's digest.
 sha2.workspace = true
 objc2.workspace = true
-objc2-core-ml = { version = "0.3", default-features = false, features = ["std", "MLDictionaryFeatureProvider", "MLFeatureProvider", "MLFeatureValue", "MLModel", "MLModel_MLModelCompilation", "MLModelConfiguration", "MLModelDescription", "MLModelMetadataKeys", "MLMultiArray"] }
+# Core ML lends an array's bytes to a block (`getBytesWithHandler`).
+block2 = "0.6"
+objc2-core-ml = { version = "0.3", default-features = false, features = ["std", "block2", "MLDictionaryFeatureProvider", "MLFeatureProvider", "MLFeatureValue", "MLModel", "MLModel_MLModelCompilation", "MLModelConfiguration", "MLModelDescription", "MLModelMetadataKeys", "MLMultiArray"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSProcessInfo", "NSString", "NSURL", "NSValue"] }
 
 [dev-dependencies]
