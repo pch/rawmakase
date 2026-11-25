@@ -54,6 +54,8 @@ impl Editor {
             Flushed::Late => eprintln!("Edits not saved: the catalog did not answer in time"),
         }
         self.remember_place(crate::app::shell::workspace::LayoutEdit::Settled);
+        // A level chosen by a drag the quit cut short.
+        self.remember_zoom_level();
         // Only now: the save went through it.
         stopping.push(self.autosave.close());
         let waited = task::wait_for(stopping, until.saturating_duration_since(Instant::now()));

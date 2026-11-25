@@ -626,6 +626,22 @@ mod tests {
         let reopened = Editor::with_context(&ctx, None, saved, None);
         assert_eq!(reopened.view.zoom.level, 0.125);
         assert!(!reopened.view.zoom.on);
+        // The first frame draws it as it was: nothing to render again.
+        assert_eq!(reopened.view.zoom_key, (false, 0.125));
+        // A saved level out of reach reads back within it and isn't written
+        // again until the zoom changes; an unreadable one reads as 100%.
+        for (saved, read) in [(Some(20.), 16.), (Some(-2.), 1.), (Some(f32::NAN), 1.)] {
+            let session = crate::app::preferences::session::Session {
+                zoom_level: saved,
+                ..Default::default()
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("session.json");
+            let mut editor = Editor::with_context(&ctx, None, session, Some(file.clone()));
+            assert_eq!(editor.view.zoom.level, read, "{saved:?}");
+            editor.remember_zoom_level();
+            assert!(!file.exists(), "{saved:?} written again unchanged");
+        }
     }
 
     /// A saved level reads back within the levels a step reaches; none, or
