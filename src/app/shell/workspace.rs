@@ -349,6 +349,7 @@ impl Editor {
             library.session.pause_checksums(busy);
             library.set_preview_pace(pace);
             library.set_display(self.view.display_profile());
+            library.set_map(self.map.source());
             library.publish_shown();
             library.poll_previews(&ctx);
             if stack_bursts {

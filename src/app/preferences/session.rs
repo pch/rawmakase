@@ -100,6 +100,29 @@ pub(crate) struct Session {
     /// The user turned off checking for updates, which is on by default.
     #[serde(default, deserialize_with = "lenient")]
     pub no_update_checks: bool,
+    /// Preferences › General's Map: shown under the Metadata panel's GPS
+    /// row; off by default, as its tiles tell the server where photos were taken.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub map: bool,
+    /// The map's tile server address, with `{z}`, `{x}` and `{y}`; none is
+    /// OpenStreetMap's.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub map_tiles: Option<String>,
+    /// The credit shown on the map; none is OpenStreetMap's.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub map_credit: Option<String>,
     /// Quitting asks first; off by default.
     #[serde(default, deserialize_with = "lenient")]
     pub confirm_quit: bool,

@@ -281,6 +281,8 @@ pub(crate) struct Library {
     copy_names: copy_name::CopyNames,
     /// Title, caption and the other descriptive fields being shown or typed.
     fields: metadata_fields::Fields,
+    /// The map under the GPS row, off until Preferences turns it on.
+    map: map::Map,
     keyword_list: keyword_list::KeywordList,
     keyword_sets: keyword_sets::KeywordSetPanel,
     loupe: loupe::Loupe,
@@ -409,6 +411,7 @@ impl Library {
             offer_previous_import: false,
             copy_names: Default::default(),
             fields: Default::default(),
+            map: map::Map::new(),
             keyword_list: Default::default(),
             keyword_sets: Default::default(),
             done: Vec::new(),
@@ -1621,6 +1624,15 @@ impl Library {
         self.screen.set_display(display.clone());
         self.cache.set_display(display);
     }
+    /// Shows the Metadata panel's map from `source`, or none; the workspace
+    /// sets it every frame.
+    pub(in crate::app) fn set_map(&mut self, source: Option<map::Source>) {
+        self.map.set_source(source);
+    }
+    /// Ends the map's tile workers at exit; they are then waited for.
+    pub(in crate::app) fn close_map(&mut self) -> Vec<crate::app::task::Stopping> {
+        self.map.close()
+    }
     /// Drain in every workspace so the bounded worker never waits for the grid.
     pub(in crate::app) fn poll_previews(&mut self, ctx: &egui::Context) {
         if self.availability.poll(false, self.session.photos()) {
@@ -2003,6 +2015,7 @@ mod keyword_tests;
 mod kinetic;
 mod layout;
 mod loupe;
+pub(in crate::app) mod map;
 mod metadata;
 mod metadata_bar;
 mod metadata_fields;

@@ -508,6 +508,11 @@ Some features span several owners; each module's docs describe its part:
   owns the data, its validation, matching and verification and never reaches the
   network; `app::develop::profile_download` owns the request, the task and the offer, and
   `app::develop::panels::inspector::profile_offer` draws it.
+- The Metadata panel's map: `app::library::map` owns the view, the tile requests and
+  their disk cache, and reaches the network only while Preferences › General's Map is
+  on and the panel shows a photo with a place; the editor keeps the setting
+  (`session.json`) and hands the Library its source each frame, as the monitor
+  profile. Its workers stop at exit as `work::Kind::MapTiles`.
 - Shortcuts: see [Commands and keys](#commands-and-keys).
 - `app::shell::messages` owns what the app says to the user, and the running-work line
   is read each frame from the state that owns the work, so nothing starts or ends it

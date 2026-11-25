@@ -552,6 +552,8 @@ impl Editor {
         group(ui, "Scripting");
         self.local_access_rows(ui, "Ready for scripts and MCP clients");
         gap(ui);
+        self.map_rows(ui);
+        gap(ui);
         group(ui, "Help");
         form_row(ui, "", |ui| {
             if ui.button("Keyboard Shortcuts").clicked() {
@@ -1898,6 +1900,7 @@ mod third_party_tests {
 }
 
 mod external_editing;
+mod map;
 pub(in crate::app) mod monitor;
 pub(in crate::app) mod raw_defaults;
 pub(crate) mod session;

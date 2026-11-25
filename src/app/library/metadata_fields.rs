@@ -52,6 +52,9 @@ pub(super) struct Fields {
     copyright: Shared<String>,
     creators: Shared<Vec<String>>,
     location: Shared<Option<Location>>,
+    /// Where the photos shown that have a location were taken, latitude and
+    /// longitude in degrees, for the map.
+    pub(super) places: Vec<(f64, f64)>,
     /// Each keyword, and whether every photo shown has it.
     keywords: Vec<(Keyword, bool)>,
     /// Text as typed, from the value shown when typing started.
@@ -272,6 +275,13 @@ impl Library {
             _ => Vec::new(),
         }));
         f.location = Shared::of(all.iter().map(|d| d.location.clone()));
+        f.places = all
+            .iter()
+            .filter_map(|d| match d.location {
+                Some(Location::At { lat, lon, .. }) => Some((lat, lon)),
+                _ => None,
+            })
+            .collect();
         let mut counts: std::collections::HashMap<i64, (Keyword, usize)> = Default::default();
         for k in keywords.iter().flatten() {
             counts.entry(k.id).or_insert_with(|| (k.clone(), 0)).1 += 1;
@@ -340,9 +350,11 @@ impl Library {
             !text.is_empty(),
         );
         response.on_hover_text(if text.is_empty() {
-            "The location in the file, if it has one"
+            "The location in the file, if it has one".to_owned()
+        } else if self.map.is_on() || self.fields.places.is_empty() {
+            text
         } else {
-            &text
+            format!("{text}\nTurn on Map in Preferences › General to see it on a map")
         });
         let clear = ui
             .put(
@@ -357,6 +369,8 @@ impl Library {
                     .fail(format!("Location could not be cleared: {e}"));
             }
         }
+        let places = self.fields.places.clone();
+        self.map.show(ui, &places);
     }
     /// The Keywording panel: the keywords of the photos shown, one per row
     /// (with "*" when only some have it), and a field to add more.
