@@ -261,6 +261,17 @@ impl LensCorrection {
     /// The `source` of the correction read from a Sony file's own tables (a DNG's
     /// opcodes are another source, with Lightroom's framing).
     pub const SONY_BUILTIN: &'static str = "Sony built-in";
+    /// The `source` of the correction read from a DNG's own opcodes. It is shown as
+    /// [`Self::shown_source`] says, since "opcodes" means nothing to most people.
+    pub const DNG_OPCODES: &'static str = "DNG opcodes";
+    /// Where the correction came from, as the Lens Corrections panel names it.
+    pub fn shown_source(&self) -> &str {
+        if self.source == Self::DNG_OPCODES {
+            "Stored in the file"
+        } else {
+            &self.source
+        }
+    }
     /// The start of the `source` of a correction read from an imported Adobe lens
     /// profile, which Camera Raw frames differently ([`Self::fill_scale`]).
     pub const ADOBE_PROFILE: &'static str = "Adobe profile";

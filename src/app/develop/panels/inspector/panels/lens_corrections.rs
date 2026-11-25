@@ -70,12 +70,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 );
             });
             lens_profile::profile_menus(ui, r, metadata, lensfun_view);
-            // Said here as well as on import, so a missing profile is never silent.
-            if let Some(missing) = metadata.and_then(|m| r.missing_lens_profile(m)) {
+            // Said here as well as on import, so a missing profile is never silent; and
+            // in the window, not only in a hover tip, that the file's own correction
+            // renders whatever the switch says, so toggling it changes nothing.
+            if let Some(note) = metadata.and_then(|m| correction_note(r, m)) {
                 control_row(ui, "", |ui| {
                     ui.add(
                         egui::Label::new(
-                            egui::RichText::new(missing)
+                            egui::RichText::new(note)
                                 .size(text::SMALL)
                                 .color(palette.tone(Tone::SECONDARY)),
                         )
@@ -165,4 +167,108 @@ pub(in crate::app::develop::panels::inspector) fn show(
     }
     switch.finish(r);
     actions
+}
+
+/// What the panel says under the Profile menus: why the profile it should use
+/// can't render ([`Recipe::missing_lens_profile`]), and whether the file carries a
+/// correction that renders whether Enable Profile Corrections is on or off
+/// ([`Recipe::fixed_lens_correction`]). Where the file's other tables follow the
+/// switch (Sony's), only part of it does.
+fn correction_note(r: &Recipe, m: &Metadata) -> Option<String> {
+    let missing = r.missing_lens_profile(m);
+    let Some(fixed) = r.fixed_lens_correction(m) else {
+        return missing;
+    };
+    // A stand-in that holds no more than the fixed correction (a Sony lens that
+    // stores only its CA) leaves nothing for the switch to add.
+    let part = m.lens_stand_in.as_ref().is_some_and(|s| s != fixed);
+    // With a missing profile the note ends by naming the file's correction, which is
+    // what renders whenever the fixed one applies; the clause then says the rest.
+    Some(match (missing, part) {
+        (Some(missing), false) => format!(
+            "{missing}, which always applies in full, whether Enable Profile Corrections is on or off."
+        ),
+        (Some(missing), true) => format!(
+            "{missing}, part of which always applies, whether Enable Profile Corrections is on or off."
+        ),
+        (None, false) => "The lens correction stored in this file always applies in full, whether Enable Profile Corrections is on or off.".into(),
+        (None, true) => "Part of the lens correction stored in this file always applies, whether Enable Profile Corrections is on or off.".into(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::recipe::ProfileCorrections;
+    use crate::optics::{LensCorrection, Radial};
+
+    /// A photo whose file stores a distortion `source`; with `stand_in`, fuller
+    /// data (vignetting too) stands in for a profile, as a Sony file's tables do.
+    fn photo(source: &str, default_on: bool, stand_in: bool) -> Metadata {
+        let lens = LensCorrection {
+            source: source.into(),
+            default_on,
+            distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+            ..Default::default()
+        };
+        Metadata {
+            lens_stand_in: stand_in.then(|| LensCorrection {
+                vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
+                ..lens.clone()
+            }),
+            lens: Some(lens),
+            ..Default::default()
+        }
+    }
+
+    /// The note says "always" only of what renders whatever the switch says, and
+    /// "part" where the rest of the file's tables follow it (#1289).
+    #[test]
+    fn the_note_says_always_only_of_what_ignores_the_switch() {
+        let note = |m: &Metadata, on| {
+            let mut r = Recipe::for_metadata(m);
+            r.set_profile_corrections(m, on);
+            correction_note(&r, m)
+        };
+        use ProfileCorrections::{Off, On};
+        let dng = photo(LensCorrection::DNG_OPCODES, true, false);
+        assert_eq!(
+            note(&dng, Off).as_deref(),
+            Some(
+                "The lens correction stored in this file always applies in full, \
+                 whether Enable Profile Corrections is on or off."
+            )
+        );
+        assert_eq!(
+            note(&dng, On).as_deref(),
+            Some(
+                "No matching imported Adobe lens profile for this lens; using the lens \
+                 correction stored in the file, which always applies in full, whether \
+                 Enable Profile Corrections is on or off."
+            )
+        );
+        let sony = photo(LensCorrection::SONY_BUILTIN, true, true);
+        assert!(note(&sony, Off).unwrap().starts_with("Part of"));
+        assert!(
+            note(&sony, On)
+                .unwrap()
+                .ends_with("using Sony built-in, part of which always applies, whether Enable Profile Corrections is on or off.")
+        );
+        // A stand-in no fuller than what always applies adds nothing to the switch.
+        let same = Metadata {
+            lens_stand_in: sony.lens.clone(),
+            ..sony
+        };
+        assert!(note(&same, Off).unwrap().starts_with("The lens correction"));
+        // Nikon's optional profile follows the switch: only the missing profile is said.
+        let nikon = photo("Nikon built-in", false, false);
+        assert_eq!(note(&nikon, Off), None);
+        assert_eq!(
+            note(&nikon, On).as_deref(),
+            Some("No matching imported Adobe lens profile for this lens; using Nikon built-in")
+        );
+        for on in [Off, On] {
+            assert!(note(&Metadata::default(), on).is_none_or(|n| !n.contains("always")));
+        }
+    }
 }

@@ -608,6 +608,19 @@ fn lensfun_renders_from_its_copy_and_never_as_adobe() {
     assert!(c.distortion.is_some() && c.chromatic.is_some() && c.vignetting.is_some());
     assert!(c.chromatic_at_source);
     assert_eq!(r.missing_lens_profile(&m), None);
+    // The lens replaces a correction the file always applies once the switch is on,
+    // so that correction isn't fixed with it off either (#1289).
+    m.lens = Some(crate::optics::LensCorrection {
+        source: crate::optics::LensCorrection::DNG_OPCODES.into(),
+        default_on: true,
+        distortion: crate::optics::Radial::new(vec![0., 1.], vec![1., 1.01]),
+        ..Default::default()
+    });
+    assert_eq!(r.fixed_lens_correction(&m), None);
+    r.lens_profile = false;
+    assert_eq!(r.fixed_lens_correction(&m), None);
+    r.lens_profile = true;
+    m.lens = None;
     // Rendering takes no database, so neither none installed nor another version of
     // it changes this: the choice carries its own calibration.
     // Switched off, nothing of it renders; Default never picks it.
@@ -670,6 +683,18 @@ fn an_unresolved_lensfun_choice_falls_back_to_built_in_only() {
             .unwrap()
             .ends_with("; using Canon built-in")
     );
+    // A DNG's opcodes are named for what they are, not by the format's term (#1289),
+    // and an unresolved lens doesn't replace them, the switch on or off.
+    m.lens.as_mut().unwrap().source = crate::optics::LensCorrection::DNG_OPCODES.into();
+    assert!(
+        r.missing_lens_profile(&m)
+            .unwrap()
+            .ends_with("; using the lens correction stored in the file")
+    );
+    assert!(r.fixed_lens_correction(&m).is_some());
+    r.lens_profile = false;
+    assert!(r.fixed_lens_correction(&m).is_some());
+    r.lens_profile = true;
     // Resolving copies the installed calibration.
     let installed = fixture::installed(-0.02, 1_793_180_205);
     let resolved = r
@@ -770,4 +795,76 @@ fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
             .unwrap()
             .contains("crop factor")
     );
+}
+
+/// Which corrections stored in the file render whether Enable Profile Corrections is
+/// on or off (#1289): a DNG's opcodes and the other `default_on` ones do, unless an
+/// imported profile replaces them; Nikon's and Canon's optional ones, which follow
+/// the switch, and a correction an old edit keeps off never do.
+#[test]
+fn only_corrections_that_ignore_the_switch_are_fixed() {
+    use crate::model::recipe::{ProfileCorrections, Recipe};
+    use crate::optics::{LensCorrection, Radial};
+    let warp = |source: &str, default_on| LensCorrection {
+        source: source.into(),
+        default_on,
+        distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+        ..Default::default()
+    };
+    let with = |lens: LensCorrection, profiles: bool| {
+        let mut m = photo();
+        m.lens = Some(lens);
+        if !profiles {
+            m.lens_profiles = Default::default();
+        }
+        m
+    };
+    let fixed = |m: &Metadata, on: ProfileCorrections| {
+        let mut r = Recipe::for_metadata(m);
+        r.set_profile_corrections(m, on);
+        r.fixed_lens_correction(m).map(|c| c.source.clone())
+    };
+    use ProfileCorrections::{Off, On};
+    let dng = with(warp(LensCorrection::DNG_OPCODES, true), false);
+    assert_eq!(fixed(&dng, Off).as_deref(), Some("DNG opcodes"));
+    assert_eq!(fixed(&dng, On).as_deref(), Some("DNG opcodes"));
+    // Its plain name, in the panel and in the note on a missing profile.
+    assert_eq!(
+        dng.lens.as_ref().unwrap().shown_source(),
+        "Stored in the file"
+    );
+    let mut r = Recipe::for_metadata(&dng);
+    r.set_profile_corrections(&dng, On);
+    let note = r.missing_lens_profile(&dng).unwrap();
+    assert_eq!(
+        note,
+        "No matching imported Adobe lens profile for 35mm F2; \
+         using the lens correction stored in the file"
+    );
+    let fuji = with(warp("Fujifilm built-in", true), false);
+    assert!(fixed(&fuji, Off).is_some() && fixed(&fuji, On).is_some());
+    // Sony's lateral CA stays on while its other tables stand in for a profile.
+    let sony = Metadata {
+        lens_stand_in: Some(LensCorrection {
+            vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
+            ..warp(LensCorrection::SONY_BUILTIN, true)
+        }),
+        ..with(warp(LensCorrection::SONY_BUILTIN, true), false)
+    };
+    assert!(fixed(&sony, Off).is_some() && fixed(&sony, On).is_some());
+    // An imported profile of the lens replaces it once the switch is on, so it
+    // isn't fixed with the switch off either.
+    let profiled = with(warp(LensCorrection::DNG_OPCODES, true), true);
+    assert_eq!(fixed(&profiled, Off), None);
+    assert_eq!(fixed(&profiled, On), None);
+    // Nikon's optional profile and Canon's follow the switch.
+    for optional in ["Nikon built-in", "Canon built-in"] {
+        let m = with(warp(optional, false), false);
+        assert_eq!(fixed(&m, Off), None, "{optional}");
+        assert_eq!(fixed(&m, On), None, "{optional}");
+    }
+    // An edit saved before built-in corrections existed keeps them off.
+    let mut old = Recipe::for_metadata(&dng);
+    old.lens_builtin = false;
+    assert_eq!(old.fixed_lens_correction(&dng), None);
 }
