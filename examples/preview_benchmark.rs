@@ -52,7 +52,11 @@ fn main() -> Result<()> {
     anyhow::ensure!((1..=100).contains(&iterations), "Use 1–100 iterations");
     let cancel = AtomicBool::new(false);
     let start = Instant::now();
-    let image = rawmakase::photo::open(std::path::Path::new(path))?.develop(
+    let image = rawmakase::photo::open(
+        std::path::Path::new(path),
+        &rawmakase::photo::LensProfiles::none(),
+    )?
+    .develop(
         camera_data::Decode::full(Default::default()),
         Cancel::new(&cancel),
     )?;

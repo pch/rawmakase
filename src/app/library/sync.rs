@@ -219,6 +219,8 @@ impl BatchChange {
 pub(in crate::app) struct Decoding {
     pub demosaic: crate::camera_data::Demosaic,
     pub cache: Option<crate::decode_cache::DecodeCache>,
+    /// The imported lens profiles each photo is opened with.
+    pub lenses: crate::photo::LensProfiles,
 }
 
 /// How far a batch has got, shared by its worker and the window that shows it, and
@@ -364,25 +366,27 @@ pub(in crate::app) fn synchronize(
             return result;
         }
         Some(SyncSource::Open(settings)) => Some(settings.as_ref()),
-        Some(SyncSource::Photo(photo)) => match photo_settings(catalog, photo, defaults) {
-            Ok((settings, warnings)) => {
-                result
-                    .notes
-                    .extend(warnings.into_iter().map(|note| SyncNote {
+        Some(SyncSource::Photo(photo)) => {
+            match photo_settings(catalog, photo, defaults, &decoding.lenses) {
+                Ok((settings, warnings)) => {
+                    result
+                        .notes
+                        .extend(warnings.into_iter().map(|note| SyncNote {
+                            name: photo.name.clone(),
+                            note,
+                        }));
+                    read = settings;
+                    Some(&read)
+                }
+                Err(e) => {
+                    result.failed.push(SyncFailure {
                         name: photo.name.clone(),
-                        note,
-                    }));
-                read = settings;
-                Some(&read)
+                        reason: format!("its settings can't be read to sync from: {e:#}"),
+                    });
+                    return result;
+                }
             }
-            Err(e) => {
-                result.failed.push(SyncFailure {
-                    name: photo.name.clone(),
-                    reason: format!("its settings can't be read to sync from: {e:#}"),
-                });
-                return result;
-            }
-        },
+        }
     };
     // Matching to a photo without aperture, shutter speed and ISO means nothing.
     if *change == BatchChange::MatchTotalExposures
@@ -674,7 +678,7 @@ impl Opened {
             // Only its metadata may have been read so far.
             let opened = match self.opened.take() {
                 Some(opened) => opened,
-                None => crate::photo::open_source(&self.path, cancel)?,
+                None => crate::photo::open_source(&self.path, &decoding.lenses, cancel)?,
             };
             let image = match opened {
                 crate::photo::Opened::Raw(raw) => match &decoding.cache {
@@ -723,12 +727,12 @@ fn prepare(
         _ => false,
     };
     let header = (sets_only && crate::storage::is_raw(&target.path))
-        .then(|| crate::photo::header_metadata(&target.path).ok())
+        .then(|| crate::photo::header_metadata(&target.path, &decoding.lenses).ok())
         .flatten();
     let (metadata, opened) = match header {
         Some(metadata) => (metadata, None),
         None => {
-            let opened = crate::photo::open_source(&target.path, Cancel::NEVER)
+            let opened = crate::photo::open_source(&target.path, &decoding.lenses, Cancel::NEVER)
                 .with_context(|| format!("{} can't be read", target.name))?;
             (opened.metadata().clone(), Some(opened))
         }
@@ -739,7 +743,13 @@ fn prepare(
         image: None,
     };
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
-    let profiles = crate::camera_look::with_default(&target.path, &metadata, profiles, cancel);
+    let profiles = crate::camera_look::with_default(
+        &target.path,
+        &decoding.lenses,
+        &metadata,
+        profiles,
+        cancel,
+    );
     let record = catalog.edit_record(target.id)?;
     let resolved = edits::resolve(&record, &target.path, &metadata, &profiles, defaults)?;
     let starting_warnings = starting_warnings(resolved.origin, resolved.warnings);
@@ -971,13 +981,14 @@ fn photo_settings(
     catalog: &Catalog,
     photo: &SyncTarget,
     defaults: &DevelopDefaults,
+    lenses: &crate::photo::LensProfiles,
 ) -> Result<(Settings, Vec<String>)> {
-    let opened = crate::photo::open_source(&photo.path, Cancel::NEVER)
+    let opened = crate::photo::open_source(&photo.path, lenses, Cancel::NEVER)
         .with_context(|| format!("{} can't be read", photo.name))?;
     let metadata = opened.metadata().clone();
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
     let profiles =
-        crate::camera_look::with_default(&photo.path, &metadata, profiles, Cancel::NEVER);
+        crate::camera_look::with_default(&photo.path, lenses, &metadata, profiles, Cancel::NEVER);
     let record = catalog.edit_record(photo.id)?;
     let resolved = edits::resolve(&record, &photo.path, &metadata, &profiles, defaults)?;
     let warnings = starting_warnings(resolved.origin, resolved.warnings);
@@ -1000,6 +1011,7 @@ pub(in crate::app) fn starting_recipe(
     catalog: &Catalog,
     target: &SyncTarget,
     defaults: &Arc<DevelopDefaults>,
+    lenses: &crate::photo::LensProfiles,
     cancel: Cancel<'_>,
 ) -> Result<Recipe> {
     let record = catalog.edit_record(target.id)?;
@@ -1008,17 +1020,18 @@ pub(in crate::app) fn starting_recipe(
         return Ok(saved.recipe);
     }
     let header = crate::storage::is_raw(&target.path)
-        .then(|| crate::photo::header_metadata(&target.path).ok())
+        .then(|| crate::photo::header_metadata(&target.path, lenses).ok())
         .flatten();
     let metadata = match header {
         Some(metadata) => metadata,
-        None => crate::photo::open_source(&target.path, cancel)
+        None => crate::photo::open_source(&target.path, lenses, cancel)
             .with_context(|| format!("{} can't be read", target.name))?
             .metadata()
             .clone(),
     };
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
-    let profiles = crate::camera_look::with_default(&target.path, &metadata, profiles, cancel);
+    let profiles =
+        crate::camera_look::with_default(&target.path, lenses, &metadata, profiles, cancel);
     Ok(start.resolve(&metadata, &profiles)?.recipe)
 }
 
@@ -1325,6 +1338,7 @@ impl Editor {
         let decoding = Decoding {
             demosaic: self.session.demosaic,
             cache: Some(self.decode_cache().clone()),
+            lenses: self.lens_profiles().clone(),
         };
         let progress = Arc::new(BatchProgress::new(change.name(), targets.len()));
         // Moving to another photo or catalog waits, so neither can see an edit change
@@ -1523,7 +1537,8 @@ mod tests {
         image::RgbImage::from_pixel(24, 16, image::Rgb([90, 120, 150])).save(&jpeg)?;
         c.add_folder(&folder)?;
         let id = c.photos()?.into_iter().find(|p| p.path == jpeg).unwrap().id;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut source = Recipe::with_profiles(&metadata, &profiles);
         source.exposure = 0.5;
@@ -1579,9 +1594,10 @@ mod tests {
         .save(&png)?;
         c.add_folder(&folder)?;
         let id = c.photos()?.into_iter().find(|p| p.path == png).unwrap().id;
-        let metadata = crate::photo::open_source(&png, Cancel::NEVER)?
-            .metadata()
-            .clone();
+        let metadata =
+            crate::photo::open_source(&png, &crate::photo::LensProfiles::none(), Cancel::NEVER)?
+                .metadata()
+                .clone();
         let mut source = Recipe::with_profiles(&metadata, &[]);
         source.set_auto_straighten(Some(5.));
         let mut crop = GroupSelection::none();
@@ -1620,7 +1636,8 @@ mod tests {
             catalog: mut c,
             photos,
         } = catalog()?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut source = Recipe::with_profiles(&metadata, &profiles);
         source.exposure = 0.5;
@@ -1751,7 +1768,8 @@ mod tests {
             catalog: mut c,
             photos,
         } = catalog()?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut source = Recipe::with_profiles(&metadata, &profiles);
         source.exposure = 0.5;
@@ -1810,7 +1828,8 @@ mod tests {
             catalog: mut c,
             photos,
         } = catalog()?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut source = Recipe::with_profiles(&metadata, &profiles);
         source.exposure = 0.5;
@@ -1944,7 +1963,11 @@ mod tests {
         let defaults = DevelopDefaults::default();
         let mut exposures = Vec::new();
         for (id, path) in &all {
-            let opened = crate::photo::open_source(path, Cancel::NEVER)?;
+            let opened = crate::photo::open_source(
+                path,
+                &crate::photo::LensProfiles::none(),
+                Cancel::NEVER,
+            )?;
             let metadata = opened.metadata().clone();
             let (profiles, _) = crate::camera_profiles::installed(&metadata);
             let image = match opened {
@@ -2017,7 +2040,8 @@ mod tests {
             .find(|p| p.path == png)
             .unwrap()
             .id;
-        let opened = crate::photo::open_source(&png, Cancel::NEVER)?;
+        let opened =
+            crate::photo::open_source(&png, &crate::photo::LensProfiles::none(), Cancel::NEVER)?;
         let image = match opened {
             crate::photo::Opened::Rendered(image) => image,
             crate::photo::Opened::Raw(_) => unreachable!(),
@@ -2292,7 +2316,8 @@ mod tests {
             catalog: mut c,
             photos,
         } = catalog()?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut source = Recipe::with_profiles(&metadata, &profiles);
         source.sharpening = 0.9;
@@ -2412,7 +2437,8 @@ mod tests {
             photos,
         } = catalog()?;
         let (source_id, source_path) = photos[0].clone();
-        let metadata = crate::photo::open(&source_path)?.metadata;
+        let metadata =
+            crate::photo::open(&source_path, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut edit = Recipe::with_profiles(&metadata, &profiles);
         edit.exposure = 0.7;
@@ -2497,7 +2523,8 @@ mod tests {
             catalog: mut c,
             photos,
         } = catalog()?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let source = Settings {
             recipe: Recipe {
                 exposure: 0.3,
@@ -2546,7 +2573,8 @@ mod tests {
             catalog: mut c,
             photos,
         } = catalog()?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let mut recipe = Recipe::default();
         recipe.upright.mode = crate::model::transform::UprightMode::Guided;
         recipe.exposure = 0.3;
@@ -2595,7 +2623,8 @@ mod tests {
             "UPDATE photos SET lightroom_develop=? WHERE id=?",
             rusqlite::params![lightroom_text, photos[1].0.0],
         )?;
-        let metadata = crate::photo::open(&photos[0].1)?.metadata;
+        let metadata =
+            crate::photo::open(&photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
         let (profiles, _) = crate::camera_profiles::installed(&metadata);
         let mut source = Recipe::with_profiles(&metadata, &profiles);
         source.effects.clarity = 0.2;

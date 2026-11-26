@@ -374,9 +374,13 @@ fn batch_preset_matches_the_preset_clicked_in_develop() -> anyhow::Result<()> {
     });
     // Both photos of each pair start from the same edit, which a preset's zeros
     // must replace and whose Detail panel is off.
-    let m = crate::photo::open_source(&photos[0].1, Cancel::NEVER)?
-        .metadata()
-        .clone();
+    let m = crate::photo::open_source(
+        &photos[0].1,
+        &crate::photo::LensProfiles::none(),
+        Cancel::NEVER,
+    )?
+    .metadata()
+    .clone();
     let mut start = crate::model::recipe::Recipe::with_profiles(&m, &[]);
     start.contrast = 0.3;
     start.shadows = 0.2;

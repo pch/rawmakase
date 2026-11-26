@@ -70,9 +70,10 @@ fn imported_profiles_render_and_roundtrip() -> anyhow::Result<()> {
 #[test]
 #[ignore = "Explicitly imported private DCP/XMP profiles; no Adobe directory discovery"]
 fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<()> {
-    let raw = rawmakase::photo::open(&std::path::PathBuf::from(std::env::var(
-        "RAWMAKASE_PROFILE_RAW",
-    )?))?;
+    let raw = rawmakase::photo::open(
+        &std::path::PathBuf::from(std::env::var("RAWMAKASE_PROFILE_RAW")?),
+        &rawmakase::photo::LensProfiles::none(),
+    )?;
     let (profiles, errors) = camera_profiles::installed(&raw.metadata);
     assert!(errors.is_empty(), "{errors:?}");
     for name in [

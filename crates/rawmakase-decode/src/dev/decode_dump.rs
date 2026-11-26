@@ -53,7 +53,7 @@ pub struct Mode {
 /// The develop fingerprint of the file at `path`. With `floats`, a full decode
 /// that is not a mosaic is also written there as `<sha256>.full.f32` (raw
 /// little-endian floats, three per pixel; the size is in the fingerprint).
-pub fn dump(path: &Path, floats: Option<&Path>) -> Dump {
+pub fn dump(path: &Path, lenses: &crate::photo::LensProfiles, floats: Option<&Path>) -> Dump {
     let d = Dump {
         path: path.to_path_buf(),
         decoder: crate::raw::version(),
@@ -64,7 +64,7 @@ pub fn dump(path: &Path, floats: Option<&Path>) -> Dump {
         half: None,
     };
     let before = crate::dev::fingerprint::identity(path);
-    let mut d = describe(path, floats, d);
+    let mut d = describe(path, lenses, floats, d);
     // The file is read several times (hashed, then decoded per mode): a file
     // replaced in between would pair one file's hash with another's images.
     if before.is_none() || crate::dev::fingerprint::identity(path) != before {
@@ -80,7 +80,12 @@ pub fn dump(path: &Path, floats: Option<&Path>) -> Dump {
     d
 }
 
-fn describe(path: &Path, floats: Option<&Path>, mut d: Dump) -> Dump {
+fn describe(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+    floats: Option<&Path>,
+    mut d: Dump,
+) -> Dump {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -91,7 +96,7 @@ fn describe(path: &Path, floats: Option<&Path>, mut d: Dump) -> Dump {
     let sha256 = hex(&sha2::Sha256::digest(&bytes));
     d.sha256 = Some(sha256.clone());
     drop(bytes);
-    let mosaic = crate::photo::open(path).and_then(|raw| Ok(raw.sensor()?.channels == 1));
+    let mosaic = crate::photo::open(path, lenses).and_then(|raw| Ok(raw.sensor()?.channels == 1));
     match mosaic {
         Ok(mosaic) => d.mosaic = Some(mosaic),
         Err(e) => {
@@ -99,8 +104,9 @@ fn describe(path: &Path, floats: Option<&Path>, mut d: Dump) -> Dump {
             return d;
         }
     }
-    let decode =
-        |mode: Decode| crate::photo::open(path).and_then(|raw| raw.develop(mode, Cancel::NEVER));
+    let decode = |mode: Decode| {
+        crate::photo::open(path, lenses).and_then(|raw| raw.develop(mode, Cancel::NEVER))
+    };
     let full = decode(Decode::Full(Demosaic::Rawmakase));
     if let (Some(dir), Ok(image), Some(false)) = (floats, &full, d.mosaic) {
         let file = dir.join(format!("{sha256}.full.f32"));
@@ -161,14 +167,18 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../tests/corpus/charts/synthetic-d65.dng"
         );
-        let d = super::dump(chart.as_ref(), None);
+        let d = super::dump(chart.as_ref(), &crate::photo::LensProfiles::none(), None);
         assert_eq!(d.mosaic, Some(true));
         let (full, half) = (d.full.unwrap(), d.half.unwrap());
         assert_eq!(full.size, Some([970, 742]));
         assert_eq!(half.size, Some([485, 371]));
         assert!(full.pixels_sha256.is_some() && full.error.is_none());
         let dir = tempfile::tempdir().unwrap();
-        let missing = super::dump(&dir.path().join("missing.dng"), None);
+        let missing = super::dump(
+            &dir.path().join("missing.dng"),
+            &crate::photo::LensProfiles::none(),
+            None,
+        );
         assert!(missing.sha256.is_none() && missing.error.is_some() && missing.full.is_none());
     }
 }

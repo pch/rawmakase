@@ -89,7 +89,9 @@ pub fn command(c: Command) -> Result<()> {
     let started = Instant::now();
     // Read before decoding: the result must be of the same file.
     let file = crate::storage::Identity::read(&c.input)?;
-    let plain = Arc::new(crate::photo::open(&c.input)?.develop(
+    // AI Denoise reads the mosaic alone; no imported lens profile is needed.
+    let none = crate::photo::LensProfiles::none();
+    let plain = Arc::new(crate::photo::open(&c.input, &none)?.develop(
         crate::camera_data::Decode::full(Default::default()),
         Cancel::NEVER,
     )?);

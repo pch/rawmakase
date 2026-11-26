@@ -391,6 +391,8 @@ pub struct Batch {
     pub demosaic: crate::camera_data::Demosaic,
     /// Where each full-size decode is looked up first.
     pub cache: crate::decode_cache::DecodeCache,
+    /// The imported lens profiles each photo is opened with.
+    pub lenses: crate::photo::LensProfiles,
     /// Where AI Denoise sources come from.
     pub ai: crate::ai_denoise::AiService,
 }
@@ -768,13 +770,14 @@ fn render<'a>(
     let (batch, cancel) = (shared.batch, shared.cancel);
     // The file as it is before it is decoded: AI Denoise's result must be of the same.
     let file = crate::storage::Identity::read(&photo.source).ok();
-    let opened = crate::photo::open_source(&photo.source, cancel)
+    let opened = crate::photo::open_source(&photo.source, &batch.lenses, cancel)
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
         Edit::Catalog(record) => {
             let profiles = shared.profiles.installed(opened.metadata());
             let profiles = rawmakase_decode::camera_look::with_default(
                 &photo.source,
+                &batch.lenses,
                 opened.metadata(),
                 profiles,
                 cancel,
@@ -844,6 +847,7 @@ fn render<'a>(
             watermark: batch.watermark.clone().filter(|_| preset.is_none()),
             demosaic: batch.demosaic,
             cache: batch.cache.clone(),
+            lenses: batch.lenses.clone(),
             ai: batch.ai.clone(),
             file,
         },

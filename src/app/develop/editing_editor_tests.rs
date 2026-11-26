@@ -383,7 +383,7 @@ fn develop_opens_photos_with_the_edit_the_catalog_resolves() -> anyhow::Result<(
     c.add_folder(&photos)?;
     let ids: Vec<(PhotoId, std::path::PathBuf)> =
         c.photos()?.into_iter().map(|p| (p.id, p.path)).collect();
-    let metadata = crate::photo::open(&ids[0].1)?.metadata;
+    let metadata = crate::photo::open(&ids[0].1, &crate::photo::LensProfiles::none())?.metadata;
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
     let mut saved = Recipe::with_profiles(&metadata, &profiles);
     saved.exposure = 0.4;

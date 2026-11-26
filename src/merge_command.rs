@@ -69,6 +69,7 @@ impl From<DeghostLevel> for Deghost {
 /// `cancel` is set.
 pub fn merge_hdr(
     args: &MergeHdr,
+    lenses: &crate::photo::LensProfiles,
     raw_defaults: &dyn Fn() -> DevelopDefaults,
     cancel: Cancel<'_>,
     err: &mut (dyn Write + Send),
@@ -103,8 +104,13 @@ pub fn merge_hdr(
         (Some(c), Some(active)) => crate::catalog_command::photo_edit(c, *active)?,
         _ => crate::edits::EditRecord::default(),
     };
-    let active =
-        crate::merge_hdr::ActiveEdit::resolve(&record, &args.raws[0], &raw_defaults, cancel)?;
+    let active = crate::merge_hdr::ActiveEdit::resolve(
+        &record,
+        &args.raws[0],
+        &raw_defaults,
+        lenses,
+        cancel,
+    )?;
     for warning in &active.warnings {
         writeln!(err, "{warning}")?;
     }
@@ -175,6 +181,7 @@ pub fn merge_hdr(
         &merged,
         active.active(),
         &raw_defaults,
+        lenses,
         &destination,
         &options.software,
         cancel,
@@ -250,7 +257,14 @@ mod tests {
             stack: false,
         };
         let mut err = Vec::new();
-        let got = merge_hdr(&args, &Default::default, Cancel::NEVER, &mut err).unwrap_err();
+        let got = merge_hdr(
+            &args,
+            &crate::photo::LensProfiles::none(),
+            &Default::default,
+            Cancel::NEVER,
+            &mut err,
+        )
+        .unwrap_err();
         assert_eq!(
             got.to_string(),
             format!("{} already exists", output.display())
@@ -261,7 +275,14 @@ mod tests {
             output: None,
             ..args
         };
-        let got = merge_hdr(&args, &Default::default, Cancel::NEVER, &mut err).unwrap_err();
+        let got = merge_hdr(
+            &args,
+            &crate::photo::LensProfiles::none(),
+            &Default::default,
+            Cancel::NEVER,
+            &mut err,
+        )
+        .unwrap_err();
         assert!(
             got.to_string().starts_with("missing.CR3 can't be read"),
             "{got}"
@@ -292,6 +313,7 @@ mod tests {
                     metadata: &m,
                 },
                 &Default::default(),
+                &crate::photo::LensProfiles::none(),
                 &Destination::beside(&merged.inputs[0].path),
                 "RAWmakase test",
                 Cancel::NEVER,

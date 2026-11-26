@@ -94,11 +94,17 @@ pub(in crate::app) enum Pace {
     Full,
 }
 /// Renders a 640 px edited preview, giving up once the flag is set.
-type RenderEdited = fn(&Path, &EditSource, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
+type RenderEdited = fn(
+    &Path,
+    &crate::photo::LensProfiles,
+    &EditSource,
+    Cancel<'_>,
+) -> anyhow::Result<image::RgbImage>;
 /// Renders a preview of an edit with AI Denoise from a finished result: the file's
 /// version the result was made for, and the result.
 type RenderWithAi = fn(
     &Path,
+    &crate::photo::LensProfiles,
     &crate::storage::Identity,
     &EditSource,
     &rawmakase_decode::ai::cache::AiEntry,
@@ -128,6 +134,9 @@ struct State {
     /// Where AI Denoise's results are, which an edit with it renders from once
     /// finished; none until the app sets it.
     ai: Option<AiCache>,
+    /// The imported lens profiles photos are opened with: the app's context's,
+    /// set before anything is asked for; none until then.
+    lenses: crate::photo::LensProfiles,
 }
 struct Queued {
     job: EditJob,
@@ -201,6 +210,10 @@ impl EditQueue {
     /// Finished AI Denoise results come from `cache` from now on.
     pub(in crate::app::library) fn set_ai_cache(&self, cache: AiCache) {
         self.0.lock().ai = Some(cache);
+    }
+    /// Photos are opened with `lenses` from now on.
+    pub(in crate::app::library) fn set_lens_profiles(&self, lenses: crate::photo::LensProfiles) {
+        self.0.lock().lenses = lenses;
     }
     /// Drops the photos asked ahead and not started, for a list shown no
     /// longer: each is answered `Skipped` unless it is shown by then. Renders
@@ -559,6 +572,7 @@ impl Renders {
         }
         let full = state.pace == Pace::Full;
         let ai = state.ai.clone();
+        let lenses = state.lenses.clone();
         let slot = state.next_slot;
         state.next_slot += 1;
         let cancel = Arc::<AtomicBool>::default();
@@ -600,11 +614,12 @@ impl Renders {
                 let named_before = as_named();
                 let (image, shows) = match finished_entry(&path, &source, ai.as_ref()) {
                     Some((file, entry)) => (
-                        render_ai(&path, &file, &source, &entry, Cancel::new(&cancel)).ok()?,
+                        render_ai(&path, &lenses, &file, &source, &entry, Cancel::new(&cancel))
+                            .ok()?,
                         PreviewAi::Finished,
                     ),
                     None => (
-                        render(&path, &source, Cancel::new(&cancel)).ok()?,
+                        render(&path, &lenses, &source, Cancel::new(&cancel)).ok()?,
                         plain_of(&source),
                     ),
                 };

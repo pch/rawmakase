@@ -35,6 +35,8 @@ pub struct Photo {
     pub demosaic: Demosaic,
     /// Where a full-size decode is looked up first.
     pub cache: DecodeCache,
+    /// The imported lens profiles a full-size decode opens the photo with.
+    pub lenses: crate::photo::LensProfiles,
     /// Where the AI Denoise source comes from when the edit has AI Denoise on.
     pub ai: crate::ai_denoise::AiService,
     /// The file as it was before `image` was decoded from it, for AI Denoise: a file
@@ -228,6 +230,7 @@ pub fn prepare_with_backend(
     let image = full_size(
         photo.image.clone(),
         &photo.source,
+        &photo.lenses,
         photo.demosaic,
         &photo.cache,
         cancel,
@@ -377,6 +380,7 @@ fn ai_source(
 fn full_size(
     image: Arc<CameraImage>,
     source: &Path,
+    lenses: &crate::photo::LensProfiles,
     demosaic: Demosaic,
     cache: &DecodeCache,
     cancel: Cancel<'_>,
@@ -389,7 +393,11 @@ fn full_size(
         Some(cached) => cached,
         // Recovered in its own buffer, as `decode_full` does.
         None => crate::develop::quality::with_recovered(
-            full.decode(crate::photo::open(source)?, DecodePolicy::Export, cancel)?,
+            full.decode(
+                crate::photo::open(source, lenses)?,
+                DecodePolicy::Export,
+                cancel,
+            )?,
             cancel,
         )?,
     }))
@@ -468,6 +476,7 @@ mod tests {
             watermark: None,
             demosaic: Demosaic::default(),
             cache: DecodeCache::new(cache.to_path_buf(), u64::MAX, "test"),
+            lenses: crate::photo::LensProfiles::none(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
             file: None,
         }
@@ -771,7 +780,7 @@ mod tests {
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
         let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
-        let raw = crate::photo::open(&chart)?;
+        let raw = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?;
         let cached = CameraImage {
             width: 4,
             height: 3,
@@ -799,8 +808,8 @@ mod tests {
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
         let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
-        let raw = crate::photo::open(&chart)?;
-        let apart = crate::photo::open(&chart)?.develop(
+        let raw = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?;
+        let apart = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?.develop(
             crate::camera_data::Decode::Full(Demosaic::default()),
             Cancel::NEVER,
         )?;
@@ -833,7 +842,7 @@ mod tests {
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
         let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
-        let metadata = crate::photo::open(&chart)?.metadata;
+        let metadata = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?.metadata;
         let image = |width: u32, height: u32, fast: bool| {
             let image = CameraImage {
                 width,
@@ -860,7 +869,14 @@ mod tests {
             .metadata
             .lateral_ca
             .set(Some([measured.clone(), measured]));
-        let full = full_size(half, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
+        let full = full_size(
+            half,
+            &chart,
+            &crate::photo::LensProfiles::none(),
+            Demosaic::default(),
+            &cache,
+            Cancel::NEVER,
+        )?;
         assert_eq!((full.width, full.height), (4, 3));
         assert!(full.metadata.lateral_ca.get().is_none());
         // Its recovered image is the same decode, with the same measurement.

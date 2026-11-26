@@ -251,12 +251,13 @@ fn photos_match_accepted_renders() {
             outcome(raw, "kept", None, BTreeMap::new());
             return;
         }
-        let im = match rawmakase::photo::open(raw).and_then(|r| {
-            r.develop(
-                rawmakase::camera_data::Decode::full(Default::default()),
-                Cancel::NEVER,
-            )
-        }) {
+        let im = match rawmakase::photo::open(raw, &rawmakase::photo::LensProfiles::none())
+            .and_then(|r| {
+                r.develop(
+                    rawmakase::camera_data::Decode::full(Default::default()),
+                    Cancel::NEVER,
+                )
+            }) {
             Ok(im) => im,
             Err(e) if accepted.is_none() => {
                 skipped
@@ -445,7 +446,11 @@ fn photos_camera_raw_parity_does_not_regress() {
     let results: Vec<(String, Result<Comparison, String>, String)> = by_raw
         .iter()
         .flat_map(|(raw, references)| {
-            let im = match rawmakase::photo::open(&corpus.join("raws").join(raw)).and_then(|r| {
+            let im = match rawmakase::photo::open(
+                &corpus.join("raws").join(raw),
+                &rawmakase::photo::LensProfiles::none(),
+            )
+            .and_then(|r| {
                 r.develop(
                     rawmakase::camera_data::Decode::full(Default::default()),
                     Cancel::NEVER,

@@ -229,6 +229,7 @@ fn replace(overwrite: bool) -> crate::export::Replace {
 /// as its AI Denoise source is made, so its worker and model are gone before the render.
 pub fn render(
     o: &Render,
+    lenses: &crate::photo::LensProfiles,
     raw_defaults: &dyn Fn() -> DevelopDefaults,
     ai_denoise: &dyn Fn() -> CommandLine,
     cancel: Cancel<'_>,
@@ -267,7 +268,7 @@ pub fn render(
     let t = Instant::now();
     // Read before decoding: AI Denoise's result must be of the same file.
     let file = crate::storage::Identity::read(input)?;
-    let r = crate::photo::open(input)?;
+    let r = crate::photo::open(input, lenses)?;
     let mut edit = if let Some(p) = &o.recipe {
         crate::presets::load_preset(p)?.recipe
     } else if let Some(sidecar) = o
@@ -287,6 +288,7 @@ pub fn render(
         // camera look.
         let profiles = crate::camera_look::with_default(
             input,
+            lenses,
             &r.metadata,
             crate::camera_profiles::installed(&r.metadata).0,
             cancel,
@@ -483,6 +485,7 @@ pub fn render(
 /// photo is developed, and serves every job, so its model loads once.
 pub fn render_batch(
     o: &RenderBatch,
+    lenses: &crate::photo::LensProfiles,
     ai_denoise: &dyn Fn() -> CommandLine,
     cancel: Cancel<'_>,
     console: &mut Console<'_>,
@@ -491,7 +494,7 @@ pub fn render_batch(
     let jobs: Vec<Job> = serde_json::from_str(&std::fs::read_to_string(&o.jobs)?)?;
     // Read before decoding: AI Denoise's result must be of the same file.
     let file = crate::storage::Identity::read(input)?;
-    let photo = crate::photo::open(input)?;
+    let photo = crate::photo::open(input, lenses)?;
     let im = Arc::new(photo.develop(camera_data::Decode::full(Default::default()), cancel)?);
     let (profiles, _) = crate::camera_profiles::installed(&im.metadata);
     let base = Recipe::with_profiles(&im.metadata, &profiles);

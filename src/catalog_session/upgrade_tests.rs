@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 /// The synthetic chart, decoded at full size.
 fn chart(path: &std::path::Path) -> Result<CameraImage> {
-    let crate::photo::Opened::Raw(raw) = crate::photo::open_source(path, Cancel::NEVER)? else {
+    let crate::photo::Opened::Raw(raw) =
+        crate::photo::open_source(path, &crate::photo::LensProfiles::none(), Cancel::NEVER)?
+    else {
         anyhow::bail!("the chart is a RAW")
     };
     raw.develop(Decode::full(Demosaic::default()), Cancel::NEVER)

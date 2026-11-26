@@ -153,7 +153,9 @@ fn given_a_catalog_a_photo_starts_from_its_catalog_edit() {
     rawmakase::presets::save_preset(
         &explicit,
         &darker,
-        &rawmakase::photo::open(Path::new(CHART)).unwrap().metadata,
+        &rawmakase::photo::open(Path::new(CHART), &rawmakase::photo::LensProfiles::none())
+            .unwrap()
+            .metadata,
     )
     .unwrap();
     let (run, recipe) = render(

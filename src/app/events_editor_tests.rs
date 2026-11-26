@@ -794,7 +794,12 @@ fn editor_with_a_neighbour_waiting(
         .join("tests/corpus/charts/synthetic-d65.dng");
     let cache = crate::decode_cache::DecodeCache::new(cache.into(), u64::MAX, "test");
     task::wait_for(e.loader.stop().into(), std::time::Duration::from_secs(5));
-    e.loader = worker::Loader::new(e.tx.clone(), ctx.clone(), cache.clone());
+    e.loader = worker::Loader::new(
+        e.tx.clone(),
+        ctx.clone(),
+        cache.clone(),
+        crate::photo::LensProfiles::none(),
+    );
     task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
     let (taken, _) = std::sync::mpsc::channel();
     let (hold, release) = std::sync::mpsc::channel();

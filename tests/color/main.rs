@@ -215,7 +215,7 @@ pub fn cases() -> Cases {
 
 pub fn develop(path: &Path) -> CameraImage {
     charts_ready();
-    rawmakase::photo::open(path)
+    rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())
         .and_then(|r| {
             r.develop(
                 rawmakase::camera_data::Decode::full(Default::default()),

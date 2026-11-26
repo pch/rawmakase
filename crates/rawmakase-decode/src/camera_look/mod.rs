@@ -232,6 +232,7 @@ fn stage(
 /// A fit stopped by `cancel` is neither used nor stored.
 pub fn with_default(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     m: &Metadata,
     mut profiles: Vec<Arc<CameraProfile>>,
     cancel: Cancel<'_>,
@@ -239,7 +240,7 @@ pub fn with_default(
     if fitted::eligibility(m, &profiles) != fitted::Eligibility::Absent {
         return profiles;
     }
-    if let Some(p) = default_profile(path, m, &cache::dir(), cancel) {
+    if let Some(p) = default_profile(path, lenses, m, &cache::dir(), cancel) {
         profiles.push(Arc::new(p));
     }
     profiles
@@ -248,6 +249,7 @@ pub fn with_default(
 /// The default fit of an `Absent` photo, through the fit cache in `dir`.
 fn default_profile(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     m: &Metadata,
     dir: &Path,
     cancel: Cancel<'_>,
@@ -265,7 +267,7 @@ fn default_profile(
     // A fit that panics must not stop the photo opening: it starts from what it
     // would have without one, and is tried again next time.
     let fitted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        fit(path, &FitInputs::default(), cancel)
+        fit(path, lenses, &FitInputs::default(), cancel)
     }));
     let Ok(fitted) = fitted else {
         eprintln!(
@@ -350,8 +352,11 @@ pub struct CameraPreview {
 
 /// The [`CameraPreview`] of the photo at `path`: converted from the color space the
 /// file states; one that states none is taken to be sRGB already.
-pub fn preview_srgb(path: &Path) -> anyhow::Result<CameraPreview> {
-    let mut raw = crate::photo::open(path)?;
+pub fn preview_srgb(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+) -> anyhow::Result<CameraPreview> {
+    let mut raw = crate::photo::open(path, lenses)?;
     let look = raw.metadata.camera_look.clone();
     let image = crate::raw::thumbnail(&mut raw)?;
     let image = match pairs::preview_pro(path, &mut raw, &image) {
@@ -387,9 +392,14 @@ pub struct Comparison {
 
 /// The [`Comparison`] of the photo at `path` and its fit, at `edge` pixels on the long
 /// edge or the JPEG's, if that is smaller.
-pub fn compare(path: &Path, fitted: &Fitted, edge: u32) -> anyhow::Result<Comparison> {
+pub fn compare(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+    fitted: &Fitted,
+    edge: u32,
+) -> anyhow::Result<Comparison> {
     let cancel = Cancel::NEVER;
-    let mut raw = crate::photo::open(path)?;
+    let mut raw = crate::photo::open(path, lenses)?;
     let m = raw.metadata.clone();
     let preview = pairs::preview(path, &mut raw).map_err(|e| anyhow::anyhow!(e.reason))?;
     let edge = edge.min(preview.width.max(preview.height));
@@ -434,9 +444,14 @@ pub fn compare(path: &Path, fitted: &Fitted, edge: u32) -> anyhow::Result<Compar
 }
 
 /// Fits a camera look to the photo at `path`, or says why it can't.
-pub fn fit(path: &Path, inputs: &FitInputs, cancel: Cancel<'_>) -> Result<Fitted, Refusal> {
+pub fn fit(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+    inputs: &FitInputs,
+    cancel: Cancel<'_>,
+) -> Result<Fitted, Refusal> {
     let start = std::time::Instant::now();
-    let mut raw = crate::photo::open(path).map_err(|e| refuse(format!("{e:#}")))?;
+    let mut raw = crate::photo::open(path, lenses).map_err(|e| refuse(format!("{e:#}")))?;
     let m = raw.metadata.clone();
     let mut report = Report {
         camera: format!("{} {}", m.make, m.model),
@@ -703,11 +718,19 @@ mod tests {
     #[test]
     fn only_a_photo_without_colour_data_is_fitted_by_default_and_only_once() {
         let named = chart("synthetic-d65");
-        let m = crate::photo::open(&named).unwrap().metadata;
+        let m = crate::photo::open(&named, &crate::photo::LensProfiles::none())
+            .unwrap()
+            .metadata;
         let (profiles, _) = rawmakase_model::camera_profiles::installed(&m);
         let cancel = AtomicBool::new(false);
         assert_eq!(
-            with_default(&named, &m, profiles.clone(), Cancel::new(&cancel)),
+            with_default(
+                &named,
+                &crate::photo::LensProfiles::none(),
+                &m,
+                profiles.clone(),
+                Cancel::new(&cancel)
+            ),
             profiles
         );
         // The chart with its color tags renamed: no color data at all.
@@ -724,10 +747,21 @@ mod tests {
         }
         let bare = dir.path().join("bare.dng");
         std::fs::write(&bare, &bytes).unwrap();
-        let m = crate::photo::open(&bare).unwrap().metadata;
+        let m = crate::photo::open(&bare, &crate::photo::LensProfiles::none())
+            .unwrap()
+            .metadata;
         assert_eq!(fitted::eligibility(&m, &[]), fitted::Eligibility::Absent);
         let cache = dir.path().join("cache");
-        assert!(default_profile(&bare, &m, &cache, Cancel::new(&cancel)).is_none());
+        assert!(
+            default_profile(
+                &bare,
+                &crate::photo::LensProfiles::none(),
+                &m,
+                &cache,
+                Cancel::new(&cancel)
+            )
+            .is_none()
+        );
         let key = cache::FitKey::of(&bare).unwrap();
         assert!(
             matches!(cache::load(&cache, &key, &m), Some(Err(_))),
@@ -738,7 +772,16 @@ mod tests {
         let other = dir.path().join("other.dng");
         bytes.push(0);
         std::fs::write(&other, &bytes).unwrap();
-        assert!(default_profile(&other, &m, &cache, Cancel::new(&AtomicBool::new(true))).is_none());
+        assert!(
+            default_profile(
+                &other,
+                &crate::photo::LensProfiles::none(),
+                &m,
+                &cache,
+                Cancel::new(&AtomicBool::new(true))
+            )
+            .is_none()
+        );
         assert!(cache::load(&cache, &cache::FitKey::of(&other).unwrap(), &m).is_none());
     }
 

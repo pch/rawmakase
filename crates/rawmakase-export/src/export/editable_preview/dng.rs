@@ -456,7 +456,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("copy.dng");
         std::fs::write(&path, bytes).unwrap();
-        let read = rawmakase_decode::photo::open(&path)
+        let read = rawmakase_decode::photo::open(&path, &crate::photo::LensProfiles::none())
             .and_then(|raw| {
                 raw.develop(
                     rawmakase_model::camera_data::Decode::Full(Default::default()),

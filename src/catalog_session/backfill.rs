@@ -354,12 +354,15 @@ pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
         // the info. When that can't be read, from the file opened whole. A RAW
         // that cannot be opened now (still copying, a network error) is tried
         // again later.
+        // A photo's info is its camera's: which imported lens profile fits it
+        // changes none of it, so none are read.
+        let none = crate::photo::LensProfiles::none();
         let header = crate::platform::preview_reads::in_pieces()
-            .then(|| crate::photo::header_metadata(path).ok())
+            .then(|| crate::photo::header_metadata(path, &none).ok())
             .flatten();
         let metadata = match header {
             Some(metadata) => metadata,
-            None => crate::photo::open(path).ok()?.metadata,
+            None => crate::photo::open(path, &none).ok()?.metadata,
         };
         Some(PhotoInfo::from_metadata(&metadata))
     } else {

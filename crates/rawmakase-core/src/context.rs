@@ -3,6 +3,7 @@
 use crate::{Error, ErrorKind, Result};
 use rawmakase_decode::ai::cache::{self as ai_cache, AiCache};
 use rawmakase_decode::decode_cache::{self, DecodeCache};
+use rawmakase_decode::photo::LensProfiles;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -31,10 +32,11 @@ impl Default for CacheLimits {
 /// `Sync`.
 ///
 /// Each value is the context's only once the library reads it from here; one
-/// that nothing reads yet is not offered. Today that is the cache folder, its
-/// limits and its build id, from which the decode cache and AI Denoise's cache
-/// are made. The data folders, fonts and the rest join as the crates under the
-/// library take them as values (`docs/embedding-plan.md`, step 4).
+/// that nothing reads yet is not offered. Today that is the data folders, in
+/// which the imported lens profiles are found, and the cache folder, its limits
+/// and its build id, from which the decode cache and AI Denoise's cache are
+/// made. Fonts and the rest join as the crates under the library take them as
+/// values (`docs/embedding-plan.md`, step 4).
 #[derive(Clone, Debug)]
 pub struct Context {
     inner: Arc<Inner>,
@@ -42,6 +44,11 @@ pub struct Context {
 
 #[derive(Debug)]
 struct Inner {
+    data_dirs: Vec<PathBuf>,
+    // Read by opening a photo (step 5 of docs/embedding-plan.md), and today by
+    // RAWmakase's app through `workspace`.
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
+    lenses: LensProfiles,
     cache: Option<Cache>,
 }
 
@@ -61,10 +68,20 @@ struct Cache {
 #[derive(Debug, Default)]
 #[must_use]
 pub struct ContextBuilder {
+    data_dirs: Vec<PathBuf>,
     cache: Option<(PathBuf, CacheLimits, String)>,
 }
 
 impl ContextBuilder {
+    /// The data folders, in order. The first is where RAWmakase would write
+    /// what an app imports; all are searched for what has been imported: the
+    /// lens profiles in each folder's `lens-profiles`. Without any, no
+    /// imported lens profile is found.
+    pub fn data_dirs<P: Into<PathBuf>>(mut self, dirs: impl IntoIterator<Item = P>) -> Self {
+        self.data_dirs = dirs.into_iter().map(Into::into).collect();
+        self
+    }
+
     /// The cache folder, its limits and the build id its entries belong to,
     /// given together. There is no default build id: a default would let a
     /// newer library read an older one's results. An app gives one that
@@ -100,7 +117,11 @@ impl ContextBuilder {
             }
         };
         Ok(Context {
-            inner: Arc::new(Inner { cache }),
+            inner: Arc::new(Inner {
+                lenses: LensProfiles::in_data_dirs(&self.data_dirs),
+                data_dirs: self.data_dirs,
+                cache,
+            }),
         })
     }
 }
@@ -109,6 +130,11 @@ impl Context {
     /// Starts a context's configuration.
     pub fn builder() -> ContextBuilder {
         ContextBuilder::default()
+    }
+
+    /// The data folders as given, in order.
+    pub fn data_dirs(&self) -> &[PathBuf] {
+        &self.inner.data_dirs
     }
 
     /// The cache folder as given.
@@ -132,6 +158,7 @@ pub mod workspace {
     use super::Context;
     use rawmakase_decode::ai::cache::AiCache;
     use rawmakase_decode::decode_cache::DecodeCache;
+    use rawmakase_decode::photo::LensProfiles;
 
     /// The context's decode cache, when it has a cache. A clone is the same
     /// cache, and its folder and limit can be changed while it is in use, as
@@ -143,6 +170,12 @@ pub mod workspace {
     /// The context's AI Denoise cache, beside the decode cache.
     pub fn ai_denoise_cache(ctx: &Context) -> Option<&AiCache> {
         ctx.inner.cache.as_ref().map(|c| &c.ai_denoise)
+    }
+
+    /// The imported lens profiles in the context's data folders, which every
+    /// photo is opened with. A clone shares what was read.
+    pub fn lens_profiles(ctx: &Context) -> &LensProfiles {
+        &ctx.inner.lenses
     }
 }
 
@@ -192,6 +225,27 @@ mod tests {
                 .unwrap_err();
             assert_eq!(e.kind(), ErrorKind::Invalid, "{e}");
         }
+    }
+
+    #[test]
+    fn the_lens_profiles_are_looked_for_in_each_data_folder() {
+        let ctx = Context::builder()
+            .data_dirs(["/data", "/older"])
+            .build()
+            .unwrap();
+        assert_eq!(
+            ctx.data_dirs(),
+            [PathBuf::from("/data"), PathBuf::from("/older")]
+        );
+        assert_eq!(
+            ctx.inner.lenses.dirs(),
+            [
+                PathBuf::from("/data/lens-profiles"),
+                PathBuf::from("/older/lens-profiles")
+            ]
+        );
+        let none = Context::builder().build().unwrap();
+        assert!(none.inner.lenses.dirs().is_empty());
     }
 
     #[test]

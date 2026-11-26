@@ -30,7 +30,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
     c.add_folder(&photos)?;
     let mut ids: Vec<(PhotoId, std::path::PathBuf)> =
         c.photos()?.into_iter().map(|p| (p.id, p.path)).collect();
-    let metadata = crate::photo::open(&ids[0].1)?.metadata;
+    let metadata = crate::photo::open(&ids[0].1, &crate::photo::LensProfiles::none())?.metadata;
     let (profiles, _) = crate::camera_profiles::installed(&metadata);
     let base = Recipe::with_profiles(&metadata, &profiles);
     let save = |c: &mut crate::catalog::Catalog,
@@ -180,6 +180,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 photos,
                 settings,
                 defaults: defaults.clone(),
+                lenses: crate::photo::LensProfiles::none(),
                 watermark: None,
                 demosaic: Default::default(),
                 cache: editor.decode_cache().clone(),

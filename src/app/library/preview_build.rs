@@ -99,6 +99,8 @@ pub(in crate::app) struct Item {
     pub demosaic: Demosaic,
     /// Where a full-size decode is looked up first.
     pub decode_cache: crate::decode_cache::DecodeCache,
+    /// The imported lens profiles the photo is opened with.
+    pub lenses: crate::photo::LensProfiles,
     pub identity: String,
     pub kind: PreviewKind,
     /// The long edge asked for; 0 for full size.
@@ -199,11 +201,16 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 /// identity-checked record (a protected or unreadable edit fails, never falling
 /// back to the defaults), Upright completed, then a cancellable render.
 pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
-    let opened = crate::photo::open_source(&item.path, cancel)
+    let opened = crate::photo::open_source(&item.path, &item.lenses, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
     let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
-    let profiles =
-        crate::camera_look::with_default(&item.path, opened.metadata(), profiles, cancel);
+    let profiles = crate::camera_look::with_default(
+        &item.path,
+        &item.lenses,
+        opened.metadata(),
+        profiles,
+        cancel,
+    );
     let mut recipe = item_recipe(item, opened.metadata(), &profiles)?;
     let image = match opened {
         Opened::Raw(raw) if needs_full(&recipe, &raw.metadata, item.edge) => {
@@ -873,6 +880,7 @@ impl Editor {
                 defaults: self.raw_defaults.clone(),
                 demosaic: self.session.demosaic,
                 decode_cache: self.decode_cache().clone(),
+                lenses: self.lens_profiles().clone(),
                 kind,
                 edge,
             });

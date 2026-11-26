@@ -36,7 +36,12 @@ fn an_edited_jpeg_renders_with_its_edit() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("photo.jpg");
     let edit = edited_jpeg(&path)?;
-    let image = render_edited(&path, &edit, Cancel::NEVER)?;
+    let image = render_edited(
+        &path,
+        &crate::photo::LensProfiles::none(),
+        &edit,
+        Cancel::NEVER,
+    )?;
     assert_eq!(image.dimensions(), (64, 48));
     // One stop brighter than the file's 60.
     assert!(
@@ -71,8 +76,18 @@ fn an_edited_preview_is_rendered_as_develops_fit_draws_it() -> anyhow::Result<()
     recipe.effects.clarity = 0.2;
     let edit = EditSource::saved(recipe);
     let cancel = AtomicBool::new(false);
-    let preview = render_edited(&path, &edit, Cancel::new(&cancel))?;
-    let (image, recipe) = open_quickly(&path, Some(&edit), Cancel::new(&cancel))?;
+    let preview = render_edited(
+        &path,
+        &crate::photo::LensProfiles::none(),
+        &edit,
+        Cancel::new(&cancel),
+    )?;
+    let (image, recipe) = open_quickly(
+        &path,
+        &crate::photo::LensProfiles::none(),
+        Some(&edit),
+        Cancel::new(&cancel),
+    )?;
     let fitted = rgb(crate::develop::render_fitted(
         &image,
         &recipe,
@@ -100,7 +115,8 @@ fn an_edited_render_stops_once_cancelled() -> anyhow::Result<()> {
     let path = directory.path().join("photo.png");
     let edited = edited_jpeg(&path)?;
     let recipe: Recipe = edited.saved_recipe().unwrap().clone();
-    let crate::photo::Opened::Rendered(image) = crate::photo::open_source(&path, Cancel::NEVER)?
+    let crate::photo::Opened::Rendered(image) =
+        crate::photo::open_source(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER)?
     else {
         unreachable!("a PNG opens rendered")
     };
@@ -176,7 +192,12 @@ fn a_panicking_edited_preview_fails_and_the_next_one_is_rendered() -> anyhow::Re
     for path in [&panics, &works] {
         image::RgbImage::new(16, 16).save(path)?;
     }
-    fn render(path: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        path: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         assert!(!path.ends_with("panics.png"), "render panics");
         Ok(image::open(path)?.to_rgb8())
     }
@@ -262,7 +283,12 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
 fn render_of_the_defaults(
     path: &Path,
     profiles: &str,
-    render: fn(&Path, &EditSource, Cancel<'_>) -> anyhow::Result<image::RgbImage>,
+    render: fn(
+        &Path,
+        &crate::photo::LensProfiles,
+        &EditSource,
+        Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage>,
     library: fn() -> String,
 ) -> anyhow::Result<(bool, bool)> {
     let directory = tempfile::tempdir()?;
@@ -319,7 +345,12 @@ fn a_render_of_the_defaults_is_kept_only_under_the_library_it_was_resolved_again
     fn steady() -> String {
         STEADY.lock().unwrap().to_string()
     }
-    fn renders(_: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn renders(
+        _: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         Ok(image::RgbImage::new(4, 3))
     }
     assert_eq!(
@@ -334,6 +365,7 @@ fn a_render_of_the_defaults_is_kept_only_under_the_library_it_was_resolved_again
     // Profiles imported as the render resolves the defaults.
     fn renders_as_profiles_are_imported(
         _: &Path,
+        _: &crate::photo::LensProfiles,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -424,7 +456,12 @@ fn renders_of(path: &Path, kind: PreviewAi) -> usize {
         .count()
 }
 
-fn plain(path: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+fn plain(
+    path: &Path,
+    _: &crate::photo::LensProfiles,
+    _: &EditSource,
+    _: Cancel<'_>,
+) -> anyhow::Result<image::RgbImage> {
     RENDERS
         .lock()
         .unwrap()
@@ -434,6 +471,7 @@ fn plain(path: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::Rg
 
 fn with_ai(
     path: &Path,
+    _: &crate::photo::LensProfiles,
     _: &crate::storage::Identity,
     _: &EditSource,
     _: &rawmakase_decode::ai::cache::AiEntry,
@@ -548,7 +586,8 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
         &path,
     )?;
     let cancel = AtomicBool::new(false);
-    let packed = crate::photo::open(&path)?.packed_bayer(Cancel::new(&cancel))?;
+    let packed = crate::photo::open(&path, &crate::photo::LensProfiles::none())?
+        .packed_bayer(Cancel::new(&cancel))?;
     let layout = packed.layout;
     // A flat result: the preview shows it, not the chart.
     let entry = rawmakase_decode::ai::cache::AiEntry {
@@ -564,10 +603,23 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
     recipe.switch_ai_denoise(true);
     recipe.ai_denoise.amount = 1.;
     let source = EditSource::saved(recipe.clone());
-    let (plain, shows) = develop_for_preview(&path, &source, 256, None, Cancel::new(&cancel))?;
+    let (plain, shows) = develop_for_preview(
+        &path,
+        &crate::photo::LensProfiles::none(),
+        &source,
+        256,
+        None,
+        Cancel::new(&cancel),
+    )?;
     assert_eq!(shows, PreviewAi::Plain);
-    let (denoised, shows) =
-        develop_for_preview(&path, &source, 256, Some(&ai), Cancel::new(&cancel))?;
+    let (denoised, shows) = develop_for_preview(
+        &path,
+        &crate::photo::LensProfiles::none(),
+        &source,
+        256,
+        Some(&ai),
+        Cancel::new(&cancel),
+    )?;
     assert_eq!(shows, PreviewAi::Finished);
     assert_eq!(plain.dimensions(), denoised.dimensions());
     // Rendered from the flat result: far from the chart's own colors.
@@ -715,7 +767,12 @@ pub(super) fn render_job(id: i64, path: &Path, ahead: bool) -> EditJob {
 fn edited_previews_render_side_by_side_at_full_pace() -> anyhow::Result<()> {
     static RUNNING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     // Ends once the other render is under way too.
-    fn render(path: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        path: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         RUNNING.fetch_add(1, Ordering::SeqCst);
         until(|| RUNNING.load(Ordering::SeqCst) >= 2);
         Ok(image::open(path)?.to_rgb8())
@@ -750,7 +807,12 @@ fn edited_previews_render_side_by_side_at_full_pace() -> anyhow::Result<()> {
 fn edited_previews_render_one_at_a_time_in_the_background() -> anyhow::Result<()> {
     static RUNNING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     static MOST: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    fn render(path: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        path: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         let running = RUNNING.fetch_add(1, Ordering::SeqCst) + 1;
         MOST.fetch_max(running, Ordering::SeqCst);
         std::thread::sleep(Duration::from_millis(20));
@@ -786,7 +848,12 @@ fn edited_previews_render_one_at_a_time_in_the_background() -> anyhow::Result<()
 #[test]
 fn full_pace_renders_give_way_when_the_pace_drops() -> anyhow::Result<()> {
     static STARTED: AtomicBool = AtomicBool::new(false);
-    fn render(_: &Path, _: &EditSource, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        _: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        cancel: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         STARTED.store(true, Ordering::SeqCst);
         until(|| cancel.is_cancelled());
         anyhow::bail!("Cancelled")
@@ -819,7 +886,12 @@ fn full_pace_renders_give_way_when_the_pace_drops() -> anyhow::Result<()> {
 #[test]
 fn photos_asked_ahead_are_kept_and_then_shown_from_the_cache() -> anyhow::Result<()> {
     static RENDERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    fn render(path: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        path: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         RENDERS.fetch_add(1, Ordering::SeqCst);
         Ok(image::open(path)?.to_rgb8())
     }
@@ -892,7 +964,12 @@ fn thumbnails_are_made_side_by_side() -> anyhow::Result<()> {
 #[test]
 fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
     static STARTED: AtomicBool = AtomicBool::new(false);
-    fn render(_: &Path, _: &EditSource, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        _: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        cancel: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         STARTED.store(true, Ordering::Relaxed);
         // A render that only a cancel ends.
         while !cancel.is_cancelled() {
@@ -1129,7 +1206,12 @@ fn successive_edits_of_a_photo_keep_eight_previews() -> anyhow::Result<()> {
 fn edited_previews_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow::Result<()> {
     use crate::app::preferences::monitor::DisplayProfile;
     const RED: [u8; 3] = [200, 40, 30];
-    fn render(_: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        _: &Path,
+        _: &crate::photo::LensProfiles,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         Ok(image::RgbImage::from_pixel(32, 24, image::Rgb(RED)))
     }
     let p3 = Path::new(env!("CARGO_MANIFEST_DIR"))

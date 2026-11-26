@@ -140,7 +140,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
-        let open = || crate::photo::open(&chart());
+        let open = || crate::photo::open(&chart(), &crate::photo::LensProfiles::none());
         let go = AtomicBool::new(false);
         // An export decodes but leaves the cache as it was.
         assert!(
@@ -180,7 +180,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
-        let open = || crate::photo::open(&chart());
+        let open = || crate::photo::open(&chart(), &crate::photo::LensProfiles::none());
         let decoded = open()?.develop(Decode::Full(Demosaic::default()), Cancel::NEVER)?;
         let apart = recover_highlights(&decoded, Cancel::NEVER)?;
         assert_ne!(apart.pixels, decoded.pixels, "the chart has highlights");

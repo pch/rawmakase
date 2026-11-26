@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     // What the loader shows first today: the camera's JPEG, at most 2560 px.
     let t = Instant::now();
-    let mut raw = rawmakase::photo::open(path)?;
+    let mut raw = rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?;
     let embedded = rawmakase::raw::thumbnail(&mut raw)?;
     println!(
         "Embedded JPEG {}x{}: {:.1} ms",
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
 
     // The first live Fit: from the decode cache, and from a decode.
     let t = Instant::now();
-    let full = rawmakase::photo::open(path)?.develop(
+    let full = rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?.develop(
         camera_data::Decode::full(Default::default()),
         Cancel::new(&cancel),
     )?;
@@ -122,7 +122,9 @@ fn main() -> Result<()> {
             let pool = rawmakase::raw::background_pool(2, "preview-build").unwrap();
             while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                 pool.install(|| {
-                    let raw = rawmakase::photo::open(&path).unwrap();
+                    let raw =
+                        rawmakase::photo::open(&path, &rawmakase::photo::LensProfiles::none())
+                            .unwrap();
                     let im = raw
                         .develop(camera_data::Decode::Half, Cancel::new(&stop))
                         .ok()?;

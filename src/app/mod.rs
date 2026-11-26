@@ -199,6 +199,10 @@ impl Editor {
     pub(in crate::app) fn decode_cache(&self) -> &crate::decode_cache::DecodeCache {
         crate::environment::decode_cache(&self.core)
     }
+    /// The imported lens profiles every photo is opened with: the context's.
+    pub(in crate::app) fn lens_profiles(&self) -> &crate::photo::LensProfiles {
+        crate::environment::lens_profiles(&self.core)
+    }
 }
 impl Editor {
     pub(crate) fn new(
@@ -373,9 +377,16 @@ impl Editor {
                 .send(worker::Event::AiDenoiseStored(path.to_path_buf()));
             stored_ctx.request_repaint();
         }));
-        let loader = worker::Loader::new(tx.clone(), ctx.clone(), decode_cache.clone());
+        let lenses = crate::environment::lens_profiles(&core).clone();
+        let loader = worker::Loader::new(
+            tx.clone(),
+            ctx.clone(),
+            decode_cache.clone(),
+            lenses.clone(),
+        );
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
-        let reference_loader = worker::reference_loader(tx.clone(), ctx.clone(), decode_cache);
+        let reference_loader =
+            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache, lenses.clone());
         let standard_preview_size = session.standard_preview_size();
         let discard_one_to_one_after = session.discard_one_to_one_after();
         let stand_ins = crate::app::develop::stand_in::StandIns::new(
@@ -494,7 +505,7 @@ impl Editor {
                 standard_preview_size,
                 discard_one_to_one_after,
             ),
-            copies: crate::app::worker::editable_preview::decoder(),
+            copies: crate::app::worker::editable_preview::decoder(lenses),
             editable_builds: Default::default(),
             stand_ins,
             autosave: Default::default(),

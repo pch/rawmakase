@@ -34,8 +34,10 @@ pub enum rawmakase_core::ErrorKind #[non_exhaustive]
 pub fn rawmakase_core::Context::build_id(&self) -> core::option::Option<&str>
 pub fn rawmakase_core::Context::builder() -> rawmakase_core::ContextBuilder
 pub fn rawmakase_core::Context::cache_dir(&self) -> core::option::Option<&std::path::Path>
+pub fn rawmakase_core::Context::data_dirs(&self) -> &[std::path::PathBuf]
 pub fn rawmakase_core::ContextBuilder::build(self) -> rawmakase_core::Result<rawmakase_core::Context>
 pub fn rawmakase_core::ContextBuilder::cache(self, dir: impl core::convert::Into<std::path::PathBuf>, limits: rawmakase_core::CacheLimits, build_id: impl core::convert::Into<alloc::string::String>) -> Self
+pub fn rawmakase_core::ContextBuilder::data_dirs<P: core::convert::Into<std::path::PathBuf>>(self, dirs: impl core::iter::traits::collect::IntoIterator<Item = P>) -> Self
 pub fn rawmakase_core::Error::is_cancelled(&self) -> bool
 pub fn rawmakase_core::Error::kind(&self) -> rawmakase_core::ErrorKind
 pub rawmakase_core::CacheLimits::ai_denoise: u64

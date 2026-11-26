@@ -84,10 +84,16 @@ fn main() -> Result<()> {
         None => SIDE,
     };
     let t = Instant::now();
-    let image = Arc::new(rawmakase::photo::open(std::path::Path::new(path))?.develop(
-        rawmakase::camera_data::Decode::full(Default::default()),
-        Cancel::NEVER,
-    )?);
+    let image = Arc::new(
+        rawmakase::photo::open(
+            std::path::Path::new(path),
+            &rawmakase::photo::LensProfiles::none(),
+        )?
+        .develop(
+            rawmakase::camera_data::Decode::full(Default::default()),
+            Cancel::NEVER,
+        )?,
+    );
     println!(
         "Decode {}x{} {} {}: {:.0} ms",
         image.width,

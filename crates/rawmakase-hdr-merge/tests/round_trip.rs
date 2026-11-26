@@ -145,7 +145,8 @@ fn a_merged_dng_opens_with_what_it_was_written_with() {
     let coverage = coverage();
     let facts = facts();
     let path = write(&pixels, Some(&coverage), &facts);
-    let raw = rawmakase_decode::photo::open(&path).unwrap();
+    let raw = rawmakase_decode::photo::open(&path, &rawmakase_decode::photo::LensProfiles::none())
+        .unwrap();
     let m = raw.metadata.clone();
     assert_eq!((m.make.as_str(), m.model.as_str()), ("Fujifilm", "X-T4"));
     assert_eq!((m.width, m.height), (W, H));
@@ -206,7 +207,8 @@ fn coverage_and_maker_note_are_optional() {
     let mut facts = facts();
     facts.maker_note = None;
     let path = write(&pixels(), None, &facts);
-    let raw = rawmakase_decode::photo::open(&path).unwrap();
+    let raw = rawmakase_decode::photo::open(&path, &rawmakase_decode::photo::LensProfiles::none())
+        .unwrap();
     assert!(raw.metadata.coverage.is_none());
     // Unknown, as for a file without the note.
     assert_eq!(raw.metadata.fuji_dynamic_range, 65535);
@@ -256,15 +258,18 @@ fn the_xmp_and_preview_are_added_to_the_same_image() {
     assert_eq!(ifd0_xmp(&without), None);
     let file = tempfile::Builder::new().suffix(".dng").tempfile().unwrap();
     std::fs::write(file.path(), &with).unwrap();
-    let mut raw = rawmakase_decode::photo::open(file.path()).unwrap();
+    let mut raw =
+        rawmakase_decode::photo::open(file.path(), &rawmakase_decode::photo::LensProfiles::none())
+            .unwrap();
     assert_eq!(raw.thumbnail().unwrap(), jpeg);
     assert!(raw.metadata.coverage.is_some());
     let developed = raw.develop(Decode::Half, Cancel::NEVER).unwrap();
     std::fs::write(file.path(), &without).unwrap();
-    let plain = rawmakase_decode::photo::open(file.path())
-        .unwrap()
-        .develop(Decode::Half, Cancel::NEVER)
-        .unwrap();
+    let plain =
+        rawmakase_decode::photo::open(file.path(), &rawmakase_decode::photo::LensProfiles::none())
+            .unwrap()
+            .develop(Decode::Half, Cancel::NEVER)
+            .unwrap();
     assert!(developed.pixels.iter().eq(plain.pixels.iter()));
 }
 

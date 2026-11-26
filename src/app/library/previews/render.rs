@@ -11,21 +11,23 @@ use std::path::Path;
 /// faster than rendering it whole and reducing the result.
 pub(super) fn render_edited(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     source: &EditSource,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
-    let (image, recipe) = open_quickly(path, Some(source), cancel)?;
+    let (image, recipe) = open_quickly(path, lenses, Some(source), cancel)?;
     rgb(crate::develop::render_fitted(&image, &recipe, 640, cancel)?)
 }
 /// [`develop_with_ai`] at the Library's preview size.
 pub(super) fn render_edited_with_ai(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     file: &crate::storage::Identity,
     source: &EditSource,
     entry: &rawmakase_decode::ai::cache::AiEntry,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
-    develop_with_ai(path, file, source, entry, 640, cancel)
+    develop_with_ai(path, lenses, file, source, entry, 640, cancel)
 }
 /// What a render of `source` without an AI Denoise result shows.
 pub(super) fn plain_of(source: &EditSource) -> PreviewAi {
@@ -77,6 +79,7 @@ fn finished_ai(path: &Path, ai: Option<&AiCache>) -> Option<(crate::storage::Ide
 /// otherwise from the half-size decode, without it, as [`develop_quickly`] does.
 pub(in crate::app::library) fn develop_for_preview(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     source: &EditSource,
     edge: u32,
     ai: Option<&AiCache>,
@@ -84,12 +87,12 @@ pub(in crate::app::library) fn develop_for_preview(
 ) -> anyhow::Result<(image::RgbImage, PreviewAi)> {
     if let Some((file, entry)) = finished_entry(path, source, ai) {
         return Ok((
-            develop_with_ai(path, &file, source, &entry, edge, cancel)?,
+            develop_with_ai(path, lenses, &file, source, &entry, edge, cancel)?,
             PreviewAi::Finished,
         ));
     }
     Ok((
-        develop_quickly(path, Some(source), edge, cancel)?,
+        develop_quickly(path, lenses, Some(source), edge, cancel)?,
         plain_of(source),
     ))
 }
@@ -98,6 +101,7 @@ pub(in crate::app::library) fn develop_for_preview(
 /// file changed meanwhile fails: the result is of the version it was made for.
 fn develop_with_ai(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     file: &crate::storage::Identity,
     source: &EditSource,
     entry: &rawmakase_decode::ai::cache::AiEntry,
@@ -105,8 +109,8 @@ fn develop_with_ai(
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     use rawmakase_decode::ai::denoise::{ModelOutput, assemble};
-    let raw = crate::photo::open(path)?;
-    let recipe = EditSource::recipe(Some(source), &raw.metadata, path, cancel)?;
+    let raw = crate::photo::open(path, lenses)?;
+    let recipe = EditSource::recipe(Some(source), &raw.metadata, path, lenses, cancel)?;
     let plain = raw.develop(crate::camera_data::Decode::Full(Default::default()), cancel)?;
     let denoised = assemble(
         &ModelOutput {
@@ -132,22 +136,24 @@ fn develop_with_ai(
 /// a RAW from the fast half-size decode, a JPEG, PNG or TIFF from the file.
 pub(in crate::app::library) fn develop_quickly(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     edit: Option<&EditSource>,
     edge: u32,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
-    let (image, recipe) = open_quickly(path, edit, cancel)?;
+    let (image, recipe) = open_quickly(path, lenses, edit, cancel)?;
     finish_quickly(&image, &recipe, edge, cancel)
 }
 /// `path` opened for a quick render, with the recipe `edit` gives it: a RAW from
 /// the fast half-size decode, a JPEG, PNG or TIFF from the file.
 pub(super) fn open_quickly(
     path: &Path,
+    lenses: &crate::photo::LensProfiles,
     edit: Option<&EditSource>,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<(crate::camera_data::CameraImage, Recipe)> {
-    let opened = crate::photo::open_source(path, cancel)?;
-    let recipe = EditSource::recipe(edit, opened.metadata(), path, cancel)?;
+    let opened = crate::photo::open_source(path, lenses, cancel)?;
+    let recipe = EditSource::recipe(edit, opened.metadata(), path, lenses, cancel)?;
     let image = match opened {
         crate::photo::Opened::Raw(raw) => raw.develop(crate::camera_data::Decode::Half, cancel)?,
         crate::photo::Opened::Rendered(image) => image,

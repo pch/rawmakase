@@ -718,13 +718,14 @@ mod tests {
             tx,
             egui::Context::default(),
             crate::decode_cache::DecodeCache::default(),
+            crate::photo::LensProfiles::none(),
         );
         let defaults = Arc::new(crate::raw_defaults::brighter_defaults());
         loader.submit(crate::app::worker::LoadJob {
             id: 1,
             path: chart,
             from: Default::default(),
-            copies: crate::app::worker::editable_preview::decoder(),
+            copies: crate::app::worker::editable_preview::decoder(Default::default()),
             cancel: Default::default(),
             defaults: defaults.clone(),
             demosaic: crate::camera_data::Demosaic::default(),

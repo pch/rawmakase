@@ -22,7 +22,10 @@ fn main() -> anyhow::Result<()> {
         i.db.clone()
     };
     for path in &args {
-        let raw = match rawmakase::photo::open(std::path::Path::new(path)) {
+        let raw = match rawmakase::photo::open(
+            std::path::Path::new(path),
+            &rawmakase::photo::LensProfiles::none(),
+        ) {
             Ok(r) => r,
             Err(e) => {
                 println!("{path}: can't open: {e:#}");

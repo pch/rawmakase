@@ -411,11 +411,48 @@ fn correction_from(entries: &[Entry], m: &Metadata, which: LensEntries) -> Optio
     (!c.is_empty() && c.validate()).then_some(c)
 }
 
-pub fn library_dirs() -> Vec<PathBuf> {
-    crate::storage::asset_dirs()
-        .into_iter()
-        .map(|p| p.join("lens-profiles"))
-        .collect()
+/// The imported lens profiles kept in a set of folders, read once and again
+/// when a profile file changes: what opening a photo looks its lens up in. A
+/// clone shares the folders and what was read from them, so the profiles are
+/// read once for every thread that opens photos.
+#[derive(Clone, Debug)]
+pub struct Profiles(Arc<ProfilesIn>);
+#[derive(Debug)]
+struct ProfilesIn {
+    dirs: Vec<PathBuf>,
+    cache: LibraryCache,
+}
+impl Profiles {
+    /// The profiles in `dirs`, searched in order.
+    pub fn in_dirs(dirs: Vec<PathBuf>) -> Self {
+        Self(Arc::new(ProfilesIn {
+            dirs,
+            cache: LibraryCache::new(),
+        }))
+    }
+    /// The profiles in the `lens-profiles` folder of each data folder, where
+    /// RAWmakase imports them.
+    pub fn in_data_dirs(data_dirs: &[PathBuf]) -> Self {
+        Self::in_dirs(data_dirs.iter().map(|d| d.join("lens-profiles")).collect())
+    }
+    /// No imported profiles at all.
+    pub fn none() -> Self {
+        Self::in_dirs(Vec::new())
+    }
+    /// The folders searched, in order.
+    pub fn dirs(&self) -> &[PathBuf] {
+        &self.0.dirs
+    }
+    /// The profiles as the files are now.
+    pub fn current(&self) -> Arc<Library> {
+        self.0.cache.current(&self.0.dirs)
+    }
+}
+impl Default for Profiles {
+    /// [`Profiles::none`].
+    fn default() -> Self {
+        Self::none()
+    }
 }
 
 /// Every imported lens profile, read once and again when the folders change.
@@ -611,20 +648,19 @@ fn stamp(dirs: &[PathBuf]) -> Stamp {
 }
 
 /// The imported profiles, read again only when a profile file changes.
-#[derive(Default)]
-pub struct LibraryCache {
+#[derive(Debug, Default)]
+struct LibraryCache {
     cached: Mutex<Option<(Stamp, Arc<Library>)>>,
 }
 impl LibraryCache {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         Self {
             cached: Mutex::new(None),
         }
     }
-    /// The profiles as the files are now.
-    pub fn current(&self) -> Arc<Library> {
-        let dirs = library_dirs();
-        let stamp = stamp(&dirs);
+    /// The profiles in `dirs` as the files are now.
+    fn current(&self, dirs: &[PathBuf]) -> Arc<Library> {
+        let stamp = stamp(dirs);
         if let Some((s, library)) = self.lock().as_ref()
             && *s == stamp
         {
@@ -632,7 +668,7 @@ impl LibraryCache {
         }
         // Read without the lock: a low-priority preview thread reading every profile
         // must not hold up Develop's open of a photo, which reads them itself instead.
-        let library = Arc::new(Library::load(&dirs));
+        let library = Arc::new(Library::load(dirs));
         *self.lock() = Some((stamp, Arc::clone(&library)));
         library
     }
@@ -846,6 +882,25 @@ mod tests {
   <stCamera:VignetteModel stCamera:VignetteModelParam1="-2.871602" stCamera:VignetteModelParam2="-4.473586" stCamera:VignetteModelParam3="33.881413"/>
  </rdf:Description></stCamera:PerspectiveModel></rdf:Description></rdf:li>
 </rdf:Seq></photoshop:CameraProfiles></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    /// Two libraries on two sets of folders each read their own, and one sees
+    /// a profile imported into its folders while it is in use.
+    #[test]
+    fn each_library_reads_its_own_folders_and_sees_a_profile_added() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        for dir in [a.path(), b.path()] {
+            std::fs::create_dir(dir.join("lens-profiles")).unwrap();
+        }
+        std::fs::write(a.path().join("lens-profiles/sony.lcp"), SAMPLE).unwrap();
+        let first = Profiles::in_data_dirs(&[a.path().to_path_buf()]);
+        let second = Profiles::in_data_dirs(&[b.path().to_path_buf()]);
+        let shared = second.clone();
+        assert_eq!(first.current().profiles.len(), 1);
+        assert!(second.current().profiles.is_empty());
+        std::fs::write(b.path().join("lens-profiles/sony.lcp"), SAMPLE).unwrap();
+        // A clone is the same library, and sees the profile too.
+        assert_eq!(shared.current().profiles.len(), 1);
+        assert!(Profiles::none().current().profiles.is_empty());
+    }
     #[test]
     fn one_unusable_file_does_not_stop_the_others() {
         let temp = tempfile::tempdir().unwrap();

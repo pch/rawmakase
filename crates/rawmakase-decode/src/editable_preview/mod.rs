@@ -51,11 +51,15 @@ pub struct EditablePreview {
 /// Its DNG is read by the DNG reader as any DNG is; then the record's facts
 /// replace the tags', and the imported lens profiles that fit are matched, as
 /// opening the original would match them.
-pub fn open(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
+pub fn open(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+    cancel: Cancel<'_>,
+) -> Result<EditablePreview> {
     let record = read_record(path)?;
     let mut metadata = record.metadata()?;
     let default_look = record.default_look(&metadata)?;
-    let decoded = crate::photo::open(path)
+    let decoded = crate::photo::open(path, lenses)
         .and_then(|raw| raw.develop(Decode::Full(Demosaic::default()), cancel))
         .context("An editable preview's pixels can't be read")?;
     ensure!(
@@ -66,7 +70,7 @@ pub fn open(path: &Path, cancel: Cancel<'_>) -> Result<EditablePreview> {
         record.copy_width,
         record.copy_height
     );
-    metadata.lens_profiles = crate::photo::lens_profiles(&metadata);
+    metadata.lens_profiles = crate::photo::lens_profiles(&metadata, lenses);
     let mut image = CameraImage {
         width: decoded.width,
         height: decoded.height,

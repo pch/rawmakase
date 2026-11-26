@@ -43,6 +43,7 @@ What the context takes today:
 
 | Value | What for | Default |
 | --- | --- | --- |
+| The data folders, in order | Imported lens profiles are looked for in each one's `lens-profiles` folder | None: no imported lens profile |
 | The cache folder, its limits and a build id, given together | Decoded photos and AI Denoise's results are kept there, up to the limits (4 GiB and 10 GiB by default) | No cache |
 
 The build id names the build that made a cache's entries; entries of another
@@ -97,3 +98,5 @@ which CI compares with the code. Each change to them is noted here.
 
 - **Started**: `Context` with its cache (folder, limits, build id), `Error`
   and `ErrorKind`.
+- **Data folders**: `ContextBuilder::data_dirs` and `Context::data_dirs`; the
+  cache's build id now keys its entries.

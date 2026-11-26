@@ -52,6 +52,7 @@ pub(in crate::app) fn reference_loader(
     tx: Sender<Event>,
     ctx: egui::Context,
     cache: DecodeCache,
+    lenses: crate::photo::LensProfiles,
 ) -> Latest<ReferenceJob> {
     Latest::new(move |job: ReferenceJob| {
         let ticket = job.ticket;
@@ -62,7 +63,7 @@ pub(in crate::app) fn reference_loader(
             }
         };
         let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            develop(&job, &cache, |image| reply(Ok(Box::new(image))))
+            develop(&job, &cache, &lenses, |image| reply(Ok(Box::new(image))))
         }));
         match loaded {
             Ok(Ok(())) => {}
@@ -79,9 +80,10 @@ pub(in crate::app) fn reference_loader(
 fn develop(
     job: &ReferenceJob,
     cache: &DecodeCache,
+    lenses: &crate::photo::LensProfiles,
     mut ready: impl FnMut(ReferenceImage),
 ) -> anyhow::Result<()> {
-    let raw = match crate::photo::open_source(&job.path, Cancel::new(&job.cancel))? {
+    let raw = match crate::photo::open_source(&job.path, lenses, Cancel::new(&job.cancel))? {
         Opened::Raw(raw) => raw,
         // A JPEG, PNG or TIFF opens at full size: nothing to cache or refine.
         Opened::Rendered(image) => {
@@ -89,6 +91,7 @@ fn develop(
                 Some(&job.edit),
                 &image.metadata,
                 &job.path,
+                lenses,
                 Cancel::new(&job.cancel),
             )?;
             if !job.cancel.load(Ordering::Relaxed) {
@@ -105,6 +108,7 @@ fn develop(
         Some(&job.edit),
         &raw.metadata,
         &job.path,
+        lenses,
         Cancel::new(&job.cancel),
     )?;
     let full_size = FullSize::with_cache(&job.path, job.demosaic, cache.clone());
@@ -128,7 +132,7 @@ fn develop(
         recipe: recipe.clone(),
         resolution: Resolution::Half,
     });
-    let opened = crate::photo::open(&job.path)?;
+    let opened = crate::photo::open(&job.path, lenses)?;
     let full = Arc::new(full_size.decode(opened, DecodePolicy::Show, Cancel::new(&job.cancel))?);
     if job.cancel.load(Ordering::Relaxed) {
         return Ok(());
@@ -164,7 +168,9 @@ mod tests {
         };
         let develop_stages = |job: &ReferenceJob| -> anyhow::Result<Vec<Resolution>> {
             let mut stages = Vec::new();
-            develop(job, &cache, |image| stages.push(image.resolution))?;
+            develop(job, &cache, &crate::photo::LensProfiles::none(), |image| {
+                stages.push(image.resolution)
+            })?;
             Ok(stages)
         };
 
@@ -202,7 +208,7 @@ mod tests {
         // Developed, then opened from the cache.
         for _ in 0..2 {
             let mut renamed = Vec::new();
-            develop(&job, &cache, |image| {
+            develop(&job, &cache, &crate::photo::LensProfiles::none(), |image| {
                 if image.resolution == Resolution::Full {
                     renamed.push(
                         std::fs::rename(&path, &away).and_then(|()| std::fs::rename(&away, &path)),
@@ -231,7 +237,9 @@ mod tests {
             demosaic: Demosaic::default(),
         };
         let mut images = Vec::new();
-        develop(&job, &cache, |image| images.push(image))?;
+        develop(&job, &cache, &crate::photo::LensProfiles::none(), |image| {
+            images.push(image)
+        })?;
         let [image] = &images[..] else {
             panic!("{} stages", images.len());
         };

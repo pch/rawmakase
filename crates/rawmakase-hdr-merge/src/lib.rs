@@ -241,8 +241,12 @@ pub fn merge(
         .iter()
         .map(|input| {
             cancelled()?;
-            photo::header_metadata(&input.path)
-                .or_else(|_| photo::open(&input.path).map(|raw| raw.metadata))
+            // The bracket's facts and pixels are its camera's: which imported lens
+            // profile fits a frame changes nothing the merge reads or writes, so
+            // none are read.
+            let none = photo::LensProfiles::none();
+            photo::header_metadata(&input.path, &none)
+                .or_else(|_| photo::open(&input.path, &none).map(|raw| raw.metadata))
                 .map_err(|e| unreadable(&input.path, &e))
         })
         .collect::<Result<_, _>>()?;
@@ -526,7 +530,8 @@ struct Kept {
 }
 
 fn decode(path: &Path, demosaic: Demosaic, cancel: Cancel<'_>) -> Result<Frame, Error> {
-    let frame = photo::open(path).and_then(|raw| raw.develop_frame(demosaic, cancel));
+    let frame = photo::open(path, &photo::LensProfiles::none())
+        .and_then(|raw| raw.develop_frame(demosaic, cancel));
     if cancel.is_cancelled() {
         return Err(Error::Cancelled);
     }

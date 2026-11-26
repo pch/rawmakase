@@ -327,7 +327,9 @@ fn open_mosaic(path: &Path, cancel: Cancel<'_>) -> Result<PackedBayer> {
             "AI Denoise works on RAW files only.",
         )));
     }
-    crate::photo::open(path)?.packed_bayer(cancel)
+    // The mosaic is the sensor's alone: which imported lens profile fits the
+    // photo changes nothing in it, so none are read.
+    crate::photo::open(path, &crate::photo::LensProfiles::none())?.packed_bayer(cancel)
 }
 
 /// ONNX Runtime threads: fewer than rendering's, so a running job leaves the UI and

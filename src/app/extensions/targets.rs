@@ -133,6 +133,8 @@ pub(super) struct Reading {
     key: (String, u64),
     photos: Vec<Entry>,
     defaults: Arc<crate::raw_defaults::DevelopDefaults>,
+    /// The imported lens profiles a photo not open is read with.
+    lenses: crate::photo::LensProfiles,
 }
 
 enum Entry {
@@ -196,6 +198,7 @@ impl Reading {
                         catalog,
                         &target,
                         &self.defaults,
+                        &self.lenses,
                         rawmakase_cancel::Cancel::new(cancel),
                     );
                     if cancel.load(Ordering::Relaxed) {
@@ -380,6 +383,7 @@ impl Editor {
             key: (catalog, generation),
             photos,
             defaults: self.raw_defaults.clone(),
+            lenses: self.lens_profiles().clone(),
         })
     }
 
@@ -718,6 +722,7 @@ impl Editor {
         let decoding = Decoding {
             demosaic: self.session.demosaic,
             cache: Some(self.decode_cache().clone()),
+            lenses: self.lens_profiles().clone(),
         };
         let finished = |outcome| Finished {
             ticket,

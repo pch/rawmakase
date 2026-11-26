@@ -227,6 +227,7 @@ impl Fixture {
             watermark: None,
             demosaic: Default::default(),
             cache: Default::default(),
+            lenses: crate::photo::LensProfiles::none(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         }
     }
@@ -270,7 +271,7 @@ fn every_photo_is_exported_with_its_own_edit_or_said_why_not() -> Result<()> {
     let [(a, a_path), (b, b_path), _, (d, d_path), (_, e_path)] = &f.photos[..] else {
         panic!("five photos");
     };
-    let m = crate::photo::open(a_path)?.metadata;
+    let m = crate::photo::open(a_path, &crate::photo::LensProfiles::none())?.metadata;
     let (profiles, _) = crate::camera_profiles::installed(&m);
     let mut brighter = Recipe::with_profiles(&m, &profiles);
     brighter.exposure = 1.;
@@ -467,7 +468,7 @@ fn cancel_before_a_commit_leaves_nothing_and_after_it_counts_as_exported() -> Re
 fn a_batch_exports_the_edits_as_they_were_when_export_was_pressed() -> Result<()> {
     let mut f = fixture(&["a.dng"])?;
     let (id, path) = &f.photos[0];
-    let m = crate::photo::open(path)?.metadata;
+    let m = crate::photo::open(path, &crate::photo::LensProfiles::none())?.metadata;
     let (profiles, _) = crate::camera_profiles::installed(&m);
     let mut edit = Recipe::with_profiles(&m, &profiles);
     edit.exposure = 0.5;
@@ -810,6 +811,7 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
             watermark: None,
             demosaic: Default::default(),
             cache: Default::default(),
+            lenses: crate::photo::LensProfiles::none(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         };
         run_all(&batch)
@@ -867,6 +869,7 @@ fn exporting_never_replaces_another_photos_original() -> Result<()> {
         watermark: None,
         demosaic: Default::default(),
         cache: Default::default(),
+        lenses: crate::photo::LensProfiles::none(),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
     };
     assert_eq!(batch.plan.entries[0].target, jpeg);
@@ -966,7 +969,7 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
     let [(a, a_path), _] = &f.photos[..] else {
         panic!("two photos");
     };
-    let m = crate::photo::open(a_path)?.metadata;
+    let m = crate::photo::open(a_path, &crate::photo::LensProfiles::none())?.metadata;
     let (profiles, _) = crate::camera_profiles::installed(&m);
     let mut denoised = Recipe::with_profiles(&m, &profiles);
     denoised.ai_denoise = crate::model::ai_denoise::AiDenoise {
@@ -1003,7 +1006,7 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
 fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
     let mut f = fixture(&["a.dng", "b.dng"])?;
-    let m = crate::photo::open(&f.photos[0].1)?.metadata;
+    let m = crate::photo::open(&f.photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
     let (profiles, _) = crate::camera_profiles::installed(&m);
     let mut hdr = Recipe::with_profiles(&m, &profiles);
     hdr.hdr.enabled = true;

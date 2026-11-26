@@ -6,6 +6,7 @@ use rawmakase_cancel::Cancel;
 use std::path::Path;
 pub fn compare(
     input: &Path,
+    lenses: &crate::photo::LensProfiles,
     reference: &Path,
     output: &Path,
     recipe: Option<&Path>,
@@ -15,7 +16,7 @@ pub fn compare(
         !output.exists(),
         "Comparison output directory already exists"
     );
-    let raw = crate::photo::open(input)?;
+    let raw = crate::photo::open(input, lenses)?;
     let edit = if let Some(p) = recipe {
         crate::presets::load_preset(p)?.recipe
     } else {

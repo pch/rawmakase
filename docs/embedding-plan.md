@@ -892,6 +892,20 @@ so the design is proved on one path before it is spread.
    Look's fit cache still keys by the executable until its own change
    below. The ambient check counts `build_identity()` calls now, and no
    longer counts a function's definition as a call to it.
+
+   The lens profile library: `lens::lcp::Profiles`, a handle on the
+   profiles in a set of folders that a clone shares, made by the context
+   from its data folders (`ContextBuilder::data_dirs`), replaces the
+   process-wide one, and every opener takes it (`photo::open`,
+   `open_source`, `header_metadata`, `lens_profiles`, the editable
+   preview, Camera Look's fit and default, the developer tools). The
+   app's workers take it from the context when they are made or a job is
+   captured; the Library gets it beside its AI Denoise cache, before
+   anything is shown; the command line from the `environment` module's
+   context. Merge to HDR, AI Denoise, a photo's info and the AI Denoise
+   benchmark open photos with no imported profiles, since nothing they
+   read or write depends on which one fits (so AI Denoise's later step
+   needs nothing more here).
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

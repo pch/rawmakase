@@ -76,7 +76,11 @@ fn main() -> Result<()> {
     let fit: u32 = args.get(3).map_or(Ok(1402), |n| n.parse())?;
     anyhow::ensure!((2..=200).contains(&steps), "Use 2–200 steps");
     let cancel = AtomicBool::new(false);
-    let image = rawmakase::photo::open(std::path::Path::new(path))?.develop(
+    let image = rawmakase::photo::open(
+        std::path::Path::new(path),
+        &rawmakase::photo::LensProfiles::none(),
+    )?
+    .develop(
         camera_data::Decode::full(Default::default()),
         Cancel::new(&cancel),
     )?;

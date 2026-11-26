@@ -69,12 +69,12 @@ impl Ahead {
     }
     /// Opens `path` and holds it, dropping what was held first. A cancelled
     /// prefetch keeps nothing: the photo it was for has been moved past or opened.
-    fn prefetch(&self, path: &Path, cancel: Cancel<'_>) {
+    fn prefetch(&self, path: &Path, lenses: &crate::photo::LensProfiles, cancel: Cancel<'_>) {
         *self.held() = None;
         let Ok(identity) = crate::storage::Identity::read(path) else {
             return;
         };
-        let Ok(Opened::Rendered(image)) = crate::photo::open_source(path, cancel) else {
+        let Ok(Opened::Rendered(image)) = crate::photo::open_source(path, lenses, cancel) else {
             return;
         };
         if !cancel.is_cancelled() {
@@ -113,7 +113,11 @@ fn release_kept_blocks() {
 
 /// Develops a neighbour on two threads, leaving the other cores to rendering the
 /// photo on screen: a RAW into the decode cache, a JPEG, PNG or TIFF into `ahead`.
-fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
+fn prefetcher(
+    cache: DecodeCache,
+    lenses: crate::photo::LensProfiles,
+    ahead: Ahead,
+) -> Latest<Prefetch> {
     Latest::new(move |job: Prefetch| {
         static POOL: std::sync::OnceLock<Option<rayon::ThreadPool>> = std::sync::OnceLock::new();
         let Some(pool) = POOL.get_or_init(|| crate::raw::background_pool(2, "prefetch").ok())
@@ -127,7 +131,7 @@ fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
             // What the open photo's first render freed goes before the neighbour
             // is opened, as before a RAW's decode below.
             release_kept_blocks();
-            pool.install(|| ahead.prefetch(&job.path, Cancel::new(&job.cancel)));
+            pool.install(|| ahead.prefetch(&job.path, &lenses, Cancel::new(&job.cancel)));
             return;
         }
         let full = FullSize::with_cache(&job.path, job.demosaic, cache.clone());
@@ -138,7 +142,7 @@ fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
         // the prefetch after it), and the allocator still holds the planes its
         // noise reduction freed: they go before this decode allocates its own.
         release_kept_blocks();
-        let open = || crate::photo::open(&job.path);
+        let open = || crate::photo::open(&job.path, &lenses);
         let _ = pool.install(|| full.get(open, DecodePolicy::Prefetch, Cancel::new(&job.cancel)));
     })
 }
@@ -160,7 +164,12 @@ impl Between {
         }
     }
 }
-fn full_loader(tx: Sender<Event>, ctx: egui::Context, between: Between) -> Latest<FullJob> {
+fn full_loader(
+    tx: Sender<Event>,
+    ctx: egui::Context,
+    lenses: crate::photo::LensProfiles,
+    between: Between,
+) -> Latest<FullJob> {
     Latest::new(move |job: FullJob| {
         let result = caught(|| -> anyhow::Result<()> {
             if job.cancel.load(Ordering::Relaxed) {
@@ -171,7 +180,7 @@ fn full_loader(tx: Sender<Event>, ctx: egui::Context, between: Between) -> Lates
                 // Checked before and after: the decoder keeps what it read, so a file
                 // put back between the two would pass the second check alone.
                 unchanged(&job.path, job.file.as_ref())?;
-                let raw = crate::photo::open(&job.path)?;
+                let raw = crate::photo::open(&job.path, &lenses)?;
                 between.run(&job.path, FullStage::Opened);
                 let image = Arc::new(job.full.decode(
                     raw,
@@ -226,8 +235,15 @@ pub(crate) struct Loader {
     prefetch: Latest<Prefetch>,
 }
 impl Loader {
-    pub(crate) fn new(tx: Sender<Event>, ctx: egui::Context, cache: DecodeCache) -> Self {
-        Self::with_parts(tx, ctx, cache, Ahead::default(), Between::default())
+    /// A loader opening photos with `lenses`, keeping full-size decodes in
+    /// `cache`.
+    pub(crate) fn new(
+        tx: Sender<Event>,
+        ctx: egui::Context,
+        cache: DecodeCache,
+        lenses: crate::photo::LensProfiles,
+    ) -> Self {
+        Self::with_parts(tx, ctx, cache, lenses, Ahead::default(), Between::default())
     }
     /// A loader whose full-size decodes are kept in `cache`, whose prefetched
     /// rendered files in `ahead`, running `between` before each full-size stage.
@@ -235,12 +251,13 @@ impl Loader {
         tx: Sender<Event>,
         ctx: egui::Context,
         cache: DecodeCache,
+        lenses: crate::photo::LensProfiles,
         ahead: Ahead,
         between: Between,
     ) -> Self {
-        let prefetch = prefetcher(cache.clone(), ahead.clone());
-        let full = full_loader(tx.clone(), ctx.clone(), between);
-        let open = opener(tx, ctx, cache, ahead, full.mailbox());
+        let prefetch = prefetcher(cache.clone(), lenses.clone(), ahead.clone());
+        let full = full_loader(tx.clone(), ctx.clone(), lenses.clone(), between);
+        let open = opener(tx, ctx, cache, lenses, ahead, full.mailbox());
         Self {
             open,
             full,
@@ -283,6 +300,7 @@ fn opener(
     tx: Sender<Event>,
     ctx: egui::Context,
     cache: DecodeCache,
+    lenses: crate::photo::LensProfiles,
     ahead: Ahead,
     full: Mailbox<FullJob>,
 ) -> Latest<LoadJob> {
@@ -339,7 +357,7 @@ fn opener(
             }
             let opened = match prefetched {
                 Some(image) => Opened::Rendered(image),
-                None => crate::photo::open_source(&path, Cancel::new(&job.cancel))?,
+                None => crate::photo::open_source(&path, &lenses, Cancel::new(&job.cancel))?,
             };
             unchanged(&path, file.as_ref())?;
             let metadata = opened.metadata().clone();
@@ -352,6 +370,7 @@ fn opener(
             // (or read from the fit cache) before its defaults are installed.
             let profiles = crate::camera_look::with_default(
                 &path,
+                &lenses,
                 &metadata,
                 profiles,
                 Cancel::new(&job.cancel),
@@ -594,6 +613,7 @@ pub(in crate::app) mod tests {
             tx,
             egui::Context::default(),
             DecodeCache::new(cache.into(), u64::MAX, "test"),
+            crate::photo::LensProfiles::none(),
             ahead,
             between,
         );
@@ -601,7 +621,7 @@ pub(in crate::app) mod tests {
             id: 7,
             path: path.into(),
             from: Default::default(),
-            copies: crate::app::worker::editable_preview::decoder(),
+            copies: crate::app::worker::editable_preview::decoder(Default::default()),
             cancel: Default::default(),
             defaults: Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
                 Default::default(),
@@ -827,7 +847,7 @@ pub(in crate::app) mod tests {
         let path = dir.path().join("next.jpg");
         image::RgbImage::from_pixel(40, 30, image::Rgb([120, 90, 60])).save(&path)?;
         let ahead = Ahead::default();
-        ahead.prefetch(&path, Cancel::NEVER);
+        ahead.prefetch(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER);
 
         let events = load_with(&path, &dir.path().join("decoded"), ahead.clone());
 
@@ -855,7 +875,7 @@ pub(in crate::app) mod tests {
         let path = dir.path().join("next.jpg");
         image::RgbImage::from_pixel(40, 30, image::Rgb([120, 90, 60])).save(&path)?;
         let ahead = Ahead::default();
-        ahead.prefetch(&path, Cancel::NEVER);
+        ahead.prefetch(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER);
         image::RgbImage::from_pixel(20, 10, image::Rgb([20, 30, 40])).save(&path)?;
 
         let events = load_with(&path, &dir.path().join("decoded"), ahead);
@@ -878,7 +898,7 @@ pub(in crate::app) mod tests {
             (m.len(), m.modified()?)
         };
         let ahead = Ahead::default();
-        ahead.prefetch(&path, Cancel::NEVER);
+        ahead.prefetch(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER);
         image::RgbImage::from_pixel(40, 30, image::Rgb([0, 0, 200])).save(&path)?;
         std::fs::File::options()
             .write(true)
@@ -908,6 +928,7 @@ pub(in crate::app) mod tests {
 
         ahead.prefetch(
             &path,
+            &crate::photo::LensProfiles::none(),
             Cancel::new(&std::sync::atomic::AtomicBool::new(true)),
         );
 
@@ -926,7 +947,12 @@ pub(in crate::app) mod tests {
     fn prefetching_loader(cache: &Path) -> (Loader, FullSize) {
         let cache = DecodeCache::new(cache.into(), u64::MAX, "test");
         let (tx, _rx) = mpsc::channel();
-        let loader = Loader::new(tx, egui::Context::default(), cache.clone());
+        let loader = Loader::new(
+            tx,
+            egui::Context::default(),
+            cache.clone(),
+            crate::photo::LensProfiles::none(),
+        );
         (
             loader,
             FullSize::with_cache(&chart(), Default::default(), cache),
