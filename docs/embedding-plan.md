@@ -1,6 +1,7 @@
 # A library for other apps: plan
 
-Status: Plan (2026-11-26), being built on one branch; no step has landed.
+Status: Plan (2026-11-26), being built on one branch (`t3/library`, one pull
+request); stage 1, steps 1–5, is built and in review; no step has landed.
 Its API's shape was tried in a prototype (stage 0), and the plan was
 corrected from it. One library that another app links to open, decode,
 edit, render and export photos as RAWmakase does, without the desktop
