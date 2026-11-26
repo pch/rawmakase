@@ -198,10 +198,15 @@ impl LocalEdits {
     pub fn is_empty(&self) -> bool {
         self.retouch.is_empty() && self.red_eye.is_blank() && self.masks.is_empty()
     }
+    /// Whether the retouching, red eye and masks are whole. A failure is
+    /// [`crate::error::Invalid`], printed as the check that failed.
     pub fn validate(&self) -> Result<()> {
-        crate::model::retouch::validate(&self.retouch)?;
-        crate::model::red_eye::validate(&self.red_eye)?;
-        crate::model::masks::validate(&self.masks)
+        let check = || -> Result<()> {
+            crate::model::retouch::validate(&self.retouch)?;
+            crate::model::red_eye::validate(&self.red_eye)?;
+            crate::model::masks::validate(&self.masks)
+        };
+        check().map_err(|e| crate::error::Invalid::from_error(e).into())
     }
 }
 impl Default for Recipe {

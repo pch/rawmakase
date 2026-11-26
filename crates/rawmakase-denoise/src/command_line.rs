@@ -2,7 +2,7 @@
 use super::{Service, wait_within};
 use crate::camera_data::CameraImage;
 use crate::develop::AiSource;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai::cache::AiCache;
 use rawmakase_decode::ai::denoise::AiBase;
@@ -67,7 +67,7 @@ impl CommandLine {
         self.service
             .get(path, file, image, cancel)
             .and_then(|ai| AiSource::recover(Arc::unwrap_or_clone(ai), cancel))
-            .map_err(|e| anyhow!("AI Denoise: {e:#}"))
+            .map_err(rawmakase_decode::ai::failed)
     }
 }
 impl Drop for CommandLine {

@@ -13,7 +13,7 @@ use crate::{
     model::recipe::Recipe,
     raw::Raw,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use std::{
     path::{Path, PathBuf},
@@ -101,7 +101,9 @@ pub fn run_with_backend(
     let format = crate::export_settings::Format::from_path(target);
     if let Some(output) = settings.hdr_output()? {
         let format = format.ok_or_else(|| {
-            anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
+            rawmakase_model::error::Invalid::new(
+                "An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl",
+            )
         })?;
         crate::export_settings::Format::check_hdr(format, output)?;
     } else if let Some(format) = format {
@@ -186,10 +188,12 @@ pub fn prepare_with_backend(
     let hdr = settings.hdr_output()?;
     if hdr.is_some() {
         // Captured with the job: the edit's own intent, never the editor's or display's.
-        ensure!(
-            photo.recipe.hdr.is_active(),
-            "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR"
-        );
+        if !photo.recipe.hdr.is_active() {
+            return Err(rawmakase_model::error::Invalid::new(
+                "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR",
+            )
+            .into());
+        }
     }
     let cancelled = || -> Result<()> {
         cancel.check("Cancelled")?;
@@ -364,7 +368,7 @@ fn ai_source(
         .ai
         .0
         .get(&photo.source, &file, image, cancel)
-        .map_err(|e| anyhow::anyhow!("AI Denoise: {e:#}"))?;
+        .map_err(rawmakase_decode::ai::failed)?;
     let ai = Arc::try_unwrap(ai).unwrap_or_else(|shared| (*shared).clone());
     crate::develop::AiSource::recover(ai, cancel).map(Some)
 }
@@ -519,6 +523,45 @@ mod tests {
         .unwrap_err();
         assert!(error.to_string().contains("no AI Denoise here"), "{error}");
         assert!(!target.exists());
+        Ok(())
+    }
+
+    /// Settings no export can write are refused as invalid before anything
+    /// renders, whether the settings' format or the target's can't hold them.
+    #[test]
+    fn settings_an_export_cannot_write_are_invalid() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("a.dng");
+        std::fs::write(&source, b"synthetic")?;
+        let prophoto = ExportSettings {
+            color_space: crate::color::output::OutputSpace::ProPhoto,
+            ..ExportSettings::default()
+        };
+        assert!(
+            prophoto
+                .check_output()
+                .unwrap_err()
+                .is::<rawmakase_model::error::Invalid>()
+        );
+        // ProPhoto RGB in JPEG settings, and TIFF settings sent to a JPEG target.
+        let tiff = ExportSettings {
+            format: crate::export_settings::Format::Tiff,
+            ..prophoto.clone()
+        };
+        for settings in [prophoto, tiff] {
+            let target = dir.path().join("out.jpg");
+            let error = run(
+                photo(&source, &dir.path().join("cache")),
+                &settings,
+                &target,
+                super::super::Replace::NoClobber,
+                Cancel::NEVER,
+                |_| {},
+            )
+            .unwrap_err();
+            assert!(error.is::<rawmakase_model::error::Invalid>(), "{error:#}");
+            assert!(!target.exists());
+        }
         Ok(())
     }
 

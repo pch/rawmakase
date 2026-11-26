@@ -3,7 +3,7 @@
 //! export (and Export with Previous) starts from them.
 use crate::color::OutputSpace;
 use crate::storage::RasterFormat;
-use anyhow::{Result, bail, ensure};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -52,17 +52,35 @@ impl Default for ExportOptions {
         }
     }
 }
+/// Refuses settings that can't be exported, as
+/// [`rawmakase_model::error::Invalid`] saying the formatted message.
+macro_rules! refuse {
+    ($($message:tt)*) => {
+        return Err(rawmakase_model::error::Invalid::new(format!($($message)*)).into())
+    };
+}
+/// [`refuse!`] unless `condition` holds.
+macro_rules! require {
+    ($condition:expr, $($message:tt)*) => {
+        if !$condition {
+            refuse!($($message)*);
+        }
+    };
+}
+
 impl ExportOptions {
+    /// Whether the options are in range. A failure is
+    /// [`rawmakase_model::error::Invalid`].
     pub fn validate(&self) -> Result<()> {
-        ensure!(
+        require!(
             (1..=100).contains(&self.quality),
             "JPEG quality must be 1–100"
         );
-        ensure!(
+        require!(
             self.max_edge <= 30_000,
             "Export edge must not exceed 30000 pixels"
         );
-        ensure!(
+        require!(
             self.max_bytes != Some(0),
             "A file size limit must be above 0 K"
         );
@@ -139,10 +157,10 @@ impl Format {
     /// only as 16-bit TIFF, as 8 bits band in so wide a gamut.
     pub fn supports(self, space: OutputSpace) -> Result<()> {
         if self == Format::Jxl && space != OutputSpace::Srgb {
-            bail!("JPEG XL exports are sRGB, or HDR; choose sRGB, HDR export or another format");
+            refuse!("JPEG XL exports are sRGB, or HDR; choose sRGB, HDR export or another format");
         }
         if space.needs_sixteen_bits() && self != Format::Tiff {
-            bail!(
+            refuse!(
                 "{} exports only as 16-bit TIFF; choose TIFF or another color space",
                 space.label()
             );
@@ -161,21 +179,21 @@ impl Format {
     pub fn check_hdr(format: Format, output: crate::color::hdr_output::HdrOutput) -> Result<()> {
         use crate::color::hdr_output::HdrGamut;
         if output.gain_map {
-            ensure!(
+            require!(
                 matches!(format, Format::Jpeg | Format::Jxl),
                 "Gain maps are written as JPEG or JPEG XL; choose one, or HDR pixels in TIFF"
             );
-            ensure!(
+            require!(
                 output.gamut == HdrGamut::Rec709,
                 "A gain map's base is sRGB: choose the Rec. 709 gamut"
             );
             return Ok(());
         }
-        ensure!(
+        require!(
             matches!(format, Format::Tiff | Format::Jxl),
             "HDR pixels are written as TIFF or JPEG XL; choose one, or a gain map for JPEG"
         );
-        ensure!(
+        require!(
             format == Format::Tiff
                 || output.transfer != crate::color::hdr_output::HdrTransfer::Linear,
             "Linear HDR is written as 32-bit float TIFF only; choose TIFF, PQ or HLG"
@@ -849,7 +867,7 @@ impl ExportSettings {
     /// a format other than TIFF. Every export checks its settings with this.
     pub fn output_space(&self) -> Result<OutputSpace> {
         if let Some(later) = self.later_color_space() {
-            bail!(
+            refuse!(
                 "The color space {later} is from a later version of RAWmakase; choose another in the Export dialog"
             );
         }
@@ -1032,7 +1050,7 @@ impl ExportSettings {
     /// can't hold it ([`Format::check_hdr`]).
     pub fn hdr_output(&self) -> Result<Option<crate::color::hdr_output::HdrOutput>> {
         if let LaterHdr(Some(later)) = &self.later_hdr {
-            bail!(
+            refuse!(
                 "The HDR export {later} is from a later version of RAWmakase; choose another in the Export dialog"
             );
         }
@@ -1045,16 +1063,13 @@ impl ExportSettings {
     /// What every export checks before anything renders: an HDR export's encoding in
     /// its format, else the SDR color space in its format ([`Self::output_space`]).
     /// An HDR export never uses the SDR color space, so that is not checked then.
-    /// Whether the output these settings ask for can be written. A failure is
+    /// A failure, here and in the checks it makes, is
     /// [`rawmakase_model::error::Invalid`].
     pub fn check_output(&self) -> Result<()> {
-        let check = || -> Result<()> {
-            if self.hdr_output()?.is_none() {
-                self.output_space()?;
-            }
-            Ok(())
-        };
-        check().map_err(|e| rawmakase_model::error::Invalid::from_error(e).into())
+        if self.hdr_output()?.is_none() {
+            self.output_space()?;
+        }
+        Ok(())
     }
     pub fn options(&self) -> ExportOptions {
         ExportOptions {

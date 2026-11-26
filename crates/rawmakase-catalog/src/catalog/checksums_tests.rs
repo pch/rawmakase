@@ -111,3 +111,18 @@ fn a_checksum_read_before_its_folder_was_located_elsewhere_is_dropped() -> Resul
     assert_eq!(cat.save_checksums(std::slice::from_ref(&a))?, [a.photo]);
     Ok(())
 }
+
+/// A catalog is never created over a file that is already there.
+#[test]
+fn a_catalog_is_not_created_over_an_existing_file() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("Photos.rawmakase");
+    std::fs::write(&path, b"something else")?;
+    let Err(e) = Catalog::create(&path) else {
+        panic!("a catalog was created over a file");
+    };
+    assert!(e.is::<rawmakase_model::error::Exists>(), "{e:#}");
+    assert!(e.to_string().starts_with("Catalog already exists: "));
+    assert_eq!(std::fs::read(&path)?, b"something else");
+    Ok(())
+}

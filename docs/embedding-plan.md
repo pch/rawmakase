@@ -825,12 +825,15 @@ so the design is proved on one path before it is spread.
    holds `Invalid`, `Missing`, `Changed` and `Exists`, each printing what
    the error it replaces printed (its message, or the error it was made
    from with that error's causes), so a chain reads the same: an invalid
-   recipe (`Recipe::validate`) or export output
-   (`ExportSettings::check_output`); a missing camera profile named by
+   recipe (`Recipe::validate`, its local edits too), export output or
+   options (every refusal of `ExportSettings` and `ExportOptions`, typed
+   where it is made, and an HDR export of an edit with HDR off); a missing camera profile named by
    settings and a missing saved naming preset; a photo's file changed since
    it was shown (export) or since its edit was saved (the catalog, and
    reading a stored edit); an export's destination and a new catalog that
-   already exist. Merge to HDR, inference and the installer keep the
+   already exist. AI Denoise's failures reach export and the command line
+   as one message, "AI Denoise: " and the chain, as before, except a
+   cancelled run, which stays `Cancelled`. Merge to HDR, inference and the installer keep the
    cancelled and exists variants of their own error types, which the
    library maps where it shows them. An enhanced profile that is "missing
    or unsupported" stays untyped, since it may be either.
@@ -940,7 +943,10 @@ Each is made explicit, then shown through the library.
     sidecar's, passed in; a Lightroom import's snapshot made beside its
     destination; the catalog's
     own files in the data folder (new-photo and import defaults, the
-    preview cache's path) given their folder; the library's catalog handle,
+    preview cache's path) given their folder; the kinds of the catalog's
+    other failures (a folder sync or Find on Disk stopped, an Export as
+    Catalog over an existing one, a legacy sidecar's file changed), which
+    are still text; the library's catalog handle,
     which registers the mask reader for the catalog an app shows. The
     Library's sort moves to `rawmakase-catalog`, with the label order.
 14. A photo's info and capture time to `rawmakase-decode`, with whether to
@@ -966,7 +972,10 @@ Each is made explicit, then shown through the library.
     they are given. AI Denoise's cache keys from the context's build id,
     its photos opened with the context's lens profiles, its model and
     cache folders from the context; its service owned by the context and
-    stopped with a deadline.
+    stopped with a deadline. Its failures keep their kinds: today the
+    service records a failed run as text (`Outcome::Failed(String)`), and
+    a file changed under a run is an untyped error, so both become the
+    typed causes of step 2 here.
 18. The installer crate, in two changes: `rawmakase-model-install` becomes
     `rawmakase-install` over the model's file record (the rename reaches
     the root manifest, the AI masks extension, `scripts/deps-crates.txt`,
