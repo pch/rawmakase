@@ -462,9 +462,9 @@ Camera Raw's on average where the table's was 6.2 and its Highlights +60 4.9 whe
 table's was 4.2, its Shadows −100 4.9 where the table's was 6.2 and its Shadows −60 3.0
 where the table's was 3.7.
 
-The fitted tables of both controls (`local_tone_data.rs`) remain as what a map
-without the rule's curves evaluates; a render with either slider or a mask builds the
-curves, so they are no longer read in practice.
+The earlier fitted tables (`local_tone_data.rs`, `shadow_context.rs`, the
+regional level and the Highlights tail's fine mean) were removed once every
+Shadows/Highlights render and mask used the global rule's curves.
 
 **Shadows and Highlights together (2026-11-17).** Camera Raw's render of the two
 sliders is not the product of their single gains, which is what the stage rendered until
@@ -683,11 +683,12 @@ and up −6.4. In one photo (a window with blinds in a dark kitchen) Camera Raw 
 the bright slats nearly untouched: its mask of reference pixels at L* ≥ 90 averaged
 L* 92 where the main branch rendered 60 and the first tail 53, flattening the slats to
 one grey (that mask's ΔE00 went from 23.1 to 29.5). A guided base follows contrasty fine
-structure pixel by pixel, so a steep tail turns its detail into a plateau. The tail now
-reads the base capped at 0.5 stops over the mean of log luminance in a 5 × 5 window of
-the map, taken as the largest such mean within the same reach (`TAIL_RADIUS`,
-`TAIL_MARGIN`; the `LOCAL_FINE` grid on the GPU): unchanged on a block or a lamp,
-lower on stripes and specks. Without the largest-mean step the block's first two map
+structure pixel by pixel, so a steep tail turns its detail into a plateau. Under the
+earlier guided-base tables (since removed in favor of the global rule over the local
+Laplacian base), the tail read the base capped at 0.5 stops over the mean of log
+luminance in a 5 × 5 window of the map, taken as the largest such mean within the same
+reach (`TAIL_RADIUS`, `TAIL_MARGIN`; the former `LOCAL_FINE` grid on the GPU): unchanged
+on a block or a lamp, lower on stripes and specks. Without the largest-mean step the block's first two map
 pixels, whose window includes the dark frame, were pulled up to 3 stops less than its
 inside, a bright rim. A larger window (9 × 9 and up), or no
 margin, gave back some of the gain of the lamp and ceiling-light photos. This follows
@@ -695,21 +696,22 @@ Camera Raw's size dependence only where it mattered in the photos: squares of 4 
 16 pixels are pulled −0.3 and −2.3 EV against Camera Raw's −1.1 and −2.9, and a large
 block −3.6 against −6.4.
 
-**Positive Shadows: the two-scale lift.** On the training photos Shadows +100 left the
+**Positive Shadows: the two-scale lift (historical, superseded by the global rule).** On the training photos Shadows +100 left the
 darkest display tones (L* below 15) 5–7 L* too light, almost all of it from small dark
 areas (0.2–3.5% of the frame) inside brighter surroundings, which Camera Raw lifts less
-than large dark areas at the same base level. A second level fixes most of it: the
+than large dark areas at the same base level. A second level fixed most of it under the
+fitted-table engine: the
 *regional level* K, a bilateral blur of the map's log luminance much wider than the base
 (σ 25% of the long edge, range σ 4 stops; `clarity.rs`'s bilateral grid at one scale).
-Positive Shadows' gain is a table of the base level less K plus a table of K less the
-Shadows key (`SHADOWS_DETAIL`, `SHADOWS_REGION`), fitted together by least squares on the
+Positive Shadows' gain was a table of the base level less K plus a table of K less the
+Shadows key (the former `SHADOWS_DETAIL`, `SHADOWS_REGION`), fitted together by least squares on the
 training photos at the renders' size (1024 pixels), with the region table held at 0 at
-the key (a constant could otherwise move between the tables). K is read from the map like
-the base level, so region and preview size do not change it. Negative Shadows kept the
+the key (a constant could otherwise move between the tables). K was read from the map like
+the base level, so region and preview size did not change it. Negative Shadows kept the
 base-level table (an earlier two-scale fit made Shadows −100 worse on validation, bands
 20–40 L* about 3.5 too light on bright photos) until it took the global rule's curve on
 2026-11-17. Masks read the same three tables at their own
-slider value.
+slider value before the global rule replaced them.
 
 Chosen on the training photos alone (cross-validated by photo, 2 and 4 folds, EV of scene
 gain): at Shadows +100 the error falls from 0.248 to 0.163 and in the deep shadows (base
@@ -728,22 +730,22 @@ to −0.2–6.1 L*. Still failing: Shadows +100 with Adobe Color on bright photo
 within 1.3), where Camera Raw's Highlights darkens bright areas less when Shadows is raised
 than the sum of the two gains does.
 
-**Sparse highlights in dark scenes.** The mean-only Shadows key under-lifts
-large dark areas when small bright gaps are scattered through the image. The same
+**Sparse highlights in dark scenes (historical, superseded by the global rule).** The mean-only Shadows key under-lifted
+large dark areas when small bright gaps were scattered through the image. The same
 input histogram arranged as a bright strip needs a different correction in Camera
-Raw. Positive Shadows now adds a calibrated scene-context offset to its regional
-key; negative Shadows and Highlights keep their keys. Ten log-luminance percentiles
-and luminance/texture distributions at four spatial scales distinguish these cases.
-All statistics are relative to mean luminance, so increasing Exposure does not
-activate the correction. The existing measurement copy defines the spatial scale;
-CPU, GPU and masks share the corrected key.
+Raw. Under the fitted-table engine, positive Shadows added a calibrated scene-context
+offset to its regional key (`shadow_context.rs`); negative Shadows and Highlights kept
+their keys. Ten log-luminance percentiles
+and luminance/texture distributions at four spatial scales distinguished these cases.
+All statistics were relative to mean luminance, so increasing Exposure did not
+activate the correction. The existing measurement copy defined the spatial scale;
+CPU, GPU and masks shared the corrected key.
 
-The calibration contains 137 anonymous contexts (22 photos, 115 synthetic scenes).
-`data/shadow-context.json` keeps their 34 statistics and squared gain-error curves
-for offsets −2..2 EV, without pixels, profiles or private paths. Regenerate the
-runtime table with `python3 scripts/corpus/shadow-context.py`; `--check` checks it
-without rewriting it. The minimum includes a weak 0.002·offset² penalty. Smooth
-inverse-distance weighting, with bandwidth set by the third neighbour, interpolates
+The calibration contained 137 anonymous contexts (22 photos, 115 synthetic scenes),
+originally stored in `data/shadow-context.json` and generated by
+`scripts/corpus/shadow-context.py` (both removed along with `shadow_context.rs` once the
+global rule replaced the fitted tables). The minimum included a weak 0.002·offset² penalty. Smooth
+inverse-distance weighting, with bandwidth set by the third neighbour, interpolated
 these bounded offsets without switching abruptly between reference scenes.
 
 The reported tree photo is explicitly a calibration case. Independent checks include

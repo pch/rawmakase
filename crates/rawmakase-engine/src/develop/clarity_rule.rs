@@ -360,18 +360,14 @@ pub(super) fn unit_curves(logs: &[f32], base: &[f32], w: usize, h: usize) -> [Cu
 
     [
         Curve {
-            key: 0.,
             lo,
             hi,
             table: base_table,
-            tail: 0.,
         },
         Curve {
-            key: 0.,
             lo,
             hi,
             table: pix_table,
-            tail: 0.,
         },
     ]
 }
@@ -380,22 +376,18 @@ pub(super) fn unit_curves(logs: &[f32], base: &[f32], w: usize, h: usize) -> [Cu
 pub(super) fn scale(unit: &[Curve; 2], amount: f32) -> [Curve; 2] {
     let a = amount.clamp(0., 1.);
     std::array::from_fn(|k| Curve {
-        key: unit[k].key,
         lo: unit[k].lo,
         hi: unit[k].hi,
         table: unit[k].table.map(|v| v * a),
-        tail: 0.,
     })
 }
 
 fn zero_curves(lo: f32, hi: f32) -> [Curve; 2] {
     let hi = hi.max(lo + 1e-3);
     std::array::from_fn(|_| Curve {
-        key: 0.,
         lo,
         hi,
         table: [0.; LEVELS],
-        tail: 0.,
     })
 }
 

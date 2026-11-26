@@ -84,7 +84,6 @@ else
 endif
 
 check-python: $(CHECK_VENV)/.installed
-	python3 scripts/corpus/shadow-context.py --check
 	$(CHECK_VENV)/bin/python -m unittest discover -s scripts/cameras
 	$(CHECK_VENV)/bin/python -m unittest discover -s scripts/corpus
 

@@ -98,8 +98,9 @@ pipeline (`crates/rawmakase-engine/src/develop/stage_cache.rs`), each keyed by t
   camera's exposure and Camera Calibration (the measures are taken at Exposure 0);
   with them, what renders measure on the same scene values with one more setting:
   the Contrast pivot by Dehaze, the copy's camera color, and the
-  Shadows/Highlights map's base (guided filter, keys, regional level, Clarity's
-  detail) by Exposure, so the Basic sliders only rebuild the map's curves;
+  Shadows/Highlights map's base (local Laplacian base and lazily computed
+  negative-Clarity detail) by Exposure, so the Basic sliders only rebuild the
+  map's curves;
 - the textured image, when Texture is on;
 - samples: each output pixel's camera value after geometry and lens correction,
   and its source position.

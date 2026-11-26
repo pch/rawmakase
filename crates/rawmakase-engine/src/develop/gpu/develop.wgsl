@@ -912,20 +912,17 @@ fn scene_mask(q: vec3<f32>, whites: f32, blacks: f32) -> vec3<f32> {
     return out;
 }
 // local_tone::LocalToneMap::gain
-fn local_curve(i: u32, base: f32, tail_base: f32) -> f32 {
+fn local_curve(i: u32, base: f32) -> f32 {
     let t = offset(i);
     if t < 0 {
         return 0.0;
     }
-    let key = p(i + 1u);
-    let lo = p(i + 2u);
-    let hi = p(i + 3u);
-    let f = clamp((base - key - lo) / (hi - lo) * 48.0 - 0.5, 0.0, 47.0);
+    let lo = p(i + 1u);
+    let hi = p(i + 2u);
+    let f = clamp((base - lo) / (hi - lo) * 48.0 - 0.5, 0.0, 47.0);
     let j = min(u32(f), 46u);
     let a = table(t + i32(j));
-    // The tail per stop past the last column follows the table (`Curve::tail`).
-    let past = max(tail_base - key - (hi - (hi - lo) / 96.0), 0.0);
-    return a + (table(t + i32(j) + 1) - a) * (f - f32(j)) + table(t + 48) * past;
+    return a + (table(t + i32(j) + 1) - a) * (f - f32(j));
 }
 // Slider position `k` of the 7 around a measured family, with 0 inserted at index 3,
 // and its table index (-1 for the identity).
@@ -953,32 +950,6 @@ fn bracket(values: i32, s: f32) -> vec2<f32> {
     let s0 = slider_point(values, j);
     let s1 = slider_point(values, j + 1u);
     return vec2(f32(j), (s - s0) / (s1 - s0));
-}
-// local_tone::family: a Shadows (0), Highlights (1), slot 2 placeholder (formerly
-// Dehaze, now handled by `scene_tone::haze`), Shadows detail (3) or Shadows region (4)
-// gain at slider `s` (layout: `local_tone::gpu_families`).
-fn family(f: u32, s_in: f32, key: f32, base: f32, tail_base: f32) -> f32 {
-    if s_in == 0.0 {
-        return 0.0;
-    }
-    let s = clamp(s_in, -1.0, 1.0);
-    let t = offset(P_LOCAL_FAMILIES) + i32(f * 302u);
-    let lo = table(t + 288);
-    let hi = table(t + 289);
-    let b = bracket(t + 290, s);
-    let j = u32(b.x);
-    let x = clamp((base - key - lo) / (hi - lo) * 48.0 - 0.5, 0.0, 47.0);
-    let i = min(u32(x), 46u);
-    let past = max(tail_base - key - (hi - (hi - lo) / 96.0), 0.0);
-    var y = vec2(0.0);
-    for (var k = 0u; k < 2u; k++) {
-        let row = slider_table(j + k);
-        if row >= 0 {
-            let a = table(t + row * 48 + i32(i));
-            y[k] = a + (table(t + row * 48 + i32(i) + 1) - a) * (x - f32(i)) + table(t + 296 + row) * past;
-        }
-    }
-    return y.x + (y.y - y.x) * b.y;
 }
 // basic_tone::slider over a 6 × 64 table at `t`, with positions at `values`.
 fn measured(t: i32, values: i32, s_in: f32, x: f32) -> f32 {
@@ -1057,12 +1028,6 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
     let own = log2(min(max(clarity_lum, LOCAL_FLOOR), 1e12));
     let off = (own - coef.x) / LAPLACIAN_SIGMA;
     let base = own + exp(-0.5 * off * off) * (coef.y - own);
-    // Highlights' tail reads the base, but no more than 0.5 stops above the fine mean
-    // (`LocalToneMap::tail_base`).
-    let f = u32(offset(P_LOCAL_FINE));
-    let fine_top = grid[f + iy * w + ix] * (1.0 - tx) + grid[f + iy * w + jx] * tx;
-    let fine_bottom = grid[f + jy * w + ix] * (1.0 - tx) + grid[f + jy * w + jx] * tx;
-    let tail_base = min(base, fine_top * (1.0 - ty) + fine_bottom * ty + 0.5);
     // Joint bilateral upsampling of the calibrated Clarity gains. Fine luminance
     // selects neighbouring gains without extrapolating new contrast.
     var clarity = 0.0;
@@ -1083,7 +1048,7 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
         }
         clarity = dot(gains, weights) / dot(weights, vec4(1.0));
     }
-    let cpos = local_curve(P_CLARITY_BASE, base, base) + local_curve(P_CLARITY_PIX, own, own);
+    let cpos = local_curve(P_CLARITY_BASE, base) + local_curve(P_CLARITY_PIX, own);
     if cpos != 0.0 {
         var hw = 1.0;
         let ch = offset(P_CLARITY_HDR);
@@ -1094,25 +1059,12 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
         }
         clarity += cpos * hw;
     }
-    // Positive Shadows' regional level (local_tone::LocalToneMap::lift), on the same grid.
-    var region = 0.0;
-    let r = offset(P_LOCAL_REGION);
-    if r >= 0 {
-        let g = u32(r);
-        let top = grid[g + iy * w + ix] * (1.0 - tx) + grid[g + iy * w + jx] * tx;
-        let bottom = grid[g + jy * w + ix] * (1.0 - tx) + grid[g + jy * w + jx] * tx;
-        region = top * (1.0 - ty) + bottom * ty;
-    }
     if (V_MASKS && masked) && (delta[L_SHADOWS] != 0.0 || delta[L_HIGHLIGHTS] != 0.0) {
         let s = p(P_GLOBAL_SH) + delta[L_SHADOWS];
         let h = p(P_GLOBAL_SH + 1u) + delta[L_HIGHLIGHTS];
-        var lift = 0.0;
-        if r >= 0 {
-            lift = family(3u, s, 0.0, base - region, base - region) + family(4u, s, p(P_LOCAL_KEYS + 2u), region, region);
-        }
         // Shadows and Highlights follow the photo's global rule (`local_tone_rule`),
         // scaled by the slider: the curves of Shadows +100, Highlights −100, Shadows
-        // −100 and Highlights +100. Their families only where a map carries no rule.
+        // −100 and Highlights +100.
         // With both set, each curve is blended toward a uniform gain at its extreme
         // (`local_tone_rule::Pair::at`): its fraction for the sliders' signs, ramped in
         // over the other slider's share of it.
@@ -1133,36 +1085,32 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
             );
             pair_shift = p(P_PAIR + 12u + c) * lo * pair_ramp(lo / hi, same);
         }
-        var sg = family(0u, s, p(P_LOCAL_KEYS), base, base);
+        var sg = 0.0;
         if s > 0.0 && offset(P_RULE) >= 0 {
-            let g = local_curve(P_RULE, base, base);
-            let pg = local_curve(P_RULE_PIX, own, own);
+            let g = local_curve(P_RULE, base);
+            let pg = local_curve(P_RULE_PIX, own);
             sg = (g + blend.x * (blend.y - g) + pg) * min(s, 1.0);
-        } else if s < 0.0 && offset(P_RULE + 8u) >= 0 {
-            let g = local_curve(P_RULE + 8u, base, base);
-            let pg = local_curve(P_RULE_PIX + 8u, own, own);
+        } else if s < 0.0 && offset(P_RULE + 6u) >= 0 {
+            let g = local_curve(P_RULE + 6u, base);
+            let pg = local_curve(P_RULE_PIX + 6u, own);
             sg = (g + blend.x * (blend.y - g) + pg) * min(-s, 1.0);
         }
-        var hg = family(1u, h, p(P_LOCAL_KEYS + 1u), base, tail_base);
-        if h < 0.0 && offset(P_RULE + 4u) >= 0 {
-            let g = local_curve(P_RULE + 4u, base, base);
-            let pg = local_curve(P_RULE_PIX + 4u, own, own);
+        var hg = 0.0;
+        if h < 0.0 && offset(P_RULE + 3u) >= 0 {
+            let g = local_curve(P_RULE + 3u, base);
+            let pg = local_curve(P_RULE_PIX + 3u, own);
             hg = (g + blend.z * (blend.w - g) + pg) * min(-h, 1.0);
-        } else if h > 0.0 && offset(P_RULE + 12u) >= 0 {
-            let g = local_curve(P_RULE + 12u, base, base);
-            let pg = local_curve(P_RULE_PIX + 12u, own, own);
+        } else if h > 0.0 && offset(P_RULE + 9u) >= 0 {
+            let g = local_curve(P_RULE + 9u, base);
+            let pg = local_curve(P_RULE_PIX + 9u, own);
             hg = (g + blend.z * (blend.w - g) + pg) * min(h, 1.0);
         }
-        return exp2(sg + hg + pair_shift + lift + clarity);
+        return exp2(sg + hg + pair_shift + clarity);
     }
-    var lift = 0.0;
-    if r >= 0 {
-        lift = local_curve(P_LIFT, base - region, base - region) + local_curve(P_LIFT + 4u, region, region);
-    }
-    let sg = local_curve(P_SHADOWS, base, base);
-    let hg = local_curve(P_HIGHLIGHTS, base, tail_base);
-    let pg = local_curve(P_PIX, own, own);
-    return exp2(sg + hg + pg + lift + clarity);
+    let sg = local_curve(P_SHADOWS, base);
+    let hg = local_curve(P_HIGHLIGHTS, base);
+    let pg = local_curve(P_PIX, own);
+    return exp2(sg + hg + pg + clarity);
 }
 // scene_tone::haze: the fraction of the haze positive Dehaze `s` removes.
 fn haze_omega(s_in: f32) -> f32 {
