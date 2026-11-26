@@ -1,10 +1,15 @@
-//! Dedicated headless GPU compute backend for SDR exports with deterministic
-//! two-tier CPU fallback.
+//! Dedicated headless GPU compute backend for SDR, HDR, and gain-map exports with
+//! deterministic two-tier CPU fallback.
 //!
 //! [`ExportBackend`] owns its own headless `wgpu::Device` (decoupled from eframe's UI
 //! device and [`super::SURFACE`]) and executes exports in horizontal bands (~6 MP per
 //! band) with exact vertical halo overlap for sharpening and Lanczos3 resizing so
-//! band seams are bit-exact against single-band full-frame output.
+//! band seams are bit-exact against single-band full-frame output. Band readbacks
+//! use double-buffered staging buffers so band `k` executes on the GPU while band
+//! `k - 1` maps and copies back to host memory. When a large sensor's full camera
+//! buffer exceeds the adapter's `max_storage_buffer_binding_size`, [`ExportBackend`]
+//! falls back to per-band source-strip upload (uploading only the conservative source
+//! rows each output band samples via `S_PHOTO_Y0`) before resorting to Tier-1 CPU.
 //!
 //! No `wgpu` types cross the `rawmakase-engine` boundary: callers interact solely
 //! through [`ExportBackend`], [`ExportBackendPolicy`], [`ExportBackendStatus`],
@@ -186,6 +191,8 @@ struct ExecState {
     engine: Engine,
     #[cfg(test)]
     band_height_override: Option<u32>,
+    #[cfg(test)]
+    max_binding_override: Option<u64>,
 }
 
 struct StatusState {
@@ -392,6 +399,8 @@ impl ExportBackend {
                 engine,
                 #[cfg(test)]
                 band_height_override: None,
+                #[cfg(test)]
+                max_binding_override: None,
             }),
             meta: Mutex::new(StatusState::new(policy, fallback)),
         }
@@ -637,6 +646,362 @@ impl ExportBackend {
             }
         }
     }
+
+    /// Renders an HDR master (`HdrImage`, linear ProPhoto RGB, `1.0 = graphics white`) of
+    /// `image` with `recipe` within `max_edge` (`0` for full size).
+    ///
+    /// Uses the dedicated GPU compute backend when enabled and eligible (matching
+    /// [`crate::develop::render_hdr`]: unclipped sRGB-curve sharpening, unclipped Lanczos3
+    /// resizing, and `roll_off` to the edit's HDR peak), falling back deterministically to
+    /// [`crate::develop::render_hdr`] on unsupported HDR features (grain, vignette, defringe,
+    /// masks, Point Color), adapter limits, or GPU errors. Never mutates `image`.
+    pub fn render_hdr(
+        &self,
+        image: &CameraImage,
+        recipe: &ValidRecipe,
+        ai: Option<&AiSource>,
+        max_edge: u32,
+        cancel: Cancel<'_>,
+    ) -> Result<crate::rendered::HdrImage> {
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        ensure!(recipe.hdr.is_active(), "This edit has HDR off");
+        crate::model::hdr::check_for(recipe, &image.metadata)?;
+
+        let session_disabled = {
+            let meta = self.lock_meta();
+            (!meta.gpu_active && !meta.uninitialized).then(|| {
+                meta.session_fallback
+                    .as_ref()
+                    .map_or(ExportFallbackKind::ConfiguredCpu, |(k, _)| *k)
+            })
+        };
+        if let Some(kind) = session_disabled {
+            let out = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+            let mut meta = self.lock_meta();
+            meta.cpu_renders += 1;
+            meta.record_fallback(kind);
+            return Ok(out);
+        }
+
+        let mut resolved = recipe.resolved_hdr(&image.metadata);
+        let scene_owned;
+        let (scene_img, effective_ai) = if image.metadata.hdr_source.is_some() {
+            let gain = quality::hdr_file_recipe(resolved.to_mut(), &image.metadata);
+            scene_owned = quality::hdr_file_scene(image, gain)?;
+            (&scene_owned, None)
+        } else {
+            (image, ai)
+        };
+        ensure!(
+            resolved
+                .profile
+                .as_ref()
+                .is_some_and(|p| p.hdr_tone().is_ok()),
+            "This photo's camera profile does not render in HDR"
+        );
+
+        let r = resolved.as_ref();
+        if !pixel_params::supported_hdr(r, &scene_img.metadata) {
+            let out = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+            let mut meta = self.lock_meta();
+            meta.cpu_renders += 1;
+            meta.record_fallback(ExportFallbackKind::UnsupportedRecipe);
+            return Ok(out);
+        }
+
+        if let Some(p) = &r.profile {
+            p.ensure_camera(&scene_img.metadata)?;
+        }
+        if r.lens_ca {
+            crate::lens::auto_ca::prime(scene_img);
+        }
+
+        let g = Geometry::new(scene_img, r, 0);
+        let scale = scene_img.photo_scale();
+        let (out_w, out_h) = quality::output_size(g.width, g.height, max_edge);
+        let mut base = r.clone();
+        base.sharpening = 0.;
+        base.validate()?;
+
+        let recovered = quality::recovered(scene_img, cancel)?;
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+
+        let denoise = r.denoise_with(effective_ai.filter(|a| a.fits(scene_img)));
+        let ai_base = match denoise.as_ref().and_then(|d| d.ai.as_ref()) {
+            Some(ai_blend) => ai_blend.apply(&recovered),
+            None => recovered,
+        };
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+
+        let job = PreparedHdrExport {
+            ai_base: &ai_base,
+            denoise,
+            base: &base,
+            recipe: r,
+            geometry: g,
+            scale,
+            out_w,
+            out_h,
+            peak: r.hdr.peak(),
+        };
+
+        let (gpu_outcome, retired) = {
+            let mut exec = self.lock_exec();
+            let guard = PanicGuard::new(&mut exec, &self.meta);
+            let outcome = execute_hdr_on_gpu(guard.exec, &self.meta, job, cancel);
+            let retired = match &outcome {
+                Err(GpuFailure::Session(kind, reason)) => {
+                    let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
+                    self.lock_meta().mark_disabled(*kind, reason.clone());
+                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                }
+                _ => None,
+            };
+            guard.disarm();
+            (outcome, retired)
+        };
+        if let Some((old_engine, async_drop)) = retired {
+            retire_engine(old_engine, async_drop);
+        }
+
+        match gpu_outcome {
+            Ok(master) => {
+                self.lock_meta().gpu_renders += 1;
+                Ok(master)
+            }
+            Err(GpuFailure::Cancelled) => Err(anyhow!("Render superseded")),
+            Err(GpuFailure::Hard(err)) => Err(err),
+            Err(GpuFailure::PerPhoto(kind, _reason)) => {
+                let out = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+                let mut meta = self.lock_meta();
+                meta.cpu_renders += 1;
+                meta.record_fallback(kind);
+                Ok(out)
+            }
+            Err(GpuFailure::OutOfMemory(_reason)) => {
+                let out = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+                let mut meta = self.lock_meta();
+                meta.cpu_renders += 1;
+                meta.record_fallback(ExportFallbackKind::OutOfMemory);
+                Ok(out)
+            }
+            Err(GpuFailure::Session(kind, _reason)) => {
+                let out = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+                let mut meta = self.lock_meta();
+                meta.cpu_renders += 1;
+                meta.record_fallback(kind);
+                Ok(out)
+            }
+        }
+    }
+
+    /// Renders both the HDR master (`HdrImage`) and the SDR sRGB base (`ExportImage`,
+    /// `ExportFormat::F32`) for a gain-map export in a single GPU pass when eligible,
+    /// sharing one photo upload, one GPU noise-reduction/Texture pyramid pass, and one
+    /// measurement copy between both renditions.
+    ///
+    /// Falls back cleanly to separate [`Self::render_hdr`] and [`Self::render_export`]
+    /// calls when GPU is disabled, when `image` is an HDR file (whose master uses a
+    /// distinct pseudo-scene), or when either rendition requires CPU fallback.
+    pub fn render_hdr_and_sdr(
+        &self,
+        image: &CameraImage,
+        recipe: &ValidRecipe,
+        ai: Option<&AiSource>,
+        max_edge: u32,
+        cancel: Cancel<'_>,
+    ) -> Result<(crate::rendered::HdrImage, ExportImage)> {
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        ensure!(recipe.hdr.is_active(), "This edit has HDR off");
+        crate::model::hdr::check_for(recipe, &image.metadata)?;
+
+        // Strip Point Color's Visualize Range before both GPU and CPU paths.
+        let (stripped, checked);
+        let recipe = if recipe
+            .point_colors
+            .iter()
+            .any(|p| p.view != SwatchView::Adjust)
+        {
+            let mut r = (**recipe).clone();
+            without_visualization(&mut r.point_colors);
+            stripped = r;
+            checked = stripped.checked()?;
+            &checked
+        } else {
+            recipe
+        };
+
+        let session_disabled = {
+            let meta = self.lock_meta();
+            !meta.gpu_active && !meta.uninitialized
+        };
+        if session_disabled || image.metadata.hdr_source.is_some() {
+            let master = self.render_hdr(image, recipe, ai, max_edge, cancel)?;
+            let base = self.render_export(
+                image,
+                recipe,
+                ai,
+                max_edge,
+                OutputSpace::Srgb,
+                ExportFormat::F32,
+                cancel,
+            )?;
+            return Ok((master, base));
+        }
+
+        let resolved_hdr = recipe.resolved_hdr(&image.metadata);
+        let resolved_sdr = quality::resolve(image, recipe);
+        ensure!(
+            resolved_hdr
+                .profile
+                .as_ref()
+                .is_some_and(|p| p.hdr_tone().is_ok()),
+            "This photo's camera profile does not render in HDR"
+        );
+
+        let r_hdr = resolved_hdr.as_ref();
+        let r_sdr = resolved_sdr.recipe.as_ref();
+        let g_hdr = Geometry::new(image, r_hdr, 0);
+        let g_sdr = resolved_sdr.geometry;
+        let hdr_denoise = r_hdr.denoise_with(ai.filter(|a| a.fits(image)));
+        let sdr_denoise = r_sdr.denoise_with(ai.filter(|a| a.fits(image)));
+        let can_share = pixel_params::supported_hdr(r_hdr, &image.metadata)
+            && unsupported_recipe_reason(r_sdr).is_none()
+            && g_hdr == g_sdr
+            && hdr_denoise == sdr_denoise
+            && Retouching::of(r_hdr) == Retouching::of(r_sdr)
+            && texture::measured(r_hdr) == texture::measured(r_sdr)
+            && r_hdr.file_lens_correction_left_out(&image.metadata)
+                == r_sdr.file_lens_correction_left_out(&image.metadata);
+        if !can_share {
+            let master = self.render_hdr(image, recipe, ai, max_edge, cancel)?;
+            let base = self.render_export(
+                image,
+                recipe,
+                ai,
+                max_edge,
+                OutputSpace::Srgb,
+                ExportFormat::F32,
+                cancel,
+            )?;
+            return Ok((master, base));
+        }
+
+        if let Some(p) = &r_hdr.profile {
+            p.ensure_camera(&image.metadata)?;
+        }
+        if let Some(p) = &r_sdr.profile {
+            p.ensure_camera(&image.metadata)?;
+        }
+        if r_hdr.lens_ca || r_sdr.lens_ca {
+            crate::lens::auto_ca::prime(image);
+        }
+        for m in r_sdr.masks.iter().filter(|m| m.is_active()) {
+            rawmakase_model::storage::mask_assets::ensure_shaped(
+                crate::model::masks::bitmap_refs(std::slice::from_ref(m)),
+            )?;
+        }
+
+        let scale = image.photo_scale();
+        let (out_w, out_h) = quality::output_size(g_hdr.width, g_hdr.height, max_edge);
+
+        let mut base_hdr = r_hdr.clone();
+        base_hdr.sharpening = 0.;
+        base_hdr.validate()?;
+        let mut base_sdr = r_sdr.clone();
+        base_sdr.sharpening = 0.;
+        base_sdr.validate()?;
+
+        let recovered = quality::recovered(image, cancel)?;
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        let ai_base = match hdr_denoise.as_ref().and_then(|d| d.ai.as_ref()) {
+            Some(ai_blend) => ai_blend.apply(&recovered),
+            None => recovered,
+        };
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+
+        let hdr_job = PreparedHdrExport {
+            ai_base: &ai_base,
+            denoise: hdr_denoise,
+            base: &base_hdr,
+            recipe: r_hdr,
+            geometry: g_hdr,
+            scale,
+            out_w,
+            out_h,
+            peak: r_hdr.hdr.peak(),
+        };
+        let sdr_job = PreparedExport {
+            ai_base: &ai_base,
+            denoise: sdr_denoise,
+            base: &base_sdr,
+            recipe: r_sdr,
+            geometry: g_sdr,
+            scale,
+            out_w,
+            out_h,
+            space: OutputSpace::Srgb,
+            format: ExportFormat::F32,
+        };
+
+        let (gpu_outcome, retired) = {
+            let mut exec = self.lock_exec();
+            let guard = PanicGuard::new(&mut exec, &self.meta);
+            let outcome = execute_pair_on_gpu(guard.exec, &self.meta, hdr_job, sdr_job, cancel);
+            let retired = match &outcome {
+                Err(GpuFailure::Session(kind, reason)) => {
+                    let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
+                    self.lock_meta().mark_disabled(*kind, reason.clone());
+                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                }
+                _ => None,
+            };
+            guard.disarm();
+            (outcome, retired)
+        };
+        if let Some((old_engine, async_drop)) = retired {
+            retire_engine(old_engine, async_drop);
+        }
+
+        match gpu_outcome {
+            Ok((master, base)) => {
+                self.lock_meta().gpu_renders += 1;
+                Ok((master, base))
+            }
+            Err(GpuFailure::Cancelled) => Err(anyhow!("Render superseded")),
+            Err(GpuFailure::Hard(err)) => Err(err),
+            Err(GpuFailure::PerPhoto(kind, _)) | Err(GpuFailure::Session(kind, _)) => {
+                let master = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+                let base = crate::develop::render_export(
+                    image,
+                    recipe,
+                    ai,
+                    max_edge,
+                    OutputSpace::Srgb,
+                    cancel,
+                )?;
+                let mut meta = self.lock_meta();
+                meta.cpu_renders += 1;
+                meta.record_fallback(kind);
+                Ok((master, base))
+            }
+            Err(GpuFailure::OutOfMemory(_)) => {
+                let master = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
+                let base = crate::develop::render_export(
+                    image,
+                    recipe,
+                    ai,
+                    max_edge,
+                    OutputSpace::Srgb,
+                    cancel,
+                )?;
+                let mut meta = self.lock_meta();
+                meta.cpu_renders += 1;
+                meta.record_fallback(ExportFallbackKind::OutOfMemory);
+                Ok((master, base))
+            }
+        }
+    }
 }
 
 /// Checks whether a resolved recipe uses any feature not supported on the GPU export path.
@@ -676,6 +1041,112 @@ struct PreparedExport<'a> {
     format: ExportFormat,
 }
 
+struct PreparedHdrExport<'a> {
+    ai_base: &'a Arc<CameraImage>,
+    denoise: Option<Denoise>,
+    base: &'a Recipe,
+    recipe: &'a Recipe,
+    geometry: Geometry,
+    scale: f32,
+    out_w: u32,
+    out_h: u32,
+    peak: f32,
+}
+
+#[derive(Clone, Copy)]
+enum ExportTarget {
+    Sdr {
+        space: OutputSpace,
+        format: ExportFormat,
+    },
+    Hdr {
+        peak: f32,
+    },
+}
+
+enum ExportOutput {
+    Sdr(ExportImage),
+    Hdr(crate::rendered::HdrImage),
+}
+
+/// Conservative source-row range `[y0, y1)` in `0..source_img.height` that `local.wgsl`
+/// may read while sampling output band `[0..geometry.width, y_comp0..y_comp1)` through
+/// `geometry` and optional `recipe` lens distortion / lateral CA / X-Trans safeguard.
+pub(crate) fn source_strip_bounds(
+    source_img: &CameraImage,
+    recipe: &Recipe,
+    geometry: &Geometry,
+    y_comp0: u32,
+    y_comp1: u32,
+) -> (u32, u32) {
+    let sh = source_img.height;
+    if sh == 0 || geometry.width == 0 || y_comp1 <= y_comp0 {
+        return (0, sh.min(1));
+    }
+    let lens = crate::develop::image_space::LensMap::new(source_img, recipe);
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let fw = geometry.width as f32;
+    let fh = geometry.height as f32;
+
+    let mut visit = |ox: u32, oy: u32| {
+        let [ax, ay] = geometry.source((ox as f32 + 0.5) / fw, (oy as f32 + 0.5) / fh);
+        if let Some(lens) = &lens {
+            let ([_, dy], scales) = lens.scales(ax, ay);
+            for scale in scales {
+                let sy = lens.center[1] + dy * scale - 0.5;
+                if sy.is_finite() {
+                    min_y = min_y.min(sy);
+                    max_y = max_y.max(sy);
+                }
+            }
+        } else if ay.is_finite() {
+            min_y = min_y.min(ay);
+            max_y = max_y.max(ay);
+        }
+    };
+
+    // Sample every pixel on the top and bottom edges (catches radial lens bow along X),
+    // every row on left and right edges, plus a 32-px interior grid for any interior extremum.
+    let y_last = y_comp1 - 1;
+    let x_last = geometry.width - 1;
+    for ox in 0..geometry.width {
+        visit(ox, y_comp0);
+        if y_last != y_comp0 {
+            visit(ox, y_last);
+        }
+    }
+    for oy in y_comp0..y_comp1 {
+        visit(0, oy);
+        if x_last != 0 {
+            visit(x_last, oy);
+        }
+    }
+    let mut oy = y_comp0.saturating_add(32);
+    while oy < y_last {
+        let mut ox = 32u32;
+        while ox < x_last {
+            visit(ox, oy);
+            ox = ox.saturating_add(32);
+        }
+        oy = oy.saturating_add(32);
+    }
+
+    if !min_y.is_finite() || !max_y.is_finite() {
+        return (0, sh);
+    }
+    // Bilinear + rounding margin (2 px), plus 18 px when X-Trans CA stripe coherence reads
+    // up to ±15 vertical neighbours around the green sample.
+    let margin: f32 = if source_img.metadata.xtrans && lens.is_some() {
+        20.0
+    } else {
+        2.0
+    };
+    let y0 = (min_y.floor() - margin).clamp(0.0, (sh - 1) as f32) as u32;
+    let y1 = ((max_y.ceil() + margin + 1.0).clamp(1.0, sh as f32) as u32).max(y0 + 1);
+    (y0, y1.min(sh))
+}
+
 fn has_auto_mask_brush(r: &Recipe) -> bool {
     r.masks.iter().filter(|m| m.is_active()).any(|m| {
         m.components.iter().any(|c| match &c.shape {
@@ -704,19 +1175,20 @@ fn reduced_camera_image(
     }
 }
 
-/// Executes a prepared export on `exec`'s GPU engine, performing lazy initialization
-/// and one halved-band OOM retry when applicable.
-fn execute_on_gpu(
+/// Ensures `exec.engine` is lazily initialized (or returns the session fallback reason),
+/// then runs `attempt` with one halved-band OOM retry when applicable.
+fn run_with_oom_retry<T>(
     exec: &mut ExecState,
     meta: &Mutex<StatusState>,
-    job: PreparedExport<'_>,
+    geometry: Geometry,
+    out_h: u32,
     cancel: Cancel<'_>,
-) -> std::result::Result<ExportImage, GpuFailure> {
+    mut attempt: impl FnMut(&mut Engine, Option<u32>, Option<u64>) -> std::result::Result<T, GpuFailure>,
+) -> std::result::Result<T, GpuFailure> {
     if cancel.is_cancelled() {
         return Err(GpuFailure::Cancelled);
     }
 
-    // Lazy initialization on first eligible export.
     if matches!(exec.engine, Engine::Uninitialized) {
         match GpuExportContext::new() {
             Ok(ctx) => {
@@ -749,6 +1221,11 @@ fn execute_on_gpu(
     #[cfg(not(test))]
     let initial_cap: Option<u32> = None;
 
+    #[cfg(test)]
+    let max_binding_override = exec.max_binding_override;
+    #[cfg(not(test))]
+    let max_binding_override: Option<u64> = None;
+
     let mut band_cap = initial_cap;
     let mut retried_oom = false;
 
@@ -756,18 +1233,9 @@ fn execute_on_gpu(
         if cancel.is_cancelled() {
             return Err(GpuFailure::Cancelled);
         }
-        let attempt = match &mut exec.engine {
-            Engine::Gpu(ctx) => ctx.render_banded(&job, band_cap, cancel),
-            #[cfg(test)]
-            Engine::Mock(mock) => mock.render_banded(&job, band_cap, cancel),
-            Engine::Uninitialized | Engine::Disabled => {
-                unreachable!("engine initialized or handled above")
-            }
-        };
-        match attempt {
-            Ok(img) => return Ok(img),
+        match attempt(&mut exec.engine, band_cap, max_binding_override) {
+            Ok(out) => return Ok(out),
             Err(GpuFailure::OutOfMemory(msg)) => {
-                // Release cached buffers before retrying or falling back.
                 match &mut exec.engine {
                     Engine::Gpu(ctx) => ctx.release_buffers(),
                     #[cfg(test)]
@@ -779,9 +1247,9 @@ fn execute_on_gpu(
                 }
                 let prev_h = band_cap.unwrap_or_else(|| {
                     default_band_out_height(
-                        job.geometry.width,
-                        job.geometry.height,
-                        job.out_h,
+                        geometry.width,
+                        geometry.height,
+                        out_h,
                         DEFAULT_BAND_PIXELS,
                     )
                 });
@@ -794,6 +1262,81 @@ fn execute_on_gpu(
             Err(other) => return Err(other),
         }
     }
+}
+
+/// Executes a prepared SDR export on `exec`'s GPU engine.
+fn execute_on_gpu(
+    exec: &mut ExecState,
+    meta: &Mutex<StatusState>,
+    job: PreparedExport<'_>,
+    cancel: Cancel<'_>,
+) -> std::result::Result<ExportImage, GpuFailure> {
+    run_with_oom_retry(
+        exec,
+        meta,
+        job.geometry,
+        job.out_h,
+        cancel,
+        |engine, band_cap, max_binding_override| match engine {
+            Engine::Gpu(ctx) => ctx.render_banded(&job, band_cap, max_binding_override, cancel),
+            #[cfg(test)]
+            Engine::Mock(mock) => mock.render_banded(&job, band_cap, cancel),
+            Engine::Uninitialized | Engine::Disabled => {
+                unreachable!("engine initialized or handled above")
+            }
+        },
+    )
+}
+
+/// Executes a prepared HDR master export on `exec`'s GPU engine.
+fn execute_hdr_on_gpu(
+    exec: &mut ExecState,
+    meta: &Mutex<StatusState>,
+    job: PreparedHdrExport<'_>,
+    cancel: Cancel<'_>,
+) -> std::result::Result<crate::rendered::HdrImage, GpuFailure> {
+    run_with_oom_retry(
+        exec,
+        meta,
+        job.geometry,
+        job.out_h,
+        cancel,
+        |engine, band_cap, max_binding_override| match engine {
+            Engine::Gpu(ctx) => ctx.render_hdr_banded(&job, band_cap, max_binding_override, cancel),
+            #[cfg(test)]
+            Engine::Mock(mock) => mock.render_hdr_banded(&job, band_cap, cancel),
+            Engine::Uninitialized | Engine::Disabled => {
+                unreachable!("engine initialized or handled above")
+            }
+        },
+    )
+}
+
+/// Executes a shared-source HDR + SDR gain-map pair on `exec`'s GPU engine.
+fn execute_pair_on_gpu(
+    exec: &mut ExecState,
+    meta: &Mutex<StatusState>,
+    hdr: PreparedHdrExport<'_>,
+    sdr: PreparedExport<'_>,
+    cancel: Cancel<'_>,
+) -> std::result::Result<(crate::rendered::HdrImage, ExportImage), GpuFailure> {
+    run_with_oom_retry(
+        exec,
+        meta,
+        hdr.geometry,
+        hdr.out_h,
+        cancel,
+        |engine, band_cap, max_binding_override| match engine {
+            Engine::Gpu(ctx) => {
+                ctx.render_pair_banded(&hdr, &sdr, band_cap, max_binding_override, cancel)
+            }
+            #[cfg(test)]
+            Engine::Mock(mock) => mock.render_pair_banded(&hdr, &sdr, band_cap, cancel),
+            Engine::Uninitialized | Engine::Disabled => {
+                unreachable!("engine initialized or handled above")
+            }
+        },
+    )
 }
 
 /// One horizontal strip of an export render.
@@ -959,7 +1502,9 @@ struct ExportBuffers {
     scratch: Option<wgpu::Buffer>,
     output: Option<wgpu::Buffer>,
     packed_out: Option<wgpu::Buffer>,
-    staging: Option<wgpu::Buffer>,
+    /// Double-buffered staging buffers so band `k` computes on the GPU while band `k - 1`
+    /// maps and copies back to host memory.
+    staging: [Option<wgpu::Buffer>; 2],
     params: Option<wgpu::Buffer>,
     tables: Option<wgpu::Buffer>,
     mask_weights: Option<wgpu::Buffer>,
@@ -987,8 +1532,9 @@ struct GpuExportContext {
     develop_pipelines: Vec<(Variant, wgpu::ComputePipeline)>,
     finish_layout: wgpu::BindGroupLayout,
     /// `blur_horizontal`, `sharpen`, `spatial_effects`, `resize_vertical`,
-    /// `resize_horizontal`, `pack_rgb8`, `pack_rgb16`.
-    finish_pipelines: [wgpu::ComputePipeline; 7],
+    /// `resize_horizontal`, `pack_rgb8`, `pack_rgb16`, `hdr_srgb_encode`,
+    /// `hdr_sharpen`, `hdr_resize_horizontal`, `hdr_finish_master`.
+    finish_pipelines: [wgpu::ComputePipeline; 11],
     no_kept: wgpu::Buffer,
     buffers: ExportBuffers,
 }
@@ -1032,6 +1578,10 @@ const FINISH_RESIZE_V: usize = 3;
 const FINISH_RESIZE_H: usize = 4;
 const FINISH_PACK_RGB8: usize = 5;
 const FINISH_PACK_RGB16: usize = 6;
+const FINISH_HDR_ENCODE: usize = 7;
+const FINISH_HDR_SHARPEN: usize = 8;
+const FINISH_HDR_RESIZE_H: usize = 9;
+const FINISH_HDR_FINISH: usize = 10;
 
 impl GpuExportContext {
     fn new() -> std::result::Result<Self, (ExportFallbackKind, String)> {
@@ -1256,764 +1806,1458 @@ impl GpuExportContext {
         &mut self,
         job: &PreparedExport<'_>,
         band_cap: Option<u32>,
+        max_binding_override: Option<u64>,
         cancel: Cancel<'_>,
     ) -> std::result::Result<ExportImage, GpuFailure> {
-        let g = job.geometry;
-        let full_w = g.width;
-        let full_h = g.height;
-        let out_w = job.out_w;
-        let out_h = job.out_h;
-        let resize = (out_w, out_h) != (full_w, full_h);
-
-        let limits = self.device.limits();
-        let max_binding = limits
-            .max_storage_buffer_binding_size
-            .min(limits.max_buffer_size);
-        let max_wg = limits.max_compute_workgroups_per_dimension;
-
+        let (effective_max_binding, max_wg) = self.effective_limits(max_binding_override);
         let source_img = job.ai_base;
-        let source_bytes = source_img.pixels.len() as u64 * 12;
-        let coverage_bytes = source_img
-            .metadata
-            .coverage
-            .as_ref()
-            .map_or(16, |c| (c.values.len() as u64).next_multiple_of(4).max(16));
+        let use_full_photo = fits_full_photo(source_img, effective_max_binding, max_wg);
 
-        if source_bytes > max_binding
-            || coverage_bytes > max_binding
-            || source_img.width.div_ceil(16) > max_wg
-            || source_img.height.div_ceil(16) > max_wg
-            || full_w.div_ceil(16) > max_wg
-            || out_w.div_ceil(16) > max_wg
-        {
-            return Err(GpuFailure::PerPhoto(
-                ExportFallbackKind::ExceedsLimits,
-                "Photo exceeds GPU storage or dispatch limits".into(),
-            ));
-        }
-
-        let sharpen = job.recipe.sharpening > 0.;
-        let sharpener = Sharpener::new(job.recipe);
-        let sigma = sharpener.sigma * job.scale;
-        let (radius, mut finish_weights) = if sharpen {
-            let (r, w) = quality::gaussian(sigma);
-            (r as u32, w)
-        } else {
-            (0u32, vec![1.0f32])
+        let target = ExportTarget::Sdr {
+            space: job.space,
+            format: job.format,
         };
-        let x_offset = finish_weights.len() as u32;
-        let (x_stride, y_stride, y_offset, y_lanczos_vec) = if resize {
-            let (xs, xw) = weights::lanczos_axis(full_w, out_w);
-            finish_weights.extend(xw);
-            let yo = finish_weights.len() as u32;
-            let (ys, yw) = weights::lanczos_axis(full_h, out_h);
-            finish_weights.extend(&yw);
-            (xs, ys, yo, Some(yw))
-        } else {
-            (0, 0, x_offset, None)
-        };
-        if (finish_weights.len() as u64 * 4) > max_binding {
-            return Err(GpuFailure::PerPhoto(
-                ExportFallbackKind::ExceedsLimits,
-                "Finish weight table exceeds GPU storage buffer limit".into(),
-            ));
-        }
-
-        // Plan horizontal bands, shrinking band height if any band's buffers exceed adapter limits.
-        let mut cap = band_cap;
-        let bands = loop {
-            let y_slice = y_lanczos_vec.as_deref().map(|w| (y_stride, w));
-            let candidate = plan_bands(
-                full_w,
-                full_h,
-                out_h,
-                radius,
-                y_slice,
-                DEFAULT_BAND_PIXELS,
-                cap,
-            );
-            let fits = candidate.iter().all(|b| {
-                let comp_n = u64::from(full_w) * u64::from(b.comp_h());
-                let out_n = u64::from(out_w) * u64::from(b.out_h());
-                let scratch_bytes = (comp_n * 4).max(if resize {
-                    u64::from(full_w) * u64::from(b.out_h()) * 12
-                } else {
-                    0
-                });
-                let readback_bytes = match job.format {
-                    ExportFormat::F32 => out_n * 12,
-                    ExportFormat::Rgb8 => (out_n * 3).next_multiple_of(4),
-                    ExportFormat::Rgb16 => (out_n * 6).next_multiple_of(4),
-                };
-                comp_n * 12 <= max_binding
-                    && scratch_bytes <= max_binding
-                    && out_n * 12 <= max_binding
-                    && readback_bytes <= max_binding
-                    && b.comp_h().div_ceil(16) <= max_wg
-                    && b.out_h().div_ceil(16) <= max_wg
-            });
-            if fits {
-                break candidate;
-            }
-            let cur_h = candidate.first().map_or(1, |b| b.out_h());
-            if cur_h <= 1 {
-                return Err(GpuFailure::PerPhoto(
-                    ExportFallbackKind::ExceedsLimits,
-                    "Single-row band exceeds GPU storage or dispatch limits".into(),
-                ));
-            }
-            cap = Some((cur_h / 2).max(1));
-        };
-
-        let effects = job.recipe.effects.grain != 0. || job.recipe.effects.vignette != 0.;
-        let vignette = PostCropVignette::new(&job.recipe.effects, [full_w, full_h]);
-        let grain = GrainField::new(&job.recipe.effects, full_w.max(full_h) as f32 / job.scale);
-        let has_masks = job.base.masks.iter().any(|m| m.is_active());
-        let chroma = job.denoise.as_ref().and_then(|d| d.chroma);
-        let luminance = job.denoise.as_ref().and_then(|d| d.luminance);
-        let retouch_ops = Retouching::of(job.recipe);
-        let texture_amount = texture::measured(job.base);
-        let mut base_no_tex = job.base.clone();
-        if texture_amount != 0. {
-            base_no_tex.effects.texture = 0.;
-        }
-
-        // Prebuild static sampling parameter template (per-band REGION & COUNT updated in loop).
-        let mut sampling_template = vec![0f32; sample_slot::HEADER];
-        sampling_template[sample_slot::WIDTH.start] = source_img.width as f32;
-        sampling_template[sample_slot::HEIGHT.start] = source_img.height as f32;
-        sampling_template[sample_slot::OUT].copy_from_slice(&[full_w as f32, full_h as f32]);
-        sampling_template[sample_slot::SPREAD.start] = 0.;
-        sampling_template[sample_slot::CROP.start..sample_slot::HOMOGRAPHY.end]
-            .copy_from_slice(&g.gpu_params());
-        sampling_template[sample_slot::MANUAL].copy_from_slice(&g.gpu_manual());
-        sampling_template[sample_slot::XTRANS.start] = f32::from(source_img.metadata.xtrans);
-        if let Some(c) = &source_img.metadata.coverage {
-            sampling_template[sample_slot::COVERAGE.start] = c.width as f32;
-            sampling_template[sample_slot::COVERAGE.start + 1] = c.height as f32;
-        }
-        let mut lens_tables = Vec::new();
-        let lens = pipeline::lens_gpu_params(
+        let plan = build_pass_plan(
             source_img,
-            &base_no_tex,
-            sample_slot::HEADER,
-            &mut lens_tables,
-        );
-        sampling_template[sample_slot::LENS.start..sample_slot::GAIN_MAP.end]
-            .copy_from_slice(&lens);
-        sampling_template.extend(lens_tables);
+            job.base,
+            job.recipe,
+            job.geometry,
+            job.scale,
+            job.out_w,
+            job.out_h,
+            target,
+            !use_full_photo,
+            band_cap,
+            effective_max_binding,
+            max_wg,
+        )?;
 
-        // Allocate final host pixel buffer once for the whole photo.
-        let total_out_pixels = out_w as usize * out_h as usize;
-        let mut host_pixels = match job.format {
-            ExportFormat::F32 => ExportPixels::F32(vec![[0f32; 3]; total_out_pixels]),
-            ExportFormat::Rgb8 => ExportPixels::Rgb8(vec![0u8; total_out_pixels * 3]),
-            ExportFormat::Rgb16 => ExportPixels::Rgb16(vec![0u16; total_out_pixels * 3]),
-        };
-
-        let (meas_w, meas_h) =
-            pipeline::measurement_size(source_img.width, source_img.height, local_tone::MAP_EDGE);
-        let meas_crop = local_tone::inner_crop_rect(source_img)
-            .map(|[x0, y0, x1, y1]| [x0 as u32, y0 as u32, x1 as u32, y1 as u32])
-            .unwrap_or([0, 0, source_img.width, source_img.height]);
-        let file_correction = !base_no_tex.file_lens_correction_left_out(&source_img.metadata);
+        let texture_amount = texture::measured(job.base);
+        let file_correction = !plan
+            .base_no_tex
+            .file_lens_correction_left_out(&source_img.metadata);
+        let needs_auto_mask_guide = plan.has_masks && has_auto_mask_brush(&plan.base_no_tex);
 
         self.scoped(|ctx| {
-            if cancel.is_cancelled() {
-                return Err(GpuFailure::Cancelled);
-            }
-
-            // 1. Upload camera image once (with COPY_SRC for optional retouch/Auto Mask readback).
-            let photo_buf = Self::ensure_buffer(
-                &ctx.device,
-                &mut ctx.buffers.photo,
-                "Export photo",
-                source_bytes,
-                wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-            );
-            if !source_img.pixels.is_empty() {
-                ctx.queue
-                    .write_buffer(&photo_buf, 0, bytemuck::cast_slice(&source_img.pixels));
-            }
-
-            // 2. Run Color NR and Luminance NR in-place on `photo_buf` using the shared
-            //    GPU Laplacian pyramid module.
-            let photo_scale = source_img.photo_scale();
-            if let Some(d) = chroma {
-                ctx.pyramid.apply_chroma_denoise(
-                    ctx,
-                    &photo_buf,
-                    source_img.width,
-                    source_img.height,
-                    source_img.metadata.wb,
-                    photo_scale,
-                    d,
-                    cancel,
-                )?;
-            }
-            if let Some(d) = luminance {
-                ctx.pyramid.apply_luminance_denoise(
-                    ctx,
-                    &photo_buf,
-                    source_img.width,
-                    source_img.height,
-                    source_img.metadata.wb,
-                    photo_scale,
-                    d,
-                    cancel,
-                )?;
-            }
-
-            // 3. Build measurement copies (`unretouched` and `measured`) by box-reducing the
-            //    GPU `photo_buf` (~2 MB readback) and applying CPU lens shading/corner clamping.
-            let unretouched_pixels = ctx.pyramid.box_reduce(
+            let prepared = prepare_source_on_gpu(
                 ctx,
-                &photo_buf,
-                source_img.width,
-                source_img.height,
-                meas_crop,
-                meas_w,
-                meas_h,
+                source_img,
+                job.denoise.as_ref(),
+                Retouching::of(job.recipe),
+                texture_amount,
+                job.scale,
+                file_correction,
+                needs_auto_mask_guide,
+                use_full_photo,
+                effective_max_binding,
                 cancel,
             )?;
-            let unretouched_measured = Arc::new(pipeline::finish_measurement_source(
-                reduced_camera_image(source_img, meas_w, meas_h, unretouched_pixels),
-                file_correction,
-            ));
+            match run_banded_pass(
+                ctx,
+                source_img,
+                &prepared,
+                &plan,
+                effective_max_binding,
+                max_wg,
+                cancel,
+            )? {
+                ExportOutput::Sdr(img) => Ok(img),
+                ExportOutput::Hdr(_) => unreachable!("SDR pass returned HDR output"),
+            }
+        })
+    }
 
-            let mut gpu_modified = chroma.is_some() || luminance.is_some();
-            let mut cpu_guide_override: Option<CameraImage> = None;
-            let measured = if retouch_ops.is_empty() {
-                unretouched_measured.clone()
+    fn render_hdr_banded(
+        &mut self,
+        job: &PreparedHdrExport<'_>,
+        band_cap: Option<u32>,
+        max_binding_override: Option<u64>,
+        cancel: Cancel<'_>,
+    ) -> std::result::Result<crate::rendered::HdrImage, GpuFailure> {
+        let (effective_max_binding, max_wg) = self.effective_limits(max_binding_override);
+        let source_img = job.ai_base;
+        let use_full_photo = fits_full_photo(source_img, effective_max_binding, max_wg);
+
+        let target = ExportTarget::Hdr { peak: job.peak };
+        let plan = build_pass_plan(
+            source_img,
+            job.base,
+            job.recipe,
+            job.geometry,
+            job.scale,
+            job.out_w,
+            job.out_h,
+            target,
+            !use_full_photo,
+            band_cap,
+            effective_max_binding,
+            max_wg,
+        )?;
+
+        let texture_amount = texture::measured(job.base);
+        let file_correction = !plan
+            .base_no_tex
+            .file_lens_correction_left_out(&source_img.metadata);
+
+        self.scoped(|ctx| {
+            let prepared = prepare_source_on_gpu(
+                ctx,
+                source_img,
+                job.denoise.as_ref(),
+                Retouching::of(job.recipe),
+                texture_amount,
+                job.scale,
+                file_correction,
+                false,
+                use_full_photo,
+                effective_max_binding,
+                cancel,
+            )?;
+            match run_banded_pass(
+                ctx,
+                source_img,
+                &prepared,
+                &plan,
+                effective_max_binding,
+                max_wg,
+                cancel,
+            )? {
+                ExportOutput::Hdr(img) => Ok(img),
+                ExportOutput::Sdr(_) => unreachable!("HDR pass returned SDR output"),
+            }
+        })
+    }
+
+    fn render_pair_banded(
+        &mut self,
+        hdr: &PreparedHdrExport<'_>,
+        sdr: &PreparedExport<'_>,
+        band_cap: Option<u32>,
+        max_binding_override: Option<u64>,
+        cancel: Cancel<'_>,
+    ) -> std::result::Result<(crate::rendered::HdrImage, ExportImage), GpuFailure> {
+        let (effective_max_binding, max_wg) = self.effective_limits(max_binding_override);
+        let source_img = hdr.ai_base;
+        let use_full_photo = fits_full_photo(source_img, effective_max_binding, max_wg);
+
+        let hdr_plan = build_pass_plan(
+            source_img,
+            hdr.base,
+            hdr.recipe,
+            hdr.geometry,
+            hdr.scale,
+            hdr.out_w,
+            hdr.out_h,
+            ExportTarget::Hdr { peak: hdr.peak },
+            !use_full_photo,
+            band_cap,
+            effective_max_binding,
+            max_wg,
+        )?;
+        let sdr_plan = build_pass_plan(
+            source_img,
+            sdr.base,
+            sdr.recipe,
+            sdr.geometry,
+            sdr.scale,
+            sdr.out_w,
+            sdr.out_h,
+            ExportTarget::Sdr {
+                space: sdr.space,
+                format: sdr.format,
+            },
+            !use_full_photo,
+            band_cap,
+            effective_max_binding,
+            max_wg,
+        )?;
+
+        let texture_amount = texture::measured(hdr.base);
+        let file_correction = !hdr_plan
+            .base_no_tex
+            .file_lens_correction_left_out(&source_img.metadata);
+        let needs_auto_mask_guide =
+            sdr_plan.has_masks && has_auto_mask_brush(&sdr_plan.base_no_tex);
+
+        self.scoped(|ctx| {
+            let prepared = prepare_source_on_gpu(
+                ctx,
+                source_img,
+                hdr.denoise.as_ref(),
+                Retouching::of(hdr.recipe),
+                texture_amount,
+                hdr.scale,
+                file_correction,
+                needs_auto_mask_guide,
+                use_full_photo,
+                effective_max_binding,
+                cancel,
+            )?;
+            let master = match run_banded_pass(
+                ctx,
+                source_img,
+                &prepared,
+                &hdr_plan,
+                effective_max_binding,
+                max_wg,
+                cancel,
+            )? {
+                ExportOutput::Hdr(img) => img,
+                ExportOutput::Sdr(_) => unreachable!("HDR pass returned SDR output"),
+            };
+            let base = match run_banded_pass(
+                ctx,
+                source_img,
+                &prepared,
+                &sdr_plan,
+                effective_max_binding,
+                max_wg,
+                cancel,
+            )? {
+                ExportOutput::Sdr(img) => img,
+                ExportOutput::Hdr(_) => unreachable!("SDR pass returned HDR output"),
+            };
+            Ok((master, base))
+        })
+    }
+
+    fn effective_limits(&self, max_binding_override: Option<u64>) -> (u64, u32) {
+        let limits = self.device.limits();
+        let hw_max_binding = limits
+            .max_storage_buffer_binding_size
+            .min(limits.max_buffer_size);
+        let effective = max_binding_override.map_or(hw_max_binding, |o| o.min(hw_max_binding));
+        (effective, limits.max_compute_workgroups_per_dimension)
+    }
+}
+
+fn fits_full_photo(source_img: &CameraImage, effective_max_binding: u64, max_wg: u32) -> bool {
+    let source_bytes = source_img.pixels.len() as u64 * 12;
+    source_bytes <= effective_max_binding
+        && source_img.width.div_ceil(16) <= max_wg
+        && source_img.height.div_ceil(16) <= max_wg
+}
+
+/// Precomputed geometry, weights, band layout, and optional source-strip ranges for one
+/// SDR or HDR export pass.
+struct PassPlan<'a> {
+    recipe: &'a Recipe,
+    base_no_tex: Recipe,
+    geometry: Geometry,
+    scale: f32,
+    out_w: u32,
+    out_h: u32,
+    resize: bool,
+    target: ExportTarget,
+    sharpen: bool,
+    sharpener: Sharpener,
+    radius: u32,
+    finish_weights: Vec<f32>,
+    x_offset: u32,
+    x_stride: u32,
+    y_offset: u32,
+    y_stride: u32,
+    effects: bool,
+    vignette: Option<PostCropVignette>,
+    grain: GrainField,
+    has_masks: bool,
+    bands: Vec<Band>,
+    /// Per-band `[src_y0, src_y1)` ranges when operating in source-strip upload mode.
+    strip_ranges: Option<Vec<(u32, u32)>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_pass_plan<'a>(
+    source_img: &CameraImage,
+    base: &Recipe,
+    recipe: &'a Recipe,
+    geometry: Geometry,
+    scale: f32,
+    out_w: u32,
+    out_h: u32,
+    target: ExportTarget,
+    strip_mode: bool,
+    band_cap: Option<u32>,
+    effective_max_binding: u64,
+    max_wg: u32,
+) -> std::result::Result<PassPlan<'a>, GpuFailure> {
+    let full_w = geometry.width;
+    let full_h = geometry.height;
+    let resize = (out_w, out_h) != (full_w, full_h);
+
+    let coverage_bytes = source_img
+        .metadata
+        .coverage
+        .as_ref()
+        .map_or(16, |c| (c.values.len() as u64).next_multiple_of(4).max(16));
+    if coverage_bytes > effective_max_binding
+        || full_w.div_ceil(16) > max_wg
+        || out_w.div_ceil(16) > max_wg
+    {
+        return Err(GpuFailure::PerPhoto(
+            ExportFallbackKind::ExceedsLimits,
+            "Photo exceeds GPU storage or dispatch limits".into(),
+        ));
+    }
+
+    let sharpen = recipe.sharpening > 0.;
+    let sharpener = Sharpener::new(recipe);
+    let sigma = sharpener.sigma * scale;
+    let (radius, mut finish_weights) = if sharpen {
+        let (r, w) = quality::gaussian(sigma);
+        (r as u32, w)
+    } else {
+        (0u32, vec![1.0f32])
+    };
+    let x_offset = finish_weights.len() as u32;
+    let (x_stride, y_stride, y_offset, y_lanczos_vec) = if resize {
+        let (xs, xw) = weights::lanczos_axis(full_w, out_w);
+        finish_weights.extend(xw);
+        let yo = finish_weights.len() as u32;
+        let (ys, yw) = weights::lanczos_axis(full_h, out_h);
+        finish_weights.extend(&yw);
+        (xs, ys, yo, Some(yw))
+    } else {
+        (0, 0, x_offset, None)
+    };
+    if (finish_weights.len() as u64 * 4) > effective_max_binding {
+        return Err(GpuFailure::PerPhoto(
+            ExportFallbackKind::ExceedsLimits,
+            "Finish weight table exceeds GPU storage buffer limit".into(),
+        ));
+    }
+
+    let mut base_no_tex = base.clone();
+    if texture::measured(base) != 0. {
+        base_no_tex.effects.texture = 0.;
+    }
+
+    let format = match target {
+        ExportTarget::Sdr { format, .. } => format,
+        ExportTarget::Hdr { .. } => ExportFormat::F32,
+    };
+
+    // Plan horizontal bands, shrinking band height if any band's buffers (or source strip
+    // upload in strip mode) exceed adapter limits.
+    let mut cap = band_cap;
+    let (bands, strip_ranges) = loop {
+        let y_slice = y_lanczos_vec.as_deref().map(|w| (y_stride, w));
+        let candidate = plan_bands(
+            full_w,
+            full_h,
+            out_h,
+            radius,
+            y_slice,
+            DEFAULT_BAND_PIXELS,
+            cap,
+        );
+        let strips = strip_mode.then(|| {
+            candidate
+                .iter()
+                .map(|b| {
+                    source_strip_bounds(source_img, &base_no_tex, &geometry, b.y_comp0, b.y_comp1)
+                })
+                .collect::<Vec<_>>()
+        });
+        let fits = candidate.iter().enumerate().all(|(idx, b)| {
+            let comp_n = u64::from(full_w) * u64::from(b.comp_h());
+            let out_n = u64::from(out_w) * u64::from(b.out_h());
+            let scratch_bytes = (comp_n * 4).max(if resize {
+                u64::from(full_w) * u64::from(b.out_h()) * 12
             } else {
-                let retouch_src_owned;
-                let retouch_src: &CameraImage = if gpu_modified {
-                    let pixels = GpuPyramid::readback_photo(
-                        ctx,
-                        &photo_buf,
-                        source_img.width,
-                        source_img.height,
-                        cancel,
-                    )?;
-                    retouch_src_owned = reduced_camera_image(
-                        source_img,
-                        source_img.width,
-                        source_img.height,
-                        pixels,
-                    );
-                    &retouch_src_owned
-                } else {
-                    source_img
-                };
-                if cancel.is_cancelled() {
-                    return Err(GpuFailure::Cancelled);
-                }
-                let retouched_img = retouch::apply(retouch_src, retouch_ops).map_err(|e| {
+                0
+            });
+            let readback_bytes = match format {
+                ExportFormat::F32 => out_n * 12,
+                ExportFormat::Rgb8 => (out_n * 3).next_multiple_of(4),
+                ExportFormat::Rgb16 => (out_n * 6).next_multiple_of(4),
+            };
+            let strip_fits = strips.as_ref().is_none_or(|ranges| {
+                let (sy0, sy1) = ranges[idx];
+                u64::from(source_img.width) * u64::from(sy1 - sy0) * 12 <= effective_max_binding
+            });
+            strip_fits
+                && comp_n * 12 <= effective_max_binding
+                && scratch_bytes <= effective_max_binding
+                && out_n * 12 <= effective_max_binding
+                && readback_bytes <= effective_max_binding
+                && b.comp_h().div_ceil(16) <= max_wg
+                && b.out_h().div_ceil(16) <= max_wg
+        });
+        if fits {
+            break (candidate, strips);
+        }
+        let cur_h = candidate.first().map_or(1, |b| b.out_h());
+        if cur_h <= 1 {
+            return Err(GpuFailure::PerPhoto(
+                ExportFallbackKind::ExceedsLimits,
+                "Single-row band exceeds GPU storage or dispatch limits".into(),
+            ));
+        }
+        cap = Some((cur_h / 2).max(1));
+    };
+
+    let effects = match target {
+        ExportTarget::Sdr { .. } => recipe.effects.grain != 0. || recipe.effects.vignette != 0.,
+        ExportTarget::Hdr { .. } => false,
+    };
+    let vignette = PostCropVignette::new(&recipe.effects, [full_w, full_h]);
+    let grain = GrainField::new(&recipe.effects, full_w.max(full_h) as f32 / scale);
+    let has_masks = match target {
+        ExportTarget::Sdr { .. } => base.masks.iter().any(|m| m.is_active()),
+        ExportTarget::Hdr { .. } => false,
+    };
+
+    Ok(PassPlan {
+        recipe,
+        base_no_tex,
+        geometry,
+        scale,
+        out_w,
+        out_h,
+        resize,
+        target,
+        sharpen,
+        sharpener,
+        radius,
+        finish_weights,
+        x_offset,
+        x_stride,
+        y_offset,
+        y_stride,
+        effects,
+        vignette,
+        grain,
+        has_masks,
+        bands,
+        strip_ranges,
+    })
+}
+
+/// Prepared camera pixels on the GPU (full-photo mode) or on the CPU ready for per-band
+/// horizontal strip upload (strip mode).
+enum PreparedPhoto {
+    Full(wgpu::Buffer),
+    Strips(Arc<CameraImage>),
+}
+
+/// Per-photo preprocessed state shared across all bands (and across both HDR and SDR passes
+/// in [`GpuExportContext::render_pair_banded`]).
+struct PreparedGpuSource {
+    photo: PreparedPhoto,
+    coverage_buf: wgpu::Buffer,
+    measured: Arc<CameraImage>,
+    unretouched_measured: Arc<CameraImage>,
+    mask_guide: Option<Arc<CameraImage>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_source_on_gpu(
+    ctx: &mut GpuExportContext,
+    source_img: &Arc<CameraImage>,
+    denoise: Option<&Denoise>,
+    retouch_ops: Retouching<'_>,
+    texture_amount: f32,
+    scale: f32,
+    file_correction: bool,
+    needs_auto_mask_guide: bool,
+    use_full_photo: bool,
+    effective_max_binding: u64,
+    cancel: Cancel<'_>,
+) -> std::result::Result<PreparedGpuSource, GpuFailure> {
+    if cancel.is_cancelled() {
+        return Err(GpuFailure::Cancelled);
+    }
+
+    let coverage_buf = match &source_img.metadata.coverage {
+        Some(mask) => {
+            let packed: Vec<u32> = mask
+                .values
+                .chunks(4)
+                .map(|c| {
+                    let mut b = [0u8; 4];
+                    b[..c.len()].copy_from_slice(c);
+                    u32::from_le_bytes(b)
+                })
+                .collect();
+            if (packed.len() as u64 * 4) > effective_max_binding {
+                return Err(GpuFailure::PerPhoto(
+                    ExportFallbackKind::ExceedsLimits,
+                    "Coverage mask exceeds GPU storage buffer limit".into(),
+                ));
+            }
+            GpuExportContext::upload_storage(
+                &ctx.device,
+                &ctx.queue,
+                &mut ctx.buffers.coverage,
+                "Export transparency mask",
+                bytemuck::cast_slice(&packed),
+            )
+        }
+        None => GpuExportContext::ensure_buffer(
+            &ctx.device,
+            &mut ctx.buffers.coverage,
+            "Export empty coverage",
+            16,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        ),
+    };
+
+    let chroma = denoise.and_then(|d| d.chroma);
+    let luminance = denoise.and_then(|d| d.luminance);
+
+    if !use_full_photo {
+        // Source-strip upload mode: camera buffer exceeds storage limits, so run optional
+        // noise reduction, retouching, measurement reduction, and Texture on the CPU once,
+        // then stream only each band's required horizontal source rows to the GPU.
+        let denoised: Arc<CameraImage> = if chroma.is_some() || luminance.is_some() {
+            let cpu_denoise = Denoise {
+                ai: None,
+                chroma,
+                luminance,
+            };
+            cpu_denoise
+                .apply_with(source_img, cancel, |_, _, _| None)
+                .map_err(|e| {
                     if cancel.is_cancelled() {
                         GpuFailure::Cancelled
                     } else {
                         GpuFailure::Hard(e)
                     }
-                })?;
+                })?
+        } else {
+            source_img.clone()
+        };
+        if cancel.is_cancelled() {
+            return Err(GpuFailure::Cancelled);
+        }
+
+        let unretouched_measured = Arc::new(pipeline::measurement_source(
+            denoised.as_ref().into(),
+            local_tone::MAP_EDGE,
+            file_correction,
+        ));
+        if cancel.is_cancelled() {
+            return Err(GpuFailure::Cancelled);
+        }
+
+        let (retouched, measured) = if retouch_ops.is_empty() {
+            (denoised, unretouched_measured.clone())
+        } else {
+            let img = Arc::new(retouch::apply(&denoised, retouch_ops).map_err(|e| {
                 if cancel.is_cancelled() {
-                    return Err(GpuFailure::Cancelled);
-                }
-                ctx.queue
-                    .write_buffer(&photo_buf, 0, bytemuck::cast_slice(&retouched_img.pixels));
-                gpu_modified = true;
-                let meas_pixels = ctx.pyramid.box_reduce(
-                    ctx,
-                    &photo_buf,
-                    source_img.width,
-                    source_img.height,
-                    meas_crop,
-                    meas_w,
-                    meas_h,
-                    cancel,
-                )?;
-                if has_masks && has_auto_mask_brush(&base_no_tex) && texture_amount == 0. {
-                    cpu_guide_override = Some(retouched_img);
-                }
-                Arc::new(pipeline::finish_measurement_source(
-                    reduced_camera_image(source_img, meas_w, meas_h, meas_pixels),
-                    file_correction,
-                ))
-            };
-
-            // 4. Build per-pixel develop parameters & Shadows/Highlights map from the
-            //    measurement copies (which intentionally exclude measured Texture).
-            let mut param_source = Source::new(source_img);
-            param_source.measured = Some(&measured);
-            param_source.unretouched = Some(&unretouched_measured);
-            let Some(mut params) = pixel_params::pixel_params(param_source, &base_no_tex) else {
-                return Err(GpuFailure::PerPhoto(
-                    ExportFallbackKind::UnsupportedRecipe,
-                    "Recipe is not supported by GPU develop".into(),
-                ));
-            };
-            params.color = None;
-
-            let tables_bytes = (params.tables.len() as u64 * 4).max(16);
-            let grid_bytes = params
-                .grid
-                .as_ref()
-                .map_or(16, |gr| (gr.values().len() as u64 * 4).max(16));
-            if tables_bytes > max_binding || grid_bytes > max_binding {
-                return Err(GpuFailure::PerPhoto(
-                    ExportFallbackKind::ExceedsLimits,
-                    "Develop tables or map exceed GPU storage buffer limit".into(),
-                ));
-            }
-
-            // 5. Run measured Texture in-place on `photo_buf` after measurement copies.
-            if texture_amount != 0. {
-                let offset = texture::level_offset(source_img, job.scale);
-                ctx.pyramid.apply_texture(
-                    ctx,
-                    &photo_buf,
-                    source_img.width,
-                    source_img.height,
-                    offset,
-                    texture_amount,
-                    cancel,
-                )?;
-                gpu_modified = true;
-            }
-
-            // 6. Prepare per-photo mask weigher once (so brush rasters are built once, not
-            //    once per band). Only read back `photo_buf` when an Auto Mask brush needs
-            //    the post-NR/post-Texture camera pixels as its color guide.
-            let mask_guide_owned: Option<CameraImage> =
-                if has_masks && has_auto_mask_brush(&base_no_tex) && gpu_modified {
-                    if let Some(img) = cpu_guide_override {
-                        Some(img)
-                    } else {
-                        let pixels = GpuPyramid::readback_photo(
-                            ctx,
-                            &photo_buf,
-                            source_img.width,
-                            source_img.height,
-                            cancel,
-                        )?;
-                        Some(reduced_camera_image(
-                            source_img,
-                            source_img.width,
-                            source_img.height,
-                            pixels,
-                        ))
-                    }
+                    GpuFailure::Cancelled
                 } else {
-                    None
-                };
-            let mask_guide_img: &CameraImage = mask_guide_owned.as_ref().unwrap_or(source_img);
-            let weigher = has_masks
-                .then(|| Weigher::new(mask_guide_img, &base_no_tex.masks, Selection::Active));
-
-            // 7. Upload static per-photo auxiliary buffers.
-            let coverage_buf = match &source_img.metadata.coverage {
-                Some(mask) => {
-                    let packed: Vec<u32> = mask
-                        .values
-                        .chunks(4)
-                        .map(|c| {
-                            let mut b = [0u8; 4];
-                            b[..c.len()].copy_from_slice(c);
-                            u32::from_le_bytes(b)
-                        })
-                        .collect();
-                    Self::upload_storage(
-                        &ctx.device,
-                        &ctx.queue,
-                        &mut ctx.buffers.coverage,
-                        "Export transparency mask",
-                        bytemuck::cast_slice(&packed),
-                    )
+                    GpuFailure::Hard(e)
                 }
-                None => Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.coverage,
-                    "Export empty coverage",
-                    16,
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                ),
-            };
-            let grid_buf = match &params.grid {
-                Some(grid) => Self::upload_storage(
-                    &ctx.device,
-                    &ctx.queue,
-                    &mut ctx.buffers.grid,
-                    "Export Shadows/Highlights map",
-                    bytemuck::cast_slice(&grid.values()),
-                ),
-                None => Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.grid,
-                    "Export empty map",
-                    16,
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                ),
-            };
-            let finish_weights_buf = Self::upload_storage(
-                &ctx.device,
-                &ctx.queue,
-                &mut ctx.buffers.finish_weights,
-                "Export finish weights",
-                bytemuck::cast_slice(&finish_weights),
-            );
+            })?);
+            if cancel.is_cancelled() {
+                return Err(GpuFailure::Cancelled);
+            }
+            let meas = Arc::new(pipeline::measurement_source(
+                img.as_ref().into(),
+                local_tone::MAP_EDGE,
+                file_correction,
+            ));
+            (img, meas)
+        };
+        if cancel.is_cancelled() {
+            return Err(GpuFailure::Cancelled);
+        }
 
-            // Upload params/tables now if unmasked; otherwise band 0 installs mask headers via `set_masks`.
-            let mut masks_initialized = false;
-            let mut params_buf = if !has_masks {
-                Some(Self::upload_storage(
+        let strip_img = if texture_amount != 0. {
+            let detail = texture::TextureDetail::of(&retouched, scale, cancel).map_err(|e| {
+                if cancel.is_cancelled() {
+                    GpuFailure::Cancelled
+                } else {
+                    GpuFailure::Hard(e)
+                }
+            })?;
+            Arc::new(detail.apply(&retouched, texture_amount))
+        } else {
+            retouched
+        };
+        if cancel.is_cancelled() {
+            return Err(GpuFailure::Cancelled);
+        }
+
+        return Ok(PreparedGpuSource {
+            photo: PreparedPhoto::Strips(strip_img.clone()),
+            coverage_buf,
+            measured,
+            unretouched_measured,
+            mask_guide: Some(strip_img),
+        });
+    }
+
+    // Full-photo GPU mode: upload camera image once and run Color NR, Luminance NR,
+    // measurement box reduction, and Texture directly on the device.
+    let source_bytes = source_img.pixels.len() as u64 * 12;
+    let photo_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.photo,
+        "Export photo",
+        source_bytes,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+    );
+    if !source_img.pixels.is_empty() {
+        ctx.queue
+            .write_buffer(&photo_buf, 0, bytemuck::cast_slice(&source_img.pixels));
+    }
+
+    let photo_scale = source_img.photo_scale();
+    if let Some(d) = chroma {
+        ctx.pyramid.apply_chroma_denoise(
+            ctx,
+            &photo_buf,
+            source_img.width,
+            source_img.height,
+            source_img.metadata.wb,
+            photo_scale,
+            d,
+            cancel,
+        )?;
+    }
+    if let Some(d) = luminance {
+        ctx.pyramid.apply_luminance_denoise(
+            ctx,
+            &photo_buf,
+            source_img.width,
+            source_img.height,
+            source_img.metadata.wb,
+            photo_scale,
+            d,
+            cancel,
+        )?;
+    }
+
+    let (meas_w, meas_h) =
+        pipeline::measurement_size(source_img.width, source_img.height, local_tone::MAP_EDGE);
+    let meas_crop = local_tone::inner_crop_rect(source_img)
+        .map(|[x0, y0, x1, y1]| [x0 as u32, y0 as u32, x1 as u32, y1 as u32])
+        .unwrap_or([0, 0, source_img.width, source_img.height]);
+
+    let unretouched_pixels = ctx.pyramid.box_reduce(
+        ctx,
+        &photo_buf,
+        source_img.width,
+        source_img.height,
+        meas_crop,
+        meas_w,
+        meas_h,
+        cancel,
+    )?;
+    let unretouched_measured = Arc::new(pipeline::finish_measurement_source(
+        reduced_camera_image(source_img, meas_w, meas_h, unretouched_pixels),
+        file_correction,
+    ));
+
+    let mut gpu_modified = chroma.is_some() || luminance.is_some();
+    let mut cpu_guide_override: Option<CameraImage> = None;
+    let measured = if retouch_ops.is_empty() {
+        unretouched_measured.clone()
+    } else {
+        let retouch_src_owned;
+        let retouch_src: &CameraImage = if gpu_modified {
+            let pixels = GpuPyramid::readback_photo(
+                ctx,
+                &photo_buf,
+                source_img.width,
+                source_img.height,
+                cancel,
+            )?;
+            retouch_src_owned =
+                reduced_camera_image(source_img, source_img.width, source_img.height, pixels);
+            &retouch_src_owned
+        } else {
+            source_img
+        };
+        if cancel.is_cancelled() {
+            return Err(GpuFailure::Cancelled);
+        }
+        let retouched_img = retouch::apply(retouch_src, retouch_ops).map_err(|e| {
+            if cancel.is_cancelled() {
+                GpuFailure::Cancelled
+            } else {
+                GpuFailure::Hard(e)
+            }
+        })?;
+        if cancel.is_cancelled() {
+            return Err(GpuFailure::Cancelled);
+        }
+        ctx.queue
+            .write_buffer(&photo_buf, 0, bytemuck::cast_slice(&retouched_img.pixels));
+        gpu_modified = true;
+        let meas_pixels = ctx.pyramid.box_reduce(
+            ctx,
+            &photo_buf,
+            source_img.width,
+            source_img.height,
+            meas_crop,
+            meas_w,
+            meas_h,
+            cancel,
+        )?;
+        if needs_auto_mask_guide && texture_amount == 0. {
+            cpu_guide_override = Some(retouched_img);
+        }
+        Arc::new(pipeline::finish_measurement_source(
+            reduced_camera_image(source_img, meas_w, meas_h, meas_pixels),
+            file_correction,
+        ))
+    };
+
+    if texture_amount != 0. {
+        let offset = texture::level_offset(source_img, scale);
+        ctx.pyramid.apply_texture(
+            ctx,
+            &photo_buf,
+            source_img.width,
+            source_img.height,
+            offset,
+            texture_amount,
+            cancel,
+        )?;
+        gpu_modified = true;
+    }
+
+    let mask_guide = if needs_auto_mask_guide && gpu_modified {
+        if let Some(img) = cpu_guide_override {
+            Some(Arc::new(img))
+        } else {
+            let pixels = GpuPyramid::readback_photo(
+                ctx,
+                &photo_buf,
+                source_img.width,
+                source_img.height,
+                cancel,
+            )?;
+            Some(Arc::new(reduced_camera_image(
+                source_img,
+                source_img.width,
+                source_img.height,
+                pixels,
+            )))
+        }
+    } else {
+        None
+    };
+
+    Ok(PreparedGpuSource {
+        photo: PreparedPhoto::Full(photo_buf),
+        coverage_buf,
+        measured,
+        unretouched_measured,
+        mask_guide,
+    })
+}
+
+/// An in-flight band submission whose readback staging buffer is waiting to map while the
+/// next band computes on the GPU.
+struct PendingBand {
+    slot: usize,
+    staging_buf: wgpu::Buffer,
+    submission: wgpu::SubmissionIndex,
+    rx: mpsc::Receiver<std::result::Result<(), wgpu::BufferAsyncError>>,
+    oy0: u32,
+    band_out_n: u64,
+    readback_bytes: u64,
+}
+
+/// Unmaps and drops an in-flight staging buffer on cancellation or error so subsequent
+/// renders can never race with an uncompleted map.
+fn abort_pending_band(ctx: &mut GpuExportContext, pending: &mut Option<PendingBand>) {
+    if let Some(p) = pending.take() {
+        p.staging_buf.unmap();
+        ctx.buffers.staging[p.slot] = None;
+    }
+}
+
+/// Waits for `pending`'s GPU submission, copies its mapped pixels into `host_pixels`, and
+/// unmaps its staging buffer for reuse.
+fn drain_pending_band(
+    ctx: &mut GpuExportContext,
+    pending: PendingBand,
+    out_w: u32,
+    host_pixels: &mut ExportPixels,
+    cancel: Cancel<'_>,
+) -> std::result::Result<(), GpuFailure> {
+    if let Err(err) = ctx.wait_band(pending.submission, cancel) {
+        pending.staging_buf.unmap();
+        ctx.buffers.staging[pending.slot] = None;
+        return Err(err);
+    }
+
+    let map_result = match pending.rx.try_recv() {
+        Ok(res) => Ok(res),
+        Err(mpsc::TryRecvError::Empty) => {
+            let _ = ctx.device.poll(wgpu::PollType::Poll);
+            pending.rx.recv_timeout(Duration::from_secs(1))
+        }
+        Err(mpsc::TryRecvError::Disconnected) => Err(mpsc::RecvTimeoutError::Disconnected),
+    };
+    match map_result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            pending.staging_buf.unmap();
+            ctx.buffers.staging[pending.slot] = None;
+            return Err(GpuFailure::Session(
+                ExportFallbackKind::DeviceLostOrTimeout,
+                format!("GPU readback map failed: {e}"),
+            ));
+        }
+        Err(_) => {
+            pending.staging_buf.unmap();
+            ctx.buffers.staging[pending.slot] = None;
+            return Err(GpuFailure::Session(
+                ExportFallbackKind::DeviceLostOrTimeout,
+                "GPU readback timed out".into(),
+            ));
+        }
+    }
+
+    if cancel.is_cancelled() {
+        pending.staging_buf.unmap();
+        return Err(GpuFailure::Cancelled);
+    }
+
+    {
+        let slice = pending.staging_buf.slice(..pending.readback_bytes);
+        let mapped = match slice.get_mapped_range() {
+            Ok(view) => view,
+            Err(e) => {
+                pending.staging_buf.unmap();
+                ctx.buffers.staging[pending.slot] = None;
+                return Err(GpuFailure::Session(
+                    ExportFallbackKind::DeviceLostOrTimeout,
+                    format!("GPU mapped range failed: {e}"),
+                ));
+            }
+        };
+        copy_mapped_band(&mapped, pending.oy0, out_w, pending.band_out_n, host_pixels);
+    }
+    pending.staging_buf.unmap();
+    Ok(())
+}
+
+fn copy_mapped_band(
+    mapped: &[u8],
+    oy0: u32,
+    out_w: u32,
+    band_out_n: u64,
+    host_pixels: &mut ExportPixels,
+) {
+    let row_start = oy0 as usize * out_w as usize;
+    let count = band_out_n as usize;
+    match host_pixels {
+        ExportPixels::F32(dst) => {
+            let src = bytemuck::cast_slice::<u8, [f32; 3]>(&mapped[..count * 12]);
+            dst[row_start..row_start + count].copy_from_slice(src);
+        }
+        ExportPixels::Rgb8(dst) => {
+            let byte_count = count * 3;
+            #[cfg(target_endian = "little")]
+            {
+                dst[row_start * 3..row_start * 3 + byte_count]
+                    .copy_from_slice(&mapped[..byte_count]);
+            }
+            #[cfg(target_endian = "big")]
+            {
+                let words = bytemuck::cast_slice::<u8, u32>(mapped);
+                for (i, out_b) in dst[row_start * 3..row_start * 3 + byte_count]
+                    .iter_mut()
+                    .enumerate()
+                {
+                    *out_b = ((words[i / 4] >> (8 * (i % 4))) & 0xff) as u8;
+                }
+            }
+        }
+        ExportPixels::Rgb16(dst) => {
+            let sample_count = count * 3;
+            #[cfg(target_endian = "little")]
+            {
+                let src = bytemuck::cast_slice::<u8, u16>(&mapped[..sample_count * 2]);
+                dst[row_start * 3..row_start * 3 + sample_count].copy_from_slice(src);
+            }
+            #[cfg(target_endian = "big")]
+            {
+                let words = bytemuck::cast_slice::<u8, u32>(mapped);
+                for (i, out_s) in dst[row_start * 3..row_start * 3 + sample_count]
+                    .iter_mut()
+                    .enumerate()
+                {
+                    *out_s = ((words[i / 2] >> (16 * (i % 2))) & 0xffff) as u16;
+                }
+            }
+        }
+    }
+}
+
+/// Runs one banded SDR or HDR export pass over `prepared` with double-buffered staging
+/// readback overlap.
+fn run_banded_pass(
+    ctx: &mut GpuExportContext,
+    source_img: &Arc<CameraImage>,
+    prepared: &PreparedGpuSource,
+    plan: &PassPlan<'_>,
+    effective_max_binding: u64,
+    max_wg: u32,
+    cancel: Cancel<'_>,
+) -> std::result::Result<ExportOutput, GpuFailure> {
+    if cancel.is_cancelled() {
+        return Err(GpuFailure::Cancelled);
+    }
+
+    let g = plan.geometry;
+    let full_w = g.width;
+    let full_h = g.height;
+    let out_w = plan.out_w;
+    let out_h = plan.out_h;
+    let resize = plan.resize;
+    let format = match plan.target {
+        ExportTarget::Sdr { format, .. } => format,
+        ExportTarget::Hdr { .. } => ExportFormat::F32,
+    };
+
+    // Build per-pixel develop parameters & Shadows/Highlights map from the measurement copies
+    // (which intentionally exclude measured Texture).
+    let mut param_source = Source::new(source_img);
+    param_source.measured = Some(&prepared.measured);
+    param_source.unretouched = Some(&prepared.unretouched_measured);
+    let maybe_params = match plan.target {
+        ExportTarget::Sdr { .. } => pixel_params::pixel_params(param_source, &plan.base_no_tex),
+        ExportTarget::Hdr { .. } => pixel_params::pixel_params_hdr(param_source, &plan.base_no_tex),
+    };
+    let Some(mut params) = maybe_params else {
+        return Err(GpuFailure::PerPhoto(
+            ExportFallbackKind::UnsupportedRecipe,
+            "Recipe is not supported by GPU develop".into(),
+        ));
+    };
+    params.color = None;
+
+    let tables_bytes = (params.tables.len() as u64 * 4).max(16);
+    let grid_bytes = params
+        .grid
+        .as_ref()
+        .map_or(16, |gr| (gr.values().len() as u64 * 4).max(16));
+    if tables_bytes > effective_max_binding || grid_bytes > effective_max_binding {
+        return Err(GpuFailure::PerPhoto(
+            ExportFallbackKind::ExceedsLimits,
+            "Develop tables or map exceed GPU storage buffer limit".into(),
+        ));
+    }
+
+    // Prepare per-photo mask weigher once so brush rasters are built once, not once per band.
+    let mask_guide_img: &CameraImage = prepared
+        .mask_guide
+        .as_deref()
+        .unwrap_or(source_img.as_ref());
+    let weigher = plan
+        .has_masks
+        .then(|| Weigher::new(mask_guide_img, &plan.base_no_tex.masks, Selection::Active));
+
+    // Prebuild static sampling parameter template (per-band REGION, COUNT, PHOTO_Y0 updated in loop).
+    let mut sampling_template = vec![0f32; sample_slot::HEADER];
+    sampling_template[sample_slot::WIDTH.start] = source_img.width as f32;
+    sampling_template[sample_slot::HEIGHT.start] = source_img.height as f32;
+    sampling_template[sample_slot::OUT].copy_from_slice(&[full_w as f32, full_h as f32]);
+    sampling_template[sample_slot::SPREAD.start] = 0.;
+    sampling_template[sample_slot::CROP.start..sample_slot::HOMOGRAPHY.end]
+        .copy_from_slice(&g.gpu_params());
+    sampling_template[sample_slot::MANUAL].copy_from_slice(&g.gpu_manual());
+    sampling_template[sample_slot::XTRANS.start] = f32::from(source_img.metadata.xtrans);
+    if let Some(c) = &source_img.metadata.coverage {
+        sampling_template[sample_slot::COVERAGE.start] = c.width as f32;
+        sampling_template[sample_slot::COVERAGE.start + 1] = c.height as f32;
+    }
+    let mut lens_tables = Vec::new();
+    let lens = pipeline::lens_gpu_params(
+        source_img,
+        &plan.base_no_tex,
+        sample_slot::HEADER,
+        &mut lens_tables,
+    );
+    sampling_template[sample_slot::LENS.start..sample_slot::GAIN_MAP.end].copy_from_slice(&lens);
+    sampling_template.extend(lens_tables);
+
+    // Upload static per-pass auxiliary buffers.
+    let grid_buf = match &params.grid {
+        Some(grid) => GpuExportContext::upload_storage(
+            &ctx.device,
+            &ctx.queue,
+            &mut ctx.buffers.grid,
+            "Export Shadows/Highlights map",
+            bytemuck::cast_slice(&grid.values()),
+        ),
+        None => GpuExportContext::ensure_buffer(
+            &ctx.device,
+            &mut ctx.buffers.grid,
+            "Export empty map",
+            16,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        ),
+    };
+    let finish_weights_buf = GpuExportContext::upload_storage(
+        &ctx.device,
+        &ctx.queue,
+        &mut ctx.buffers.finish_weights,
+        "Export finish weights",
+        bytemuck::cast_slice(&plan.finish_weights),
+    );
+
+    // Pre-size band working buffers once to the maximum across all bands so the shorter final
+    // band never reallocates and double-buffered staging stays churn-free.
+    let max_comp_n = plan
+        .bands
+        .iter()
+        .map(|b| u64::from(full_w) * u64::from(b.comp_h()))
+        .max()
+        .unwrap_or(1);
+    let max_out_h = plan.bands.iter().map(|b| b.out_h()).max().unwrap_or(1);
+    let max_out_n = u64::from(out_w) * u64::from(max_out_h);
+    let max_scratch_bytes = (max_comp_n * 4).max(if resize {
+        u64::from(full_w) * u64::from(max_out_h) * 12
+    } else {
+        0
+    });
+    let (max_pack_words, max_readback_bytes) = match format {
+        ExportFormat::F32 => (0u64, max_out_n * 12),
+        ExportFormat::Rgb8 => {
+            let words = (max_out_n * 3).div_ceil(4);
+            (words, words * 4)
+        }
+        ExportFormat::Rgb16 => {
+            let words = (max_out_n * 3).div_ceil(2);
+            (words, words * 4)
+        }
+    };
+
+    let samples_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.samples,
+        "Export band samples",
+        max_comp_n * 12,
+        wgpu::BufferUsages::STORAGE,
+    );
+    let positions_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.positions,
+        "Export band positions",
+        max_comp_n * 8,
+        wgpu::BufferUsages::STORAGE,
+    );
+    let pixels_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.pixels,
+        "Export band pixels",
+        max_comp_n * 12,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+    let scratch_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.scratch,
+        "Export band scratch",
+        max_scratch_bytes,
+        wgpu::BufferUsages::STORAGE,
+    );
+    let output_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.output,
+        "Export band resized output",
+        if resize { max_out_n * 12 } else { 16 },
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+    let packed_out_buf = GpuExportContext::ensure_buffer(
+        &ctx.device,
+        &mut ctx.buffers.packed_out,
+        "Export band packed output",
+        if max_pack_words > 0 {
+            max_pack_words * 4
+        } else {
+            16
+        },
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+
+    // In strip mode, pre-size the photo strip buffer once to the widest strip across bands.
+    let photo_buf = match &prepared.photo {
+        PreparedPhoto::Full(buf) => buf.clone(),
+        PreparedPhoto::Strips(_) => {
+            let max_strip_rows = plan
+                .strip_ranges
+                .as_deref()
+                .expect("strip ranges planned")
+                .iter()
+                .map(|&(y0, y1)| u64::from(y1 - y0))
+                .max()
+                .unwrap_or(1);
+            let max_strip_bytes = u64::from(source_img.width) * max_strip_rows * 12;
+            GpuExportContext::ensure_buffer(
+                &ctx.device,
+                &mut ctx.buffers.photo,
+                "Export photo strip",
+                max_strip_bytes,
+                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            )
+        }
+    };
+
+    // Upload params/tables now if unmasked; otherwise band 0 installs mask headers via `set_masks`.
+    let mut masks_initialized = false;
+    let mut params_buf = if !plan.has_masks {
+        Some(GpuExportContext::upload_storage(
+            &ctx.device,
+            &ctx.queue,
+            &mut ctx.buffers.params,
+            "Export develop params",
+            bytemuck::cast_slice(&params.params),
+        ))
+    } else {
+        None
+    };
+    let mut tables_buf = if !plan.has_masks {
+        Some(GpuExportContext::upload_storage(
+            &ctx.device,
+            &ctx.queue,
+            &mut ctx.buffers.tables,
+            "Export develop tables",
+            bytemuck::cast_slice(&params.tables),
+        ))
+    } else {
+        None
+    };
+
+    // Allocate final host pixel buffer once for the whole photo.
+    let total_out_pixels = out_w as usize * out_h as usize;
+    let mut host_pixels = match format {
+        ExportFormat::F32 => ExportPixels::F32(vec![[0f32; 3]; total_out_pixels]),
+        ExportFormat::Rgb8 => ExportPixels::Rgb8(vec![0u8; total_out_pixels * 3]),
+        ExportFormat::Rgb16 => ExportPixels::Rgb16(vec![0u16; total_out_pixels * 3]),
+    };
+
+    let (finish_output_space, develop_space, hdr_peak, hdr_encode) = match plan.target {
+        ExportTarget::Sdr { space, .. } => {
+            (Variant::output_space_code(space), space, 0.0f32, false)
+        }
+        ExportTarget::Hdr { peak } => (
+            Variant::output_space_code(OutputSpace::ProPhoto),
+            OutputSpace::Srgb,
+            peak,
+            plan.sharpen || resize,
+        ),
+    };
+
+    let mut pending: Option<PendingBand> = None;
+
+    for (band_idx, band) in plan.bands.iter().enumerate() {
+        if cancel.is_cancelled() {
+            abort_pending_band(ctx, &mut pending);
+            return Err(GpuFailure::Cancelled);
+        }
+
+        let comp_h = band.comp_h();
+        let comp_n = u64::from(full_w) * u64::from(comp_h);
+        let band_out_h = band.out_h();
+        let band_out_n = u64::from(out_w) * u64::from(band_out_h);
+        let crop_y = band.sy_min - band.y_comp0;
+        let crop_h = band.sy_h();
+
+        // Evaluate per-band mask weights when active.
+        if let Some(weigher) = weigher.as_ref() {
+            let region = [0, band.y_comp0, full_w, comp_h];
+            let weights = weigher.weights(mask_guide_img, &plan.base_no_tex, &g, region, None);
+            if cancel.is_cancelled() {
+                abort_pending_band(ctx, &mut pending);
+                return Err(GpuFailure::Cancelled);
+            }
+            if !masks_initialized {
+                if !params.set_masks(param_source, &plan.base_no_tex, Some(&weights)) {
+                    abort_pending_band(ctx, &mut pending);
+                    return Err(GpuFailure::PerPhoto(
+                        ExportFallbackKind::UnsupportedRecipe,
+                        "Mask configuration not supported on GPU".into(),
+                    ));
+                }
+                if (params.tables.len() as u64 * 4) > effective_max_binding {
+                    abort_pending_band(ctx, &mut pending);
+                    return Err(GpuFailure::PerPhoto(
+                        ExportFallbackKind::ExceedsLimits,
+                        "Mask tables exceed GPU storage buffer limit".into(),
+                    ));
+                }
+                params_buf = Some(GpuExportContext::upload_storage(
                     &ctx.device,
                     &ctx.queue,
                     &mut ctx.buffers.params,
                     "Export develop params",
                     bytemuck::cast_slice(&params.params),
-                ))
-            } else {
-                None
-            };
-            let mut tables_buf = if !has_masks {
-                Some(Self::upload_storage(
+                ));
+                tables_buf = Some(GpuExportContext::upload_storage(
                     &ctx.device,
                     &ctx.queue,
                     &mut ctx.buffers.tables,
                     "Export develop tables",
                     bytemuck::cast_slice(&params.tables),
-                ))
+                ));
+                masks_initialized = true;
             } else {
-                None
+                params.update_mask_weights(&weights);
+            }
+        }
+
+        let mask_weights_bytes = params.weights.len() as u64 * 4;
+        if mask_weights_bytes > effective_max_binding {
+            abort_pending_band(ctx, &mut pending);
+            return Err(GpuFailure::PerPhoto(
+                ExportFallbackKind::ExceedsLimits,
+                "Band mask weights exceed GPU storage buffer limit".into(),
+            ));
+        }
+        let mask_weights_buf = GpuExportContext::upload_storage(
+            &ctx.device,
+            &ctx.queue,
+            &mut ctx.buffers.mask_weights,
+            "Export band mask weights",
+            bytemuck::cast_slice(&params.weights),
+        );
+
+        let (pack_words, readback_bytes) = match format {
+            ExportFormat::F32 => (0u64, band_out_n * 12),
+            ExportFormat::Rgb8 => {
+                let words = (band_out_n * 3).div_ceil(4);
+                (words, words * 4)
+            }
+            ExportFormat::Rgb16 => {
+                let words = (band_out_n * 3).div_ceil(2);
+                (words, words * 4)
+            }
+        };
+
+        // Pick the alternate staging slot (guaranteed unmapped because `pending`, if any,
+        // uses `(band_idx - 1) % 2`).
+        let slot = band_idx % 2;
+        let staging_buf = GpuExportContext::ensure_buffer(
+            &ctx.device,
+            &mut ctx.buffers.staging[slot],
+            "Export band staging",
+            max_readback_bytes,
+            wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        );
+
+        // In strip mode, upload this band's conservative source strip before submitting.
+        if let PreparedPhoto::Strips(strip_img) = &prepared.photo {
+            let (src_y0, src_y1) =
+                plan.strip_ranges.as_deref().expect("strip ranges planned")[band_idx];
+            let start = src_y0 as usize * strip_img.width as usize;
+            let end = src_y1 as usize * strip_img.width as usize;
+            if start < end {
+                ctx.queue.write_buffer(
+                    &photo_buf,
+                    0,
+                    bytemuck::cast_slice(&strip_img.pixels[start..end]),
+                );
+            }
+            sampling_template[sample_slot::PHOTO_Y0.start] = src_y0 as f32;
+        } else {
+            sampling_template[sample_slot::PHOTO_Y0.start] = 0.;
+        }
+
+        // Update sampling params for this band.
+        let (gx_sample, gy_sample) = groups_1d(max_wg, comp_n);
+        sampling_template[sample_slot::REGION].copy_from_slice(&[
+            0.,
+            band.y_comp0 as f32,
+            full_w as f32,
+            comp_h as f32,
+        ]);
+        sampling_template[sample_slot::COUNT.start] = gx_sample as f32;
+        let sampling_buf = GpuExportContext::upload_storage(
+            &ctx.device,
+            &ctx.queue,
+            &mut ctx.buffers.sampling,
+            "Export sampling params",
+            bytemuck::cast_slice(&sampling_template),
+        );
+
+        let (gx_dev, gy_dev) = groups_1d(max_wg, comp_n);
+        let dev_size_buf = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Export develop size"),
+                contents: bytemuck::cast_slice(&[comp_n as u32, gx_dev, 0u32, 0u32]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+        let (gx_pack, gy_pack) = if pack_words > 0 {
+            groups_1d(max_wg, pack_words)
+        } else {
+            (1, 1)
+        };
+        let finish_uniform = ExportFinishParams {
+            width: full_w,
+            height: comp_h,
+            crop_y,
+            crop_h,
+            out_width: out_w,
+            out_height: band_out_h,
+            out_y0: band.oy0,
+            origin_y: band.y_comp0,
+            full_w,
+            full_h,
+            output_space: finish_output_space,
+            resize: u32::from(resize),
+            radius: plan.radius,
+            amount: plan.recipe.sharpening * plan.sharpener.gain,
+            threshold: plan.sharpener.threshold,
+            halo: plan.sharpener.halo,
+            dark: plan.sharpener.dark,
+            x_offset: plan.x_offset,
+            x_stride: plan.x_stride,
+            y_offset: plan.y_offset,
+            y_stride: plan.y_stride,
+            pack_src_offset: if resize { 0 } else { crop_y * full_w * 3 },
+            pack_groups_x: gx_pack,
+            scale: plan.scale,
+            grain: plan.grain.amount,
+            grain_cell: plan.grain.cell,
+            grain_coarse: plan.grain.coarse,
+            grain_fine: plan.grain.fine,
+            grain_seed: plan.grain.seed,
+            vignette: plan.vignette.map_or(0., |v| v.amount),
+            vignette_style: plan.vignette.map_or(0, |v| v.style.code() as u32),
+            vignette_highlights: plan.vignette.map_or(0., |v| v.highlights),
+            vignette_scale_x: plan.vignette.map_or(1., |v| v.scale[0]),
+            vignette_scale_y: plan.vignette.map_or(1., |v| v.scale[1]),
+            vignette_power: plan.vignette.map_or(2., |v| v.power),
+            vignette_midpoint: plan.vignette.map_or(0., |v| v.midpoint),
+            vignette_feather: plan.vignette.map_or(1., |v| v.feather),
+            hdr_peak,
+            hdr_decode: u32::from(hdr_encode),
+            pad2: 0,
+        };
+        let finish_uniform_buf = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Export finish params"),
+                contents: bytemuck::bytes_of(&finish_uniform),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+        let develop_pipeline = ctx.develop_pipeline(Variant::of_in(&params, develop_space));
+
+        let sample_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Export sample bindings"),
+            layout: &ctx.sample_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: photo_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: prepared.coverage_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: sampling_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: samples_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 15,
+                    resource: positions_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let p_buf = params_buf.as_ref().expect("params uploaded");
+        let t_buf = tables_buf.as_ref().expect("tables uploaded");
+        let dev_buffers = [
+            &samples_buf,
+            &positions_buf,
+            &pixels_buf,
+            p_buf,
+            t_buf,
+            &dev_size_buf,
+            &mask_weights_buf,
+            &grid_buf,
+            &ctx.no_kept,
+        ];
+        let dev_entries: Vec<_> = dev_buffers
+            .into_iter()
+            .enumerate()
+            .map(|(binding, buf)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buf.as_entire_binding(),
+            })
+            .collect();
+        let develop_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Export develop bindings"),
+            layout: &ctx.develop_layout,
+            entries: &dev_entries,
+        });
+
+        let finish_buffers = [
+            &pixels_buf,
+            &scratch_buf,
+            &output_buf,
+            &finish_weights_buf,
+            &finish_uniform_buf,
+            &packed_out_buf,
+        ];
+        let finish_entries: Vec<_> = finish_buffers
+            .into_iter()
+            .enumerate()
+            .map(|(binding, buf)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buf.as_entire_binding(),
+            })
+            .collect();
+        let finish_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Export finish bindings"),
+            layout: &ctx.finish_layout,
+            entries: &finish_entries,
+        });
+
+        let mut encoder = ctx.device.create_command_encoder(&Default::default());
+        // 1. Sample region
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Export sample_region"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&ctx.sample_pipeline);
+            pass.set_bind_group(0, &sample_group, &[]);
+            pass.dispatch_workgroups(gx_sample, gy_sample, 1);
+        }
+        // 2. Per-pixel develop (in target OutputSpace for SDR, or linear ProPhoto for HDR)
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Export develop"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&develop_pipeline);
+            pass.set_bind_group(0, &develop_group, &[]);
+            pass.dispatch_workgroups(gx_dev, gy_dev, 1);
+        }
+        let dispatch_finish =
+            |encoder: &mut wgpu::CommandEncoder, pipeline_idx: usize, gx: u32, gy: u32| {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Export finish pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&ctx.finish_pipelines[pipeline_idx]);
+                pass.set_bind_group(0, &finish_group, &[]);
+                pass.dispatch_workgroups(gx, gy, 1);
             };
 
-            for band in &bands {
-                if cancel.is_cancelled() {
-                    return Err(GpuFailure::Cancelled);
-                }
-                let comp_h = band.comp_h();
-                let comp_n = u64::from(full_w) * u64::from(comp_h);
-                let band_out_h = band.out_h();
-                let band_out_n = u64::from(out_w) * u64::from(band_out_h);
-                let crop_y = band.sy_min - band.y_comp0;
-                let crop_h = band.sy_h();
-
-                // Evaluate per-band mask weights when active.
-                if let Some(weigher) = weigher.as_ref() {
-                    let region = [0, band.y_comp0, full_w, comp_h];
-                    let weights = weigher.weights(mask_guide_img, &base_no_tex, &g, region, None);
-                    if cancel.is_cancelled() {
-                        return Err(GpuFailure::Cancelled);
-                    }
-                    if !masks_initialized {
-                        if !params.set_masks(param_source, &base_no_tex, Some(&weights)) {
-                            return Err(GpuFailure::PerPhoto(
-                                ExportFallbackKind::UnsupportedRecipe,
-                                "Mask configuration not supported on GPU".into(),
-                            ));
-                        }
-                        if (params.tables.len() as u64 * 4) > max_binding {
-                            return Err(GpuFailure::PerPhoto(
-                                ExportFallbackKind::ExceedsLimits,
-                                "Mask tables exceed GPU storage buffer limit".into(),
-                            ));
-                        }
-                        params_buf = Some(Self::upload_storage(
-                            &ctx.device,
-                            &ctx.queue,
-                            &mut ctx.buffers.params,
-                            "Export develop params",
-                            bytemuck::cast_slice(&params.params),
-                        ));
-                        tables_buf = Some(Self::upload_storage(
-                            &ctx.device,
-                            &ctx.queue,
-                            &mut ctx.buffers.tables,
-                            "Export develop tables",
-                            bytemuck::cast_slice(&params.tables),
-                        ));
-                        masks_initialized = true;
-                    } else {
-                        params.update_mask_weights(&weights);
-                    }
-                }
-
-                let mask_weights_bytes = params.weights.len() as u64 * 4;
-                if mask_weights_bytes > max_binding {
-                    return Err(GpuFailure::PerPhoto(
-                        ExportFallbackKind::ExceedsLimits,
-                        "Band mask weights exceed GPU storage buffer limit".into(),
-                    ));
-                }
-                let mask_weights_buf = Self::upload_storage(
-                    &ctx.device,
-                    &ctx.queue,
-                    &mut ctx.buffers.mask_weights,
-                    "Export band mask weights",
-                    bytemuck::cast_slice(&params.weights),
-                );
-
-                // Ensure reusable band buffers fit this band.
-                let samples_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.samples,
-                    "Export band samples",
-                    comp_n * 12,
-                    wgpu::BufferUsages::STORAGE,
-                );
-                let positions_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.positions,
-                    "Export band positions",
-                    comp_n * 8,
-                    wgpu::BufferUsages::STORAGE,
-                );
-                let pixels_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.pixels,
-                    "Export band pixels",
-                    comp_n * 12,
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                );
-                let scratch_bytes = (comp_n * 4).max(if resize {
-                    u64::from(full_w) * u64::from(band_out_h) * 12
-                } else {
-                    0
-                });
-                let scratch_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.scratch,
-                    "Export band scratch",
-                    scratch_bytes,
-                    wgpu::BufferUsages::STORAGE,
-                );
-                let output_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.output,
-                    "Export band resized output",
-                    if resize { band_out_n * 12 } else { 16 },
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                );
-                let (pack_words, readback_bytes) = match job.format {
-                    ExportFormat::F32 => (0u64, band_out_n * 12),
-                    ExportFormat::Rgb8 => {
-                        let words = (band_out_n * 3).div_ceil(4);
-                        (words, words * 4)
-                    }
-                    ExportFormat::Rgb16 => {
-                        let words = (band_out_n * 3).div_ceil(2);
-                        (words, words * 4)
-                    }
-                };
-                let packed_out_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.packed_out,
-                    "Export band packed output",
-                    if pack_words > 0 { pack_words * 4 } else { 16 },
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                );
-                let staging_buf = Self::ensure_buffer(
-                    &ctx.device,
-                    &mut ctx.buffers.staging,
-                    "Export band staging",
-                    readback_bytes,
-                    wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                );
-
-                // Update sampling params for this band.
-                let (gx_sample, gy_sample) = groups_1d(max_wg, comp_n);
-                sampling_template[sample_slot::REGION].copy_from_slice(&[
-                    0.,
-                    band.y_comp0 as f32,
-                    full_w as f32,
-                    comp_h as f32,
-                ]);
-                sampling_template[sample_slot::COUNT.start] = gx_sample as f32;
-                let sampling_buf = Self::upload_storage(
-                    &ctx.device,
-                    &ctx.queue,
-                    &mut ctx.buffers.sampling,
-                    "Export sampling params",
-                    bytemuck::cast_slice(&sampling_template),
-                );
-
-                let (gx_dev, gy_dev) = groups_1d(max_wg, comp_n);
-                let dev_size_buf =
-                    ctx.device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Export develop size"),
-                            contents: bytemuck::cast_slice(&[comp_n as u32, gx_dev, 0u32, 0u32]),
-                            usage: wgpu::BufferUsages::UNIFORM,
-                        });
-
-                let (gx_pack, gy_pack) = if pack_words > 0 {
-                    groups_1d(max_wg, pack_words)
-                } else {
-                    (1, 1)
-                };
-                let finish_uniform = ExportFinishParams {
-                    width: full_w,
-                    height: comp_h,
-                    crop_y,
-                    crop_h,
-                    out_width: out_w,
-                    out_height: band_out_h,
-                    out_y0: band.oy0,
-                    origin_y: band.y_comp0,
-                    full_w,
-                    full_h,
-                    output_space: Variant::output_space_code(job.space),
-                    resize: u32::from(resize),
-                    radius,
-                    amount: job.recipe.sharpening * sharpener.gain,
-                    threshold: sharpener.threshold,
-                    halo: sharpener.halo,
-                    dark: sharpener.dark,
-                    x_offset,
-                    x_stride,
-                    y_offset,
-                    y_stride,
-                    pack_src_offset: if resize { 0 } else { crop_y * full_w * 3 },
-                    pack_groups_x: gx_pack,
-                    scale: job.scale,
-                    grain: grain.amount,
-                    grain_cell: grain.cell,
-                    grain_coarse: grain.coarse,
-                    grain_fine: grain.fine,
-                    grain_seed: grain.seed,
-                    vignette: vignette.map_or(0., |v| v.amount),
-                    vignette_style: vignette.map_or(0, |v| v.style.code() as u32),
-                    vignette_highlights: vignette.map_or(0., |v| v.highlights),
-                    vignette_scale_x: vignette.map_or(1., |v| v.scale[0]),
-                    vignette_scale_y: vignette.map_or(1., |v| v.scale[1]),
-                    vignette_power: vignette.map_or(2., |v| v.power),
-                    vignette_midpoint: vignette.map_or(0., |v| v.midpoint),
-                    vignette_feather: vignette.map_or(1., |v| v.feather),
-                    pad0: 0,
-                    pad1: 0,
-                    pad2: 0,
-                };
-                let finish_uniform_buf =
-                    ctx.device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Export finish params"),
-                            contents: bytemuck::bytes_of(&finish_uniform),
-                            usage: wgpu::BufferUsages::UNIFORM,
-                        });
-
-                let develop_pipeline = ctx.develop_pipeline(Variant::of_in(&params, job.space));
-
-                // Bind groups for sample_region, develop, and export_finish.
-                let sample_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Export sample bindings"),
-                    layout: &ctx.sample_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 10,
-                            resource: photo_buf.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 11,
-                            resource: coverage_buf.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 12,
-                            resource: sampling_buf.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 14,
-                            resource: samples_buf.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 15,
-                            resource: positions_buf.as_entire_binding(),
-                        },
-                    ],
-                });
-
-                let p_buf = params_buf.as_ref().expect("params uploaded");
-                let t_buf = tables_buf.as_ref().expect("tables uploaded");
-                let dev_buffers = [
-                    &samples_buf,
-                    &positions_buf,
-                    &pixels_buf,
-                    p_buf,
-                    t_buf,
-                    &dev_size_buf,
-                    &mask_weights_buf,
-                    &grid_buf,
-                    &ctx.no_kept,
-                ];
-                let dev_entries: Vec<_> = dev_buffers
-                    .into_iter()
-                    .enumerate()
-                    .map(|(binding, buf)| wgpu::BindGroupEntry {
-                        binding: binding as u32,
-                        resource: buf.as_entire_binding(),
-                    })
-                    .collect();
-                let develop_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Export develop bindings"),
-                    layout: &ctx.develop_layout,
-                    entries: &dev_entries,
-                });
-
-                let finish_buffers = [
-                    &pixels_buf,
-                    &scratch_buf,
-                    &output_buf,
-                    &finish_weights_buf,
-                    &finish_uniform_buf,
-                    &packed_out_buf,
-                ];
-                let finish_entries: Vec<_> = finish_buffers
-                    .into_iter()
-                    .enumerate()
-                    .map(|(binding, buf)| wgpu::BindGroupEntry {
-                        binding: binding as u32,
-                        resource: buf.as_entire_binding(),
-                    })
-                    .collect();
-                let finish_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Export finish bindings"),
-                    layout: &ctx.finish_layout,
-                    entries: &finish_entries,
-                });
-
-                let mut encoder = ctx.device.create_command_encoder(&Default::default());
-                // 1. Sample region
-                {
-                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("Export sample_region"),
-                        timestamp_writes: None,
-                    });
-                    pass.set_pipeline(&ctx.sample_pipeline);
-                    pass.set_bind_group(0, &sample_group, &[]);
-                    pass.dispatch_workgroups(gx_sample, gy_sample, 1);
-                }
-                // 2. Per-pixel develop (in target OutputSpace)
-                {
-                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("Export develop"),
-                        timestamp_writes: None,
-                    });
-                    pass.set_pipeline(&develop_pipeline);
-                    pass.set_bind_group(0, &develop_group, &[]);
-                    pass.dispatch_workgroups(gx_dev, gy_dev, 1);
-                }
-                let dispatch_finish =
-                    |encoder: &mut wgpu::CommandEncoder, pipeline_idx: usize, gx: u32, gy: u32| {
-                        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                            label: Some("Export finish pass"),
-                            timestamp_writes: None,
-                        });
-                        pass.set_pipeline(&ctx.finish_pipelines[pipeline_idx]);
-                        pass.set_bind_group(0, &finish_group, &[]);
-                        pass.dispatch_workgroups(gx, gy, 1);
-                    };
+        match plan.target {
+            ExportTarget::Sdr { format, .. } => {
                 // 3. Sharpening (full resolution over expanded band rows)
-                if sharpen {
+                if plan.sharpen {
                     dispatch_finish(
                         &mut encoder,
                         FINISH_BLUR_H,
@@ -2028,7 +3272,7 @@ impl GpuExportContext {
                     );
                 }
                 // 4. Post-Crop Vignette & Film Grain (valid full-res rows)
-                if effects {
+                if plan.effects {
                     dispatch_finish(
                         &mut encoder,
                         FINISH_SPATIAL,
@@ -2052,7 +3296,7 @@ impl GpuExportContext {
                     );
                 }
                 // 6. Pack and copy to staging buffer
-                match job.format {
+                match format {
                     ExportFormat::F32 => {
                         let (src, offset) = if resize {
                             (&output_buf, 0u64)
@@ -2082,121 +3326,121 @@ impl GpuExportContext {
                         );
                     }
                 }
-
-                if cancel.is_cancelled() {
-                    return Err(GpuFailure::Cancelled);
-                }
-                let submission = ctx.queue.submit([encoder.finish()]);
-
-                let (tx, rx) = mpsc::sync_channel(1);
-                let slice = staging_buf.slice(..readback_bytes);
-                slice.map_async(wgpu::MapMode::Read, move |res| {
-                    let _ = tx.send(res);
-                });
-
-                if let Err(err) = ctx.wait_band(submission, cancel) {
-                    staging_buf.unmap();
-                    // Drop the staging buffer on mid-poll cancel/error so a subsequent
-                    // render cannot race with an uncompleted map.
-                    ctx.buffers.staging = None;
-                    return Err(err);
-                }
-
-                match rx.recv_timeout(Duration::from_secs(1)) {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        staging_buf.unmap();
-                        ctx.buffers.staging = None;
-                        return Err(GpuFailure::Session(
-                            ExportFallbackKind::DeviceLostOrTimeout,
-                            format!("GPU readback map failed: {e}"),
-                        ));
-                    }
-                    Err(_) => {
-                        staging_buf.unmap();
-                        ctx.buffers.staging = None;
-                        return Err(GpuFailure::Session(
-                            ExportFallbackKind::DeviceLostOrTimeout,
-                            "GPU readback timed out".into(),
-                        ));
-                    }
-                }
-
-                if cancel.is_cancelled() {
-                    staging_buf.unmap();
-                    return Err(GpuFailure::Cancelled);
-                }
-
-                {
-                    let mapped = slice.get_mapped_range().map_err(|e| {
-                        GpuFailure::Session(
-                            ExportFallbackKind::DeviceLostOrTimeout,
-                            format!("GPU mapped range failed: {e}"),
-                        )
-                    })?;
-                    let row_start = band.oy0 as usize * out_w as usize;
-                    let count = band_out_n as usize;
-                    match &mut host_pixels {
-                        ExportPixels::F32(dst) => {
-                            let src = bytemuck::cast_slice::<u8, [f32; 3]>(&mapped[..count * 12]);
-                            dst[row_start..row_start + count].copy_from_slice(src);
-                        }
-                        ExportPixels::Rgb8(dst) => {
-                            let byte_count = count * 3;
-                            #[cfg(target_endian = "little")]
-                            {
-                                dst[row_start * 3..row_start * 3 + byte_count]
-                                    .copy_from_slice(&mapped[..byte_count]);
-                            }
-                            #[cfg(target_endian = "big")]
-                            {
-                                let words = bytemuck::cast_slice::<u8, u32>(&mapped);
-                                for (i, out_b) in dst[row_start * 3..row_start * 3 + byte_count]
-                                    .iter_mut()
-                                    .enumerate()
-                                {
-                                    *out_b = ((words[i / 4] >> (8 * (i % 4))) & 0xff) as u8;
-                                }
-                            }
-                        }
-                        ExportPixels::Rgb16(dst) => {
-                            let sample_count = count * 3;
-                            #[cfg(target_endian = "little")]
-                            {
-                                let src =
-                                    bytemuck::cast_slice::<u8, u16>(&mapped[..sample_count * 2]);
-                                dst[row_start * 3..row_start * 3 + sample_count]
-                                    .copy_from_slice(src);
-                            }
-                            #[cfg(target_endian = "big")]
-                            {
-                                let words = bytemuck::cast_slice::<u8, u32>(&mapped);
-                                for (i, out_s) in dst[row_start * 3..row_start * 3 + sample_count]
-                                    .iter_mut()
-                                    .enumerate()
-                                {
-                                    *out_s = ((words[i / 2] >> (16 * (i % 2))) & 0xffff) as u16;
-                                }
-                            }
-                        }
-                    }
-                }
-                staging_buf.unmap();
             }
+            ExportTarget::Hdr { .. } => {
+                // 3. Extended sRGB encoding before unbounded sharpening and/or Lanczos3 resize.
+                if hdr_encode {
+                    dispatch_finish(
+                        &mut encoder,
+                        FINISH_HDR_ENCODE,
+                        full_w.div_ceil(16),
+                        comp_h.div_ceil(16),
+                    );
+                }
+                // 4. Unbounded sharpening on ProPhoto luminance (`output_space == 2`).
+                if plan.sharpen {
+                    dispatch_finish(
+                        &mut encoder,
+                        FINISH_BLUR_H,
+                        full_w.div_ceil(16),
+                        comp_h.div_ceil(16),
+                    );
+                    dispatch_finish(
+                        &mut encoder,
+                        FINISH_HDR_SHARPEN,
+                        full_w.div_ceil(16),
+                        comp_h.div_ceil(16),
+                    );
+                }
+                // 5. Unbounded separable Lanczos3 resize (clamped at 0, unclipped above white).
+                if resize {
+                    dispatch_finish(
+                        &mut encoder,
+                        FINISH_RESIZE_V,
+                        full_w.div_ceil(16),
+                        band_out_h.div_ceil(16),
+                    );
+                    dispatch_finish(
+                        &mut encoder,
+                        FINISH_HDR_RESIZE_H,
+                        out_w.div_ceil(16),
+                        band_out_h.div_ceil(16),
+                    );
+                }
+                // 6. Decode sRGB curve back to linear ProPhoto (when encoded) and apply `roll_off`.
+                dispatch_finish(
+                    &mut encoder,
+                    FINISH_HDR_FINISH,
+                    out_w.div_ceil(16),
+                    band_out_h.div_ceil(16),
+                );
+                let (src, offset) = if resize {
+                    (&output_buf, 0u64)
+                } else {
+                    (&pixels_buf, u64::from(crop_y) * u64::from(full_w) * 12)
+                };
+                encoder.copy_buffer_to_buffer(src, offset, &staging_buf, 0, readback_bytes);
+            }
+        }
 
-            Ok(ExportImage::from_pixels(
-                out_w,
-                out_h,
-                host_pixels,
-                job.space,
-            ))
-        })
+        if cancel.is_cancelled() {
+            abort_pending_band(ctx, &mut pending);
+            return Err(GpuFailure::Cancelled);
+        }
+        let submission = ctx.queue.submit([encoder.finish()]);
+
+        let (tx, rx) = mpsc::sync_channel(1);
+        staging_buf
+            .slice(..readback_bytes)
+            .map_async(wgpu::MapMode::Read, move |res| {
+                let _ = tx.send(res);
+            });
+
+        let current = PendingBand {
+            slot,
+            staging_buf,
+            submission,
+            rx,
+            oy0: band.oy0,
+            band_out_n,
+            readback_bytes,
+        };
+        if let Some(prev) = pending.replace(current)
+            && let Err(err) = drain_pending_band(ctx, prev, out_w, &mut host_pixels, cancel)
+        {
+            abort_pending_band(ctx, &mut pending);
+            return Err(err);
+        }
+    }
+
+    if let Some(last) = pending.take() {
+        drain_pending_band(ctx, last, out_w, &mut host_pixels, cancel)?;
+    }
+
+    match plan.target {
+        ExportTarget::Sdr { space, .. } => Ok(ExportOutput::Sdr(ExportImage::from_pixels(
+            out_w,
+            out_h,
+            host_pixels,
+            space,
+        ))),
+        ExportTarget::Hdr { peak } => {
+            let ExportPixels::F32(pixels) = host_pixels else {
+                unreachable!("HDR output uses F32 pixels");
+            };
+            Ok(ExportOutput::Hdr(crate::rendered::HdrImage {
+                width: out_w,
+                height: out_h,
+                pixels,
+                peak,
+            }))
+        }
     }
 }
 
 fn create_export_finish_pipelines(
     device: &wgpu::Device,
-) -> (wgpu::BindGroupLayout, [wgpu::ComputePipeline; 7]) {
+) -> (wgpu::BindGroupLayout, [wgpu::ComputePipeline; 11]) {
     let storage = |binding, read_only| wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -2245,6 +3489,10 @@ fn create_export_finish_pipelines(
         "resize_horizontal",
         "pack_rgb8",
         "pack_rgb16",
+        "hdr_srgb_encode",
+        "hdr_sharpen",
+        "hdr_resize_horizontal",
+        "hdr_finish_master",
     ]
     .map(|entry| {
         device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -2267,6 +3515,32 @@ trait MockGpuDriver {
         band_cap: Option<u32>,
         cancel: Cancel<'_>,
     ) -> std::result::Result<ExportImage, GpuFailure>;
+    fn render_hdr_banded(
+        &mut self,
+        job: &PreparedHdrExport<'_>,
+        band_cap: Option<u32>,
+        _cancel: Cancel<'_>,
+    ) -> std::result::Result<crate::rendered::HdrImage, GpuFailure> {
+        let _ = band_cap;
+        let n = job.out_w as usize * job.out_h as usize;
+        Ok(crate::rendered::HdrImage {
+            width: job.out_w,
+            height: job.out_h,
+            pixels: vec![[0.5, 0.5, 0.5]; n],
+            peak: job.peak,
+        })
+    }
+    fn render_pair_banded(
+        &mut self,
+        hdr: &PreparedHdrExport<'_>,
+        sdr: &PreparedExport<'_>,
+        band_cap: Option<u32>,
+        cancel: Cancel<'_>,
+    ) -> std::result::Result<(crate::rendered::HdrImage, ExportImage), GpuFailure> {
+        let master = self.render_hdr_banded(hdr, band_cap, cancel)?;
+        let base = self.render_banded(sdr, band_cap, cancel)?;
+        Ok((master, base))
+    }
     fn release_buffers(&mut self);
 }
 
@@ -2282,6 +3556,7 @@ impl ExportBackend {
             exec: Mutex::new(ExecState {
                 engine: Engine::Mock(driver),
                 band_height_override: None,
+                max_binding_override: None,
             }),
             meta: Mutex::new(meta),
         }
@@ -2291,6 +3566,12 @@ impl ExportBackend {
     /// (e.g. `Some(64)` for band-seam exactness tests or `Some(u32::MAX)` for single-band).
     pub(crate) fn set_band_height_override(&self, height: Option<u32>) {
         self.lock_exec().band_height_override = height;
+    }
+
+    /// Test helper: simulates a smaller `max_storage_buffer_binding_size` limit so
+    /// source-strip upload banding and limit fallback can be verified on any hardware GPU.
+    pub(crate) fn set_max_binding_override(&self, limit: Option<u64>) {
+        self.lock_exec().max_binding_override = limit;
     }
 }
 

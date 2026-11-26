@@ -20,9 +20,13 @@ fn s(i: u32) -> f32 {
 fn su(i: u32) -> u32 {
     return u32(sp[i]);
 }
-// The photo's pixel `i` (`pipeline::Source::px`).
+// The photo's pixel `i` (`pipeline::Source::px`), offset by `S_PHOTO_Y0` when only a
+// horizontal strip of a large sensor is uploaded to `photo`.
 fn px(i: u32) -> vec3<f32> {
-    return vec3(photo[3u * i], photo[3u * i + 1u], photo[3u * i + 2u]);
+    let base = su(S_PHOTO_Y0) * su(S_WIDTH);
+    let max_i = arrayLength(&photo) / 3u - 1u;
+    let local_i = select(0u, min(i - base, max_i), i >= base);
+    return vec3(photo[3u * local_i], photo[3u * local_i + 1u], photo[3u * local_i + 2u]);
 }
 fn table_eval(field: u32, r: f32) -> f32 {
     let at = u32(s(field));

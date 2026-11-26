@@ -31,7 +31,7 @@ struct Params {
     grain: f32, grain_cell: f32, grain_coarse: f32, grain_fine: f32,
     grain_seed: u32, vignette: f32, vignette_style: u32, vignette_highlights: f32,
     vignette_scale_x: f32, vignette_scale_y: f32, vignette_power: f32, vignette_midpoint: f32,
-    vignette_feather: f32, pad0: u32, pad1: u32, pad2: u32,
+    vignette_feather: f32, hdr_peak: f32, hdr_decode: u32, pad2: u32,
 };
 
 @group(0) @binding(0) var<storage, read_write> pixels: array<f32>;
@@ -395,4 +395,99 @@ fn pack_rgb16(
         packed |= u32(floor(v1 * 65535.0 + 0.5)) << 16u;
     }
     packed_out[word] = packed;
+}
+
+// ============================================================================
+// HDR master finishing (`quality::hdr::master`: unclipped sRGB-curve sharpen,
+// unclipped Lanczos3 resize, sRGB-curve decode, and `roll_off` to `hdr_peak`)
+// ============================================================================
+
+// `color::hdr_output::roll_off`: at most `peak`, unchanged below 97% of it.
+fn roll_off(v: f32, peak: f32) -> f32 {
+    let knee = 0.97 * peak;
+    if !(v == v) {
+        return 0.0;
+    }
+    if v <= knee {
+        return v;
+    }
+    let room = peak - knee;
+    return peak - room * exp(-(v - knee) / room);
+}
+
+// Encodes linear ProPhoto HDR master pixels onto the extended sRGB curve in place
+// before unbounded sharpening and/or Lanczos3 resizing (`quality::hdr::master`).
+@compute @workgroup_size(16, 16)
+fn hdr_srgb_encode(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = 3u * (id.y * p.width + id.x);
+    pixels[i] = srgb_encode(max(pixels[i], 0.0));
+    pixels[i + 1u] = srgb_encode(max(pixels[i + 1u], 0.0));
+    pixels[i + 2u] = srgb_encode(max(pixels[i + 2u], 0.0));
+}
+
+// `quality::sharpen_unbounded`: adds luminance detail unclipped above white (clamped at 0).
+@compute @workgroup_size(16, 16)
+fn hdr_sharpen(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    var blur = 0.0;
+    for (var k = 0u; k <= 2u * p.radius; k++) {
+        let y = u32(clamp(i32(id.y) + i32(k) - i32(p.radius), 0, i32(p.height) - 1));
+        blur += scratch[y * p.width + id.x] * weights[k];
+    }
+    let i = id.y * p.width + id.x;
+    let color = rgb(i);
+    let d = luminance(color) - blur;
+    let delta = sharpen_delta(d, p.amount, p.threshold, p.halo, p.dark);
+    let result = max(color + vec3(delta), vec3(0.0));
+    pixels[3u * i] = result.r;
+    pixels[3u * i + 1u] = result.g;
+    pixels[3u * i + 2u] = result.b;
+}
+
+// `quality::resize_unbounded` horizontal pass: clamps only negative Lanczos ringing at 0,
+// keeping highlights unclipped above white.
+@compute @workgroup_size(16, 16)
+fn hdr_resize_horizontal(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.out_width || id.y >= p.out_height { return; }
+    let offset = p.x_offset + id.x * p.x_stride;
+    let start = u32(weights[offset]);
+    let count = u32(weights[offset + 1u]);
+    var sum = vec3(0.0);
+    for (var k = 0u; k < count; k++) {
+        let i = 3u * (id.y * p.width + start + k);
+        sum += vec3(scratch[i], scratch[i + 1u], scratch[i + 2u]) * weights[offset + 2u + k];
+    }
+    let result = max(sum, vec3(0.0));
+    let i = 3u * (id.y * p.out_width + id.x);
+    output[i] = result.r;
+    output[i + 1u] = result.g;
+    output[i + 2u] = result.b;
+}
+
+// Decodes sRGB-curve values back to linear ProPhoto (when `hdr_decode != 0`) and applies
+// `roll_off(v, hdr_peak)` in place on the band's output buffer (`output` when resized,
+// `pixels` at `crop_y` otherwise).
+@compute @workgroup_size(16, 16)
+fn hdr_finish_master(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.out_width || id.y >= p.out_height { return; }
+    if p.resize != 0u {
+        let i = 3u * (id.y * p.out_width + id.x);
+        var c = vec3(output[i], output[i + 1u], output[i + 2u]);
+        if p.hdr_decode != 0u {
+            c = vec3(srgb_decode(max(c.r, 0.0)), srgb_decode(max(c.g, 0.0)), srgb_decode(max(c.b, 0.0)));
+        }
+        output[i] = roll_off(c.r, p.hdr_peak);
+        output[i + 1u] = roll_off(c.g, p.hdr_peak);
+        output[i + 2u] = roll_off(c.b, p.hdr_peak);
+    } else {
+        let i = 3u * ((p.crop_y + id.y) * p.width + id.x);
+        var c = vec3(pixels[i], pixels[i + 1u], pixels[i + 2u]);
+        if p.hdr_decode != 0u {
+            c = vec3(srgb_decode(max(c.r, 0.0)), srgb_decode(max(c.g, 0.0)), srgb_decode(max(c.b, 0.0)));
+        }
+        pixels[i] = roll_off(c.r, p.hdr_peak);
+        pixels[i + 1u] = roll_off(c.g, p.hdr_peak);
+        pixels[i + 2u] = roll_off(c.b, p.hdr_peak);
+    }
 }

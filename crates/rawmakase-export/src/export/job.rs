@@ -84,9 +84,9 @@ pub fn run(
     )
 }
 
-/// [`run`], rendering SDR outputs through `backend` (GPU with deterministic CPU
-/// fallback when configured) and requesting zero-copy packed pixel formats matching
-/// `target`'s container when no watermark is applied.
+/// [`run`], rendering SDR, HDR, and gain-map outputs through `backend` (GPU with
+/// deterministic CPU fallback when configured) and requesting zero-copy packed pixel
+/// formats matching `target`'s container for unwatermarked SDR exports.
 pub fn run_with_backend(
     photo: Photo,
     settings: &ExportSettings,
@@ -168,10 +168,11 @@ pub fn prepare(
     )
 }
 
-/// [`prepare`], rendering SDR outputs through `backend`. When `target_format` is
-/// `Some` and no watermark will be drawn, requests packed `Rgb8` or `Rgb16` pixels
-/// directly from `backend` so encoding avoids an extra full-frame conversion pass.
-/// When `target_format` is `None` or a watermark is active, renders `F32` pixels.
+/// [`prepare`], rendering SDR, HDR, and gain-map outputs through `backend`. When
+/// `target_format` is `Some` and no watermark will be drawn, requests packed `Rgb8` or
+/// `Rgb16` pixels directly from `backend` for SDR exports so encoding avoids an extra
+/// full-frame conversion pass. When `target_format` is `None` or a watermark is active,
+/// renders `F32` pixels.
 pub fn prepare_with_backend(
     photo: &Photo,
     preset: Option<&crate::watermark::Ready>,
@@ -235,31 +236,34 @@ pub fn prepare_with_backend(
     let recipe = photo.recipe.checked()?;
     let rendered = match hdr {
         Some(output) => {
-            let mut master =
-                crate::develop::render_hdr(&image, &recipe, ai.as_ref(), options.max_edge, cancel)?;
-            if let Some(w) = &watermark
-                && !w.apply_hdr(&mut master)
-            {
-                notice = Some("the watermark's text has no characters its font can draw".into());
-            }
             if output.gain_map {
-                // The base is the edit's SDR rendition, rendered as an sRGB export and
-                // marked as it is, so the map between them keeps the mark. Gain-map
-                // computation reads linear floating-point pixels from `base`.
-                let mut base = backend.render_export(
+                // Render the HDR master and sRGB base together so the GPU shares photo
+                // upload, noise reduction, and Texture between both renditions, then
+                // watermark both before computing the ISO 21496-1 gain map.
+                let (mut master, mut base) = backend.render_hdr_and_sdr(
                     &image,
                     &recipe,
                     ai.as_ref(),
                     options.max_edge,
-                    crate::color::OutputSpace::Srgb,
-                    crate::develop::ExportFormat::F32,
                     cancel,
                 )?;
                 if let Some(w) = &watermark {
+                    if !w.apply_hdr(&mut master) {
+                        notice =
+                            Some("the watermark's text has no characters its font can draw".into());
+                    }
                     w.apply(&mut base);
                 }
                 super::Pixels::GainMap(super::GainMapPixels::new(base, &master)?)
             } else {
+                let mut master =
+                    backend.render_hdr(&image, &recipe, ai.as_ref(), options.max_edge, cancel)?;
+                if let Some(w) = &watermark
+                    && !w.apply_hdr(&mut master)
+                {
+                    notice =
+                        Some("the watermark's text has no characters its font can draw".into());
+                }
                 super::Pixels::Hdr(super::HdrPixels::encode(&master, output))
             }
         }
@@ -809,6 +813,96 @@ mod tests {
             &full.metadata.lateral_ca,
             &full.recovered.get().unwrap().metadata.lateral_ca
         ));
+        Ok(())
+    }
+
+    /// `prepare_with_backend` routes both HDR master exports (`Pixels::Hdr`) and gain-map
+    /// exports (`Pixels::GainMap`) through `ExportBackend`, applying watermarks to both
+    /// renditions before gain-map computation and matching `prepare` bit-for-bit on CPU.
+    #[test]
+    fn prepare_with_backend_renders_hdr_and_gain_map_with_watermarks() -> Result<()> {
+        use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+        use crate::export_settings::Format;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("hdr.dng");
+        std::fs::write(&source, b"synthetic")?;
+        let mut p = photo(&source, &dir.path().join("cache"));
+        let mut image = (*p.image).clone();
+        (image.width, image.height) = (48, 32);
+        (image.metadata.width, image.metadata.height) = (48, 32);
+        image.metadata.matrix = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        image.metadata.cam_xyz = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+        image.metadata.wb = [1.; 3];
+        image.metadata.daylight_wb = [1.; 3];
+        image.pixels = (0..48 * 32)
+            .map(|i| {
+                let x = (i % 48) as f32 / 47.;
+                [0.05 + 2.5 * x, 0.05 + 2.0 * x, 0.05 + 1.5 * x]
+            })
+            .collect();
+        p.image = Arc::new(image);
+        p.recipe.hdr.enabled = true;
+        p.recipe.hdr.limit = 2.3;
+        p.watermark = Some(crate::watermark::Watermark::simple_copyright("Test"));
+
+        let cpu = crate::develop::ExportBackend::cpu_only();
+
+        // 1. HDR master (PQ Rec.2020 TIFF)
+        let hdr_settings = ExportSettings {
+            format: Format::Tiff,
+            hdr: Some(HdrOutput {
+                gamut: HdrGamut::Rec2020,
+                transfer: HdrTransfer::Pq,
+                gain_map: false,
+            }),
+            ..Default::default()
+        };
+        let ref_hdr = prepare(&p, None, &hdr_settings, Cancel::NEVER, &|_| {})?;
+        let got_hdr = prepare_with_backend(
+            &p,
+            None,
+            &hdr_settings,
+            &cpu,
+            Some(Format::Tiff),
+            Cancel::NEVER,
+            &|_| {},
+        )?;
+        match (&ref_hdr.rendered, &got_hdr.rendered) {
+            (crate::export::Pixels::Hdr(a), crate::export::Pixels::Hdr(b)) => {
+                assert_eq!((a.width, a.height), (b.width, b.height));
+                assert_eq!(a.pixels, b.pixels);
+            }
+            _ => anyhow::bail!("expected Pixels::Hdr"),
+        }
+
+        // 2. Gain-map JPEG (ISO 21496-1 over sRGB base)
+        let gm_settings = ExportSettings {
+            format: Format::Jpeg,
+            hdr: Some(HdrOutput {
+                gamut: HdrGamut::Rec709,
+                transfer: HdrTransfer::default(),
+                gain_map: true,
+            }),
+            ..Default::default()
+        };
+        let ref_gm = prepare(&p, None, &gm_settings, Cancel::NEVER, &|_| {})?;
+        let got_gm = prepare_with_backend(
+            &p,
+            None,
+            &gm_settings,
+            &cpu,
+            Some(Format::Jpeg),
+            Cancel::NEVER,
+            &|_| {},
+        )?;
+        match (&ref_gm.rendered, &got_gm.rendered) {
+            (crate::export::Pixels::GainMap(a), crate::export::Pixels::GainMap(b)) => {
+                assert_eq!(a.base.pixels(), b.base.pixels());
+                assert_eq!(a.map, b.map);
+                assert_eq!(a.metadata, b.metadata);
+            }
+            _ => anyhow::bail!("expected Pixels::GainMap"),
+        }
         Ok(())
     }
 }
