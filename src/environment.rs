@@ -95,25 +95,31 @@ pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
         fits: rawmakase_core::workspace::fit_cache(ctx),
         keyword_sets: crate::keyword_sets::KeywordSets {
             dir: ctx.data_dirs().first().map(|d| d.join("Keyword Sets")),
-            lightroom: lightroom_keyword_sets(),
+            lightroom: lightroom_keyword_sets().clone(),
         },
     }
 }
 
-/// Where Lightroom Classic keeps its keyword sets on this computer.
-fn lightroom_keyword_sets() -> Option<std::path::PathBuf> {
-    let base = directories::BaseDirs::new()?;
-    if cfg!(target_os = "macos") {
-        Some(
-            base.home_dir()
-                .join("Library/Application Support/Adobe/Lightroom/Keyword Sets"),
-        )
-    } else if cfg!(windows) {
-        // Roaming application data: %APPDATA%.
-        Some(base.config_dir().join("Adobe/Lightroom/Keyword Sets"))
-    } else {
-        None
-    }
+/// Where Lightroom Classic keeps its keyword sets on this computer, found
+/// the first time it is asked for: [`libraries`] is made for every job, and
+/// finding it asks the shell on Windows.
+fn lightroom_keyword_sets() -> &'static Option<std::path::PathBuf> {
+    static FOLDER: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    FOLDER.get_or_init(|| {
+        if !cfg!(any(target_os = "macos", windows)) {
+            return None;
+        }
+        let base = directories::BaseDirs::new()?;
+        if cfg!(target_os = "macos") {
+            Some(
+                base.home_dir()
+                    .join("Library/Application Support/Adobe/Lightroom/Keyword Sets"),
+            )
+        } else {
+            // Roaming application data: %APPDATA%.
+            Some(base.config_dir().join("Adobe/Lightroom/Keyword Sets"))
+        }
+    })
 }
 
 /// The saved watermarks of a context, its first data folder's `watermarks`

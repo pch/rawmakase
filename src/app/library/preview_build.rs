@@ -857,6 +857,7 @@ impl Editor {
             .map_err(|e| format!("The catalog could not be read: {e:#}"))?;
         let edge = self.preview_builds.edge(kind);
         let mut items = Vec::with_capacity(chosen.len());
+        let libraries = crate::environment::libraries(&self.core);
         for ((photo, name, path), record) in chosen.into_iter().zip(records) {
             let edited = has_edit(&record.edit);
             // A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL without an edit is its own
@@ -881,7 +882,7 @@ impl Editor {
                 defaults: self.raw_defaults.clone(),
                 demosaic: self.session.demosaic,
                 decode_cache: self.decode_cache().clone(),
-                libraries: crate::environment::libraries(&self.core),
+                libraries: libraries.clone(),
                 kind,
                 edge,
             });
