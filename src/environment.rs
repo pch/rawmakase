@@ -264,6 +264,14 @@ pub fn user_folders() -> crate::export_settings::UserFolders {
     }
 }
 
+/// The export backend the app and the command line render exports with: the
+/// GPU when there is one, unless `RAWMAKASE_EXPORT_GPU=0` turns it off.
+pub fn export_backend() -> crate::develop::ExportBackend {
+    use crate::develop::{EXPORT_GPU_ENV, ExportBackend, ExportBackendPolicy};
+    let switch = std::env::var(EXPORT_GPU_ENV).ok();
+    ExportBackend::with_switch(ExportBackendPolicy::Auto, switch.as_deref(), false)
+}
+
 /// Lensfun's database of a context [`context`] made, in the data folder.
 pub fn lensfun(ctx: &rawmakase_core::Context) -> &crate::lens::lensfun::installed::Handle {
     rawmakase_core::workspace::lensfun(ctx)

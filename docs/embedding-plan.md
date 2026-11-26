@@ -994,6 +994,13 @@ so the design is proved on one path before it is spread.
    found in the `environment` module, to the Library's panel, which reads
    its sets again when they change. With it the interop crate no longer
    depends on `directories`, and no library crate calls it.
+
+   GPU export, which landed on `main` while this was built, read
+   `RAWMAKASE_EXPORT_GPU` in the engine (`ExportBackend::new` and
+   `from_env`); the ambient check listed it when the branch moved onto
+   it, and the switch now comes from the caller
+   (`ExportBackend::with_switch`, read by the app's `environment`
+   module), its cancelled renders typed as `Cancelled` too.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

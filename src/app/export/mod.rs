@@ -907,7 +907,7 @@ impl Editor {
             let (each_tx, each_ctx) = (tx.clone(), ctx.clone());
             Queue::with_backend(
                 batch::Lanes::for_machine(logical, crate::platform::memory::total()),
-                Arc::new(crate::develop::ExportBackend::auto()),
+                Arc::new(crate::environment::export_backend()),
                 move |ticket, index, outcome| {
                     let outcome = outcome.clone();
                     let _ = each_tx.send(Event::PhotoExported {

@@ -382,7 +382,7 @@ pub fn render(
     let im = Arc::new(im);
     let ai = ai_denoise().source(input, &file, &im, &edit, cancel)?;
     let backend = if o.gpu {
-        develop::ExportBackend::auto()
+        crate::environment::export_backend()
     } else {
         develop::ExportBackend::cpu_only()
     };
@@ -505,7 +505,7 @@ pub fn render_batch(
     // pipelines initialize once.
     let ai_denoise = ai_denoise();
     let backend = if o.gpu {
-        develop::ExportBackend::auto()
+        crate::environment::export_backend()
     } else {
         develop::ExportBackend::cpu_only()
     };

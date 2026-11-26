@@ -18,8 +18,6 @@ crates/rawmakase-decode/src/decode_cache.rs folder 2
 crates/rawmakase-denoise/src/bench.rs command 1
 crates/rawmakase-denoise/src/bench.rs env 1
 crates/rawmakase-denoise/src/bench.rs temp 1
-crates/rawmakase-engine/src/develop/gpu/export.rs env 2
-crates/rawmakase-engine/src/develop/gpu/export.rs wgpu-env 1
 crates/rawmakase-engine/src/develop/gpu/mod.rs env 1
 crates/rawmakase-engine/src/develop/gpu/mod.rs wgpu-env 9
 crates/rawmakase-engine/src/develop/local_tone_rule.rs env 2
