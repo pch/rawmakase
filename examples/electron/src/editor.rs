@@ -4,18 +4,20 @@
 //! controls' state as JSON and frames as RGBA.
 //!
 //! Every edit carries a number the interface chose, and the frame it gives
-//! carries it back, so the interface knows which edit a frame shows.
+//! carries it back, so the interface knows which edit a frame shows. The
+//! render thread runs the library's [`RenderLoop`]: the newest edit renders
+//! next, a draft first when one is due, and a frame older than the one shown
+//! never reaches the interface.
 #![forbid(unsafe_code)]
-use crate::worker::{self, Job, Render, Worker};
 use rawmakase_core::{
     CacheLimits, Cancel, Context, Decode, Defaults, ExportSettings, Image, Inserted, Parameter,
-    Photo, RawDefaults, Recipe, Renderer, ToneCurve, View,
+    Photo, RawDefaults, Recipe, RenderJob, RenderLoop, Rendered, Renderer, ToneCurve, View,
 };
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// The sliders the editor shows, by the library's names, in the panel's order.
 const CONTROLS: [&str; 8] = [
@@ -52,6 +54,8 @@ pub enum Error {
     NoSuchPoint(u32),
     /// Another photo was asked for while this one was opening.
     Superseded,
+    /// The render thread could not be started.
+    Thread(String),
 }
 
 impl std::fmt::Display for Error {
@@ -62,6 +66,7 @@ impl std::fmt::Display for Error {
             Self::UnknownControl(name) => write!(f, "No control is named {name:?}"),
             Self::NoSuchPoint(index) => write!(f, "The curve has no point {index}"),
             Self::Superseded => f.write_str("Another photo was opened meanwhile"),
+            Self::Thread(e) => write!(f, "The render thread could not start: {e}"),
         }
     }
 }
@@ -127,24 +132,6 @@ pub fn render(
     })
 }
 
-/// The library's draft rule decides.
-impl Render<Work> for Renderer {
-    type Output = Pixels;
-
-    fn draft_due(&self, work: &Work) -> bool {
-        Renderer::draft_due(self, &work.image, &work.recipe, work.view).is_some()
-    }
-
-    fn render(
-        &mut self,
-        work: &Work,
-        draft: bool,
-        cancel: Cancel<'_>,
-    ) -> rawmakase_core::Result<Pixels> {
-        render(self, work, draft, cancel)
-    }
-}
-
 struct Document {
     photo: Arc<Photo>,
     image: Image,
@@ -180,7 +167,15 @@ struct Shared {
     /// What a photo opened without an edit starts from: Adobe Default.
     defaults: Defaults,
     state: Mutex<State>,
-    worker: Worker<Work>,
+    /// The render thread's loop, which the library runs.
+    renders: RenderLoop,
+}
+
+/// The render thread ends after the render it is in; nothing waits for it.
+impl Drop for Shared {
+    fn drop(&mut self) {
+        self.renders.close();
+    }
 }
 
 /// The editor. Cheap to clone; every clone is the same editor.
@@ -196,27 +191,35 @@ impl Editor {
             .data_dirs([&config.data_dir])
             .cache(&config.cache_dir, CacheLimits::default(), config.build_id)
             .build()?;
-        let renderers = ctx.clone();
-        let worker = Worker::spawn(
-            QUIET,
-            move || renderers.renderer(),
-            move |event| {
-                sink(match event {
-                    worker::Event::Shown {
-                        edit,
-                        draft,
-                        output,
-                        took,
-                    } => Update::Frame {
-                        edit,
-                        draft,
-                        pixels: output,
-                        render_ms: took.as_secs_f64() * 1000.,
-                    },
-                    worker::Event::Failed { edit, message } => Update::Failed { edit, message },
-                })
-            },
-        );
+        let renders = RenderLoop::new().quiet(QUIET);
+        let (running, renderers) = (renders.clone(), ctx.clone());
+        std::thread::Builder::new()
+            .name("render".into())
+            .spawn(move || {
+                running.run(&renderers, |rendered| {
+                    sink(match rendered {
+                        Rendered::Frame { tag, frame, took } => {
+                            let started = Instant::now();
+                            let pixels = Pixels {
+                                width: frame.width(),
+                                height: frame.height(),
+                                rgba: frame.rgba8(),
+                            };
+                            Update::Frame {
+                                edit: tag as u32,
+                                draft: frame.is_draft(),
+                                pixels,
+                                render_ms: (took + started.elapsed()).as_secs_f64() * 1000.,
+                            }
+                        }
+                        Rendered::Failed { tag, error } => Update::Failed {
+                            edit: tag as u32,
+                            message: format!("{error:#}"),
+                        },
+                    })
+                });
+            })
+            .map_err(|e| Error::Thread(e.to_string()))?;
         Ok(Self {
             shared: Arc::new(Shared {
                 defaults: ctx.raw_defaults(&RawDefaults::default()),
@@ -228,7 +231,7 @@ impl Editor {
                     cancel: Arc::default(),
                     opening: 0,
                 }),
-                worker,
+                renders,
             }),
         })
     }
@@ -278,13 +281,11 @@ impl Editor {
         let (Some(document), Some(max_edge)) = (&state.document, state.max_edge) else {
             return;
         };
-        self.shared.worker.submit(Job {
-            edit,
-            work: Work {
-                image: document.image.clone(),
-                recipe: document.recipe.clone(),
-                view: View::Fit(max_edge),
-            },
+        self.shared.renders.submit(RenderJob {
+            tag: edit.into(),
+            image: document.image.clone(),
+            recipe: document.recipe.clone(),
+            view: View::Fit(max_edge),
             cancel: state.cancel.clone(),
         });
     }

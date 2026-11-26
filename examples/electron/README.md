@@ -34,8 +34,7 @@ already there is replaced, as the save dialog asked.
 
 | File | What it is |
 | --- | --- |
-| [`src/editor.rs`](src/editor.rs) | The editor: the photo, its recipe and the renderer, all on the Rust side. An edit arrives as a control's name and a value, or a curve point added, moved or removed; the controls' state goes back as JSON and frames as RGBA. No Node in it. |
-| [`src/worker.rs`](src/worker.rs) | The render thread, on the library's `Mailbox`, draft rule (`Renderer::draft_due`) and stale-frame rule (`Shown`). The newest edit replaces the one waiting, the running render finishes and shows, a draft shows first when the library says one is due, and a render is cancelled only when its photo or view is gone. |
+| [`src/editor.rs`](src/editor.rs) | The editor: the photo, its recipe and the render thread, which runs the library's `RenderLoop` (the newest edit replaces the one waiting, the running render finishes and shows, a draft shows first when the library says one is due, and a render is cancelled only when its photo or view is gone), all on the Rust side. An edit arrives as a control's name and a value, or a curve point added, moved or removed; the controls' state goes back as JSON and frames as RGBA. No Node in it. |
 | [`src/binding.rs`](src/binding.rs) | The Node addon (napi-rs) over the editor, built with the `addon` feature. Opening and exporting return promises and run on Node's thread pool; frames come back through a thread-safe function. |
 | [`main.js`](main.js), [`preload.js`](preload.js) | Electron's main process, which loads the addon and passes edits and frames over IPC, and the small API the page gets. Context isolation and the sandbox are on; the page has no Node. |
 | [`renderer/`](renderer/app.js) | The page. Sliders are built from what the library says of each control (range, step, scale, text); nothing about a control is written in JavaScript. |
@@ -45,26 +44,19 @@ Where the app keeps RAWmakase's data (`main.js`, `folders`) is given to the
 library as values: a data folder, and a cache folder with the addon's build
 as the cache's build id. The app sets no environment variable and writes no
 `unsafe`; its root denies it, since what `#[napi]` expands to allows it for
-itself, and every other module forbids it.
+itself, and the editor forbids it. The render loop's scheduling is the
+library's, and tested there (`rawmakase-core`'s `render_loop` tests).
 
 ## Tests and measures
 
 ```sh
-cargo test                   # the editor and the render thread, without Node
+cargo test                   # the editor, without Node
 cargo test -- --ignored      # the desktop's pixels; needs the desktop binary:
                              #   cargo build --bin rawmakase             (repository root)
 npm run probe                # the scripted window: timings and screenshots in probe-out/
 cargo run --release --bin headless -- bench --home <dir> <photo> --edge <pixels>
 ```
 
-- **Scheduling and cancellation** ([`tests/scheduling.rs`](tests/scheduling.rs)):
-  the render thread with a renderer the tests hold and release, so nothing
-  depends on how fast the computer renders: the newest edit replaces the one
-  waiting, the running render shows, a due draft shows first and its frame
-  follows when quiet or gives way to a newer edit, a cancelled render is never
-  shown or reported, a panic fails its edit alone, and a stopped worker runs
-  nothing pending. One test uses the library's renderer to see a cancelled
-  render return the cancelled kind.
 - **The editor** ([`tests/editor.rs`](tests/editor.rs)): on the color-chart
   DNG, as the addon drives it: controls by name, the curve, a new view or
   photo.

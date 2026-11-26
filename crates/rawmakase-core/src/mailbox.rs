@@ -1,6 +1,5 @@
-//! What a front end that renders while its controls move needs beside a
-//! renderer: a single-slot mailbox of edits, and the rules for which frame
-//! is shown.
+//! What the render loop ([`crate::RenderLoop`]) keeps beside a renderer: a
+//! single-slot mailbox of edits, and the rules for which frame is shown.
 //!
 //! An editor keeps one render thread and gives it only the newest edit: the
 //! one waiting is replaced, the one running finishes and shows. Each edit put
@@ -13,7 +12,7 @@ use std::time::{Duration, Instant};
 /// [`Mailbox::take`] gives the render thread the newest. `Send` and `Sync`,
 /// to share behind an `Arc`.
 #[derive(Debug)]
-pub struct Mailbox<T> {
+pub(crate) struct Mailbox<T> {
     state: Mutex<State<T>>,
     wake: Condvar,
 }
@@ -29,7 +28,7 @@ struct State<T> {
 
 /// What [`Mailbox::take_within`] gave.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Taken<T> {
+pub(crate) enum Taken<T> {
     /// A newer edit, to render in place of the draft's frame.
     Job(Numbered<T>),
     /// None came: render the draft's frame now.
@@ -40,11 +39,11 @@ pub enum Taken<T> {
 
 /// An edit taken from a [`Mailbox`], with its number.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Numbered<T> {
+pub(crate) struct Numbered<T> {
     /// Its place among the edits put in the mailbox, from 1.
-    pub number: u64,
+    pub(crate) number: u64,
     /// The edit.
-    pub job: T,
+    pub(crate) job: T,
 }
 
 impl<T> Default for Mailbox<T> {
@@ -62,13 +61,13 @@ impl<T> Default for Mailbox<T> {
 
 impl<T> Mailbox<T> {
     /// An empty mailbox.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Puts `job` in the mailbox in place of any waiting, and returns its
     /// number. Once the mailbox is closed, the job is dropped.
-    pub fn put(&self, job: T) -> u64 {
+    pub(crate) fn put(&self, job: T) -> u64 {
         let mut state = self.lock();
         let number = state.next;
         state.next += 1;
@@ -87,7 +86,7 @@ impl<T> Mailbox<T> {
 
     /// The newest job, waiting until one is put; `None` once the mailbox is
     /// closed, which ends the render thread's loop.
-    pub fn take(&self) -> Option<Numbered<T>> {
+    pub(crate) fn take(&self) -> Option<Numbered<T>> {
         let mut state = self.lock();
         loop {
             if state.closed {
@@ -106,7 +105,7 @@ impl<T> Mailbox<T> {
     /// The newest job put within `quiet`: what a render thread asks after
     /// showing a draft, so that the draft's frame is rendered only once no
     /// newer edit has come for that long, and a newer edit goes first.
-    pub fn take_within(&self, quiet: Duration) -> Taken<T> {
+    pub(crate) fn take_within(&self, quiet: Duration) -> Taken<T> {
         // A quiet time too long for the clock is no deadline.
         let deadline = Instant::now().checked_add(quiet);
         let mut state = self.lock();
@@ -137,13 +136,14 @@ impl<T> Mailbox<T> {
     }
 
     /// The newest job, if one waits, without waiting.
-    pub fn try_take(&self) -> Option<Numbered<T>> {
+    #[cfg(test)]
+    pub(crate) fn try_take(&self) -> Option<Numbered<T>> {
         self.lock().waiting.take()
     }
 
     /// Closes the mailbox: what waits is dropped, and [`Mailbox::take`]
     /// returns `None` from now on.
-    pub fn close(&self) {
+    pub(crate) fn close(&self) {
         let mut state = self.lock();
         state.closed = true;
         let dropped = state.waiting.take();
@@ -160,7 +160,7 @@ impl<T> Mailbox<T> {
 /// Which frame a view shows, by the number of the edit it renders
 /// ([`Numbered::number`]): the rules every front end repeats.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Shown {
+pub(crate) struct Shown {
     shown: Option<(u64, bool)>,
 }
 
@@ -169,7 +169,7 @@ impl Shown {
     /// in place of the frame on screen, and if so, records it. A frame older
     /// than the one shown is dropped, and a draft never replaces its own
     /// edit's full frame; the full frame replaces its draft.
-    pub fn accept(&mut self, number: u64, draft: bool) -> bool {
+    pub(crate) fn accept(&mut self, number: u64, draft: bool) -> bool {
         let taken = match self.shown {
             None => true,
             Some((shown, _)) if number > shown => true,
@@ -183,7 +183,8 @@ impl Shown {
     }
 
     /// The number of the edit whose frame is shown, if any.
-    pub fn number(&self) -> Option<u64> {
+    #[cfg(test)]
+    pub(crate) fn number(&self) -> Option<u64> {
         self.shown.map(|(n, _)| n)
     }
 }

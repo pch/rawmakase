@@ -131,13 +131,17 @@ starts no thread of its own.
 
 `Context`, `Photo`, `Image` and `Error` are `Send` and `Sync`; a `Renderer`
 is `Send` and belongs to one thread. An editor that renders while its
-controls move keeps one render thread and gives it only the newest edit,
-through a `Mailbox`: the edit waiting is replaced, the running one finishes.
-`Shown` keeps the rules for what is on screen: a frame older than the one
-shown is dropped, and a draft never replaces its own edit's frame. It
-counts by the mailbox's numbers, not an interface's own: rendering the same
-edit again for a new view puts it in the mailbox again, which numbers it
-anew, so its frame shows.
+controls move runs a `RenderLoop` on a render thread of its own
+(`RenderLoop::run`, which blocks) and submits each edit to it from any
+thread as a `RenderJob`. The edit waiting is replaced and the running one
+finishes and shows; a draft renders first when `Renderer::draft_due` asks
+for one, and its frame follows once no newer edit has come for the quiet
+time (`RenderLoop::QUIET`, 50 ms, unless `quiet` sets another). A frame
+older than the one shown, and a draft after its own edit's frame, never
+reach the app, and a job whose `cancel` the app sets, because its photo or
+view is gone, is dropped without a word. A render that panics is reported
+as its job's failure, and the loop goes on. `RenderLoop::close` ends `run`
+after the render it is in; nothing joins the thread.
 
 ## What is shared in a process
 
@@ -206,3 +210,7 @@ which CI compares with the code. Each change to them is noted here.
 - **A held full decode used again**: while an app holds an `Image` of a
   photo's last full decode, the photo's next full decode and its export
   use it, through the same context.
+- **A render loop in place of its parts**: `RenderLoop`, `RenderJob` and
+  `Rendered` run what an editor's render thread does, which the Electron
+  example had written out; `Mailbox`, `Numbered`, `Taken` and `Shown` are
+  no longer shown.

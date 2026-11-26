@@ -34,7 +34,9 @@ fn handles_are_send_and_sync_where_the_docs_say() {
     shared::<Photo>();
     shared::<Image>();
     shared::<Error>();
-    shared::<Mailbox<Recipe>>();
+    shared::<RenderLoop>();
+    shared::<RenderJob>();
+    movable::<Rendered>();
     movable::<Renderer>();
     movable::<Frame>();
 }

@@ -79,11 +79,11 @@
 //! that was cancelled returns [`ErrorKind::Cancelled`]. The library starts no
 //! thread of its own; pixel work runs on rayon's pool.
 //!
-//! An editor that renders while its controls move keeps one render thread
-//! and gives it only the newest edit through a [`Mailbox`]: the one waiting
-//! is replaced, the running one finishes and shows, and [`Shown`] drops a
-//! frame older than the one on screen. Before an edit's frame it renders the
-//! draft [`Renderer::draft_due`] asks for.
+//! An editor that renders while its controls move runs a [`RenderLoop`] on
+//! its render thread and submits each edit to it: the one waiting is
+//! replaced, the running one finishes and shows, a draft comes first when
+//! [`Renderer::draft_due`] asks for one, and a frame older than the one shown
+//! is never given to it.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
@@ -99,6 +99,7 @@ mod mailbox;
 mod photo;
 mod recipe;
 mod render;
+mod render_loop;
 
 #[cfg(feature = "workspace")]
 pub use context::workspace;
@@ -110,7 +111,6 @@ pub use error::{Error, ErrorKind, Result};
 pub use export::ExportSettings;
 pub use image::{DecodeStats, Image};
 pub use info::{Metadata, Profile};
-pub use mailbox::{Mailbox, Numbered, Shown, Taken};
 pub use photo::{Decode, Photo};
 /// The values an [`ExportSettings`]'s fields take.
 #[cfg(feature = "export")]
@@ -121,6 +121,7 @@ pub use rawmakase_model::color::OutputSpace;
 pub use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
 pub use recipe::Recipe;
 pub use render::{Frame, Renderer, View};
+pub use render_loop::{RenderJob, RenderLoop, Rendered};
 
 pub use rawmakase_cancel::{Cancel, Cancelled};
 pub use rawmakase_model::color::curve::{Inserted, ToneCurve};

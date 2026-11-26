@@ -26,8 +26,9 @@ impl core::clone::Clone for rawmakase_core::Preset
 impl core::clone::Clone for rawmakase_core::Profile
 impl core::clone::Clone for rawmakase_core::RawDefaults
 impl core::clone::Clone for rawmakase_core::Recipe
+impl core::clone::Clone for rawmakase_core::RenderJob
+impl core::clone::Clone for rawmakase_core::RenderLoop
 impl core::clone::Clone for rawmakase_core::Scale
-impl core::clone::Clone for rawmakase_core::Shown
 impl core::clone::Clone for rawmakase_core::ToneCurve
 impl core::clone::Clone for rawmakase_core::View
 impl core::cmp::Eq for rawmakase_core::CacheLimits
@@ -44,7 +45,6 @@ impl core::cmp::Eq for rawmakase_core::OutputSpace
 impl core::cmp::Eq for rawmakase_core::Parameter
 impl core::cmp::Eq for rawmakase_core::RawDefaults
 impl core::cmp::Eq for rawmakase_core::Scale
-impl core::cmp::Eq for rawmakase_core::Shown
 impl core::cmp::Eq for rawmakase_core::View
 impl core::cmp::PartialEq for rawmakase_core::CacheLimits
 impl core::cmp::PartialEq for rawmakase_core::CameraDefault
@@ -67,7 +67,6 @@ impl core::cmp::PartialEq for rawmakase_core::Preset
 impl core::cmp::PartialEq for rawmakase_core::RawDefaults
 impl core::cmp::PartialEq for rawmakase_core::Recipe
 impl core::cmp::PartialEq for rawmakase_core::Scale
-impl core::cmp::PartialEq for rawmakase_core::Shown
 impl core::cmp::PartialEq for rawmakase_core::ToneCurve
 impl core::cmp::PartialEq for rawmakase_core::View
 impl core::default::Default for rawmakase_core::CacheLimits
@@ -80,8 +79,8 @@ impl core::default::Default for rawmakase_core::HdrTransfer
 impl core::default::Default for rawmakase_core::Include
 impl core::default::Default for rawmakase_core::OutputSpace
 impl core::default::Default for rawmakase_core::RawDefaults
+impl core::default::Default for rawmakase_core::RenderLoop
 impl core::default::Default for rawmakase_core::Scale
-impl core::default::Default for rawmakase_core::Shown
 impl core::default::Default for rawmakase_core::ToneCurve
 impl core::error::Error for rawmakase_core::Cancelled
 impl core::error::Error for rawmakase_core::Error
@@ -114,9 +113,11 @@ impl core::fmt::Debug for rawmakase_core::Preset
 impl core::fmt::Debug for rawmakase_core::Profile
 impl core::fmt::Debug for rawmakase_core::RawDefaults
 impl core::fmt::Debug for rawmakase_core::Recipe
+impl core::fmt::Debug for rawmakase_core::RenderJob
+impl core::fmt::Debug for rawmakase_core::RenderLoop
+impl core::fmt::Debug for rawmakase_core::Rendered
 impl core::fmt::Debug for rawmakase_core::Renderer
 impl core::fmt::Debug for rawmakase_core::Scale
-impl core::fmt::Debug for rawmakase_core::Shown
 impl core::fmt::Debug for rawmakase_core::ToneCurve
 impl core::fmt::Debug for rawmakase_core::View
 impl core::fmt::Display for rawmakase_core::Cancelled
@@ -137,7 +138,6 @@ impl core::marker::Copy for rawmakase_core::Inserted
 impl core::marker::Copy for rawmakase_core::OutputSpace
 impl core::marker::Copy for rawmakase_core::Parameter
 impl core::marker::Copy for rawmakase_core::Scale
-impl core::marker::Copy for rawmakase_core::Shown
 impl core::marker::Copy for rawmakase_core::View
 impl core::marker::Send for rawmakase_core::Applied
 impl core::marker::Send for rawmakase_core::CacheLimits
@@ -168,9 +168,11 @@ impl core::marker::Send for rawmakase_core::Preset
 impl core::marker::Send for rawmakase_core::Profile
 impl core::marker::Send for rawmakase_core::RawDefaults
 impl core::marker::Send for rawmakase_core::Recipe
+impl core::marker::Send for rawmakase_core::RenderJob
+impl core::marker::Send for rawmakase_core::RenderLoop
+impl core::marker::Send for rawmakase_core::Rendered
 impl core::marker::Send for rawmakase_core::Renderer
 impl core::marker::Send for rawmakase_core::Scale
-impl core::marker::Send for rawmakase_core::Shown
 impl core::marker::Send for rawmakase_core::ToneCurve
 impl core::marker::Send for rawmakase_core::View
 impl core::marker::Sync for rawmakase_core::Applied
@@ -202,9 +204,11 @@ impl core::marker::Sync for rawmakase_core::Preset
 impl core::marker::Sync for rawmakase_core::Profile
 impl core::marker::Sync for rawmakase_core::RawDefaults
 impl core::marker::Sync for rawmakase_core::Recipe
+impl core::marker::Sync for rawmakase_core::RenderJob
+impl core::marker::Sync for rawmakase_core::RenderLoop
+impl core::marker::Sync for rawmakase_core::Rendered
 impl core::marker::Sync for rawmakase_core::Renderer
 impl core::marker::Sync for rawmakase_core::Scale
-impl core::marker::Sync for rawmakase_core::Shown
 impl core::marker::Sync for rawmakase_core::ToneCurve
 impl core::marker::Sync for rawmakase_core::View
 impl serde_core::ser::Serialize for rawmakase_core::Control
@@ -226,22 +230,6 @@ impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrTransfer
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Include
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::OutputSpace
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::ToneCurve
-impl<T: core::clone::Clone> core::clone::Clone for rawmakase_core::Numbered<T>
-impl<T: core::clone::Clone> core::clone::Clone for rawmakase_core::Taken<T>
-impl<T: core::cmp::Eq> core::cmp::Eq for rawmakase_core::Numbered<T>
-impl<T: core::cmp::Eq> core::cmp::Eq for rawmakase_core::Taken<T>
-impl<T: core::cmp::PartialEq> core::cmp::PartialEq for rawmakase_core::Numbered<T>
-impl<T: core::cmp::PartialEq> core::cmp::PartialEq for rawmakase_core::Taken<T>
-impl<T: core::fmt::Debug> core::fmt::Debug for rawmakase_core::Mailbox<T>
-impl<T: core::fmt::Debug> core::fmt::Debug for rawmakase_core::Numbered<T>
-impl<T: core::fmt::Debug> core::fmt::Debug for rawmakase_core::Taken<T>
-impl<T> core::default::Default for rawmakase_core::Mailbox<T>
-impl<T> core::marker::Send for rawmakase_core::Mailbox<T> where std::sync::poison::mutex::Mutex<State<T>>: core::marker::Send
-impl<T> core::marker::Send for rawmakase_core::Numbered<T> where T: core::marker::Send
-impl<T> core::marker::Send for rawmakase_core::Taken<T> where rawmakase_core::Numbered<T>: core::marker::Send
-impl<T> core::marker::Sync for rawmakase_core::Mailbox<T> where std::sync::poison::mutex::Mutex<State<T>>: core::marker::Sync
-impl<T> core::marker::Sync for rawmakase_core::Numbered<T> where T: core::marker::Sync
-impl<T> core::marker::Sync for rawmakase_core::Taken<T> where rawmakase_core::Numbered<T>: core::marker::Sync
 pub const fn rawmakase_core::Cancelled::message(self) -> &'static str
 pub const fn rawmakase_core::Cancelled::new(message: &'static str) -> Self
 pub const fn rawmakase_core::Parameter::name(self) -> &'static str
@@ -251,6 +239,7 @@ pub const rawmakase_core::HdrTransfer::ALL: [Self; 3]
 pub const rawmakase_core::Include::ALL: [Self; 6]
 pub const rawmakase_core::OutputSpace::ALL: [Self; 3]
 pub const rawmakase_core::Parameter::ALL: [Self; 60]
+pub const rawmakase_core::RenderLoop::QUIET: core::time::Duration
 pub enum rawmakase_core::Decode
 pub enum rawmakase_core::DefaultChoice
 pub enum rawmakase_core::ErrorKind #[non_exhaustive]
@@ -260,8 +249,8 @@ pub enum rawmakase_core::Include
 pub enum rawmakase_core::Inserted
 pub enum rawmakase_core::OutputSpace
 pub enum rawmakase_core::Parameter #[non_exhaustive]
+pub enum rawmakase_core::Rendered
 pub enum rawmakase_core::Scale
-pub enum rawmakase_core::Taken<T>
 pub enum rawmakase_core::View
 pub fn rawmakase_core::Cancel::check(self, message: &'static str) -> core::result::Result<(), rawmakase_core::Cancelled> [impl<'a> rawmakase_core::Cancel<'a>]
 pub fn rawmakase_core::Cancel::is_cancelled(self) -> bool [impl<'a> rawmakase_core::Cancel<'a>]
@@ -309,12 +298,6 @@ pub fn rawmakase_core::Image::stats(&self) -> rawmakase_core::DecodeStats
 pub fn rawmakase_core::Include::label(self) -> &'static str
 pub fn rawmakase_core::Include::removes_location(self) -> bool
 pub fn rawmakase_core::Inserted::index(self) -> usize
-pub fn rawmakase_core::Mailbox::close(&self) [impl<T> rawmakase_core::Mailbox<T>]
-pub fn rawmakase_core::Mailbox::new() -> Self [impl<T> rawmakase_core::Mailbox<T>]
-pub fn rawmakase_core::Mailbox::put(&self, job: T) -> u64 [impl<T> rawmakase_core::Mailbox<T>]
-pub fn rawmakase_core::Mailbox::take(&self) -> core::option::Option<rawmakase_core::Numbered<T>> [impl<T> rawmakase_core::Mailbox<T>]
-pub fn rawmakase_core::Mailbox::take_within(&self, quiet: core::time::Duration) -> rawmakase_core::Taken<T> [impl<T> rawmakase_core::Mailbox<T>]
-pub fn rawmakase_core::Mailbox::try_take(&self) -> core::option::Option<rawmakase_core::Numbered<T>> [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::OutputSpace::decode(self, v: f32) -> f32
 pub fn rawmakase_core::OutputSpace::encode(self, v: f32) -> f32
 pub fn rawmakase_core::OutputSpace::from_linear_srgb(self) -> [[f32; 3]; 3]
@@ -353,13 +336,16 @@ pub fn rawmakase_core::Recipe::curve(&self) -> &rawmakase_core::ToneCurve
 pub fn rawmakase_core::Recipe::curve_mut(&mut self) -> &mut rawmakase_core::ToneCurve
 pub fn rawmakase_core::Recipe::uses_ai_denoise(&self) -> bool
 pub fn rawmakase_core::Recipe::validate(&self) -> rawmakase_core::Result<()>
+pub fn rawmakase_core::RenderLoop::close(&self)
+pub fn rawmakase_core::RenderLoop::new() -> Self
+pub fn rawmakase_core::RenderLoop::quiet(self, quiet: core::time::Duration) -> Self
+pub fn rawmakase_core::RenderLoop::run(&self, ctx: &rawmakase_core::Context, rendered: impl core::ops::function::FnMut(rawmakase_core::Rendered))
+pub fn rawmakase_core::RenderLoop::submit(&self, job: rawmakase_core::RenderJob)
 pub fn rawmakase_core::Renderer::draft_due(&self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View) -> core::option::Option<(u32, u32)>
 pub fn rawmakase_core::Renderer::render(&mut self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
 pub fn rawmakase_core::Renderer::render_draft(&mut self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
 pub fn rawmakase_core::Scale::position(self, value: f32, range: &core::ops::range::RangeInclusive<f32>) -> f32
 pub fn rawmakase_core::Scale::value_at(self, position: f32, range: &core::ops::range::RangeInclusive<f32>) -> f32
-pub fn rawmakase_core::Shown::accept(&mut self, number: u64, draft: bool) -> bool
-pub fn rawmakase_core::Shown::number(&self) -> core::option::Option<u64>
 pub fn rawmakase_core::ToneCurve::end_slope(&self) -> f32
 pub fn rawmakase_core::ToneCurve::evaluate(&self, x: f32) -> f32
 pub fn rawmakase_core::ToneCurve::insert(&mut self, p: [f32; 2]) -> rawmakase_core::Inserted
@@ -444,8 +430,6 @@ pub rawmakase_core::Metadata::monochrome: bool
 pub rawmakase_core::Metadata::rendered: bool
 pub rawmakase_core::Metadata::shutter: f32
 pub rawmakase_core::Metadata::width: u32
-pub rawmakase_core::Numbered::job: T
-pub rawmakase_core::Numbered::number: u64
 pub rawmakase_core::OutputSpace::AdobeRgb
 pub rawmakase_core::OutputSpace::ProPhoto
 pub rawmakase_core::OutputSpace::Srgb
@@ -512,11 +496,15 @@ pub rawmakase_core::Parameter::Whites
 pub rawmakase_core::RawDefaults::camera_overrides: bool
 pub rawmakase_core::RawDefaults::cameras: alloc::vec::Vec<rawmakase_core::CameraDefault>
 pub rawmakase_core::RawDefaults::master: rawmakase_core::DefaultChoice
+pub rawmakase_core::RenderJob::cancel: alloc::rcs::arc::Arc<core::sync::atomic::AtomicBool>
+pub rawmakase_core::RenderJob::image: rawmakase_core::Image
+pub rawmakase_core::RenderJob::recipe: rawmakase_core::Recipe
+pub rawmakase_core::RenderJob::tag: u64
+pub rawmakase_core::RenderJob::view: rawmakase_core::View
+pub rawmakase_core::Rendered::Failed { tag: u64, error: rawmakase_core::Error }
+pub rawmakase_core::Rendered::Frame { tag: u64, frame: rawmakase_core::Frame, took: core::time::Duration }
 pub rawmakase_core::Scale::Linear
 pub rawmakase_core::Scale::Reciprocal
-pub rawmakase_core::Taken::Closed
-pub rawmakase_core::Taken::Job(rawmakase_core::Numbered<T>)
-pub rawmakase_core::Taken::Quiet
 pub rawmakase_core::ToneCurve::natural: bool
 pub rawmakase_core::ToneCurve::points: alloc::vec::Vec<[f32; 2]>
 pub rawmakase_core::ToneCurve::smooth: bool
@@ -537,16 +525,15 @@ pub struct rawmakase_core::ExportSettings
 pub struct rawmakase_core::Frame
 pub struct rawmakase_core::HdrOutput
 pub struct rawmakase_core::Image
-pub struct rawmakase_core::Mailbox<T>
 pub struct rawmakase_core::Metadata #[non_exhaustive]
-pub struct rawmakase_core::Numbered<T>
 pub struct rawmakase_core::Photo
 pub struct rawmakase_core::Preset
 pub struct rawmakase_core::Profile
 pub struct rawmakase_core::RawDefaults
 pub struct rawmakase_core::Recipe
+pub struct rawmakase_core::RenderJob
+pub struct rawmakase_core::RenderLoop
 pub struct rawmakase_core::Renderer
-pub struct rawmakase_core::Shown
 pub struct rawmakase_core::ToneCurve
 pub type rawmakase_core::Result<T, E = rawmakase_core::Error> = core::result::Result<T, E>
 rawmakase_core::Cancel has private fields
@@ -560,7 +547,6 @@ rawmakase_core::Defaults is a tuple struct of 1
 rawmakase_core::Error has private fields
 rawmakase_core::Frame has private fields
 rawmakase_core::Image has private fields
-rawmakase_core::Mailbox has private fields
 rawmakase_core::Photo has private fields
 rawmakase_core::Preset has private fields
 rawmakase_core::Preset is a tuple struct of 1
@@ -568,5 +554,5 @@ rawmakase_core::Profile has private fields
 rawmakase_core::Profile is a tuple struct of 1
 rawmakase_core::Recipe has private fields
 rawmakase_core::Recipe is a tuple struct of 1
+rawmakase_core::RenderLoop has private fields
 rawmakase_core::Renderer has private fields
-rawmakase_core::Shown has private fields

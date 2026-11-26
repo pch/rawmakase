@@ -3,7 +3,7 @@
 //!
 //! Whether a draft comes first is the library's rule, by how long the last
 //! frames took, so these tests skip drafts and wait for frames; the render
-//! thread's handling of a draft is tested in `scheduling.rs`.
+//! loop's handling of a draft is tested in the library (`RenderLoop`).
 use rawmakase_electron::editor::{Config, Editor, Error, Update};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
