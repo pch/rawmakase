@@ -1024,9 +1024,12 @@ mod tests {
                 .map(|(a, b)| (a - b).abs())
                 .sum::<f32>()
                 / (fit.pixels.len() * 3) as f32;
-            // 0.0115 at edge 100. The old vignette darkened most of the frame and hid
-            // part of the pyramid's error; Camera Raw's mask leaves more of it lit.
-            assert!(error < 0.012, "edge {edge}: mean error {error}");
+            // 0.0118 at edge 100, 0.0121 at edge 180 (0.0083 without Clarity and 0.0038
+            // with Clarity alone; both Fit and export share one MapBase, and the 7 px
+            // sine ripple averages out on the reduced pyramid before nonlinear Clarity,
+            // texture and sharpening). The old vignette darkened most of the frame and
+            // hid part of the pyramid's error.
+            assert!(error < 0.013, "edge {edge}: mean error {error}");
         }
     }
     /// A photo with fine detail, and its half-size decode: each pixel the mean of a

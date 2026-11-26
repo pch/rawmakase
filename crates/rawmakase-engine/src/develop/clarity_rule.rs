@@ -1,7 +1,8 @@
 //! Positive Clarity in the scene tone stage (`G_base(b) + G_pix(l)`): Camera Raw 18.7's
-//! Clarity +100 response decomposes additively into a base-level curve on the local
-//! Laplacian base (`MapBase::laplacian`) plus a pixel-level contrast curve on each
-//! pixel's own log2 luminance, scaling linearly with the slider (`0..=1`).
+//! Clarity +100 response decomposes additively into a base-level curve on the full-depth
+//! (`1×1`) symmetric local Laplacian base (`MapBase::clarity_laplacian`) plus a
+//! pixel-level contrast curve on each pixel's own log2 luminance, scaling linearly with
+//! the slider (`0..=1`).
 //!
 //! Trained in cancellation-free form `G_flat(b) + (G_pix(l) - G_pix(b))` on 72
 //! shift-invariant descriptors of the map's blurred histogram, local-Laplacian base
