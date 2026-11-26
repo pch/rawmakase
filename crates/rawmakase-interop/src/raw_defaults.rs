@@ -200,7 +200,7 @@ pub fn same_camera(name: &str, m: &Metadata) -> bool {
 /// Cheap to share between threads behind an `Arc`. Equal when the choices and the
 /// presets as read are: a preset file can change under the same id. (The
 /// Lensfun database is the context's, the same for every defaults it makes.)
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DevelopDefaults {
     settings: RawDefaults,
     presets: Vec<Preset>,
@@ -219,6 +219,17 @@ pub struct Resolved {
 impl Default for DevelopDefaults {
     fn default() -> Self {
         Self::with_presets(RawDefaults::default(), |_| None)
+    }
+}
+/// The settings and the presets, without the Lensfun database: the Library
+/// identifies a preview of a photo on its defaults by this text, which is
+/// what it was before the defaults carried a database.
+impl std::fmt::Debug for DevelopDefaults {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DevelopDefaults")
+            .field("settings", &self.settings)
+            .field("presets", &self.presets)
+            .finish()
     }
 }
 impl PartialEq for DevelopDefaults {
@@ -386,6 +397,25 @@ pub fn brighter_defaults() -> DevelopDefaults {
 mod tests {
     use super::*;
     use crate::camera_profiles::open;
+
+    /// The Library's previews of photos on their defaults are identified by
+    /// the defaults' `Debug` text, so the Lensfun database they are given,
+    /// the context's, mustn't change it.
+    #[test]
+    fn the_lensfun_database_given_leaves_the_defaults_text_as_it_was() {
+        let plain = DevelopDefaults::default();
+        let given = DevelopDefaults::default().with_lensfun(
+            crate::lens::lensfun::installed::Handle::installed_in("/data/lensfun".into()),
+        );
+        assert_eq!(format!("{given:?}"), format!("{plain:?}"));
+        assert_eq!(
+            format!("{plain:?}"),
+            format!(
+                "DevelopDefaults {{ settings: {:?}, presets: [] }}",
+                RawDefaults::default()
+            )
+        );
+    }
 
     #[allow(clippy::approx_constant)] // Exact camera matrix coefficients, not mathematical constants.
     fn x100f() -> Metadata {
