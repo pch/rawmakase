@@ -53,12 +53,20 @@ fn render_resident(
     }) {
         return Ok(None);
     }
-    // The measured Texture's image is made on the CPU, its detail once per image.
+    // Measured Texture computes its detail via the shared GPU pyramid runner (when available)
+    // and keeps it in the stage cache across slider moves.
     let texture = develop::texture::measured(&base);
     let untextured = (texture != 0.).then(|| source.clone());
     let source = &if texture != 0. {
         base.effects.texture = 0.;
-        textured(source, texture, scale, cancel, Some(&mut *stages.cache))?
+        textured(
+            source,
+            texture,
+            scale,
+            cancel,
+            Some(&mut *stages.cache),
+            Some(&mut *stages.backend),
+        )?
     } else {
         source.clone()
     };
@@ -208,8 +216,15 @@ pub(crate) fn render_level(
     if let Some(frame) = frame {
         return Ok(frame);
     }
-    let (toned, tonal_recipe) =
-        local_stage(level, full, r, level_scale, cancel, Some(stages.cache))?;
+    let (toned, tonal_recipe) = local_stage(
+        level,
+        full,
+        r,
+        level_scale,
+        cancel,
+        Some(stages.cache),
+        Some(stages.backend),
+    )?;
     let frame = develop::pipeline::render_display(
         &toned,
         &tonal_recipe,
@@ -345,7 +360,16 @@ pub(crate) fn render_preview(
         "Only sRGB renders run on the GPU"
     );
     ensure!(!cancel.is_cancelled(), "Render superseded");
-    let source = resolved.source(im, ai, cancel, stages.as_mut().map(|s| &mut *s.retouch))?;
+    let source = match stages.as_deref_mut() {
+        Some(s) => resolved.source_with_backend(
+            im,
+            ai,
+            cancel,
+            Some(&mut *s.retouch),
+            Some(&mut *s.backend),
+        )?,
+        None => resolved.source(im, ai, cancel, None)?,
+    };
     let r = resolved.recipe.as_ref();
     let g = resolved.geometry;
     // Output pixels per pixel of the photo: below 1 for a reduced decode.
@@ -399,14 +423,18 @@ pub(crate) fn render_preview(
             return Ok(frame);
         }
     }
-    let (toned, tonal_recipe) = local_stage(
-        &source.image,
-        &source,
-        r,
-        scale,
-        cancel,
-        stages.as_mut().map(|s| &mut *s.cache),
-    )?;
+    let (toned, tonal_recipe) = match stages.as_deref_mut() {
+        Some(s) => local_stage(
+            &source.image,
+            &source,
+            r,
+            scale,
+            cancel,
+            Some(&mut *s.cache),
+            Some(&mut *s.backend),
+        )?,
+        None => local_stage(&source.image, &source, r, scale, cancel, None, None)?,
+    };
     if unresized && let Some(stages) = stages.as_mut() {
         let finish = develop::gpu::Finish {
             sigma,

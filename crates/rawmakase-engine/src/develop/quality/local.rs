@@ -3,6 +3,24 @@
 use super::*;
 use rawmakase_cancel::Cancel;
 
+/// Computes [`develop::texture::TextureDetail`] using `backend`'s shared GPU pyramid
+/// runner when available and within device limits, falling back to CPU otherwise.
+fn compute_texture_detail(
+    im: &Arc<CameraImage>,
+    scale: f32,
+    cancel: Cancel<'_>,
+    backend: Option<&mut develop::preview_renderer::Backend>,
+) -> Result<develop::texture::TextureDetail> {
+    if let Some(b) = backend
+        && b.gpu.as_ref().is_some_and(|gpu| gpu.fits_pyramid(im))
+        && let Some(detail) = b.run_pyramid(cancel, |gpu| gpu.texture_detail(im, scale, cancel))
+    {
+        return Ok(detail);
+    }
+    check_cancel(cancel)?;
+    develop::texture::TextureDetail::of(im, scale, cancel)
+}
+
 /// The measured Texture's detail of `im` at `scale`, through the stage cache when there
 /// is one.
 pub(crate) fn texture_detail(
@@ -10,15 +28,16 @@ pub(crate) fn texture_detail(
     scale: f32,
     cancel: Cancel<'_>,
     cache: Option<&mut StageCache>,
+    backend: Option<&mut develop::preview_renderer::Backend>,
 ) -> Result<Arc<develop::texture::TextureDetail>> {
     match cache {
         Some(cache) => cache.texture_detail.get_or_try(
             TextureKey::new(im, scale, 0.),
             develop::texture::TextureDetail::bytes,
-            || develop::texture::TextureDetail::of(im, scale, cancel),
+            || compute_texture_detail(im, scale, cancel, backend),
         ),
-        None => Ok(Arc::new(develop::texture::TextureDetail::of(
-            im, scale, cancel,
+        None => Ok(Arc::new(compute_texture_detail(
+            im, scale, cancel, backend,
         )?)),
     }
 }
@@ -30,16 +49,17 @@ pub(crate) fn textured(
     scale: f32,
     cancel: Cancel<'_>,
     cache: Option<&mut StageCache>,
+    backend: Option<&mut develop::preview_renderer::Backend>,
 ) -> Result<Arc<CameraImage>> {
     let Some(cache) = cache else {
         return Ok(Arc::new(
-            develop::texture::TextureDetail::of(im, scale, cancel)?.apply(im, amount),
+            compute_texture_detail(im, scale, cancel, backend)?.apply(im, amount),
         ));
     };
     let detail = cache.texture_detail.get_or_try(
         TextureKey::new(im, scale, 0.),
         develop::texture::TextureDetail::bytes,
-        || develop::texture::TextureDetail::of(im, scale, cancel),
+        || compute_texture_detail(im, scale, cancel, backend),
     )?;
     cache.textured.get_or_try(
         TextureKey::new(im, scale, amount),
@@ -105,6 +125,7 @@ pub(super) fn local_stage(
     scale: f32,
     cancel: Cancel<'_>,
     cache: Option<&mut StageCache>,
+    backend: Option<&mut develop::preview_renderer::Backend>,
 ) -> Result<(Toned, Recipe)> {
     // Shadows, Highlights and Clarity render in the pixel pipeline, from the photo's
     // map (local_tone.rs, clarity.rs).
@@ -115,7 +136,7 @@ pub(super) fn local_stage(
     let texture = develop::texture::measured(r);
     let untextured = (texture != 0.).then(|| im.clone());
     let im = &if texture != 0. {
-        textured(im, texture, scale, cancel, cache.as_deref_mut())?
+        textured(im, texture, scale, cancel, cache.as_deref_mut(), backend)?
     } else {
         im.clone()
     };

@@ -1,9 +1,9 @@
 //! Shared GPU Laplacian pyramid compute runner for Color Noise Reduction,
 //! Luminance Noise Reduction, Texture, and measurement box reduction.
 //!
-//! Currently wired into headless exports ([`super::export::ExportBackend`]) and
-//! decoupled from submission/polling via [`PyramidHost`] so interactive previews
-//! ([`super::Processor`]) can reuse the exact same kernels and CPU quantile logic.
+//! Used by both headless exports ([`super::export::ExportBackend`]) and interactive
+//! Develop previews ([`super::Processor`]) via [`PyramidHost`], so both paths execute
+//! the exact same GPU pyramid kernels and CPU quantile logic.
 //!
 //! Temporary pyramid working buffers live only for the duration of each stage call
 //! and are dropped before downstream banded develop/finish dispatches begin (cached
@@ -85,6 +85,11 @@ pub(super) trait PyramidHost {
     fn cancelled(&self) -> Self::Error;
     fn readback_error(&self, message: String) -> Self::Error;
     fn exceeds_limits(&self, message: String) -> Self::Error;
+}
+
+struct TextureLevels {
+    levels: Vec<(u32, u32, usize)>,
+    residual: (u32, u32),
 }
 
 /// Compiled compute pipelines for the shared GPU Laplacian pyramid passes.
@@ -972,6 +977,157 @@ impl GpuPyramid {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn record_texture_channel(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        photo: &wgpu::Buffer,
+        planes: &[wgpu::Buffer],
+        scratch: &wgpu::Buffer,
+        width: u32,
+        height: u32,
+        levels: &[(u32, u32, usize)],
+        channel: u32,
+    ) {
+        self.dispatch(
+            device,
+            encoder,
+            P_TEXTURE_EXTRACT,
+            photo,
+            &self.dummy,
+            &planes[0],
+            PyramidParams {
+                src_w: width,
+                src_h: height,
+                dst_w: width,
+                dst_h: height,
+                aux0: channel,
+                ..Default::default()
+            },
+        );
+        // Top-down: downsample `planes[k] -> planes[k+1]` and overwrite `planes[k]`
+        // in-place with the compressed weighted detail band for level `tex_level`.
+        for (k, &(lw, lh, tex_level)) in levels.iter().enumerate() {
+            let (cw, ch) = (lw.div_ceil(2), lh.div_ceil(2));
+            self.dispatch(
+                device,
+                encoder,
+                P_DOWN_F32_H,
+                &planes[k],
+                &self.dummy,
+                scratch,
+                PyramidParams {
+                    src_w: lw,
+                    src_h: lh,
+                    dst_w: cw,
+                    dst_h: lh,
+                    ..Default::default()
+                },
+            );
+            self.dispatch(
+                device,
+                encoder,
+                P_DOWN_F32_V,
+                scratch,
+                &self.dummy,
+                &planes[k + 1],
+                PyramidParams {
+                    src_w: cw,
+                    src_h: lh,
+                    dst_w: cw,
+                    dst_h: ch,
+                    ..Default::default()
+                },
+            );
+            self.dispatch(
+                device,
+                encoder,
+                P_UP_F32_H,
+                &planes[k + 1],
+                &self.dummy,
+                scratch,
+                PyramidParams {
+                    src_w: cw,
+                    src_h: ch,
+                    dst_w: lw,
+                    dst_h: ch,
+                    ..Default::default()
+                },
+            );
+            self.dispatch(
+                device,
+                encoder,
+                P_UP_F32_COMPRESS_TEX,
+                scratch,
+                &self.dummy,
+                &planes[k],
+                PyramidParams {
+                    src_w: lw,
+                    src_h: ch,
+                    dst_w: lw,
+                    dst_h: lh,
+                    f0: texture::WEIGHTS[tex_level],
+                    f1: texture::THRESHOLDS[tex_level],
+                    ..Default::default()
+                },
+            );
+        }
+        // Bottom-up: expand accumulated detail `planes[k+1]` and add into `planes[k]`.
+        if levels.len() >= 2 {
+            for k in (0..levels.len() - 1).rev() {
+                let (lw, lh, _) = levels[k];
+                let (cw, ch) = (lw.div_ceil(2), lh.div_ceil(2));
+                self.dispatch(
+                    device,
+                    encoder,
+                    P_UP_F32_H,
+                    &planes[k + 1],
+                    &self.dummy,
+                    scratch,
+                    PyramidParams {
+                        src_w: cw,
+                        src_h: ch,
+                        dst_w: lw,
+                        dst_h: ch,
+                        ..Default::default()
+                    },
+                );
+                self.dispatch(
+                    device,
+                    encoder,
+                    P_UP_F32_ADD_INPLACE,
+                    scratch,
+                    &self.dummy,
+                    &planes[k],
+                    PyramidParams {
+                        src_w: lw,
+                        src_h: ch,
+                        dst_w: lw,
+                        dst_h: lh,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+    }
+
+    fn texture_levels(width: u32, height: u32, level_offset: usize) -> TextureLevels {
+        let mut levels = Vec::new();
+        let (mut w, mut h) = (width, height);
+        let mut level = level_offset;
+        while level < texture::LEVELS && w >= 4 && h >= 4 {
+            levels.push((w, h, level));
+            w = w.div_ceil(2);
+            h = h.div_ceil(2);
+            level += 1;
+        }
+        TextureLevels {
+            levels,
+            residual: (w, h),
+        }
+    }
+
     /// Runs measured Texture (`texture.rs`) in-place on the GPU camera RGB buffer `photo`
     /// (`width` × `height`), submitting one channel at a time with zero readbacks so
     /// cancellation is checked between channels and each submission stays bounded.
@@ -993,19 +1149,13 @@ impl GpuPyramid {
         if strength == 0. {
             return Ok(());
         }
-        let mut levels: Vec<(u32, u32, usize)> = Vec::new();
-        let (mut w, mut h) = (width, height);
-        let mut level = level_offset;
-        while level < texture::LEVELS && w >= 4 && h >= 4 {
-            levels.push((w, h, level));
-            w = w.div_ceil(2);
-            h = h.div_ceil(2);
-            level += 1;
-        }
+        let TextureLevels {
+            levels,
+            residual: residual_size,
+        } = Self::texture_levels(width, height, level_offset);
         if levels.is_empty() {
             return Ok(());
         }
-        let residual_size = (w, h);
 
         let n0 = u64::from(width) * u64::from(height);
         Self::check_limits(host, n0 * 4, width, height)?;
@@ -1035,126 +1185,17 @@ impl GpuPyramid {
                 return Err(host.cancelled());
             }
             let mut encoder = device.create_command_encoder(&Default::default());
-            self.dispatch(
+            self.record_texture_channel(
                 device,
                 &mut encoder,
-                P_TEXTURE_EXTRACT,
                 photo,
-                &self.dummy,
-                &planes[0],
-                PyramidParams {
-                    src_w: width,
-                    src_h: height,
-                    dst_w: width,
-                    dst_h: height,
-                    aux0: channel,
-                    ..Default::default()
-                },
+                &planes,
+                &scratch,
+                width,
+                height,
+                &levels,
+                channel,
             );
-            // Top-down: downsample `planes[k] -> planes[k+1]` and overwrite `planes[k]`
-            // in-place with the compressed weighted detail band for level `tex_level`.
-            for (k, &(lw, lh, tex_level)) in levels.iter().enumerate() {
-                let (cw, ch) = (lw.div_ceil(2), lh.div_ceil(2));
-                self.dispatch(
-                    device,
-                    &mut encoder,
-                    P_DOWN_F32_H,
-                    &planes[k],
-                    &self.dummy,
-                    &scratch,
-                    PyramidParams {
-                        src_w: lw,
-                        src_h: lh,
-                        dst_w: cw,
-                        dst_h: lh,
-                        ..Default::default()
-                    },
-                );
-                self.dispatch(
-                    device,
-                    &mut encoder,
-                    P_DOWN_F32_V,
-                    &scratch,
-                    &self.dummy,
-                    &planes[k + 1],
-                    PyramidParams {
-                        src_w: cw,
-                        src_h: lh,
-                        dst_w: cw,
-                        dst_h: ch,
-                        ..Default::default()
-                    },
-                );
-                self.dispatch(
-                    device,
-                    &mut encoder,
-                    P_UP_F32_H,
-                    &planes[k + 1],
-                    &self.dummy,
-                    &scratch,
-                    PyramidParams {
-                        src_w: cw,
-                        src_h: ch,
-                        dst_w: lw,
-                        dst_h: ch,
-                        ..Default::default()
-                    },
-                );
-                self.dispatch(
-                    device,
-                    &mut encoder,
-                    P_UP_F32_COMPRESS_TEX,
-                    &scratch,
-                    &self.dummy,
-                    &planes[k],
-                    PyramidParams {
-                        src_w: lw,
-                        src_h: ch,
-                        dst_w: lw,
-                        dst_h: lh,
-                        f0: texture::WEIGHTS[tex_level],
-                        f1: texture::THRESHOLDS[tex_level],
-                        ..Default::default()
-                    },
-                );
-            }
-            // Bottom-up: expand accumulated detail `planes[k+1]` and add into `planes[k]`.
-            if levels.len() >= 2 {
-                for k in (0..levels.len() - 1).rev() {
-                    let (lw, lh, _) = levels[k];
-                    let (cw, ch) = (lw.div_ceil(2), lh.div_ceil(2));
-                    self.dispatch(
-                        device,
-                        &mut encoder,
-                        P_UP_F32_H,
-                        &planes[k + 1],
-                        &self.dummy,
-                        &scratch,
-                        PyramidParams {
-                            src_w: cw,
-                            src_h: ch,
-                            dst_w: lw,
-                            dst_h: ch,
-                            ..Default::default()
-                        },
-                    );
-                    self.dispatch(
-                        device,
-                        &mut encoder,
-                        P_UP_F32_ADD_INPLACE,
-                        &scratch,
-                        &self.dummy,
-                        &planes[k],
-                        PyramidParams {
-                            src_w: lw,
-                            src_h: ch,
-                            dst_w: lw,
-                            dst_h: lh,
-                            ..Default::default()
-                        },
-                    );
-                }
-            }
             self.dispatch(
                 device,
                 &mut encoder,
@@ -1177,6 +1218,82 @@ impl GpuPyramid {
             host.wait(sub, cancel)?;
         }
         Ok(())
+    }
+
+    /// Computes [`texture::TextureDetail`] on the GPU from `photo` (`width` × `height`),
+    /// submitting and reading back one channel at a time so Develop's `StageCache` can
+    /// reuse the quantized detail across Texture slider movements and mask Texture.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn compute_texture_detail<H: PyramidHost>(
+        &self,
+        host: &H,
+        photo: &wgpu::Buffer,
+        width: u32,
+        height: u32,
+        level_offset: usize,
+        cancel: Cancel<'_>,
+    ) -> std::result::Result<texture::TextureDetail, H::Error> {
+        if cancel.is_cancelled() {
+            return Err(host.cancelled());
+        }
+        let pixel_count = width as usize * height as usize;
+        let TextureLevels {
+            levels,
+            residual: residual_size,
+        } = Self::texture_levels(width, height, level_offset);
+        if levels.is_empty() {
+            return Ok(texture::TextureDetail::from_channels([
+                vec![0i16; pixel_count],
+                vec![0i16; pixel_count],
+                vec![0i16; pixel_count],
+            ]));
+        }
+
+        let n0 = u64::from(width) * u64::from(height);
+        Self::check_limits(host, n0 * 4, width, height)?;
+
+        let device = host.device();
+        let mut planes: Vec<wgpu::Buffer> = Vec::with_capacity(levels.len() + 1);
+        for (k, &(lw, lh, _)) in levels.iter().enumerate() {
+            planes.push(Self::alloc_storage(
+                device,
+                "Texture pyramid plane",
+                u64::from(lw) * u64::from(lh) * 4,
+                k == 0,
+            ));
+        }
+        planes.push(Self::alloc_storage(
+            device,
+            "Texture pyramid coarse",
+            u64::from(residual_size.0) * u64::from(residual_size.1) * 4,
+            false,
+        ));
+        let scratch_px = (u64::from(width.div_ceil(2)) * u64::from(height))
+            .max(u64::from(width) * u64::from(height.div_ceil(2)));
+        let scratch = Self::alloc_storage(device, "Texture pyramid scratch", scratch_px * 4, false);
+
+        let mut channels: [Vec<i16>; 3] = Default::default();
+        for (channel, out) in channels.iter_mut().enumerate() {
+            if cancel.is_cancelled() {
+                return Err(host.cancelled());
+            }
+            let mut encoder = device.create_command_encoder(&Default::default());
+            self.record_texture_channel(
+                device,
+                &mut encoder,
+                photo,
+                &planes,
+                &scratch,
+                width,
+                height,
+                &levels,
+                channel as u32,
+            );
+            let floats =
+                Self::submit_and_readback_f32(host, encoder, &planes[0], pixel_count, cancel)?;
+            *out = texture::quantize_detail(&floats);
+        }
+        Ok(texture::TextureDetail::from_channels(channels))
     }
 
     /// Runs crop-clamped box reduction on `photo` (`width` × `height`) to `(out_w, out_h)`

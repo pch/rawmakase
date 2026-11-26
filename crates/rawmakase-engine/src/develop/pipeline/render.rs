@@ -91,7 +91,15 @@ pub(crate) fn render_base(
             None,
             cancel,
         )?;
-        let samples = detail(toned, &base, samples, weights.as_deref(), None, cancel)?;
+        let samples = detail(
+            toned,
+            &base,
+            samples,
+            weights.as_deref(),
+            None,
+            None,
+            cancel,
+        )?;
         let out = develop_samples_in(im, &base, &samples, cancel, weights.as_deref(), space)?;
         return Ok((out, weights));
     };
@@ -116,6 +124,7 @@ pub(crate) fn render_base(
         samples,
         weights.as_deref(),
         Some(&mut *stages.cache),
+        Some(&mut *stages.backend),
         cancel,
     )?;
     let backend = &mut *stages.backend;
@@ -190,6 +199,7 @@ pub(crate) fn render_display(
         samples,
         weights.as_deref(),
         Some(&mut *stages.cache),
+        Some(&mut *stages.backend),
         cancel,
     )?;
     Ok(match stages.hdr {
@@ -297,13 +307,15 @@ pub(super) fn detail(
     samples: Arc<Samples>,
     weights: Option<&MaskWeights>,
     cache: Option<&mut crate::develop::stage_cache::StageCache>,
+    backend: Option<&mut crate::develop::preview_renderer::Backend>,
     cancel: Cancel<'_>,
 ) -> Result<Arc<Samples>> {
     let Some(weights) = weights.filter(|w| w.uses(&[slot::TEXTURE])) else {
         return Ok(samples);
     };
     let source = toned.untextured.as_ref().unwrap_or(&toned.image);
-    let texture = crate::develop::quality::texture_detail(source, toned.scale, cancel, cache)?;
+    let texture =
+        crate::develop::quality::texture_detail(source, toned.scale, cancel, cache, backend)?;
     let global = crate::develop::texture::strength(r.effects.texture);
     let (w, h) = (source.width as usize, source.height as usize);
     let mut out = Samples {
@@ -437,7 +449,7 @@ pub(crate) fn stage_samples(
     let im = toned.source();
     let samples = Arc::new(sample_region(im, r, g, region, 0., cancel)?);
     let weights = mask_weights(toned, r, g, region, 0., Some(&samples), None, cancel)?;
-    let samples = detail(toned, r, samples, weights.as_deref(), None, cancel)?;
+    let samples = detail(toned, r, samples, weights.as_deref(), None, None, cancel)?;
     develop_samples_to(
         im,
         r,

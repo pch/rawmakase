@@ -156,7 +156,7 @@ fn master(
         (x + w + halo).min(g.width) - left,
         (y + h + halo).min(g.height) - top,
     ];
-    let (toned, tonal_recipe) = local_stage(&source.image, &source, r, scale, cancel, None)?;
+    let (toned, tonal_recipe) = local_stage(&source.image, &source, r, scale, cancel, None, None)?;
     let srgb = crate::color::OutputSpace::Srgb;
     let (mut out, weights) =
         develop::render_base(&toned, &tonal_recipe, &g, base, 0., cancel, None, srgb)?;

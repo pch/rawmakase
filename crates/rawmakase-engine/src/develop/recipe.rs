@@ -62,17 +62,39 @@ pub(crate) struct Denoise {
     pub(crate) luminance: Option<crate::develop::luminance_noise::LuminanceDenoise>,
 }
 impl Denoise {
-    /// `source` (the plain image, highlights recovered) with all of it applied.
+    /// `source` (the plain image, highlights recovered) with all of it applied on the CPU.
+    #[cfg(test)]
     pub(crate) fn apply(
         &self,
         source: &std::sync::Arc<crate::camera_data::CameraImage>,
         cancel: Cancel<'_>,
+    ) -> anyhow::Result<std::sync::Arc<crate::camera_data::CameraImage>> {
+        self.apply_with(source, cancel, |_, _, _| None)
+    }
+    /// Applies AI Denoise's blend, then Color and luminance noise reduction: tries `try_gpu`
+    /// for the Laplacian pyramid stages first when either is active, falling back to the CPU
+    /// reference unless cancelled.
+    pub(crate) fn apply_with(
+        &self,
+        source: &std::sync::Arc<crate::camera_data::CameraImage>,
+        cancel: Cancel<'_>,
+        try_gpu: impl FnOnce(
+            &crate::camera_data::CameraImage,
+            Option<crate::develop::color_noise::ChromaDenoise>,
+            Option<crate::develop::luminance_noise::LuminanceDenoise>,
+        ) -> Option<crate::camera_data::CameraImage>,
     ) -> anyhow::Result<std::sync::Arc<crate::camera_data::CameraImage>> {
         use std::sync::Arc;
         let base = match &self.ai {
             Some(ai) => ai.apply(source),
             None => source.clone(),
         };
+        anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
+        if (self.chroma.is_some() || self.luminance.is_some())
+            && let Some(out) = try_gpu(&base, self.chroma, self.luminance)
+        {
+            return Ok(Arc::new(out));
+        }
         anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let chroma = self.chroma.map(|d| d.apply(&base, cancel)).transpose()?;
         if let Some(luminance) = self.luminance {

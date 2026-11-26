@@ -82,18 +82,36 @@ pub(crate) fn retouched(
     cancel: Cancel<'_>,
     cache: Option<&mut develop::retouch::RetouchCache>,
 ) -> Result<Retouched> {
+    retouched_with_backend(im, r, ai, cancel, cache, None)
+}
+/// As [`retouched`], using `backend`'s shared GPU pyramid runner for Color and luminance
+/// noise reduction when available and within device limits.
+pub(crate) fn retouched_with_backend(
+    im: &CameraImage,
+    r: &Recipe,
+    ai: Option<&develop::AiSource>,
+    cancel: Cancel<'_>,
+    cache: Option<&mut develop::retouch::RetouchCache>,
+    backend: Option<&mut develop::preview_renderer::Backend>,
+) -> Result<Retouched> {
     let recovered = recovered(im, cancel)?;
     let ops = develop::retouch::Retouching::of(r);
     let denoise = r.denoise_with(ai.filter(|a| a.fits(im)));
     let (base, image) = match cache {
         Some(cache) => {
-            let base = cache.denoised(&recovered, denoise, cancel)?;
+            let base = cache.denoised_with(&recovered, denoise, cancel, backend)?;
             let image = cache.get(&base, ops, cancel)?;
             (base, image)
         }
         None => {
             let base = match denoise {
-                Some(d) => d.apply(&recovered, cancel)?,
+                Some(d) => d.apply_with(&recovered, cancel, |base, chroma, luminance| {
+                    let b = backend?;
+                    if !b.gpu.as_ref().is_some_and(|gpu| gpu.fits_pyramid(base)) {
+                        return None;
+                    }
+                    b.run_pyramid(cancel, |gpu| gpu.denoise(base, chroma, luminance, cancel))
+                })?,
                 None => recovered,
             };
             let image = match ops.is_empty() {
@@ -218,7 +236,7 @@ pub fn render_stage_sized(
     }
     let source = retouched(im, r, None, cancel, None)?;
     let g = Geometry::new(&source.image, r, max_edge);
-    let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None)?;
+    let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None, None)?;
     let output = match stage {
         Stage::SceneInput => PixelOutput::SceneInput,
         Stage::SceneOutput => PixelOutput::SceneOutput,
@@ -258,7 +276,7 @@ pub fn curve_input_histogram(
     let r = resolved.recipe.as_ref();
     let g = Geometry::new(&source.image, r, max_edge);
     let scale = reduced.photo_scale();
-    let (toned, tonal) = local_stage(&source.image, &source, r, scale, cancel, None)?;
+    let (toned, tonal) = local_stage(&source.image, &source, r, scale, cancel, None, None)?;
     let out = develop::pipeline::stage_samples(
         &toned,
         &tonal,
@@ -289,7 +307,7 @@ fn stage_means<const N: usize>(
     let mut retouch = develop::retouch::RetouchCache::default();
     let source = retouched(im, r, None, cancel, Some(&mut retouch))?;
     let g = Geometry::new(&source.image, r, 0);
-    let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None)?;
+    let (toned, tonal) = local_stage(&source.image, &source, r, 1., cancel, None, None)?;
     let at = |t: f32, size: u32| {
         let c = (t.clamp(0., 1.) * size as f32) as u32;
         c.saturating_sub(2).min(size.saturating_sub(5))

@@ -64,17 +64,21 @@
 //! otherwise.
 //!
 //! For the same recipes, the stages before the per-pixel stage also run on the
-//! device when the photo fits its buffer limits (`resident.rs`): the photo or pyramid
-//! level is kept there, and regions are sampled there through geometry and lens
-//! correction. Color and luminance noise reduction run on the CPU on the full camera
-//! image, before retouching and before the preview pyramid is built
+//! device when the photo fits its buffer limits (`resident.rs`, `pyramid.rs`): the
+//! photo or pyramid level is kept there, and regions are sampled there through
+//! geometry and lens correction. Color and luminance noise reduction run on the full
+//! camera image before retouching and before the preview pyramid is built
 //! (`develop::recipe::Denoise` captures their settings and execution together; the
-//! retouch cache keys that value and the source image identity), so the GPU samples
-//! the already denoised image. Exports run the same stage without the cache. The Shadows/Highlights map (with Clarity's gain) is
+//! retouch cache keys that value and the source image identity), using the shared GPU
+//! Laplacian pyramid runner (`pyramid.rs`) when the photo fits device limits and
+//! falling back to the CPU reference otherwise. Measured Texture computes its
+//! [`crate::develop::texture::TextureDetail`] through the same shared GPU pyramid
+//! runner (reusing the resident GPU photo buffer when uploaded), cached in the stage
+//! cache across slider drags. The Shadows/Highlights map (with Clarity's gain) is
 //! built on the CPU from the photo's measurement copy, and the scene tone stage reads
-//! it in `develop.wgsl`. Texture's image is made on the CPU, and a mask's Clarity or
-//! Texture renders the whole preview on the CPU. A failure in these stages turns off
-//! only this path for the session.
+//! it in `develop.wgsl`. A mask's Clarity or Texture renders the whole preview on the
+//! CPU (while still sharing GPU-computed Texture detail when available). A failure in
+//! these stages turns off only this path for the session.
 //!
 //! # Textures, buffers and failure
 //!
@@ -162,6 +166,59 @@ fn wait(device: &wgpu::Device, submission: wgpu::SubmissionIndex) -> Result<(), 
     }
 }
 
+fn wait_cancellable(
+    device: &wgpu::Device,
+    submission: wgpu::SubmissionIndex,
+    cancel: Cancel<'_>,
+) -> Result<()> {
+    const SLICE: Duration = Duration::from_millis(2);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        match device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission.clone()),
+            timeout: Some(SLICE),
+        }) {
+            Ok(_) => return Ok(()),
+            Err(wgpu::PollError::Timeout) if std::time::Instant::now() < deadline => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+}
+
+struct ProcessorHost<'a> {
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+}
+
+impl pyramid::PyramidHost for ProcessorHost<'_> {
+    type Error = anyhow::Error;
+
+    fn device(&self) -> &wgpu::Device {
+        self.device
+    }
+
+    fn submit(&self, encoder: wgpu::CommandEncoder) -> wgpu::SubmissionIndex {
+        submit(self.queue, encoder)
+    }
+
+    fn wait(&self, submission: wgpu::SubmissionIndex, cancel: Cancel<'_>) -> Result<()> {
+        wait_cancellable(self.device, submission, cancel)
+    }
+
+    fn cancelled(&self) -> anyhow::Error {
+        anyhow::anyhow!("Render superseded")
+    }
+
+    fn readback_error(&self, message: String) -> anyhow::Error {
+        anyhow::anyhow!("{message}")
+    }
+
+    fn exceeds_limits(&self, message: String) -> anyhow::Error {
+        anyhow::anyhow!("{message}")
+    }
+}
+
 pub struct Processor {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -174,6 +231,8 @@ pub struct Processor {
     presenter: Option<present::Presenter>,
     /// The photo and its local-tone and sampling stages on the device.
     resident: Option<resident::Resident>,
+    /// Shared GPU Laplacian pyramid pipelines, created on first use.
+    pyramid: Option<pyramid::GpuPyramid>,
     /// The develop pass's camera color kept for its samples (see `develop::Kept`), most
     /// recently used first.
     kept: Vec<develop::Kept>,
@@ -373,12 +432,126 @@ impl Processor {
             developer: None,
             presenter: None,
             resident: None,
+            pyramid: None,
             kept: Vec::new(),
             name: adapter.name.clone(),
         })
     }
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether `image` fits the GPU Laplacian pyramid buffer and dispatch limits.
+    pub(crate) fn fits_pyramid(&self, image: &crate::camera_data::CameraImage) -> bool {
+        let limits = self.device.limits();
+        let max_binding = limits
+            .max_storage_buffer_binding_size
+            .min(limits.max_buffer_size);
+        let max_wg = limits.max_compute_workgroups_per_dimension;
+        let bytes = image.pixels.len() as u64 * 12;
+        bytes > 0
+            && bytes <= max_binding
+            && image.width.div_ceil(16) <= max_wg
+            && image.height.div_ceil(16) <= max_wg
+    }
+
+    /// Runs Color and/or Luminance noise reduction on `base` through the shared GPU
+    /// Laplacian pyramid runner (`pyramid.rs`), returning a denoised camera image.
+    pub(crate) fn denoise(
+        &mut self,
+        base: &crate::camera_data::CameraImage,
+        chroma: Option<super::color_noise::ChromaDenoise>,
+        luminance: Option<super::luminance_noise::LuminanceDenoise>,
+        cancel: Cancel<'_>,
+    ) -> Result<crate::camera_data::CameraImage> {
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        ensure!(self.fits_pyramid(base), "Photo exceeds GPU pyramid limits");
+        self.scoped_pyramid(|gpu| {
+            let device = &gpu.device;
+            let runner = gpu
+                .pyramid
+                .get_or_insert_with(|| pyramid::GpuPyramid::new(device));
+            let host = ProcessorHost {
+                device,
+                queue: &gpu.queue,
+            };
+            let photo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Preview pyramid photo"),
+                contents: bytemuck::cast_slice(&base.pixels),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            });
+            let photo_scale = base.photo_scale();
+            if let Some(d) = chroma {
+                runner.apply_chroma_denoise(
+                    &host,
+                    &photo,
+                    base.width,
+                    base.height,
+                    base.metadata.wb,
+                    photo_scale,
+                    d,
+                    cancel,
+                )?;
+            }
+            if let Some(d) = luminance {
+                runner.apply_luminance_denoise(
+                    &host,
+                    &photo,
+                    base.width,
+                    base.height,
+                    base.metadata.wb,
+                    photo_scale,
+                    d,
+                    cancel,
+                )?;
+            }
+            let pixels = pyramid::GpuPyramid::readback_photo(
+                &host,
+                &photo,
+                base.width,
+                base.height,
+                cancel,
+            )?;
+            let mut out = base.clone();
+            out.recovered = Default::default();
+            out.pixels = pixels.into();
+            Ok(out)
+        })
+    }
+
+    /// Computes measured [`super::texture::TextureDetail`] for `image` at `scale` through
+    /// the shared GPU Laplacian pyramid runner (`pyramid.rs`), reusing the resident GPU
+    /// photo buffer when `image` is already uploaded.
+    pub(crate) fn texture_detail(
+        &mut self,
+        image: &std::sync::Arc<crate::camera_data::CameraImage>,
+        scale: f32,
+        cancel: Cancel<'_>,
+    ) -> Result<super::texture::TextureDetail> {
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+        ensure!(self.fits_pyramid(image), "Photo exceeds GPU pyramid limits");
+        self.scoped_pyramid(|gpu| {
+            let existing = gpu.resident.as_ref().and_then(|r| r.photo_buffer(image));
+            let device = &gpu.device;
+            let photo = existing.unwrap_or_else(|| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Preview texture photo"),
+                    contents: bytemuck::cast_slice(&image.pixels),
+                    usage: wgpu::BufferUsages::STORAGE,
+                })
+            });
+            let runner = gpu
+                .pyramid
+                .get_or_insert_with(|| pyramid::GpuPyramid::new(device));
+            let host = ProcessorHost {
+                device,
+                queue: &gpu.queue,
+            };
+            let offset = super::texture::level_offset(image, scale);
+            runner.compute_texture_detail(&host, &photo, image.width, image.height, offset, cancel)
+        })
     }
 
     /// Sharpen with a blur of `sigma` (the recipe's, scaled to the image's pixels),
@@ -603,6 +776,20 @@ impl Processor {
         })
     }
 }
+
+/// Typed error returned when a GPU Laplacian pyramid stage hits device memory limits,
+/// allowing callers to fall back to CPU for that photo without disabling GPU pyramids
+/// or resident GPU sampling for subsequent smaller photos.
+#[derive(Debug)]
+pub(crate) struct PyramidOutOfMemory(pub(crate) String);
+
+impl std::fmt::Display for PyramidOutOfMemory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for PyramidOutOfMemory {}
 
 #[cfg(test)]
 mod tests;
