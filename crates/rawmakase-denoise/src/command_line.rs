@@ -11,8 +11,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// AI Denoise for command-line renders (`render`, `render-batch`): one service for the
-/// whole command, so the model loads once. Its worker is stopped when this is dropped,
-/// waiting at most three seconds.
+/// whole command, so the model stays loaded across back-to-back renders (unloading
+/// after 60 s idle and reloading on demand). Its worker is stopped when this is
+/// dropped, waiting at most three seconds.
 pub struct CommandLine {
     service: Service,
     /// The model pack's folder, used when the model is installed there.

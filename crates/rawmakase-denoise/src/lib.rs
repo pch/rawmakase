@@ -227,6 +227,9 @@ struct Queue {
     neural_engine_off: bool,
     /// The worker is to drop its loaded models (the model is being removed).
     unload: bool,
+    /// A worker thread is alive or still dropping its loaded models: cleared only by
+    /// [`WorkerExited`] after `models` has dropped (or if spawning the thread fails).
+    worker_active: bool,
     /// A worker thread serves the queue. Cleared by a worker leaving it, under the
     /// same lock as it takes the last of the queue, so a job queued after has a new
     /// worker started for it rather than wait for one that is gone.
@@ -259,6 +262,20 @@ struct Working<'a>(&'a Service);
 impl Drop for Working<'_> {
     fn drop(&mut self) {
         self.0.queue().working = false;
+    }
+}
+
+/// Marks the worker inactive and wakes any [`Service::unload`] waiter once the worker's
+/// loaded models have finished dropping (whether returning normally or unwinding).
+struct WorkerExited<'a>(&'a Service);
+impl Drop for WorkerExited<'_> {
+    fn drop(&mut self) {
+        {
+            let mut queue = self.0.queue();
+            queue.worker_active = false;
+            queue.unload = false;
+        }
+        self.0.shared.changed.notify_all();
     }
 }
 
@@ -548,6 +565,7 @@ impl Service {
                 return;
             }
             queue.served = true;
+            queue.worker_active = true;
         }
         let mut thread = self.thread.lock().unwrap_or_else(|e| e.into_inner());
         let service = self.clone();
@@ -569,7 +587,13 @@ impl Service {
             Err(e) => {
                 *thread = None;
                 drop(thread);
-                self.queue().served = false;
+                {
+                    let mut queue = self.queue();
+                    queue.served = false;
+                    queue.worker_active = false;
+                    queue.unload = false;
+                }
+                self.shared.changed.notify_all();
                 self.fail_pending(&format!("AI Denoise could not start: {e}"));
             }
         }
@@ -716,6 +740,9 @@ impl Service {
 
     /// The worker: one job at a time until stopped.
     fn work(&self) {
+        // Declared before `models` so reverse-order drop guarantees every loaded model
+        // finishes dropping before `WorkerExited` clears `worker_active` and wakes waiters.
+        let _exited = WorkerExited(self);
         let mut models: HashMap<(PathBuf, Provider), Box<dyn TileModel + Send>> = HashMap::new();
         loop {
             let job = {
@@ -1111,34 +1138,37 @@ impl Service {
     }
 
     /// Lets go of the model before it is removed: no job uses it from now on, the
-    /// running one is cancelled, and the worker drops its ONNX sessions between jobs.
-    /// Waits for that up to five seconds (a run stops within one cancel poll).
-    pub fn unload(&self) {
+    /// running one is cancelled, and the worker drops its ONNX/Core ML sessions off the
+    /// queue lock between jobs (or on exit if stopped concurrently). Waits up to five
+    /// seconds for teardown to complete and returns whether the worker has let go of
+    /// its models; callers must not delete the model files when this returns `false`.
+    pub fn unload(&self) -> bool {
+        self.unload_within(Duration::from_secs(5))
+    }
+    fn unload_within(&self, timeout: Duration) -> bool {
         self.set_model(None);
-        let alive = self
-            .thread
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .is_some_and(|t| !t.is_finished());
         let mut queue = self.queue();
-        if !alive {
-            return;
+        if !queue.worker_active {
+            return true;
         }
         queue.unload = true;
         if let Some((_, cancel)) = &queue.running {
             cancel.store(true, Ordering::Relaxed);
         }
         self.shared.changed.notify_all();
-        let until = std::time::Instant::now() + Duration::from_secs(5);
-        while queue.unload && !queue.stopped && std::time::Instant::now() < until {
+        let until = std::time::Instant::now() + timeout;
+        while queue.unload && queue.worker_active {
+            let Some(remaining) = until.checked_duration_since(std::time::Instant::now()) else {
+                break;
+            };
             queue = self
                 .shared
                 .changed
-                .wait_timeout(queue, Duration::from_millis(50))
+                .wait_timeout(queue, remaining.min(Duration::from_millis(50)))
                 .unwrap_or_else(|e| e.into_inner())
                 .0;
         }
+        !queue.unload || !queue.worker_active
     }
     /// Stops the worker for good: the stop flag and the running run's cancel flag are
     /// raised, and its thread is handed back for the caller's deadline (the app's

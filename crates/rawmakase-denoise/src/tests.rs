@@ -618,7 +618,7 @@ fn unloading_cancels_the_run_drops_the_model_and_refuses_later_jobs() {
     let unloading = std::thread::spawn(move || service.unload());
     std::thread::sleep(Duration::from_millis(50));
     drop(gate);
-    unloading.join().unwrap();
+    assert!(unloading.join().unwrap());
     assert!(!f.service.queue().unload, "the worker dropped its models");
     // The cancelled run reported nothing as a failure; nothing was cached.
     while let Ok(state) = rx.recv_timeout(Duration::from_millis(300)) {
@@ -1061,8 +1061,13 @@ fn stop_does_not_block_while_unload_drops_model() {
     let plain = f.plain();
     let (rx, _w) = f.request(&f.photo("a.raw"), &plain, None);
     assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+    let (unloaded_tx, unloaded_rx) = mpsc::channel();
     let service = f.service.clone();
-    let unloader = std::thread::spawn(move || service.unload());
+    let unloader = std::thread::spawn(move || {
+        let done = service.unload();
+        let _ = unloaded_tx.send(done);
+        done
+    });
     started_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("model drop started");
@@ -1074,13 +1079,100 @@ fn stop_does_not_block_while_unload_drops_model() {
         handle
     });
     let stopped_in_time = stop_rx.recv_timeout(Duration::from_millis(500)).is_ok();
+    // Even after stop() ran, unload() must keep waiting until model teardown finishes.
+    let returned_early = unloaded_rx.recv_timeout(Duration::from_millis(150)).is_ok();
     let _ = release_tx.send(());
     drop(release_tx);
-    unloader.join().unwrap();
+    let unload_ok = unloader.join().unwrap();
     if let Some(handle) = stop_thread.join().unwrap() {
         handle.join().unwrap();
     }
     assert!(stopped_in_time, "stop() blocked while model was dropping");
+    assert!(
+        !returned_early,
+        "unload() returned before model destructor completed"
+    );
+    assert!(
+        unload_ok,
+        "unload() reported failure after teardown completed"
+    );
+}
+
+#[test]
+fn unload_waits_for_teardown_even_when_stop_ran_first() {
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let f = fixture(
+        Provider::Cpu,
+        Behaviour {
+            drop_gate: Some(DropGate {
+                started: Mutex::new(Some(started_tx)),
+                release: Mutex::new(release_rx),
+            }),
+            ..Default::default()
+        },
+    );
+    let plain = f.plain();
+    let (rx, _w) = f.request(&f.photo("a.raw"), &plain, None);
+    assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+    // stop() takes self.thread first; the worker exits its loop and blocks dropping `models`.
+    let handle = f.service.stop();
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("model drop started on worker exit");
+    let (unloaded_tx, unloaded_rx) = mpsc::channel();
+    let service = f.service;
+    let unloader = std::thread::spawn(move || {
+        let done = service.unload();
+        let _ = unloaded_tx.send(done);
+        done
+    });
+    let returned_early = unloaded_rx.recv_timeout(Duration::from_millis(150)).is_ok();
+    let _ = release_tx.send(());
+    drop(release_tx);
+    let unload_ok = unloader.join().unwrap();
+    if let Some(handle) = handle {
+        handle.join().unwrap();
+    }
+    assert!(
+        !returned_early,
+        "unload() returned early after stop() took the thread handle"
+    );
+    assert!(unload_ok);
+}
+
+#[test]
+fn unload_within_returns_false_when_teardown_outlasts_deadline() {
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let f = fixture(
+        Provider::Cpu,
+        Behaviour {
+            drop_gate: Some(DropGate {
+                started: Mutex::new(Some(started_tx)),
+                release: Mutex::new(release_rx),
+            }),
+            ..Default::default()
+        },
+    );
+    let plain = f.plain();
+    let (rx, _w) = f.request(&f.photo("a.raw"), &plain, None);
+    assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+    let service = f.service.clone();
+    let unloader = std::thread::spawn(move || service.unload_within(Duration::from_millis(50)));
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("model drop started");
+    let unloaded_in_time = unloader.join().unwrap();
+    let _ = release_tx.send(());
+    drop(release_tx);
+    if let Some(handle) = f.service.stop() {
+        handle.join().unwrap();
+    }
+    assert!(
+        !unloaded_in_time,
+        "unload_within() must return false when the deadline expires mid-drop"
+    );
 }
 
 #[test]
@@ -1397,7 +1489,7 @@ mod neural_engine {
         };
         std::thread::sleep(Duration::from_millis(100));
         drop(gate);
-        unload.join().unwrap();
+        assert!(unload.join().unwrap());
         let started = std::time::Instant::now();
         while f.service.busy() {
             assert!(

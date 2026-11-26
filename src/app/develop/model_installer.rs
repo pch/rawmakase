@@ -123,28 +123,41 @@ impl Installer {
         vec![Stopping::new(self.thread.take())]
     }
     /// Removes the model from disk: the worker lets go of it first, off the UI
-    /// thread, and the files go once it has.
+    /// thread, and the files go once it has. Refuses to delete them if the worker
+    /// does not finish unloading within its deadline.
     pub(in crate::app) fn remove(
         &mut self,
-        unload: impl FnOnce() + Send + 'static,
+        unload: impl FnOnce() -> bool + Send + 'static,
         tx: Sender<Event>,
         ctx: egui::Context,
     ) {
         if self.busy() || !self.installed() {
             return;
         }
+        self.remove_dir(crate::model_install::dir(), unload, tx, ctx);
+    }
+    fn remove_dir(
+        &mut self,
+        dir: PathBuf,
+        unload: impl FnOnce() -> bool + Send + 'static,
+        tx: Sender<Event>,
+        ctx: egui::Context,
+    ) {
         self.removing = true;
         std::thread::spawn(move || {
-            unload();
-            let result = std::fs::remove_dir_all(crate::model_install::dir())
-                .or_else(|e| {
-                    if e.kind() == std::io::ErrorKind::NotFound {
-                        Ok(())
-                    } else {
-                        Err(e)
-                    }
-                })
-                .map_err(|e| e.to_string());
+            let result = if !unload() {
+                Err("the denoiser did not finish unloading the model in time".into())
+            } else {
+                std::fs::remove_dir_all(dir)
+                    .or_else(|e| {
+                        if e.kind() == std::io::ErrorKind::NotFound {
+                            Ok(())
+                        } else {
+                            Err(e)
+                        }
+                    })
+                    .map_err(|e| e.to_string())
+            };
             let _ = tx.send(Event::ModelRemoved(result));
             ctx.request_repaint();
         });
@@ -158,6 +171,7 @@ impl Installer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
 
     #[test]
     fn a_failed_install_says_why_until_the_next_one() {
@@ -171,5 +185,40 @@ mod tests {
         );
         installer.finished(&Err(InstallError::Cancelled));
         assert_eq!(installer.failure(), None);
+    }
+
+    #[test]
+    fn remove_keeps_files_and_reports_error_when_unload_times_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let model_dir = dir.path().join("model");
+        std::fs::create_dir(&model_dir).unwrap();
+        let model_file = model_dir.join("model.onnx");
+        std::fs::write(&model_file, b"weights").unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let ctx = egui::Context::default();
+        let mut installer = Installer::new();
+        installer.remove_dir(model_dir.clone(), || false, tx.clone(), ctx.clone());
+        assert!(installer.busy());
+        let event = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("ModelRemoved event");
+        assert!(matches!(event, Event::ModelRemoved(Err(_))));
+        assert!(
+            model_file.is_file(),
+            "model files must not be deleted when unload times out"
+        );
+        installer.removed();
+        assert!(!installer.busy());
+
+        installer.remove_dir(model_dir.clone(), || true, tx, ctx);
+        assert!(installer.busy());
+        let event = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("ModelRemoved event");
+        assert!(matches!(event, Event::ModelRemoved(Ok(()))));
+        assert!(!model_dir.exists(), "model directory should be deleted");
+        installer.removed();
+        assert!(!installer.busy());
     }
 }
