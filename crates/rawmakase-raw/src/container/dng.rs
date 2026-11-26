@@ -484,6 +484,8 @@ pub(crate) fn header_parts(t: &TiffFile) -> Option<Vec<(u64, u64)>> {
     if !private.starts_with(b"Adobe\0") {
         return Some(parts);
     }
+    let mut found_raf = false;
+    let mut found_makn = false;
     let mut pos = 6u64;
     while pos.checked_add(8).is_some_and(|end| end <= tag_len) {
         if private.has_gap(pos, 8) {
@@ -496,19 +498,21 @@ pub(crate) fn header_parts(t: &TiffFile) -> Option<Vec<(u64, u64)>> {
         let Some(len) = private.u32(Order::Big, pos + 4).map(u64::from) else {
             break;
         };
-        if rec_name == [0; 4] && len == 0 {
-            break;
-        }
         let data_at = pos + 8;
         let Some(next) = data_at.checked_add(len).filter(|&end| end <= tag_len) else {
             break;
         };
         if let Some(payload) = private.slice_exact(data_at, len) {
-            if rec_name == *b"RAF " {
+            if rec_name == *b"RAF " && !found_raf {
+                found_raf = true;
                 collect_raf_parts(&mut parts, base + data_at, payload)?;
-            } else if rec_name == *b"MakN" {
+            } else if rec_name == *b"MakN" && !found_makn {
+                found_makn = true;
                 collect_makn_parts(&mut parts, base + data_at, payload)?;
             }
+        }
+        if found_raf && found_makn {
+            break;
         }
         pos = next;
     }
@@ -546,9 +550,6 @@ fn collect_raf_parts(
     let Some(dir_len) = raf.u32(Order::Big, dir_len_at).map(u64::from) else {
         return Some(());
     };
-    if dir_len > crate::io::MAX_PIECE {
-        return None;
-    }
     let dir_at = dir_len_at + 4;
     if dir_at
         .checked_add(dir_len)
@@ -556,6 +557,9 @@ fn collect_raf_parts(
         && dir_len > 0
         && raf.has_gap(dir_at, dir_len)
     {
+        if dir_len > crate::io::MAX_PIECE {
+            return None;
+        }
         parts.push((raf_base + dir_at, dir_len));
     }
     Some(())
@@ -592,13 +596,12 @@ fn collect_makn_parts(
     let Some(count) = makn.u16(Order::Little, ifd_at).map(u64::from) else {
         return Some(());
     };
-    let table_len = 12 * count;
-    if table_len > crate::io::MAX_PIECE {
-        return None;
-    }
     let table_at = ifd_at + 2;
-    let avail = table_len.min(makn.len().saturating_sub(table_at));
+    let avail = (12 * count).min(makn.len().saturating_sub(table_at));
     if avail > 0 && makn.has_gap(table_at, avail) {
+        if avail > crate::io::MAX_PIECE {
+            return None;
+        }
         parts.push((makn_base + table_at, avail));
     }
     Some(())
@@ -614,7 +617,7 @@ fn adobe_record<'a>(
     name: [u8; 4],
 ) -> Option<crate::io::Source<'a>> {
     let view = private.into();
-    if !view.starts_with(b"Adobe\0") {
+    if view.has_gap(0, 6) || !view.starts_with(b"Adobe\0") {
         return None;
     }
     let mut pos = 6u64;
@@ -2507,19 +2510,25 @@ pub(crate) mod tests {
         assert_eq!(partial.info.fuji_exposure_shift, whole.fuji_exposure_shift);
     }
 
-    #[test]
-    fn fujifilm_dynamic_range_straddling_sparse_head() {
-        let head = crate::partial::HEAD as usize;
+    fn fuji_dynamic_makn_payload(dr: u16, trim: usize) -> Vec<u8> {
         let mut note = b"FUJIFILM".to_vec();
         note.extend(12u32.to_le_bytes());
         note.extend(1u16.to_le_bytes());
         note.extend(0x1403u16.to_le_bytes());
         note.extend(3u16.to_le_bytes());
         note.extend(1u32.to_le_bytes());
-        note.extend(400u16.to_le_bytes());
+        note.extend(dr.to_le_bytes());
         note.extend([0u8; 2]);
+        note.truncate(note.len() - trim);
         let mut makn = b"II\0\0\0\0".to_vec();
         makn.extend(note);
+        makn
+    }
+
+    #[test]
+    fn fujifilm_dynamic_range_straddling_sparse_head() {
+        let head = crate::partial::HEAD as usize;
+        let makn = fuji_dynamic_makn_payload(400, 0);
         let build = |noop_len: usize, tail_len: usize| {
             let mut private = b"Adobe\0".to_vec();
             private.extend(b"NOOP");
@@ -2545,6 +2554,119 @@ pub(crate) mod tests {
         assert_eq!(whole.fuji_dynamic_range, 400);
         let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
         assert_eq!(partial.info.fuji_dynamic_range, whole.fuji_dynamic_range);
+    }
+
+    #[test]
+    fn fujifilm_records_after_all_zero_header_before_sparse_head() {
+        let head = crate::partial::HEAD as usize;
+        let raf = fuji_exposure_raf_payload(256, 511);
+        let makn = fuji_dynamic_makn_payload(400, 0);
+        let build = |noop_len: usize| {
+            let mut private = b"Adobe\0".to_vec();
+            private.extend(b"NOOP");
+            private.extend((noop_len as u32).to_be_bytes());
+            private.resize(private.len() + noop_len, 0);
+            private.extend([0u8; 8]);
+            private.extend(b"RAF ");
+            private.extend((raf.len() as u32).to_be_bytes());
+            private.extend(&raf);
+            private.extend(b"MakN");
+            private.extend((makn.len() as u32).to_be_bytes());
+            private.extend(&makn);
+            private.extend(b"TAIL");
+            private.extend((1u32 << 20).to_be_bytes());
+            private.resize(private.len() + (1 << 20), 0);
+            dng(2, 1, &[(50740, 1, private.len() as u32, private)])
+        };
+        let probe = build(0);
+        let raf_at = probe.windows(4).position(|w| w == b"RAF ").unwrap();
+        let file = build(head - raf_at);
+        assert_eq!(&file[head - 8..head], &[0u8; 8]);
+        assert_eq!(&file[head..head + 4], b"RAF ");
+        let whole = crate::open(&file).unwrap();
+        assert_eq!(whole.fuji_exposure_shift, 0.50097847);
+        assert_eq!(whole.fuji_dynamic_range, 400);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
+        assert_eq!(partial.info.fuji_exposure_shift, whole.fuji_exposure_shift);
+        assert_eq!(partial.info.fuji_dynamic_range, whole.fuji_dynamic_range);
+    }
+
+    #[test]
+    fn fujifilm_first_records_in_head_skip_spaced_trailing_siblings() {
+        let raf = fuji_exposure_raf_payload(50, 100);
+        let makn = fuji_dynamic_makn_payload(400, 0);
+        let mut bad_raf = b"MM".to_vec();
+        bad_raf.extend(4u32.to_be_bytes());
+        bad_raf.extend(b"0201");
+        bad_raf.extend((20u32 << 20).to_be_bytes());
+
+        let mut private = b"Adobe\0".to_vec();
+        for (name, data) in [(b"RAF ", &raf), (b"RAF ", &bad_raf), (b"MakN", &makn)] {
+            private.extend(name);
+            private.extend((data.len() as u32).to_be_bytes());
+            private.extend(data);
+        }
+        let head_pad = crate::partial::HEAD as usize;
+        private.extend(b"PAD0");
+        private.extend((head_pad as u32).to_be_bytes());
+        private.resize(private.len() + head_pad, 0);
+        let gap = 128usize << 10;
+        for _ in 0..10 {
+            private.extend(b"NOOP");
+            private.extend((gap as u32).to_be_bytes());
+            private.resize(private.len() + gap, 0);
+        }
+        private.extend(b"RAF ");
+        private.extend((bad_raf.len() as u32).to_be_bytes());
+        private.extend(&bad_raf);
+
+        let file = dng(2, 1, &[(50740, 1, private.len() as u32, private)]);
+        let whole = crate::open(&file).unwrap();
+        assert_eq!(whole.fuji_exposure_shift, 0.5);
+        assert_eq!(whole.fuji_dynamic_range, 400);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
+        assert_eq!(partial.info.fuji_exposure_shift, 0.5);
+        assert_eq!(partial.info.fuji_dynamic_range, 400);
+        assert!(partial.read < file.len() as u64 / 2);
+
+        // An out-of-bounds `RAF ` directory length past `MAX_PIECE` does not
+        // force whole-file fallback.
+        let mut oob_private = b"Adobe\0".to_vec();
+        oob_private.extend(b"RAF ");
+        oob_private.extend((bad_raf.len() as u32).to_be_bytes());
+        oob_private.extend(&bad_raf);
+        oob_private.extend(b"TAIL");
+        oob_private.extend((2u32 << 20).to_be_bytes());
+        oob_private.resize(oob_private.len() + (2 << 20), 0);
+        let oob_file = dng(2, 1, &[(50740, 1, oob_private.len() as u32, oob_private)]);
+        let oob_whole = crate::open(&oob_file).unwrap();
+        let oob_partial = crate::header_from_file(&mut std::io::Cursor::new(&oob_file)).unwrap();
+        assert_eq!(
+            oob_partial.info.fuji_exposure_shift,
+            oob_whole.fuji_exposure_shift
+        );
+        assert!(oob_partial.read < oob_file.len() as u64 / 2);
+    }
+
+    #[test]
+    fn fujifilm_truncated_final_makn_entry_reads_dynamic_range() {
+        let makn = fuji_dynamic_makn_payload(400, 2);
+        let mut private = b"Adobe\0".to_vec();
+        let pad = crate::partial::HEAD as usize;
+        private.extend(b"NOOP");
+        private.extend((pad as u32).to_be_bytes());
+        private.resize(private.len() + pad, 0);
+        private.extend(b"MakN");
+        private.extend((makn.len() as u32).to_be_bytes());
+        private.extend(&makn);
+        private.extend(b"TAIL");
+        private.extend((1u32 << 20).to_be_bytes());
+        private.resize(private.len() + (1 << 20), 0);
+        let file = dng(2, 1, &[(50740, 1, private.len() as u32, private)]);
+        let whole = crate::open(&file).unwrap();
+        assert_eq!(whole.fuji_dynamic_range, 400);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
+        assert_eq!(partial.info.fuji_dynamic_range, 400);
     }
 
     /// AsShotWhiteXY's neutral: the calibration (here an identity

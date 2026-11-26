@@ -396,12 +396,15 @@ fn note_short<'a>(notes: impl Into<Source<'a>>, tag: u16) -> Option<u16> {
     let count = b.u16(Order::Little, at)?;
     for i in 0..u64::from(count) {
         let e = at.checked_add(2 + 12 * i)?;
-        if b.has_gap(e, 12) {
+        if b.has_gap(e, 4) {
             return None;
         }
         let found = b.u16(Order::Little, e)?;
         let kind = b.u16(Order::Little, e + 2)?;
         if found == tag && kind == rawmakase_tiff::kind::SHORT {
+            if b.has_gap(e + 8, 2) {
+                return None;
+            }
             return b.u16(Order::Little, e + 8);
         }
     }
@@ -465,7 +468,10 @@ mod tests {
 
     #[test]
     fn a_film_simulation_is_named_black_and_white_first() {
-        let classic = notes(&[(0x1003, 0), (0x1401, 0x600)]);
+        let mut classic = notes(&[(0x1003, 0), (0x1401, 0x600)]);
+        assert_eq!(film_simulation(&classic).as_deref(), Some("Classic Chrome"));
+        // A final SHORT entry missing its 2 trailing padding bytes still parses.
+        classic.truncate(classic.len() - 2);
         assert_eq!(film_simulation(&classic).as_deref(), Some("Classic Chrome"));
         let acros = notes(&[(0x1003, 0x500), (0x1401, 0)]);
         assert_eq!(film_simulation(&acros).as_deref(), Some("Acros"));
@@ -605,6 +611,8 @@ mod tests {
         n.extend(1u32.to_le_bytes());
         n.extend(400u32.to_le_bytes());
         assert_eq!(dynamic_range(&n), Some(400));
+        assert_eq!(dynamic_range(&n[..n.len() - 2]), Some(400));
+        assert_eq!(dynamic_range(&n[..n.len() - 3]), None);
         assert_eq!(dynamic_range(&n[..20]), None);
         assert_eq!(dynamic_range(b"FUJIFILM\xff\xff\xff\xff"), None);
     }
