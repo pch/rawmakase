@@ -20,8 +20,9 @@ destination. It works on files: a photo and its edit in, rendered files out.
   to print.
 - AI Denoise's service and model pack are the `rawmakase-denoise` crate, given
   their model, runtime and cache folders and a `Cancel` by the caller.
-- Watermark fonts no longer come through egui: `rawmakase-export` bundles Inter
-  and its own font-folder lookup.
+- Watermark fonts no longer come through egui: `rawmakase-export` finds the
+  system's default font and lists the installed-font folders itself. It
+  bundles no font (Inter is in the crate for its tests only).
 - `--quality` for JPEG output.
 
 ## Deferred
