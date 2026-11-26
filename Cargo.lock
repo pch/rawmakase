@@ -4271,7 +4271,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "brotli-decompressor 6.3.2",
- "directories",
  "rawmakase-model",
  "roxmltree 0.21.2",
  "serde",

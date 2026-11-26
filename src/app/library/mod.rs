@@ -1784,6 +1784,7 @@ impl Library {
         self.cache.edit_tx.set_libraries(libraries.clone());
         self.screen.set_libraries(libraries);
         self.session.set_lens_profiles(libraries.lenses.clone());
+        self.keyword_sets.set_store(libraries.keyword_sets.clone());
     }
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does

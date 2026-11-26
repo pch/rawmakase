@@ -59,8 +59,9 @@ pub fn profile_manager(ctx: &rawmakase_core::Context) -> crate::camera_profiles:
 }
 
 /// What photos are opened with and their edits resolved among, taken
-/// together from a context: its imported lens profiles and installed camera
-/// profiles. Cheap to clone; the default has neither.
+/// together from a context: its imported lens profiles, installed camera
+/// profiles, Lensfun's database and Camera Look's fits, and the keyword
+/// sets the Library offers. Cheap to clone; the default has none of them.
 #[derive(Clone, Debug)]
 pub struct Libraries {
     pub lenses: crate::photo::LensProfiles,
@@ -70,6 +71,8 @@ pub struct Libraries {
     /// Camera Look's fit cache, which a photo without color data is fitted
     /// through.
     pub fits: crate::camera_look::cache::FitCache,
+    /// The keyword sets: the data folder's `Keyword Sets` and Lightroom's.
+    pub keyword_sets: crate::keyword_sets::KeywordSets,
 }
 impl Default for Libraries {
     fn default() -> Self {
@@ -78,6 +81,7 @@ impl Default for Libraries {
             profiles: Default::default(),
             lensfun: crate::lens::lensfun::installed::Handle::none(),
             fits: Default::default(),
+            keyword_sets: Default::default(),
         }
     }
 }
@@ -89,6 +93,26 @@ pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
         profiles: camera_profiles(ctx).clone(),
         lensfun: lensfun(ctx).clone(),
         fits: rawmakase_core::workspace::fit_cache(ctx),
+        keyword_sets: crate::keyword_sets::KeywordSets {
+            dir: ctx.data_dirs().first().map(|d| d.join("Keyword Sets")),
+            lightroom: lightroom_keyword_sets(),
+        },
+    }
+}
+
+/// Where Lightroom Classic keeps its keyword sets on this computer.
+fn lightroom_keyword_sets() -> Option<std::path::PathBuf> {
+    let base = directories::BaseDirs::new()?;
+    if cfg!(target_os = "macos") {
+        Some(
+            base.home_dir()
+                .join("Library/Application Support/Adobe/Lightroom/Keyword Sets"),
+        )
+    } else if cfg!(windows) {
+        // Roaming application data: %APPDATA%.
+        Some(base.config_dir().join("Adobe/Lightroom/Keyword Sets"))
+    } else {
+        None
     }
 }
 

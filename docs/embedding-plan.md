@@ -884,7 +884,7 @@ so the design is proved on one path before it is spread.
    default destination and the keyword sets' Lightroom folder, the last
    uses of `directories`.
 
-   Built so far: the caches' build id. A decode and an AI Denoise cache are
+   Built: every change above. The caches' build id first. A decode and an AI Denoise cache are
    made with the build they key entries by and the folder they return to
    when a chosen folder is given up (`set_folder(None)`), both from the
    context; the keys keep their form, and the desktop passes the
@@ -985,6 +985,14 @@ so the design is proved on one path before it is spread.
    folder when even the home folder was unknown. The desktop finds them
    once at startup in its `environment` module, as before (user-dirs.dirs
    on Linux, the shell's known folders on Windows).
+
+   The keyword sets' folders: `keyword_sets::KeywordSets` has no default
+   that reads the environment; without its own folder it lists the
+   built-in sets and Lightroom's and saves none. The app's libraries
+   bundle carries the data folder's `Keyword Sets` and Lightroom's folder,
+   found in the `environment` module, to the Library's panel, which reads
+   its sets again when they change. With it the interop crate no longer
+   depends on `directories`, and no library crate calls it.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

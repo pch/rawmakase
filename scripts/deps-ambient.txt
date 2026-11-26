@@ -28,8 +28,6 @@ crates/rawmakase-inference/src/runtime.rs env 3
 crates/rawmakase-interop/src/export_settings.rs folder 1
 crates/rawmakase-interop/src/export_settings/rename.rs folder 1
 crates/rawmakase-interop/src/export_settings/saved.rs folder 1
-crates/rawmakase-interop/src/keyword_sets.rs directories 1
-crates/rawmakase-interop/src/keyword_sets.rs folder 1
 crates/rawmakase-interop/src/presets/curves.rs folder 1
 crates/rawmakase-interop/src/presets/library.rs folder 1
 crates/rawmakase-interop/src/presets/user.rs folder 1
