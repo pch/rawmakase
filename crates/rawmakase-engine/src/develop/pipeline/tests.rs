@@ -150,6 +150,162 @@ fn exposure_on_a_rendered_file_follows_lightroom() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Camera Raw 18.7 renders of saturated sRGB primary, secondary and vivid patches in
+/// a rendered JPEG at Exposure −1, +1, +2 and +3: the Embedded profile's ACR3 tone
+/// curve (and `rendered::scene_from_rendered`'s inverse of it) uses PV2012's
+/// hue-ratio-preserving channel mixing rather than PV2010 DNG RGBTone.
+#[test]
+fn exposure_on_a_rendered_files_saturated_colours_follows_lightroom() -> anyhow::Result<()> {
+    let patches = [
+        [143u8, 1, 0], // red mid
+        [206, 0, 0],   // red bright
+        [0, 143, 1],   // green mid
+        [0, 0, 142],   // blue mid
+        [144, 143, 0], // yellow mid
+        [0, 143, 143], // cyan mid
+        [143, 0, 142], // magenta mid
+        [216, 108, 0], // orange vivid
+        [65, 0, 128],  // violet vivid
+    ];
+    let im = rendered_fixture(&patches);
+    for (exposure, expected) in [
+        (
+            -1.,
+            [
+                [92u8, 2, 2],
+                [139, 0, 0],
+                [0, 93, 0],
+                [0, 0, 92],
+                [94, 93, 0],
+                [0, 93, 93],
+                [93, 0, 92],
+                [150, 71, 0],
+                [39, 0, 82],
+            ],
+        ),
+        (
+            1.,
+            [
+                [211, 13, 13],
+                [255, 44, 44],
+                [48, 198, 48],
+                [30, 30, 197],
+                [197, 196, 46],
+                [93, 194, 194],
+                [199, 43, 198],
+                [255, 146, 66],
+                [100, 29, 184],
+            ],
+        ),
+        (
+            2.,
+            [
+                [255, 54, 54],
+                [255, 96, 95],
+                [117, 235, 117],
+                [76, 77, 237],
+                [232, 231, 112],
+                [171, 229, 229],
+                [238, 110, 236],
+                [255, 181, 130],
+                [138, 81, 229],
+            ],
+        ),
+        (
+            3.,
+            [
+                [255, 108, 108],
+                [255, 152, 152],
+                [179, 254, 179],
+                [133, 133, 255],
+                [250, 250, 176],
+                [221, 247, 247],
+                [255, 174, 255],
+                [255, 213, 185],
+                [178, 143, 253],
+            ],
+        ),
+    ] {
+        let r = Recipe {
+            exposure,
+            ..Recipe::for_rendered(&im.metadata)
+        };
+        let out = rendered_levels(&im, &r)?;
+        for (i, want) in expected.into_iter().enumerate() {
+            let got = out[i];
+            assert!(
+                near(got, want, 2),
+                "Exposure {exposure}: patch {i} ({:?}) -> {got:?}, Camera Raw {want:?}",
+                patches[i]
+            );
+        }
+    }
+    Ok(())
+}
+
+/// An HDR master render (`r.hdr.enabled = true`) keeps `CurveSet::rendered_tone == false`
+/// and GPU `P_RENDERED_TONE == 0`, while the SDR base of an HDR rendered file
+/// (`r.hdr.enabled = false`) matches opening the plain SDR image and reproduces its base
+/// within ±1/255.
+#[test]
+fn hdr_master_leaves_rendered_tone_disabled() -> anyhow::Result<()> {
+    use rawmakase_model::camera_data::{HdrSource, Source};
+    use rawmakase_model::camera_profiles::RGB_TO_PRO;
+    use rawmakase_model::color::hdr_output::HdrTransfer;
+    let srgb = [[206u8, 0, 0], [0, 143, 1], [216, 108, 0]];
+    let decode = |v: u8| {
+        let v = v as f32 / 255.;
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let linear_pro: Vec<[f32; 3]> = srgb
+        .iter()
+        .map(|p| crate::color::mul(RGB_TO_PRO, p.map(decode)))
+        .collect();
+    let im = crate::develop::rendered::to_scene(CameraImage {
+        recovered: Default::default(),
+        width: srgb.len() as u32,
+        height: 1,
+        pixels: linear_pro.into(),
+        metadata: Metadata {
+            width: srgb.len() as u32,
+            height: 1,
+            source: Source::Rendered,
+            hdr_source: Some(HdrSource {
+                peak: 4.0,
+                transfer: HdrTransfer::Pq,
+                gain_map: false,
+            }),
+            wb: [1.; 3],
+            daylight_wb: [1.; 3],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    // HDR master path: rendered_tone stays false and GPU P_RENDERED_TONE stays 0.
+    let mut r_hdr = Recipe::for_rendered(&im.metadata);
+    r_hdr.hdr.enabled = true;
+    let camera_hdr = camera_stage(&im.metadata, &r_hdr);
+    let lut_hdr = CurveSet::with_photo_measures((&im).into(), &r_hdr, camera_hdr);
+    assert!(!lut_hdr.rendered_tone);
+    assert!(lut_hdr.hdr.is_some());
+    let gpu_hdr = super::pixel_params::pixel_params_hdr((&im).into(), &r_hdr).expect("supported");
+    assert_eq!(gpu_hdr.get(super::pixel_params::slot::RENDERED_TONE), &[0.]);
+    // SDR base rendition reproduces the SDR base within ±1/255.
+    let r_sdr = Recipe::for_rendered(&im.metadata);
+    let out = rendered_levels(&im, &r_sdr)?;
+    for (got, want) in out.into_iter().zip(srgb) {
+        assert!(near(got, want, 1), "{want:?} -> {got:?}");
+    }
+    Ok(())
+}
+
 /// Lightroom's renders of the same chart at Temp +25, +50 and Tint +25.
 #[test]
 fn white_balance_on_a_rendered_file_follows_lightroom() -> anyhow::Result<()> {

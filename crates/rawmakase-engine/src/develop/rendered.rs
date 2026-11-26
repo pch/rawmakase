@@ -1,11 +1,12 @@
 //! A rendered file (JPEG, PNG, TIFF) as Lightroom develops it: as the scene whose
 //! default rendering it is. Camera Raw's default rendering `F` is the scene tone
 //! stage's white curve at keys 0 (sensor white, maximum, Whites level and white point
-//! all at 1; no black point, as the Embedded profile) followed by the ACR3 tone curve,
-//! each applied DNG RGBTone fashion. A rendered file's linear ProPhoto values go
-//! through `F⁻¹` once, when it opens, and then render through the raw path like any
-//! scene; at default settings that path is `F`, so the file comes back as it is
-//! (docs/scene-tone-stage.md, rendered files).
+//! all at 1; no black point, as the Embedded profile) applied DNG RGBTone fashion,
+//! followed by the ACR3 tone curve applied with PV2012's hue-ratio-preserving tone
+//! operator ([`rawmakase_model::camera_profiles::pv2012_tone`]). An SDR rendered file's
+//! linear ProPhoto values go through `F⁻¹` once, when it opens, and then render through
+//! the raw path like any scene; at default settings that path is `F`, so the file comes
+//! back as it is (docs/scene-tone-stage.md, rendered files).
 //!
 //! An HDR file's master renders from an HDR pseudo-scene of its light in the same way:
 //! [`scene_from_light`] inverts `F_hdr`, what the HDR master renders a scene as at a
@@ -14,6 +15,7 @@
 //! a linear curve (docs/records/hdr-stage4-design.md).
 use crate::camera_data::CameraImage;
 use crate::develop::scene_tone::{GlobalTone, rgb_tone};
+use rawmakase_model::camera_profiles::{default_tone_at, default_tone_inv_at, pv2012_tone};
 use rayon::prelude::*;
 use std::sync::OnceLock;
 
@@ -30,9 +32,10 @@ fn white() -> &'static GlobalTone {
     WHITE.get_or_init(|| GlobalTone::new([0.; 4], 0., 0., -12., -12., false))
 }
 
-/// `F` on one value: the white curve, then ACR3 as the profile applies it.
+/// `F` on one neutral value: the white curve, then ACR3 as the profile applies it.
+#[cfg(test)]
 pub(crate) fn default_rendering(s: f32) -> f32 {
-    rawmakase_model::camera_profiles::default_tone_at(white().white_curve(s))
+    default_tone_at(white().white_curve(s))
 }
 
 /// The log2 scene value of the table's `k`th sample.
@@ -40,49 +43,66 @@ fn log_at(k: usize) -> f32 {
     FIRST + (LAST - FIRST) * k as f32 / (SAMPLES - 1) as f32
 }
 
-/// `F` tabulated at log2 scene values from `FIRST` to `LAST`, made non-decreasing.
-fn table() -> &'static [f32] {
+/// The S3 white curve tabulated at log2 scene values from `FIRST` to `LAST`, clamped to
+/// `[0, 1]` and made non-decreasing.
+fn white_table() -> &'static [f32] {
     static TABLE: OnceLock<Vec<f32>> = OnceLock::new();
     TABLE.get_or_init(|| {
         let mut out = Vec::with_capacity(SAMPLES);
         let mut previous = 0f32;
         for k in 0..SAMPLES {
-            previous = previous.max(default_rendering(log_at(k).exp2()));
+            previous = previous.max(white().white_curve(log_at(k).exp2()).min(1.));
             out.push(previous);
         }
         out
     })
 }
 
-/// `F⁻¹` on one value: the smallest scene value `F` takes to `y` (interpolated in
-/// log2), linear below the table, and at 1 and above where `F` first reaches 1.
-fn scene_value(y: f32) -> f32 {
-    if y.is_nan() || y <= 0. {
+/// Inverse of the S3 white curve on one value in `[0, 1]`: the smallest scene value the
+/// white curve takes to `u` (interpolated in log2), linear below the table, and at 1 and
+/// above where the curve first reaches 1.
+fn white_scene_value(u: f32) -> f32 {
+    if u.is_nan() || u <= 0. {
         return 0.;
     }
-    let y = y.min(1.);
-    let outputs = table();
-    let k = outputs.partition_point(|&v| v < y);
+    let u = u.min(1.);
+    let outputs = white_table();
+    let k = outputs.partition_point(|&v| v < u);
     if k == 0 {
-        return log_at(0).exp2() * y / outputs[0].max(f32::MIN_POSITIVE);
+        return log_at(0).exp2() * u / outputs[0].max(f32::MIN_POSITIVE);
     }
     if k == outputs.len() {
         return log_at(SAMPLES - 1).exp2();
     }
     let (y0, y1) = (outputs[k - 1], outputs[k]);
-    let t = if y1 > y0 { (y - y0) / (y1 - y0) } else { 1. };
+    let t = if y1 > y0 { (u - y0) / (y1 - y0) } else { 1. };
     (log_at(k - 1) + (log_at(k) - log_at(k - 1)) * t).exp2()
 }
 
-/// The pseudo-scene of one rendered pixel (linear ProPhoto): `F⁻¹` DNG RGBTone
-/// fashion, which inverts the white curve and ACR3 applied that way in turn.
-/// Values that are not finite are taken as 0.
+/// Camera Raw's default rendering of one linear ProPhoto pseudo-scene pixel: the S3
+/// white curve (DNG RGBTone) followed by the S4 ACR3 tone curve (PV2012 tone operator).
+/// Exact inverse of [`scene_from_rendered`] on every unclipped pixel.
+pub(crate) fn rendered_from_scene(s: [f32; 3]) -> [f32; 3] {
+    let s = s.map(|v| if v.is_finite() { v.max(0.) } else { 0. });
+    let u = rgb_tone(s, |v| white().white_curve(v));
+    pv2012_tone(u, default_tone_at)
+}
+
+/// The pseudo-scene of one SDR rendered pixel (linear ProPhoto): inverts Camera Raw's
+/// PV2012 S4 ACR3 tone curve (`pv2012_tone` with [`default_tone_inv_at`]) and then the
+/// S3 white curve (`rgb_tone` with `white_scene_value`). Values that are not finite are
+/// taken as 0.
 pub fn scene_from_rendered(p: [f32; 3]) -> [f32; 3] {
-    let p = p.map(|v| if v.is_finite() { v } else { 0. });
-    rgb_tone(p, scene_value)
+    let p = p.map(|v| if v.is_finite() { v.clamp(0., 1.) } else { 0. });
+    let u = pv2012_tone(p, default_tone_inv_at);
+    rgb_tone(u, white_scene_value)
 }
 
 /// A rendered file's image as the scene its default rendering is of.
+///
+/// An HDR file's master renders from its separate `HdrLight` buffer through
+/// [`scene_from_light`]; this only transforms the SDR pixel buffer (`image.pixels`),
+/// keeping a gain-map file's SDR base identical to opening the plain SDR image.
 pub fn to_scene(mut image: CameraImage) -> CameraImage {
     image
         .pixels
@@ -176,8 +196,46 @@ mod tests {
             } else {
                 (-16. * k as f32 / 4096.).exp2()
             };
-            let back = default_rendering(scene_value(y));
+            let back = default_rendering(white_scene_value(default_tone_inv_at(y)));
             assert!((back - y).abs() <= 1e-4_f32.max(y * 1e-3), "{y}: {back}");
+        }
+        // Full 3D RGB round-trip across saturated sRGB and Display P3 colors.
+        for rgb in [
+            [1., 0., 0.],
+            [0., 1., 0.],
+            [0., 0., 1.],
+            [1., 1., 0.],
+            [0., 1., 1.],
+            [1., 0., 1.],
+            [0.8, 0.2, 0.01],
+            [0.05, 0.7, 0.4],
+            [0.3, 0.05, 0.9],
+        ] {
+            let pro =
+                rawmakase_model::color::mul(rawmakase_model::camera_profiles::RGB_TO_PRO, rgb);
+            let back = rendered_from_scene(scene_from_rendered(pro));
+            for c in 0..3 {
+                assert!(
+                    (back[c] - pro[c]).abs() <= 2e-4,
+                    "{rgb:?} -> pro {pro:?} -> back {back:?}"
+                );
+            }
+        }
+        // Extreme out-of-Rec.2020 ProPhoto corners fall outside PV2012 ACR3's [0, 1]^3
+        // range and clamp identically to Camera Raw 18.7 at Exposure 0:
+        // linear ProPhoto [1.0, 0.2811, 0.0] -> [0.9991, 0.3077, 0.0374]
+        // linear ProPhoto [1.0, 0.4974, 0.0] -> [0.9992, 0.5046, 0.0151].
+        for (input, cr_default) in [
+            ([1.0, 0.2811, 0.0], [0.9991, 0.3077, 0.0374]),
+            ([1.0, 0.4974, 0.0], [0.9992, 0.5046, 0.0151]),
+        ] {
+            let back = rendered_from_scene(scene_from_rendered(input));
+            for c in 0..3 {
+                assert!(
+                    (back[c] - cr_default[c]).abs() <= 1.5e-3,
+                    "ProPhoto corner {input:?}: got {back:?}, Camera Raw 18.7 {cr_default:?}"
+                );
+            }
         }
     }
 
@@ -208,7 +266,7 @@ mod tests {
     fn the_pseudo_scene_is_monotone() {
         let mut previous = 0.;
         for k in 0..=65535 {
-            let s = scene_value(k as f32 / 65535.);
+            let s = white_scene_value(default_tone_inv_at(k as f32 / 65535.));
             assert!(s >= previous, "{k}: {s} < {previous}");
             previous = s;
         }
@@ -230,15 +288,15 @@ mod tests {
     /// there without a step.
     #[test]
     fn below_the_table_the_pseudo_scene_is_linear() {
-        let first = table()[0];
+        let first = white_table()[0];
         assert!(first > 0., "{first}");
-        let at = scene_value(first);
+        let at = white_scene_value(first);
         assert!((at / FIRST.exp2() - 1.).abs() < 1e-4, "{at}");
         for y in [first * 0.999, first * 0.5, first * 1e-3] {
-            let ratio = scene_value(y) / y;
+            let ratio = white_scene_value(y) / y;
             assert!((ratio * first / at - 1.).abs() < 1e-4, "{y}: {ratio}");
         }
-        let above = scene_value(first * 1.001);
+        let above = white_scene_value(first * 1.001);
         assert!(above > at && above < at * 1.01, "{above}");
     }
 
@@ -246,14 +304,14 @@ mod tests {
     /// take the scene value where `F` first reaches 1, short of the table's end.
     #[test]
     fn white_and_above_take_the_scene_white() {
-        let outputs = table();
+        let outputs = white_table();
         assert_eq!(outputs[SAMPLES - 1], 1.);
-        let white = scene_value(1.);
+        let white = white_scene_value(1.);
         assert!(white < LAST.exp2(), "{white}");
         for y in [1. + 1e-6, 1.5, 100., f32::MAX] {
-            assert_eq!(scene_value(y), white, "{y}");
+            assert_eq!(white_scene_value(y), white, "{y}");
         }
-        assert!(scene_value(1. - 1e-4) < white);
+        assert!(white_scene_value(1. - 1e-4) < white);
     }
 
     /// RGBTone: the middle channel keeps its place between the others, so hue holds.

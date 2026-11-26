@@ -50,6 +50,10 @@ pub(super) struct CurveSet {
     pub(super) hdr: Option<HdrFinish>,
     /// The SDR rendition's sliders, on an HDR edit's SDR rendition.
     pub(super) sdr_rendition: Option<crate::develop::sdr_rendition::SdrRenditionTone>,
+    /// Apply S4's profile tone curve with PV2012's hue-ratio-preserving operator
+    /// (`CameraProfile::finish_rendered`), enabled for SDR renders of rendered files
+    /// (`is_rendered() && hdr.is_none()`).
+    pub(super) rendered_tone: bool,
 }
 /// How an HDR render finishes after the scene tone stage: the profile's tables and
 /// curve, and its look's, unclipped ([`crate::camera_profiles::CameraProfile::finish_hdr`]),
@@ -642,6 +646,7 @@ impl CurveSet {
         };
         let hdr = HdrFinish::new(r);
         let raw_sdr = !is_rendered && !r.hdr.is_active();
+        let rendered_tone = is_rendered && hdr.is_none();
         Self {
             output: PixelOutput::Display,
             space: crate::color::OutputSpace::Srgb,
@@ -686,6 +691,7 @@ impl CurveSet {
             sdr_rendition: (!r.hdr.enabled)
                 .then(|| crate::develop::sdr_rendition::SdrRenditionTone::new(&r.hdr.sdr))
                 .flatten(),
+            rendered_tone,
         }
     }
 }
@@ -1123,7 +1129,7 @@ pub(super) fn contrast_pivot(
     } else {
         camera
     };
-    let mut lut = CurveSet::new(&default);
+    let mut lut = CurveSet::new_for(&default, small.metadata.is_rendered());
     let haze = haze.map(|haze| {
         crate::develop::scene_tone::Dehazing::new(haze, [small.width, small.height], 0.)
     });

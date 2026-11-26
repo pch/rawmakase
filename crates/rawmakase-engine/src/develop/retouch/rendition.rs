@@ -13,11 +13,12 @@
 //!   default exposure the photo opens with (its baseline), times an exposure for
 //!   the region ([`Rendition::exposed_for`]: up for a dark one, so its shadows
 //!   take more of the 8-bit steps, down for one whose highlights would clip),
-//!   Camera Raw's default rendering `F` ([`crate::develop::rendered`]) DNG
-//!   RGBTone fashion, ProPhoto to linear sRGB with negative and above-1 channels
-//!   clipped, the sRGB transfer and rounding to 8 bits. A JPEG or TIFF gives the
-//!   generator its own pixels back, with no exposure of its own; a RAW, its
-//!   default rendering, exposed for the region.
+//!   Camera Raw's default rendering `F` ([`crate::develop::rendered`]: S3 white
+//!   curve DNG RGBTone fashion, then S4 ACR3 through PV2012's tone operator),
+//!   ProPhoto to linear sRGB with negative and above-1 channels clipped, the sRGB
+//!   transfer and rounding to 8 bits. A JPEG or TIFF gives the generator its own
+//!   pixels back, with no exposure of its own; a RAW, its default rendering,
+//!   exposed for the region (both use the same invertible `F` / `F⁻¹` pair).
 //! - inverse: 8 bits to linear sRGB, to linear ProPhoto, `F⁻¹`
 //!   ([`crate::develop::rendered::scene_from_rendered`]), ÷ exposure, the inverse
 //!   matrix, ÷ white balance, with the values the request was sent through
@@ -238,9 +239,7 @@ impl Rendition {
     pub fn forward(&self, p: [f32; 3]) -> [u8; 3] {
         let scene = mul(self.to_pro, std::array::from_fn(|c| p[c] * self.wb[c]))
             .map(|v| if v.is_finite() { v * self.gain } else { 0. });
-        let rendered = crate::develop::scene_tone::rgb_tone(scene, |s| {
-            crate::develop::rendered::default_rendering(s.max(0.))
-        });
+        let rendered = crate::develop::rendered::rendered_from_scene(scene);
         mul(PRO_TO_RGB, rendered).map(|v| {
             (srgb_encode(v.clamp(0., 1.)) * 255.)
                 .round()

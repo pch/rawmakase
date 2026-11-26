@@ -649,6 +649,24 @@ impl CameraProfile {
         }
         mul(PRO_TO_RGB, p)
     }
+    /// [`Self::finish`] for an SDR rendered file: applies `&self.tone` with Camera Raw's
+    /// PV2012 hue-ratio-preserving operator ([`pv2012_tone`]) instead of PV2010 DNG
+    /// RGBTone, matching Camera Raw 18.7's `ProcessVersion = 15.4` rendering of SDR
+    /// rendered files while leaving RAW rendering untouched.
+    pub fn finish_rendered(&self, pro: [f32; 3]) -> [f32; 3] {
+        let mut p = pro;
+        if let Some(table) = &self.look {
+            p = table.apply(p, None, 0.);
+        }
+        if let Some(look) = &self.enhanced {
+            p = look.apply_table(p);
+        }
+        p = pv2012_tone(p, |v| evaluate_tone(&self.tone, v));
+        if let Some(look) = &self.enhanced {
+            p = look.apply_curve(p);
+        }
+        mul(PRO_TO_RGB, p)
+    }
 }
 impl CameraProfile {
     /// How this profile's tone curve renders in HDR, or why it cannot yet. A look's
@@ -1075,6 +1093,64 @@ pub fn default_tone() -> Vec<[f32; 2]> {
 pub fn default_tone_at(x: f32) -> f32 {
     static POINTS: std::sync::OnceLock<Vec<[f32; 2]>> = std::sync::OnceLock::new();
     evaluate_tone(POINTS.get_or_init(default_tone), x)
+}
+
+/// Exact piecewise-linear inverse of [`default_tone_at`] on `[0, 1]`.
+pub fn default_tone_inv_at(y: f32) -> f32 {
+    if !y.is_finite() || y <= 0. {
+        return 0.;
+    }
+    if y >= 1. {
+        return 1.;
+    }
+    let table = &dng_tone::DEFAULT_TONE;
+    let k = table.partition_point(|&v| v < y);
+    if k == 0 {
+        return 0.;
+    }
+    if k >= table.len() {
+        return 1.;
+    }
+    let (y0, y1) = (table[k - 1], table[k]);
+    let t = if y1 > y0 { (y - y0) / (y1 - y0) } else { 0. };
+    ((k - 1) as f32 + t) / (table.len() - 1) as f32
+}
+
+/// Camera Raw's PV2012 profile tone curve operator on a linear ProPhoto RGB pixel `p`.
+///
+/// Measured on Camera Raw 18.7 (`ProcessVersion = 15.4`) across multiple tone curves and
+/// all six channel permutations: instead of evaluating `curve` directly at the darkest
+/// and brightest channels `(lo, hi)` like DNG `RGBTone`, PV2012 conjugates `curve` by a
+/// channel-permutation-symmetric 2×2 mixing matrix parameterized by the linear hue ratio
+/// `r = (mid - lo) / (hi - lo)`, with `alpha = 0.5 * r^2 * (1 - r)` and
+/// `beta = 0.5 * r * (1 - r)^2`. The unmixed endpoints are clamped to `[0, 1]` before
+/// reconstructing the middle channel at the same linear ratio `r`.
+///
+/// Because the mixing matrix has determinant `1 - 0.5 * r * (1 - r) >= 0.875` and leaves
+/// `r` invariant, the exact inverse of `pv2012_tone(p, f)` on unclipped colors is
+/// `pv2012_tone(p, f⁻¹)`.
+pub fn pv2012_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
+    let p = p.map(|v| if v.is_finite() { v.clamp(0., 1.) } else { 0. });
+    let lo = p[0].min(p[1]).min(p[2]);
+    let hi = p[0].max(p[1]).max(p[2]);
+    let span = hi - lo;
+    if span <= 1e-8 {
+        return [curve(hi).clamp(0., 1.); 3];
+    }
+    // 3-element median avoids losing precision when `mid` is orders of magnitude smaller than `hi`.
+    let mid = p[0].min(p[1]).max(p[0].max(p[1]).min(p[2]));
+    let r = ((mid - lo) / span).clamp(0., 1.);
+    let one_minus_r = 1. - r;
+    let alpha = 0.5 * r * r * one_minus_r;
+    let beta = 0.5 * r * one_minus_r * one_minus_r;
+    let x_hi = (1. - alpha) * hi + alpha * lo;
+    let x_lo = beta * hi + (1. - beta) * lo;
+    let y_hi = curve(x_hi);
+    let y_lo = curve(x_lo);
+    let denom = 1. - alpha - beta;
+    let o_hi = (((1. - beta) * y_hi - alpha * y_lo) / denom).clamp(0., 1.);
+    let o_lo = ((-beta * y_hi + (1. - alpha) * y_lo) / denom).clamp(0., 1.);
+    p.map(|v| o_lo + (o_hi - o_lo) * ((v - lo) / span))
 }
 
 fn matmul(a: Matrix, b: Matrix) -> Matrix {

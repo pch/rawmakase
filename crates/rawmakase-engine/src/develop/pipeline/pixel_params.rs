@@ -55,6 +55,8 @@ pub(crate) mod slot {
         ENH_CHANNELS: 3,
         TONE: 1,
         TONE_COUNT: 1,
+        // 1 for SDR rendered files using PV2012's profile tone operator, else 0.
+        RENDERED_TONE: 1,
         LOCAL: 1,
         LOCAL_SIZE: 2,
         LOCAL_SCALE: 2,
@@ -624,6 +626,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     let tone = p.push(t.tone.iter().flatten().copied());
     p.set(slot::TONE, &[tone]);
     p.set(slot::TONE_COUNT, &[t.tone.len() as f32]);
+    p.set(slot::RENDERED_TONE, &[lut.rendered_tone as u8 as f32]);
     p.set(slot::EXPOSURE_EV, &[r.exposure + r.camera_exposure]);
     p.set(slot::GLOBAL_SH, &[r.shadows, r.highlights]);
     if let Some(local) = &lut.local {

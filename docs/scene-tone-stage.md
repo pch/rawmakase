@@ -109,21 +109,34 @@ scene 1.0 at 1.0, where Camera Raw renders 0.69.
 ### Rendered files
 
 A JPEG, PNG or TIFF is treated as Lightroom treats it: as Camera Raw's default rendering
-of a scene. `develop::rendered` inverts that rendering — the white curve at keys 0 (sensor
-white, maximum, Whites level and white point all 1; no black point) followed by the ACR3
-default tone curve, both DNG RGBTone — once, when `photo::open_source` opens the file. The
-resulting pseudo-scene renders through the raw path with the Embedded profile, whose tone
-curve is ACR3. `photo_measures` pins a rendered file's sensor white and maximum to 1, so at
-default settings the render is the file (±1/255; finer in 16 bits). S0 highlight recovery
-is skipped (`quality::samples::recovered`): a rendered file's bright colors are its
-rendering, not clipping.
+of a scene. `develop::rendered` inverts that rendering — the S3 white curve at keys 0
+(sensor white, maximum, Whites level and white point all 1; no black point) applied DNG
+RGBTone fashion, followed by the S4 ACR3 default tone curve applied with Camera Raw's
+PV2012 hue-ratio-preserving tone operator (`camera_profiles::pv2012_tone`) — once, when
+`photo::open_source` opens an SDR rendered file. The resulting pseudo-scene renders
+through the raw path with the Embedded profile, whose S4 tone curve uses
+`CameraProfile::finish_rendered` (`pv2012_tone` on CPU and `P_RENDERED_TONE` in
+`develop.wgsl`). HDR masters (`hdr.is_some()`, including HDR rendered files whose master
+renders from `HdrLight` via `scene_from_light`) stay untouched.
+`photo_measures` pins a rendered file's sensor white and maximum to 1, so at default
+settings the render is the file (±1/255; finer in 16 bits) across every physical color
+gamut (sRGB, Adobe RGB, Display P3, Rec.2020); extreme out-of-Rec.2020 ProPhoto corners
+(brightest encoded channel ≥ 0.94 with darkest near 0) lie outside PV2012 ACR3's `[0, 1]³`
+range and clamp identically to Camera Raw 18.7 (e.g. linear ProPhoto `[1, 0.2811, 0]`
+renders as `[0.9991, 0.3077, 0.0374]`). S0 highlight recovery is skipped
+(`quality::samples::recovered`): a rendered file's bright colors are its rendering, not
+clipping.
 
-Measured against Lightroom Classic 15.6 (Camera Raw 18.7) on synthetic charts and 32
-photos: Exposure, Whites, Blacks and their combinations within about 1–2/255 on greys;
-Contrast with `basic_tone::RENDERED_PIVOT_OFFSET`. White balance is a matrix and a clip
-in S1 (`model::white_balance::rendered_white_balance`, see
-[color pipeline](color-pipeline.md)). Saturation and Vibrance use rendered-file tables in
-`ColorMixer` (`rendered_sat_vib.bin`, see [color mixer](color-mixer.md#rendered-files)).
+Measured against Lightroom Classic 15.6 (Camera Raw 18.7) on synthetic charts (sRGB,
+Display P3, 16-bit TIFF) and real colorful CC0 JPEGs: Exposure (−1 to +4 EV) matches
+within about 1–2/255 on greys and saturated primaries alike (cutting synthetic chart
+Exposure +2/+3 max ΔE00 from 9.28/13.32 to 0.93/1.27 in sRGB and 11.90/20.07 to
+0.72/1.13 in Display P3, and real-photo saturated `C* > 40` Exposure +2/+3 mean ΔE00 by
+31–35%); Whites, Blacks and their combinations within about 1–2/255 on greys; Contrast
+with `basic_tone::RENDERED_PIVOT_OFFSET`. White balance is a matrix and a clip in S1
+(`model::white_balance::rendered_white_balance`, see [color pipeline](color-pipeline.md)).
+Saturation and Vibrance use rendered-file tables in `ColorMixer` (`rendered_sat_vib.bin`,
+see [color mixer](color-mixer.md#rendered-files)).
 
 For SDR rendered files (`is_rendered() && hdr_source.is_none()`; HDR rendered masters
 stay on the RAW/HDR path), S3 scene tone applies rendered-specific adjustments to account
@@ -153,8 +166,7 @@ toe):
 Remaining known gaps on rendered files: Dehaze (reduced across positive and negative
 amounts, though positive Dehaze still averages ~2.0–2.6 ΔE00 on held-out JPEGs), Clarity
 (reduced, ~1.8 ΔE00 mean at +100 on held-out JPEGs), Highlights/Shadows on very dark or
-bright files (reduced at `Shadows +` / `Highlights +` extremes), extreme-exposure
-saturated primaries (ProPhoto→sRGB gamut rolloff rather than S3), and bright-grey
+bright files (reduced at `Shadows +` / `Highlights +` extremes), and bright-grey
 highlight roll-off under strong cooling / cool-magenta Temp and Tint (e.g.
 `Temp −50, Tint +50`, where Camera Raw rolls off boosted blue along an S3 white curve
 near `W* ≈ 8` while its pseudo-scene rises above 1 near white; see
