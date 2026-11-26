@@ -495,8 +495,37 @@ fn store_encoded_tagged(
     stamp: &Stamp,
     encoded: &anyhow::Result<EncodedPreview>,
 ) {
+    store_encoded_tagged_with_hook(
+        cache_at,
+        cache_path,
+        results,
+        cancel,
+        path,
+        family,
+        tag,
+        stamp,
+        encoded,
+        || {},
+    );
+}
+/// Implementation of [`store_encoded_tagged`] with a lock-site hook invoked
+/// immediately after acquiring the cache mutex for deterministic tests.
+#[allow(clippy::too_many_arguments)]
+fn store_encoded_tagged_with_hook(
+    cache_at: &Mutex<Option<PreviewCache>>,
+    cache_path: &Path,
+    results: &Results,
+    cancel: Option<&AtomicBool>,
+    path: &Path,
+    family: &str,
+    tag: &str,
+    stamp: &Stamp,
+    encoded: &anyhow::Result<EncodedPreview>,
+    after_lock: impl FnOnce(),
+) {
     let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut guard = cache(cache_at);
+        after_lock();
         if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
             return None;
         }

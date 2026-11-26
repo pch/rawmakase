@@ -532,40 +532,23 @@ fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
     assert_eq!(ENCODE_CALLS.load(Ordering::SeqCst), 0);
 
     // Verify the post-mutex-acquire cancel guard inside `store_encoded_tagged`:
-    // start the store while `cancelled` is false and the cache mutex is held,
-    // then set `cancelled` to true before releasing the lock.
+    // `cancelled` starts false and is flipped only inside `after_lock` once the
+    // cache mutex has been acquired.
     let stamp = Stamp::read(&path)?;
     let encoded = Ok(PreviewCache::encode_thumbnail(&image::RgbImage::new(8, 8))?);
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let (store_entered_tx, store_entered_rx) = mpsc::channel();
-    let guard = cache(&renders.cache);
-    let store_thread = std::thread::spawn({
-        let cache_at = renders.cache.clone();
-        let cache_path = renders.cache_path.clone();
-        let results = renders.results.clone();
-        let cancelled = cancelled.clone();
-        let path = path.clone();
-        let tag = tag.clone();
-        move || {
-            let _ = store_entered_tx.send(());
-            store_encoded_tagged(
-                &cache_at,
-                &cache_path,
-                &results,
-                Some(&cancelled),
-                &path,
-                &family,
-                &tag,
-                &stamp,
-                &encoded,
-            );
-        }
-    });
-    store_entered_rx.recv_timeout(std::time::Duration::from_secs(5))?;
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    cancelled.store(true, Ordering::SeqCst);
-    drop(guard);
-    store_thread.join().unwrap();
+    let cancelled = AtomicBool::new(false);
+    store_encoded_tagged_with_hook(
+        &renders.cache,
+        &renders.cache_path,
+        &renders.results,
+        Some(&cancelled),
+        &path,
+        &family,
+        &tag,
+        &stamp,
+        &encoded,
+        || cancelled.store(true, Ordering::SeqCst),
+    );
     assert!(rx.try_recv().is_err());
 
     drop(renders);
