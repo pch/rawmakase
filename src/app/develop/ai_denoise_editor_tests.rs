@@ -78,6 +78,7 @@ fn failed_model_removal_resumes_ai_denoise_in_develop_when_model_stays_installed
         crate::app::preferences::session::Session::default(),
         true,
     );
+    e.ai_denoise_model.set_test_dir(model_dir.clone());
     task::wait_for(vec![e.renderer.stop()], Duration::from_secs(5));
     let (taken_tx, _taken) = std::sync::mpsc::channel();
     let (_release, release) = std::sync::mpsc::channel();
@@ -88,11 +89,7 @@ fn failed_model_removal_resumes_ai_denoise_in_develop_when_model_stays_installed
     e.document.image_file = e.document.file.clone();
     e.view.viewport = Vec2::new(40., 40.);
     e.module = Module::Develop;
-    in_edit_frame(&ctx, &mut e, |e| {
-        e.document.edit.recipe_mut().switch_ai_denoise(true)
-    });
-    e.ai_denoise_model.set_test_dir(model_dir.clone());
-    e.ai_denoise.cache().purge();
+    e.document.edit.setup_mut().switch_ai_denoise(true);
 
     // Simulate clicking "Remove model" whose unload times out and returns false.
     let (unload_started_tx, unload_started_rx) = std::sync::mpsc::channel();
@@ -122,6 +119,12 @@ fn failed_model_removal_resumes_ai_denoise_in_develop_when_model_stays_installed
         ),
         "pending removal should show the install warning: {:?}",
         e.document.ai.status()
+    );
+
+    assert_eq!(
+        f.behaviour.runs.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "no inference should have run before removal failed"
     );
 
     // Let the removal fail and deliver Event::ModelRemoved(Err(...)).
