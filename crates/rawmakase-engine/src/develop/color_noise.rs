@@ -243,8 +243,8 @@ impl ChromaDenoise {
 /// Clips a white-balanced pixel below black while preserving its chroma direction
 /// and per-channel-clipped brightness `(R + 2G + B) / 4` (#802), so color noise
 /// reduction does not turn unequal-variance R/B shadow noise into a magenta cast
-/// and measurement copies keep non-negative dark keys calibrated to `default_black`.
-pub(crate) fn clip_at_black(p: [f32; 3]) -> [f32; 3] {
+/// and camera-space reductions keep full-resolution shadow brightness.
+pub fn clip_at_black(p: [f32; 3]) -> [f32; 3] {
     let lowest = p[0].min(p[1]).min(p[2]);
     if lowest >= 0. {
         return p;

@@ -100,7 +100,13 @@ pub(crate) fn half(cfa: &Cfa) -> (usize, usize, Vec<[f32; 3]>) {
                 let mut sum = [0f32; 3];
                 for y in y0..y0 + sy {
                     for x in x0..x0 + sx {
-                        let p = full[y * cfa.width + x];
+                        // Clip signed below-black noise before averaging so X-Trans
+                        // half-size drafts, Library previews and Camera Look fits
+                        // match Fit view and export shadow brightness without
+                        // introducing a magenta cast.
+                        let p = rawmakase_engine::develop::color_noise::clip_at_black(
+                            full[y * cfa.width + x],
+                        );
                         for c in 0..3 {
                             sum[c] += p[c];
                         }
@@ -957,5 +963,47 @@ mod tests {
         let (_, _, pixels) = half(&cfa);
         assert_eq!(pixels[0], [0., (1. + 6.) / 2., 7.]);
         assert_eq!(pixels[4], [14., (15. + 20.) / 2., 21.]);
+    }
+    #[test]
+    fn half_size_xtrans_clips_signed_noise_before_averaging() {
+        let pattern = xtrans_pattern();
+        let (w, h) = (36, 36);
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let data: Vec<f32> = (0..w * h)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let u = ((seed >> 40) as f32 + 0.5) / (1u64 << 24) as f32;
+                0.002 + (u - 0.5) * 0.04
+            })
+            .collect();
+        let cfa = Cfa {
+            data: &data,
+            width: w,
+            height: h,
+            pattern: &pattern,
+            white: [1.; 3],
+        };
+        let full = demosaic(&cfa);
+        assert!(full.iter().flatten().any(|&v| v < 0.));
+        let (hw, hh, reduced) = half(&cfa);
+        assert_eq!((hw, hh), (w / 2, h / 2));
+        for y in 0..hh {
+            for x in 0..hw {
+                let mut expected = [0f32; 3];
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let p = rawmakase_engine::develop::color_noise::clip_at_black(
+                            full[(2 * y + dy) * w + (2 * x + dx)],
+                        );
+                        for c in 0..3 {
+                            expected[c] += p[c] * 0.25;
+                        }
+                    }
+                }
+                assert_eq!(reduced[y * hw + x], expected, "block ({x}, {y})");
+            }
+        }
     }
 }

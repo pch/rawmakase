@@ -251,12 +251,34 @@ fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
     }
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
+    // Clip signed below-black noise before box reduction (and on already-small
+    // images) so previews and Auto copies keep full-resolution shadow brightness
+    // consistently at every size without magenta bias.
     let (w, h) = measurement_size(im.width, im.height, max);
     if (w, h) == (im.width, im.height) {
-        return im.image.clone();
+        let len = (im.width * im.height) as usize;
+        if !(0..len).into_par_iter().any(|i| {
+            let p = im.px(i);
+            p[0] < 0. || p[1] < 0. || p[2] < 0.
+        }) {
+            return im.image.clone();
+        }
+        let pixels: Vec<[f32; 3]> = (0..len)
+            .into_par_iter()
+            .map(|i| crate::develop::color_noise::clip_at_black(im.px(i)))
+            .collect();
+        return CameraImage {
+            recovered: Default::default(),
+            width: im.width,
+            height: im.height,
+            pixels: pixels.into(),
+            metadata: im.metadata.clone(),
+            fast: im.fast,
+            scale_factor: im.scale_factor,
+            scale_clipped: im.scale_clipped,
+            hdr: Default::default(),
+        };
     }
-    // Clip signed below-black noise before box reduction so previews and Auto
-    // copies keep full-resolution shadow brightness without magenta bias.
     let pixels = box_reduce(im.width, im.height, w, h, |i| {
         crate::develop::color_noise::clip_at_black(im.px(i))
     });

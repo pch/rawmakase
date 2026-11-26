@@ -79,7 +79,11 @@ impl TextureDetail {
                 data: im
                     .pixels
                     .par_iter()
-                    .map(|p| p[c].max(1e-6).log2())
+                    .map(|p| {
+                        crate::develop::color_noise::clip_at_black(*p)[c]
+                            .max(1e-6)
+                            .log2()
+                    })
                     .collect(),
             };
             *out = detail(&logs, offset, cancel)?
