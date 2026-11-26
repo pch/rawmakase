@@ -114,6 +114,15 @@ pub fn preset(r: &Recipe, shown: &Metadata, info: &PresetInfo, groups: &GroupSel
         .filter(|(key, _)| !attributes.iter().any(|(k, _)| k == key))
         .collect();
     attributes.extend(dormant);
+    // The file's own lens correction is written only while off; a preset of its
+    // group says "on" too, so applying it turns the correction on again.
+    if groups.contains(SettingGroup::LensProfileCorrections)
+        && !attributes
+            .iter()
+            .any(|(k, _)| k == super::FILE_LENS_CORRECTION_KEY)
+    {
+        attributes.push((super::FILE_LENS_CORRECTION_KEY.into(), "1".into()));
+    }
     // HDR's settings are written only once set; a preset of the group carries them at
     // their defaults too, so applying it sets HDR as this photo has it.
     if groups.contains(SettingGroup::HighDynamicRange) && r.hdr.is_default() {
@@ -239,6 +248,7 @@ pub(crate) fn group_of_key(key: &str) -> Option<SettingGroup> {
         _ if starts("LensProfile") => LensProfileCorrections,
         // The Lensfun lens an edit chose goes with the profile it stands for.
         _ if starts("rawmakase:Lensfun") => LensProfileCorrections,
+        super::FILE_LENS_CORRECTION_KEY => LensProfileCorrections,
         _ if starts("Defringe") => ChromaticAberration,
         _ if starts("Upright") => UprightMode,
         _ if starts("Perspective") => TransformAdjustments,

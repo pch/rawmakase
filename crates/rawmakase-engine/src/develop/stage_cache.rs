@@ -26,7 +26,7 @@ const BUDGET: usize = 512 << 20;
 pub(crate) struct StageCache {
     pub(crate) samples: Lru<SampleKey, Samples>,
     /// A photo's measurement copy (`Toned::measured`), per full-resolution image.
-    pub(crate) measured: Lru<Same<CameraImage>, CameraImage>,
+    pub(crate) measured: Lru<MeasuredKey, CameraImage>,
     /// The measured Texture's detail of a camera image, and the image with an amount.
     pub(crate) texture_detail: Lru<TextureKey, super::texture::TextureDetail>,
     pub(crate) textured: Lru<TextureKey, CameraImage>,
@@ -174,6 +174,20 @@ impl<T> PartialEq for Same<T> {
     }
 }
 
+/// A measurement copy's key: the full-resolution image it is reduced from, and
+/// whether it carries the file's own lens shading
+/// ([`Recipe::file_lens_correction_left_out`], see `pipeline::measurement_source`).
+#[derive(Clone, PartialEq)]
+pub(crate) struct MeasuredKey {
+    pub(crate) image: Same<CameraImage>,
+    pub(crate) file_correction: bool,
+}
+impl Keyed for MeasuredKey {
+    fn gone(&self) -> bool {
+        self.image.gone()
+    }
+}
+
 /// The recipe as the cached stages read it: the samples, and the photo's measures.
 struct StageRecipes {
     samples: Recipe,
@@ -190,6 +204,7 @@ pub(crate) fn color_recipe(r: &Recipe) -> Recipe {
 fn stage_recipes(r: &Recipe) -> StageRecipes {
     let Recipe {
         lens_builtin,
+        lens_file_correction,
         lens_profile,
         lens_profile_choice,
         lens_distortion,
@@ -312,6 +327,7 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             transform: *transform,
             upright: upright.clone(),
             lens_builtin: *lens_builtin,
+            lens_file_correction: *lens_file_correction,
             lens_profile: *lens_profile,
             lens_profile_choice: lens_profile_choice.clone(),
             lens_distortion: *lens_distortion,
@@ -494,8 +510,13 @@ mod tests {
         };
         let changes = |r: &Recipe| stage_recipes(&base).samples != stage_recipes(r).samples;
         // (edit, changes the samples)
-        let cases: [(&str, Recipe, bool); 15] = [
+        let cases: [(&str, Recipe, bool); 16] = [
             ("temperature", edit(&|r| r.temperature = 3000.), false),
+            (
+                "file's lens correction",
+                edit(&|r| r.lens_file_correction = false),
+                true,
+            ),
             ("lens vignetting", edit(&|r| r.lens_vignetting = 0.5), true),
             (
                 "manual vignetting",

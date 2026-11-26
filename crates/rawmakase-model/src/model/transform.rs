@@ -104,6 +104,7 @@ pub fn display_axes(turns: u8, flip_x: bool, flip_y: bool) -> [[f32; 2]; 2] {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LensInputs {
     builtin: bool,
+    file_correction: bool,
     profile: bool,
     profile_choice: crate::lens::choice::LensProfileChoice,
     distortion: f32,
@@ -114,6 +115,7 @@ impl LensInputs {
         let shown = r.as_rendered();
         Self {
             builtin: shown.lens_builtin,
+            file_correction: shown.lens_file_correction,
             profile: shown.lens_profile,
             profile_choice: if shown.lens_profile {
                 shown.lens_profile_choice.rendering()

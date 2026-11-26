@@ -454,11 +454,13 @@ fn describe(before: &Recipe, after: &Recipe) -> Step {
         "Color Grading"
     } else if (
         a.lens_builtin,
+        a.lens_file_correction,
         a.lens_profile,
         a.lens_ca,
         a.lens_manual_distortion,
     ) != (
         b.lens_builtin,
+        b.lens_file_correction,
         b.lens_profile,
         b.lens_ca,
         b.lens_manual_distortion,

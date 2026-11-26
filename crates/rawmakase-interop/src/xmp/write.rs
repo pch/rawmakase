@@ -467,6 +467,11 @@ pub(super) fn settings(r: &Recipe, shown: &Metadata, photo: Option<Frame<'_>>) -
         );
     }
     s.text("LensProfileEnable", if r.lens_profile { "1" } else { "0" });
+    // Written only off, so the settings of every edit that keeps it on read as
+    // before; a preset carries it either way (`preset_write::preset`).
+    if !r.lens_file_correction {
+        s.text(super::FILE_LENS_CORRECTION_KEY, "0");
+    }
     lens_profile(&mut s, r, m);
     s.text("AutoLateralCA", if r.lens_ca { "1" } else { "0" });
     s.put(

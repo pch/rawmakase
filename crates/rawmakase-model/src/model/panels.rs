@@ -129,6 +129,7 @@ impl Panel {
             // The correction a camera stores in its RAW stays: Lightroom applies it
             // outside the panel's controls (inferred; not yet measured).
             Panel::LensCorrections => {
+                r.lens_file_correction = defaults.lens_file_correction;
                 r.lens_profile = false;
                 r.lens_profile_choice = defaults.lens_profile_choice.clone();
                 r.lens_ca = false;

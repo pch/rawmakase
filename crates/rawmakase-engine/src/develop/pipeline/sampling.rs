@@ -114,9 +114,14 @@ pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
 /// render applies them at the lens Vignetting amount and with the built-in correction
 /// on; the copy, kept per image, does not follow either.) Other vignetting, a camera
 /// maker's own table or an OpcodeList2 opcode, is not on the copy.
-pub(crate) fn measurement_source(im: Source, max: u32) -> CameraImage {
+///
+/// With `file_correction` false (the edit turned the file's own correction off and
+/// nothing replaces it, [`Recipe::file_lens_correction_left_out`]) the copy is the
+/// photo without any of it: no shading and no clamp of the corners its distortion
+/// would leave out of frame.
+pub(crate) fn measurement_source(im: Source, max: u32, file_correction: bool) -> CameraImage {
     let mut copy = crop_clamped_preview(im, max);
-    let lens = copy.metadata.lens.as_ref();
+    let lens = (copy.metadata.lens.as_ref()).filter(|l| file_correction || !l.default_on);
     let grid = lens.and_then(|l| l.gain_map.clone());
     let radial = lens
         .filter(|l| l.vignetting_measured)
@@ -144,6 +149,7 @@ pub(crate) fn measurement_source(im: Source, max: u32) -> CameraImage {
     // dark floor while illuminated outer borders and Sony aspect-crop margins stay intact.
     if copy.width > 1
         && copy.height > 1
+        && file_correction
         && copy
             .metadata
             .lens

@@ -297,6 +297,22 @@ mod tests {
         assert_eq!(session.recipe().exposure, 0.);
     }
 
+    /// Switching the file's own lens correction off is one "Lens Corrections" step
+    /// to save, and Undo and Redo move it with the rest of the settings (#1289).
+    #[test]
+    fn switching_the_files_lens_correction_is_a_lens_corrections_step() {
+        let mut session = EditSession::default();
+        assert!(session.recipe().lens_file_correction);
+        session.change(None, |r| r.lens_file_correction = false);
+        let (steps, applied) = session.history().steps();
+        assert_eq!((steps[0].name.as_str(), applied), ("Lens Corrections", 1));
+        assert!(session.save_state().needs_save());
+        assert!(session.undo());
+        assert!(session.recipe().lens_file_correction);
+        assert!(session.jump(1));
+        assert!(!session.recipe().lens_file_correction);
+    }
+
     #[test]
     fn a_change_that_changes_nothing_records_and_saves_nothing() {
         let mut session = EditSession::default();

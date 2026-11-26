@@ -8822,6 +8822,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
 # "ColorNoiseReductionSomething" group Some(ColorNoiseReduction)
 # "LensProfileSomething" group Some(LensProfileCorrections)
 # "rawmakase:LensfunSomething" group Some(LensProfileCorrections)
+# "rawmakase:FileLensCorrection" group Some(LensProfileCorrections)
 # "DefringeSomething" group Some(ChromaticAberration)
 # "UprightSomething" group Some(UprightMode)
 # "PerspectiveSomething" group Some(TransformAdjustments)
@@ -10045,6 +10046,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
       xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+      xmlns:rawmakase="https://rawmakase.com/ns/xmp/1.0/"
      crs:PresetType="Normal"
      crs:Cluster=""
      crs:UUID="0123456789ABCDEF0123456789ABCDEF"
@@ -10065,6 +10067,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:LensProfileDistortionScale="7"
      crs:LensProfileVignettingScale="7"
      crs:LensManualDistortionAmount="+7"
+     rawmakase:FileLensCorrection="1"
      crs:EnableLensCorrections="True"
      crs:HasSettings="True">
      <crs:Name>
@@ -10742,6 +10745,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
       xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+      xmlns:rawmakase="https://rawmakase.com/ns/xmp/1.0/"
      crs:PresetType="Normal"
      crs:Cluster=""
      crs:UUID="0123456789ABCDEF0123456789ABCDEF"
@@ -10892,6 +10896,7 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
      crs:CropAngle="0.00"
      crs:CropConstrainToWarp="1"
      crs:HasCrop="True"
+     rawmakase:FileLensCorrection="1"
      crs:EnableToneCurve="True"
      crs:EnableColorAdjustments="True"
      crs:EnableGrayscaleMix="True"

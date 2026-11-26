@@ -26,6 +26,7 @@ fn camera(make: &str, model: &str) -> Metadata {
 fn everything_changed() -> Recipe {
     let mut r = Recipe {
         lens_builtin: false,
+        lens_file_correction: false,
         lens_profile: true,
         lens_profile_choice: crate::lens::choice::LensProfileChoice {
             setup: crate::lens::choice::LensProfileSetup::Custom,

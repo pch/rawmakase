@@ -94,6 +94,7 @@ fn fixed_change(a: &Recipe, b: &Recipe) -> Option<SettingGroup> {
     let lens = |r: &Recipe| {
         (
             r.lens_builtin,
+            r.lens_file_correction,
             r.lens_profile,
             // As it renders: Default and Auto alike, and Adobe's digest left out.
             r.lens_profile_choice.rendering(),
@@ -336,6 +337,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
     // Taken apart without `..`, so a new setting is a compile error until it is placed.
     let Recipe {
         lens_builtin,
+        lens_file_correction,
         lens_profile,
         lens_profile_choice,
         lens_distortion,
@@ -436,6 +438,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
     };
     let mut r = Recipe {
         lens_builtin: *lens_builtin,
+        lens_file_correction: *lens_file_correction,
         lens_profile: *lens_profile,
         lens_profile_choice: lens_profile_choice.clone(),
         lens_distortion: *lens_distortion,

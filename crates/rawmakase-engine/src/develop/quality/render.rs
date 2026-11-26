@@ -62,7 +62,8 @@ fn render_resident(
     } else {
         source.clone()
     };
-    let (measured, unretouched) = measurement_copies(full, Some(&mut *stages.cache), cancel)?;
+    let (measured, unretouched) =
+        measurement_copies(full, &base, Some(&mut *stages.cache), cancel)?;
     let toned = Toned {
         image: source.clone(),
         scale,

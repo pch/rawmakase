@@ -47,10 +47,12 @@ pub(crate) fn textured(
         || Ok(detail.apply(im, amount)),
     )
 }
-/// `full` (the photo at full resolution) reduced for measuring it, through the stage
-/// cache when there is one (`pipeline::measurement_source`).
+/// `full` (the photo at full resolution) reduced for measuring it, with the file's
+/// own lens shading when `file_correction` says so, through the stage cache when
+/// there is one (`pipeline::measurement_source`).
 fn measurement_copy(
     full: &Arc<CameraImage>,
+    file_correction: bool,
     cache: Option<&mut StageCache>,
     cancel: Cancel<'_>,
 ) -> Result<Arc<CameraImage>> {
@@ -59,11 +61,15 @@ fn measurement_copy(
         Ok(develop::pipeline::measurement_source(
             full.as_ref().into(),
             develop::local_tone::MAP_EDGE,
+            file_correction,
         ))
     };
     match cache {
         Some(cache) => cache.measured.get_or_try(
-            crate::develop::stage_cache::Same::of(full),
+            crate::develop::stage_cache::MeasuredKey {
+                image: crate::develop::stage_cache::Same::of(full),
+                file_correction,
+            },
             |im: &CameraImage| im.pixels.len() * 12,
             make,
         ),
@@ -72,16 +78,20 @@ fn measurement_copy(
 }
 /// The photo's measurement copies: the retouched photo's (`Toned::measured`) and the
 /// unretouched one's (`Toned::unretouched`), one copy when they are the same image.
+/// `r` is the recipe as rendered, which says whether the file's own lens correction
+/// is left out ([`Recipe::file_lens_correction_left_out`]).
 pub(crate) fn measurement_copies(
     full: &Retouched,
+    r: &Recipe,
     mut cache: Option<&mut StageCache>,
     cancel: Cancel<'_>,
 ) -> Result<(Arc<CameraImage>, Arc<CameraImage>)> {
-    let measured = measurement_copy(&full.image, cache.as_deref_mut(), cancel)?;
+    let file = !r.file_lens_correction_left_out(&full.image.metadata);
+    let measured = measurement_copy(&full.image, file, cache.as_deref_mut(), cancel)?;
     let unretouched = if Arc::ptr_eq(&full.image, &full.unretouched) {
         measured.clone()
     } else {
-        measurement_copy(&full.unretouched, cache, cancel)?
+        measurement_copy(&full.unretouched, file, cache, cancel)?
     };
     Ok((measured, unretouched))
 }
@@ -109,7 +119,7 @@ pub(super) fn local_stage(
     } else {
         im.clone()
     };
-    let (measured, unretouched) = measurement_copies(full, cache, cancel)?;
+    let (measured, unretouched) = measurement_copies(full, r, cache, cancel)?;
     let toned = Toned {
         image: im.clone(),
         scale,
