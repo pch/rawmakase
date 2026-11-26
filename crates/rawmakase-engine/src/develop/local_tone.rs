@@ -45,8 +45,6 @@ pub(crate) struct LocalToneMap {
     pub(crate) clarity_pos: Option<[Curve; 2]>,
     /// Positive Clarity's unit (+100) curves, when masks change Clarity.
     clarity_pos_unit: Option<[Curve; 2]>,
-    /// Optional per-cell HDR weight grid for positive Clarity.
-    pub(crate) clarity_hdr: Option<Vec<f32>>,
     /// Negative Clarity's detail, when masks change Clarity and read it at their own amount.
     pub(crate) clarity_detail: Option<super::clarity::ClarityDetail>,
     /// The photo's global rule at full strength (`local_tone_rule`), in
@@ -110,8 +108,14 @@ pub(crate) struct MapBase {
     height: usize,
     lum: Vec<f32>,
     logs: Vec<f32>,
-    /// The local Laplacian base level of each map pixel ([`laplacian_base`]).
+    /// The local Laplacian base level of each map pixel ([`laplacian_base`]), stopped at
+    /// `levels = ilog2(min(w, h).max(4)) - 1` (e.g. `4×3` on a `512×342` map) for
+    /// Shadows and Highlights.
     laplacian: Vec<f32>,
+    /// Full-depth (`1×1`) symmetric local Laplacian base level ([`laplacian_base_sym`]),
+    /// lazily computed when positive Clarity is active so Shadows and Highlights stay
+    /// untouched and non-Clarity renders pay no extra cost.
+    clarity_laplacian: std::sync::OnceLock<Vec<f32>>,
     /// Active default-crop rectangle `[x0, y0, x1, y1]` on this map, when the camera's
     /// default crop is narrower than the decoded sensor (`ImageFrame::inset`). Clamped
     /// out-of-crop border cells stay in the map grids for alignment and halo-free blurs,
@@ -154,6 +158,7 @@ impl MapBase {
             lum,
             logs,
             laplacian,
+            clarity_laplacian: Default::default(),
             crop: None,
             detail: Default::default(),
             clarity_rule: Default::default(),
@@ -183,9 +188,16 @@ impl MapBase {
             }
         })
     }
+    /// The full-depth (`1×1`) symmetric local Laplacian base positive Clarity reads,
+    /// lazily computed once per `MapBase`.
+    fn clarity_laplacian(&self) -> &[f32] {
+        self.clarity_laplacian
+            .get_or_init(|| laplacian_base_sym(&self.logs, self.width, self.height))
+    }
     /// Positive Clarity's unit (+100) base and pixel curves (`clarity_rule.rs`).
     fn clarity_rule(&self) -> &[Curve; 2] {
         self.clarity_rule.get_or_init(|| {
+            let clarity_lap = self.clarity_laplacian();
             if let Some([x0, y0, x1, y1]) = self.crop {
                 let (cw, ch) = (x1 - x0, y1 - y0);
                 let mut logs = Vec::with_capacity(cw * ch);
@@ -193,16 +205,11 @@ impl MapBase {
                 for y in y0..y1 {
                     let row = y * self.width;
                     logs.extend_from_slice(&self.logs[row + x0..row + x1]);
-                    lap.extend_from_slice(&self.laplacian[row + x0..row + x1]);
+                    lap.extend_from_slice(&clarity_lap[row + x0..row + x1]);
                 }
                 super::clarity_rule::unit_curves(&logs, &lap, cw, ch)
             } else {
-                super::clarity_rule::unit_curves(
-                    &self.logs,
-                    &self.laplacian,
-                    self.width,
-                    self.height,
-                )
+                super::clarity_rule::unit_curves(&self.logs, clarity_lap, self.width, self.height)
             }
         })
     }
@@ -249,27 +256,37 @@ impl MapBase {
     }
 }
 /// A map's grids as the GPU reads them (`develop.wgsl`'s `grid`): the map's log2
-/// luminance followed by its local Laplacian base level. They depend only on the map's
-/// base, which renders share while the sliders move, so the device keeps them per base
-/// instead of receiving them with every render.
+/// luminance, then its local Laplacian base level, then (when positive Clarity reads it)
+/// the full-depth `1×1` local Laplacian base. They depend only on the map's base, which
+/// renders share while the sliders move, so the device keeps them per base instead of
+/// receiving them with every render.
 #[derive(Clone)]
 pub(crate) struct MapGrid {
     base: std::sync::Arc<MapBase>,
+    clarity_base: bool,
 }
 impl MapGrid {
     /// Whether `other` holds the same values.
     pub(crate) fn same(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.base, &other.base)
+        std::sync::Arc::ptr_eq(&self.base, &other.base) && self.clarity_base == other.clarity_base
     }
     /// Cells per grid.
     pub(crate) fn cells(&self) -> usize {
         self.base.logs.len()
     }
-    /// The values, in order: `logs`, then `laplacian`.
+    /// Offset of positive Clarity's full-depth `1×1` local Laplacian base, if present.
+    pub(crate) fn clarity_base_at(&self) -> Option<usize> {
+        self.clarity_base.then(|| 2 * self.cells())
+    }
+    /// The values, in order: `logs`, `laplacian`, and optional `clarity_laplacian`.
     pub(crate) fn values(&self) -> Vec<f32> {
-        let mut v = Vec::with_capacity(2 * self.cells());
+        let grids = 2 + usize::from(self.clarity_base);
+        let mut v = Vec::with_capacity(grids * self.cells());
         v.extend(&self.base.logs);
         v.extend(&self.base.laplacian);
+        if self.clarity_base {
+            v.extend(self.base.clarity_laplacian());
+        }
         v
     }
 }
@@ -335,6 +352,9 @@ fn laplacian_base(logs: &[f32], w: usize, h: usize) -> Vec<f32> {
     use super::laplacian::Plane;
     use rawmakase_cancel::Cancel;
     let levels = (w.min(h).max(4).ilog2() as usize).saturating_sub(1).max(1);
+    if w == 0 || h == 0 {
+        return logs.to_vec();
+    }
     let pyramid = |data: Vec<f32>| {
         let mut p = vec![Plane { w, h, data }];
         for _ in 0..levels {
@@ -412,6 +432,100 @@ fn laplacian_base(logs: &[f32], w: usize, h: usize) -> Vec<f32> {
     }
     out.data
 }
+/// Full-depth (`1×1`) symmetric local Laplacian base level of `logs` (`w` × `h` log2
+/// luminance) for positive Clarity. Continuing the pyramid to `1×1` removes the `4×3`
+/// region-scale residual left by [`laplacian_base`], while [`super::laplacian::Plane::down_sym`] /
+/// [`super::laplacian::Plane::up_sym`] preserve exact center-of-mass symmetry and rotation invariance.
+fn laplacian_base_sym(logs: &[f32], w: usize, h: usize) -> Vec<f32> {
+    use super::laplacian::Plane;
+    use rawmakase_cancel::Cancel;
+    if w == 0 || h == 0 || (w == 1 && h == 1) {
+        return logs.to_vec();
+    }
+    let mut levels = 0usize;
+    let (mut cw, mut ch) = (w, h);
+    while cw > 1 || ch > 1 {
+        cw = cw.div_ceil(2);
+        ch = ch.div_ceil(2);
+        levels += 1;
+    }
+    let pyramid = |data: Vec<f32>| {
+        let mut p = vec![Plane { w, h, data }];
+        for _ in 0..levels {
+            let next = p[p.len() - 1].down_sym(Cancel::NEVER);
+            p.push(next);
+        }
+        p
+    };
+    let (lo, hi) = logs
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), v| {
+            (lo.min(v), hi.max(v))
+        });
+    if !lo.is_finite() || !hi.is_finite() || hi <= lo {
+        return logs.to_vec();
+    }
+    let gauss = pyramid(logs.to_vec());
+    let first = (lo / LAPLACIAN_STEP).floor() * LAPLACIAN_STEP;
+    let count = (((hi - first) / LAPLACIAN_STEP).ceil().clamp(0., 256.) as usize).saturating_add(1);
+    let zero = || -> Vec<Vec<f32>> {
+        gauss[..levels]
+            .iter()
+            .map(|g| vec![0.; g.data.len()])
+            .collect()
+    };
+    let detail = (0..count)
+        .into_par_iter()
+        .map(|j| {
+            let k = first + j as f32 * LAPLACIAN_STEP;
+            let mut out = zero();
+            let near = |v: &f32| (v - k).abs() < LAPLACIAN_STEP;
+            if !gauss[..levels].iter().any(|g| g.data.iter().any(near)) {
+                return out;
+            }
+            let remapped = pyramid(
+                logs.iter()
+                    .map(|l| {
+                        let d = (l - k) / LAPLACIAN_SIGMA;
+                        l + (-0.5 * d * d).exp() * (k - l)
+                    })
+                    .collect(),
+            );
+            for (l, out) in out.iter_mut().enumerate() {
+                let g = &gauss[l];
+                let up = remapped[l + 1].up_sym(g.w, g.h, Cancel::NEVER);
+                for (i, o) in out.iter_mut().enumerate() {
+                    let weight = (1. - (g.data[i] - k).abs() / LAPLACIAN_STEP).max(0.);
+                    if weight > 0. {
+                        *o = weight * (remapped[l].data[i] - up.data[i]);
+                    }
+                }
+            }
+            out
+        })
+        .reduce(zero, |mut a, b| {
+            for (a, b) in a.iter_mut().zip(&b) {
+                for (a, b) in a.iter_mut().zip(b) {
+                    *a += b;
+                }
+            }
+            a
+        });
+    let mut out = Plane {
+        w: gauss[levels].w,
+        h: gauss[levels].h,
+        data: gauss[levels].data.clone(),
+    };
+    for l in (0..levels).rev() {
+        out = out.up_sym(gauss[l].w, gauss[l].h, Cancel::NEVER);
+        for (o, d) in out.data.iter_mut().zip(&detail[l]) {
+            *o += d;
+        }
+    }
+    out.data
+}
 /// log2 of a scene luminance, as the map reads it.
 pub(crate) fn level(y: f32) -> f32 {
     const CEIL: f32 = 1e12;
@@ -459,10 +573,11 @@ impl LocalToneMap {
         local: bool,
     ) -> Self {
         let (w, h) = (base.width, base.height);
-        let has_clarity = sliders.clarity != 0. || sliders.mask_clarity;
-        // An HDR master's Clarity is stronger beside light above white, a mask's too.
-        let hdr_weights = (has_clarity && sliders.hdr).then(|| hdr_clarity_weights(base));
-        let detail = (sliders.clarity < 0. || sliders.mask_clarity).then(|| base.detail());
+        let has_neg_clarity = sliders.clarity < 0. || sliders.mask_clarity;
+        // An HDR master's negative Clarity is stronger beside light above white, a mask's
+        // too; positive Clarity renders without that near-white boost.
+        let hdr_weights = (has_neg_clarity && sliders.hdr).then(|| hdr_clarity_weights(base));
+        let detail = has_neg_clarity.then(|| base.detail());
         let clarity = detail
             .filter(|_| sliders.clarity < 0.)
             .map(|d| d.field(sliders.clarity))
@@ -475,10 +590,6 @@ impl LocalToneMap {
             .filter(|_| sliders.clarity > 0.)
             .map(|u| super::clarity_rule::scale(u, sliders.clarity));
         let clarity_pos_unit = pos_unit.filter(|_| sliders.mask_clarity).cloned();
-        let clarity_hdr = hdr_weights
-            .as_ref()
-            .filter(|_| sliders.clarity > 0. || sliders.mask_clarity)
-            .cloned();
         // Shadows and Highlights follow the photo's global rule (`local_tone_rule`);
         // the two-scale lift and the regional level are not read.
         let (rule, rule_pix) = if sliders.shadows != 0. || sliders.highlights != 0. || local {
@@ -572,7 +683,6 @@ impl LocalToneMap {
             clarity,
             clarity_pos,
             clarity_pos_unit,
-            clarity_hdr,
             clarity_detail: detail
                 .filter(|_| sliders.mask_clarity)
                 .map(|d| match &hdr_weights {
@@ -595,7 +705,12 @@ impl LocalToneMap {
         if let Some(p) = &self.pix {
             ev += p.eval(own);
         }
-        (ev + self.clarity_at(x, y, base, own)).exp2()
+        let cbase = if self.clarity_pos.is_some() {
+            self.clarity_base(x, y, own)
+        } else {
+            base
+        };
+        (ev + self.clarity_at(x, y, cbase, own)).exp2()
     }
     /// As [`Self::gain`], with Shadows, Highlights and Clarity at the given slider
     /// values (a mask's added to the recipe's).
@@ -605,11 +720,8 @@ impl LocalToneMap {
         let clarity = if self.clarity_detail.is_some() || self.clarity_pos_unit.is_some() {
             if sliders[2] > 0. {
                 self.clarity_pos_unit.as_ref().map_or(0., |[cb, cp]| {
-                    let hw = self
-                        .clarity_hdr
-                        .as_ref()
-                        .map_or(1., |w| self.bilinear(x, y, w));
-                    (cb.eval(base) + cp.eval(own)) * sliders[2].min(1.) * hw
+                    let cbase = self.clarity_base(x, y, own);
+                    (cb.eval(cbase) + cp.eval(own)) * sliders[2].min(1.)
                 })
             } else if sliders[2] < 0. {
                 self.clarity_detail
@@ -619,7 +731,12 @@ impl LocalToneMap {
                 0.
             }
         } else {
-            self.clarity_at(x, y, base, own)
+            let cbase = if self.clarity_pos.is_some() {
+                self.clarity_base(x, y, own)
+            } else {
+                base
+            };
+            self.clarity_at(x, y, cbase, own)
         };
         // The rule's curve of each sign, blended toward its extreme where both sliders
         // are set (`local_tone_rule::Pair`) and scaled by the slider.
@@ -662,6 +779,7 @@ impl LocalToneMap {
     pub(crate) fn grid(&self) -> MapGrid {
         MapGrid {
             base: self.base.clone(),
+            clarity_base: self.clarity_pos.is_some(),
         }
     }
     /// The base level of a pixel: the map's local Laplacian level there, as far as the
@@ -672,6 +790,12 @@ impl LocalToneMap {
         let d = (l - self.bilinear(x, y, &self.base.logs)) / LAPLACIAN_SIGMA;
         l + (-0.5 * d * d).exp() * (self.bilinear(x, y, &self.base.laplacian) - l)
     }
+    /// Positive Clarity's base level for a pixel at log2 luminance `own`, using the
+    /// full-depth (`1×1`) local Laplacian base with the same fine-detail remapping.
+    fn clarity_base(&self, x: f32, y: f32, own: f32) -> f32 {
+        let d = (own - self.bilinear(x, y, &self.base.logs)) / LAPLACIAN_SIGMA;
+        own + (-0.5 * d * d).exp() * (self.bilinear(x, y, self.base.clarity_laplacian()) - own)
+    }
     /// Global Clarity's log2 gain at sample position `x`, `y` (negative via `ClarityField`,
     /// positive via `clarity_rule`'s base and pixel curves).
     fn clarity_at(&self, x: f32, y: f32, base: f32, own: f32) -> f32 {
@@ -679,13 +803,10 @@ impl LocalToneMap {
             .clarity
             .as_ref()
             .map_or(0., |c| c.at(self.clarity_sample(x, y), own));
-        let pos = self.clarity_pos.as_ref().map_or(0., |[cb, cp]| {
-            let hw = self
-                .clarity_hdr
-                .as_ref()
-                .map_or(1., |w| self.bilinear(x, y, w));
-            (cb.eval(base) + cp.eval(own)) * hw
-        });
+        let pos = self
+            .clarity_pos
+            .as_ref()
+            .map_or(0., |[cb, cp]| cb.eval(base) + cp.eval(own));
         neg + pos
     }
     /// The same four neighbours used by bilinear reconstruction.
@@ -943,20 +1064,20 @@ mod tests {
                 }
             })
             .collect();
-        let map = |hdr: bool| {
+        let map = |clarity: f32, hdr: bool| {
             LocalToneMap::from_luminance(
                 lum.clone(),
                 [w as u32, h as u32],
                 [w as u32, h as u32],
                 Sliders {
-                    clarity: -0.5,
+                    clarity,
                     hdr,
                     ..Default::default()
                 },
                 false,
             )
         };
-        let (sdr, hdr) = (map(false), map(true));
+        let (sdr, hdr) = (map(-0.5, false), map(-0.5, true));
         let at = |m: &LocalToneMap, x: usize, y: usize| {
             let l = lum[y * w + x];
             m.gain(x as f32, y as f32, l).log2()
@@ -970,6 +1091,14 @@ mod tests {
         assert!(
             ratio > 1.2 && ratio <= HDR_CLARITY_NEAR_GAIN + 1e-3,
             "{s} {d}"
+        );
+        // Positive Clarity renders unboosted in HDR even right beside light above white.
+        let (pos_sdr, pos_hdr) = (map(0.5, false), map(0.5, true));
+        let (ps, pd) = (at(&pos_sdr, 62, 64), at(&pos_hdr, 62, 64));
+        assert!(ps.abs() > 1e-3, "{ps}");
+        assert_eq!(
+            pd, ps,
+            "positive HDR Clarity must not apply near-white boost"
         );
     }
 
@@ -1191,16 +1320,131 @@ mod tests {
         let base = MapBase::new(vec![0.1, 0.2, f32::INFINITY, f32::NAN], [2, 2]);
         assert!(base.logs.iter().all(|v| v.is_finite()));
         assert!(base.laplacian.iter().all(|v| v.is_finite()));
+        assert!(base.clarity_laplacian().iter().all(|v| v.is_finite()));
         let map = LocalToneMap::from_base(
             &std::sync::Arc::new(base),
             [2, 2],
             Sliders {
                 shadows: 1.,
                 highlights: -1.,
+                clarity: 1.,
                 ..Default::default()
             },
             false,
         );
         assert!(map.gain(0., 0., 0.1).is_finite());
+    }
+
+    #[test]
+    fn clarity_laplacian_matches_full_1x1_collapse_and_preserves_constants() {
+        use super::super::laplacian::Plane;
+        use rawmakase_cancel::Cancel;
+
+        // Constant image preserves value exactly.
+        let c_base = MapBase::new(vec![0.25; 64 * 48], [64, 48]);
+        let want_c = level(0.25);
+        assert!(
+            c_base
+                .clarity_laplacian()
+                .iter()
+                .all(|&v| (v - want_c).abs() < 1e-6)
+        );
+
+        // Non-square mixed even/odd dimensions with a sharp high-contrast step and smooth
+        // gradient: check constant preservation, center-of-mass symmetry down to 1×1,
+        // 90° rotation invariance, and global/masked agreement.
+        let (w, h) = (64usize, 45usize);
+        let lum: Vec<f32> = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let ev = if x < w / 2 {
+                    -1.0 - 0.5 * (y as f32 / h as f32)
+                } else {
+                    -5.5 + 0.4 * ((x * 3 + y * 5) as f32 * 0.2).sin()
+                };
+                ev.exp2()
+            })
+            .collect();
+        let mb = MapBase::new(lum.clone(), [w as u32, h as u32]);
+        let got = mb.clarity_laplacian();
+
+        // Center of mass of a linear ramp stays at 0.5000 all the way to 1×1.
+        let ramp = Plane {
+            w,
+            h,
+            data: (0..w * h)
+                .map(|i| (i % w) as f32 / (w - 1) as f32)
+                .collect(),
+        };
+        let mut p = ramp;
+        while p.w > 1 || p.h > 1 {
+            p = p.down_sym(Cancel::NEVER);
+            let mean: f32 = p.data.iter().sum::<f32>() / p.data.len() as f32;
+            assert!(
+                (mean - 0.5).abs() < 1e-5,
+                "down_sym drifted center of mass at {}×{}: {mean}",
+                p.w,
+                p.h
+            );
+        }
+
+        // Exact 90° rotation invariance of the symmetric 1×1 local Laplacian base.
+        let mut lum_rot = vec![0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                // (x, y) in w×h -> (h - 1 - y, x) in h×w
+                lum_rot[x * h + (h - 1 - y)] = lum[y * w + x];
+            }
+        }
+        let mb_rot = MapBase::new(lum_rot, [h as u32, w as u32]);
+        let got_rot = mb_rot.clarity_laplacian();
+        let mut max_rot_err = 0f32;
+        for y in 0..h {
+            for x in 0..w {
+                let a = got[y * w + x];
+                let b = got_rot[x * h + (h - 1 - y)];
+                max_rot_err = max_rot_err.max((a - b).abs());
+            }
+        }
+        assert!(
+            max_rot_err < 1e-5,
+            "symmetric 1×1 clarity_laplacian broke 90° rotation invariance: max_err={max_rot_err}"
+        );
+        // Verify global vs masked positive Clarity agree bit-close on the 1×1 base.
+        let arc = std::sync::Arc::new(mb);
+        let global = LocalToneMap::from_base(
+            &arc,
+            [w as u32, h as u32],
+            Sliders {
+                clarity: 0.75,
+                ..Default::default()
+            },
+            false,
+        );
+        let masked = LocalToneMap::from_base(
+            &arc,
+            [w as u32, h as u32],
+            Sliders {
+                mask_clarity: true,
+                ..Default::default()
+            },
+            false,
+        );
+        for (x, y) in [(5, 5), (30, 25), (60, 40)] {
+            let l = lum[y * w + x];
+            let g = global.gain(x as f32, y as f32, l);
+            let m = masked.gain_with(x as f32, y as f32, l, [0., 0., 0.75]);
+            assert!((g - m).abs() < 1e-5, "at ({x},{y}): global={g} masked={m}");
+        }
+        // Degenerate 1×1 and 1×N dimensions stay finite and preserve constants.
+        let one = MapBase::new(vec![0.5], [1, 1]);
+        assert!((one.clarity_laplacian()[0] - level(0.5)).abs() < 1e-6);
+        let strip = MapBase::new(vec![0.25; 17], [17, 1]);
+        assert!(
+            strip
+                .clarity_laplacian()
+                .iter()
+                .all(|&v| (v - level(0.25)).abs() < 1e-6)
+        );
     }
 }

@@ -1048,17 +1048,16 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
         }
         clarity = dot(gains, weights) / dot(weights, vec4(1.0));
     }
-    let cpos = local_curve(P_CLARITY_BASE, base) + local_curve(P_CLARITY_PIX, own);
-    if cpos != 0.0 {
-        var hw = 1.0;
-        let ch = offset(P_CLARITY_HDR);
-        if ch >= 0 {
-            let h_top = table(ch + i32(iy * w + ix)) * (1.0 - tx) + table(ch + i32(iy * w + jx)) * tx;
-            let h_bot = table(ch + i32(jy * w + ix)) * (1.0 - tx) + table(ch + i32(jy * w + jx)) * tx;
-            hw = h_top * (1.0 - ty) + h_bot * ty;
-        }
-        clarity += cpos * hw;
+    var cbase = base;
+    let cm = offset(P_CLARITY_MAP);
+    if cm >= 0 {
+        let g = u32(cm);
+        let c_top = grid[g + iy * w + ix] * (1.0 - tx) + grid[g + iy * w + jx] * tx;
+        let c_bot = grid[g + jy * w + ix] * (1.0 - tx) + grid[g + jy * w + jx] * tx;
+        let clap = c_top * (1.0 - ty) + c_bot * ty;
+        cbase = own + exp(-0.5 * off * off) * (clap - own);
     }
+    clarity += local_curve(P_CLARITY_BASE, cbase) + local_curve(P_CLARITY_PIX, own);
     if (V_MASKS && masked) && (delta[L_SHADOWS] != 0.0 || delta[L_HIGHLIGHTS] != 0.0) {
         let s = p(P_GLOBAL_SH) + delta[L_SHADOWS];
         let h = p(P_GLOBAL_SH + 1u) + delta[L_HIGHLIGHTS];

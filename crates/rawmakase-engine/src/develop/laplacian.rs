@@ -118,4 +118,140 @@ impl Plane {
         });
         Plane { w, h, data }
     }
+    /// Blurred and halved with exact left-right / top-bottom symmetry at every size.
+    ///
+    /// On an odd dimension, `0, 2, …, n − 1` already brackets both borders symmetrically
+    /// under the 5-tap binomial filter. On an even dimension (`n → n / 2`), sampling only
+    /// even indices shifts the center of mass by half a pixel per level, drifting a `1×1`
+    /// coarsest level toward `(0, 0)` by ~15% of the frame; the centered 4-tap filter
+    /// `[1, 3, 3, 1] / 8` at `2x + 0.5` keeps the center of mass at `0.5` and makes the
+    /// full-depth pyramid invariant to 90°/180° rotations and flips.
+    pub(crate) fn down_sym(&self, cancel: Cancel<'_>) -> Self {
+        let (w, h) = (self.w.div_ceil(2), self.h.div_ceil(2));
+        let clamp = |i: isize, n: usize| i.clamp(0, n as isize - 1) as usize;
+        let mut wide = vec![0.; w * self.h];
+        wide.par_chunks_mut(w)
+            .zip(self.data.par_chunks(self.w))
+            .for_each(|(out, row)| {
+                if cancel.is_cancelled() {
+                    return;
+                }
+                if self.w == w {
+                    out.copy_from_slice(row);
+                } else if self.w.is_multiple_of(2) {
+                    for (x, o) in out.iter_mut().enumerate() {
+                        let i = 2 * x as isize;
+                        *o = (row[clamp(i - 1, self.w)] + row[clamp(i + 2, self.w)]) * 0.125
+                            + (row[i as usize] + row[clamp(i + 1, self.w)]) * 0.375;
+                    }
+                } else {
+                    for (x, o) in out.iter_mut().enumerate() {
+                        *o = (0..5)
+                            .map(|k| row[mirror(2 * x as isize + k - 2, self.w)] * TAPS[k as usize])
+                            .sum();
+                    }
+                }
+            });
+        let mut data = vec![0.; w * h];
+        data.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
+            if cancel.is_cancelled() {
+                return;
+            }
+            if self.h == h {
+                out.copy_from_slice(&wide[y * w..(y + 1) * w]);
+            } else if self.h.is_multiple_of(2) {
+                let i = 2 * y as isize;
+                let r0 = &wide[clamp(i - 1, self.h) * w..][..w];
+                let r1 = &wide[i as usize * w..][..w];
+                let r2 = &wide[clamp(i + 1, self.h) * w..][..w];
+                let r3 = &wide[clamp(i + 2, self.h) * w..][..w];
+                for (x, o) in out.iter_mut().enumerate() {
+                    *o = (r0[x] + r3[x]) * 0.125 + (r1[x] + r2[x]) * 0.375;
+                }
+            } else {
+                let rows: [&[f32]; 5] = std::array::from_fn(|k| {
+                    let r = mirror(2 * y as isize + k as isize - 2, self.h);
+                    &wide[r * w..(r + 1) * w]
+                });
+                for (x, o) in out.iter_mut().enumerate() {
+                    *o = (0..5).map(|k| rows[k][x] * TAPS[k]).sum();
+                }
+            }
+        });
+        Plane { w, h, data }
+    }
+    /// Symmetric counterpart to [`Plane::down_sym`], expanding back to `w` × `h`.
+    pub(crate) fn up_sym(&self, w: usize, h: usize, cancel: Cancel<'_>) -> Self {
+        let clamp = |i: isize, n: usize| i.clamp(0, n as isize - 1) as usize;
+        let expand_odd = |i: usize, at: &dyn Fn(isize) -> f32| -> f32 {
+            let c = (i / 2) as isize;
+            if i.is_multiple_of(2) {
+                at(c - 1) * EVEN[0] + at(c) * EVEN[1] + at(c + 1) * EVEN[2]
+            } else {
+                (at(c) + at(c + 1)) * ODD
+            }
+        };
+        let mut wide = vec![0.; w * self.h];
+        wide.par_chunks_mut(w)
+            .zip(self.data.par_chunks(self.w))
+            .for_each(|(out, row)| {
+                if cancel.is_cancelled() {
+                    return;
+                }
+                if w == self.w {
+                    out.copy_from_slice(row);
+                } else if w.is_multiple_of(2) && self.w == w / 2 {
+                    for (x, o) in out.iter_mut().enumerate() {
+                        let c = (x / 2) as isize;
+                        *o = if x.is_multiple_of(2) {
+                            row[clamp(c - 1, self.w)] * 0.25 + row[c as usize] * 0.75
+                        } else {
+                            row[c as usize] * 0.75 + row[clamp(c + 1, self.w)] * 0.25
+                        };
+                    }
+                } else {
+                    for (x, o) in out.iter_mut().enumerate() {
+                        *o = expand_odd(x, &|c| row[mirror(c, self.w)]);
+                    }
+                }
+            });
+        let mut data = vec![0.; w * h];
+        data.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
+            if cancel.is_cancelled() {
+                return;
+            }
+            if h == self.h {
+                out.copy_from_slice(&wide[y * w..(y + 1) * w]);
+            } else if h.is_multiple_of(2) && self.h == h / 2 {
+                let c = (y / 2) as isize;
+                let (ra, rb, wa, wb) = if y.is_multiple_of(2) {
+                    (
+                        &wide[clamp(c - 1, self.h) * w..][..w],
+                        &wide[c as usize * w..][..w],
+                        0.25f32,
+                        0.75f32,
+                    )
+                } else {
+                    (
+                        &wide[c as usize * w..][..w],
+                        &wide[clamp(c + 1, self.h) * w..][..w],
+                        0.75f32,
+                        0.25f32,
+                    )
+                };
+                for (x, o) in out.iter_mut().enumerate() {
+                    *o = ra[x] * wa + rb[x] * wb;
+                }
+            } else {
+                let row = |c: isize| {
+                    let r = mirror(c, self.h);
+                    &wide[r * w..(r + 1) * w]
+                };
+                for (x, o) in out.iter_mut().enumerate() {
+                    *o = expand_odd(y, &|c| row(c)[x]);
+                }
+            }
+        });
+        Plane { w, h, data }
+    }
 }

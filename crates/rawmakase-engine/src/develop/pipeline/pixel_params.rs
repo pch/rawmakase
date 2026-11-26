@@ -58,10 +58,10 @@ pub(crate) mod slot {
         // Combined global pixel-level contrast curve (`local_tone::LocalToneMap::pix`).
         PIX: 3,
         // Positive Clarity's base and pixel curves (`local_tone::LocalToneMap::clarity_pos`),
-        // and optional HDR weight grid offset (`clarity_hdr`, or -1).
+        // and optional 1×1 local Laplacian base grid offset (`MapGrid::clarity_base_at`, or -1).
         CLARITY_BASE: 3,
         CLARITY_PIX: 3,
-        CLARITY_HDR: 1,
+        CLARITY_MAP: 1,
         // The photo's global rule at full strength: the curves (as SHADOWS) of Shadows
         // +100, Highlights −100, Shadows −100 and Highlights +100, for masks
         // (`local_tone::LocalToneMap::rule`).
@@ -448,11 +448,11 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         None => -1.,
     };
     p.set(slot::LOCAL_A, &[0., grid.cells() as f32, clarity]);
+    p.set(
+        slot::CLARITY_MAP,
+        &[grid.clarity_base_at().map_or(-1., |at| at as f32)],
+    );
     p.grid = Some(grid);
-    let clarity_hdr = match &local.clarity_hdr {
-        Some(w) if local.clarity_pos.is_some() => p.push(w.iter().copied()),
-        _ => -1.,
-    };
     let mut curve = |c: Option<&crate::develop::local_tone::Curve>| match c {
         Some(c) => [p.push(c.table), c.lo, c.hi],
         None => [-1., 0., 0.],
@@ -479,7 +479,6 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set(slot::PIX, &pix);
     p.set(slot::CLARITY_BASE, &clarity_base);
     p.set(slot::CLARITY_PIX, &clarity_pix);
-    p.set(slot::CLARITY_HDR, &[clarity_hdr]);
     p.set(slot::RULE, &rule);
     p.set(slot::RULE_PIX, &rule_pix);
     if let Some(pair) = &local.pair {
