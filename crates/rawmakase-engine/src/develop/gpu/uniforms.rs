@@ -127,6 +127,53 @@ uniform! {
     }
 }
 
+uniform! {
+    /// `Params` in `export_finish.wgsl`: OutputSpace-aware export sharpening,
+    /// spatial effects, Lanczos3 resizing, and direct rgb8/rgb16 packing.
+    ExportFinishParams {
+        width: u32,
+        height: u32,
+        crop_y: u32,
+        crop_h: u32,
+        out_width: u32,
+        out_height: u32,
+        out_y0: u32,
+        origin_y: u32,
+        full_w: u32,
+        full_h: u32,
+        output_space: u32,
+        resize: u32,
+        radius: u32,
+        amount: f32,
+        threshold: f32,
+        halo: f32,
+        dark: f32,
+        x_offset: u32,
+        x_stride: u32,
+        y_offset: u32,
+        y_stride: u32,
+        pack_src_offset: u32,
+        pack_groups_x: u32,
+        scale: f32,
+        grain: f32,
+        grain_cell: f32,
+        grain_coarse: f32,
+        grain_fine: f32,
+        grain_seed: u32,
+        vignette: f32,
+        vignette_style: u32,
+        vignette_highlights: f32,
+        vignette_scale_x: f32,
+        vignette_scale_y: f32,
+        vignette_power: f32,
+        vignette_midpoint: f32,
+        vignette_feather: f32,
+        pad0: u32,
+        pad1: u32,
+        pad2: u32,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +240,15 @@ mod tests {
         let (members, size) = shader_params(include_str!("finish.wgsl"));
         assert_eq!(members, rust_fields(FinishParams::FIELDS));
         assert_eq!(size, std::mem::size_of::<FinishParams>());
+    }
+
+    #[test]
+    fn export_finish_params_match_the_shader() {
+        let source = crate::develop::effects::PostCropVignette::wgsl_tone()
+            + include_str!("export_finish.wgsl");
+        let (members, size) = shader_params(&source);
+        assert_eq!(members, rust_fields(ExportFinishParams::FIELDS));
+        assert_eq!(size, std::mem::size_of::<ExportFinishParams>());
+        assert_eq!(size % 16, 0);
     }
 }

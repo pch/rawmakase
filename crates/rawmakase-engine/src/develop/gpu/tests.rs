@@ -1442,6 +1442,7 @@ fn shaders_are_valid_wgsl() {
         local: false,
         dehaze: false,
         hdr: false,
+        output_space: crate::color::OutputSpace::Srgb,
     };
     let modules: [(&str, String, &[&str]); 7] = [
         (

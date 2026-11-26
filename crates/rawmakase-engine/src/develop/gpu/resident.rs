@@ -46,53 +46,42 @@ fn storage(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     }
 }
 impl Resident {
-    fn new(device: &wgpu::Device) -> Self {
-        let layout = |label, entries: &[wgpu::BindGroupLayoutEntry]| {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some(label),
-                entries,
-            })
-        };
-        let pipeline = |module: &wgpu::ShaderModule, layouts: &[&wgpu::BindGroupLayout], entry| {
-            let layouts: Vec<_> = layouts.iter().map(|l| Some(*l)).collect();
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(entry),
-                bind_group_layouts: &layouts,
-                immediate_size: 0,
-            });
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(entry),
-                layout: Some(&pipeline_layout),
-                module,
-                entry_point: Some(entry),
-                compilation_options: Default::default(),
-                cache: None,
-            })
-        };
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Local stages"),
-            source: wgpu::ShaderSource::Wgsl(
-                (super::sampling::wgsl_prelude() + include_str!("local.wgsl")).into(),
-            ),
-        });
-        let entries: [(&str, Vec<wgpu::BindGroupLayoutEntry>); 1] = [(
-            "sample_region",
-            vec![
+    pub(super) fn create_sample_pipeline(
+        device: &wgpu::Device,
+    ) -> (wgpu::BindGroupLayout, wgpu::ComputePipeline) {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sample_region"),
+            entries: &[
                 storage(10, true),
                 storage(11, true),
                 storage(12, true),
                 storage(14, false),
                 storage(15, false),
             ],
-        )];
-        let pipelines = entries
-            .into_iter()
-            .map(|(entry, entries)| {
-                let layout = layout(entry, &entries);
-                let pipeline = pipeline(&module, &[&layout], entry);
-                (layout, pipeline)
-            })
-            .collect();
+        });
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Local stages"),
+            source: wgpu::ShaderSource::Wgsl(
+                (super::sampling::wgsl_prelude() + include_str!("local.wgsl")).into(),
+            ),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sample_region"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("sample_region"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("sample_region"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        (layout, pipeline)
+    }
+    fn new(device: &wgpu::Device) -> Self {
+        let pipelines = vec![Self::create_sample_pipeline(device)];
         Self {
             pipelines,
             photo: None,

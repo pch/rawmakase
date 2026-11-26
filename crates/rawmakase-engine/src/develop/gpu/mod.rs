@@ -1,11 +1,16 @@
-//! Optional compute backend for previews: the per-pixel develop stage, sharpening,
-//! Lanczos resizing and display finishing.
+//! Optional compute backends for previews and SDR exports: the per-pixel develop
+//! stage, sharpening, Lanczos resizing, display finishing, and banded export finishing.
 //!
-//! On the desktop it shares the UI's wgpu device, so a preview is finished straight
-//! into a texture the viewport draws (`present.rs`). Headless callers (tests, the
-//! benchmark) create their own device. Buffers are bounded and reused for equal
-//! dimensions; callers retain CPU pixels for fallback. The CPU stages are the
-//! reference, and exports always use them (docs/architecture.md).
+//! For previews on the desktop, [`Processor`] shares the UI's wgpu device so a preview
+//! is finished straight into a texture the viewport draws (`present.rs`). Headless
+//! callers (tests, benchmarks) create their own device. Buffers are bounded and reused
+//! for equal dimensions; callers retain CPU pixels for fallback.
+//!
+//! For exports, [`ExportBackend`] (`export.rs`) owns a dedicated headless compute device
+//! decoupled from eframe's UI device and [`SURFACE`], executing horizontal bands with
+//! exact halo overlap, `OutputSpace` encoding, and deterministic two-tier fallback to the
+//! CPU reference ([`crate::develop::render_export`]). The CPU stages remain the
+//! authoritative reference (`docs/architecture.md`).
 //!
 //! # Backends and devices
 //!
@@ -95,12 +100,16 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 mod develop;
+pub mod export;
 mod present;
 mod resident;
 pub(crate) mod sampling;
 mod uniforms;
 mod weights;
 pub(crate) use develop::Input;
+pub use export::{
+    EXPORT_GPU_ENV, ExportBackend, ExportBackendPolicy, ExportBackendStatus, ExportFallbackKind,
+};
 pub(crate) use present::Finish;
 pub use present::{Display, Frame, HdrFrame, MonitorLut, Slot};
 
