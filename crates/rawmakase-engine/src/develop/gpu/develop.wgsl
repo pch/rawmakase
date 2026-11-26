@@ -1155,6 +1155,19 @@ fn haze_omega(s_in: f32) -> f32 {
     }
     return 0.46 + (0.88 - 0.46) * (s - 0.5) / 0.5;
 }
+fn haze_omega_rendered(s_in: f32) -> f32 {
+    let s = clamp(s_in, 0.0, 1.0);
+    if s <= 0.25 {
+        return 0.26 * s / 0.25;
+    }
+    if s <= 0.50 {
+        return 0.26 + (0.50 - 0.26) * (s - 0.25) / 0.25;
+    }
+    if s <= 0.75 {
+        return 0.50 + (0.72 - 0.50) * (s - 0.50) / 0.25;
+    }
+    return 0.72 + (0.88 - 0.72) * (s - 0.75) / 0.25;
+}
 // scene_tone::haze: optical-depth multiplier for negative Dehaze `mag = -s`.
 fn haze_neg_strength(mag_in: f32) -> f32 {
     let s = clamp(mag_in, 0.0, 1.0);
@@ -1169,11 +1182,29 @@ fn haze_neg_strength(mag_in: f32) -> f32 {
     }
     return 2.30 + (4.30 - 2.30) * (s - 0.75) / 0.25;
 }
+fn haze_neg_strength_rendered(mag_in: f32) -> f32 {
+    let s = clamp(mag_in, 0.0, 1.0);
+    if s <= 0.25 {
+        return 0.55 * s / 0.25;
+    }
+    if s <= 0.50 {
+        return 0.55 + (1.45 - 0.55) * (s - 0.25) / 0.25;
+    }
+    if s <= 0.75 {
+        return 1.45 + (3.00 - 1.45) * (s - 0.50) / 0.25;
+    }
+    return 3.00 + (6.50 - 3.00) * (s - 0.75) / 0.25;
+}
 fn haze_dark_weight(y: f32) -> f32 {
     let u = clamp((y - 0.0005) / (0.003 - 0.0005), 0.0, 1.0);
     return u * u * (3.0 - 2.0 * u);
 }
-fn haze_density(pos: vec2<f32>) -> f32 {
+fn haze_grid_sample(base: i32, w: u32, ix: u32, iy: u32, jx: u32, jy: u32, tx: f32, ty: f32) -> f32 {
+    let top = table(base + i32(iy * w + ix)) * (1.0 - tx) + table(base + i32(iy * w + jx)) * tx;
+    let bottom = table(base + i32(jy * w + ix)) * (1.0 - tx) + table(base + i32(jy * w + jx)) * tx;
+    return top * (1.0 - ty) + bottom * ty;
+}
+fn haze_density(pos: vec2<f32>, y_rel: f32) -> f32 {
     let base = offset(P_HAZE);
     let w = u32(p(P_HAZE + 1u));
     let h = u32(p(P_HAZE + 2u));
@@ -1185,24 +1216,29 @@ fn haze_density(pos: vec2<f32>) -> f32 {
     let jy = min(iy + 1u, h - 1u);
     let tx = fx - f32(ix);
     let ty = fy - f32(iy);
-    let top = table(base + i32(iy * w + ix)) * (1.0 - tx) + table(base + i32(iy * w + jx)) * tx;
-    let bottom = table(base + i32(jy * w + ix)) * (1.0 - tx) + table(base + i32(jy * w + jx)) * tx;
-    return top * (1.0 - ty) + bottom * ty;
+    let first = haze_grid_sample(base, w, ix, iy, jx, jy, tx, ty);
+    if p(P_HAZE_RENDERED) != 0.0 {
+        let second = haze_grid_sample(base + i32(w * h), w, ix, iy, jx, jy, tx, ty);
+        return clamp(first * clamp(y_rel, 0.0, 2.0) + second, 0.0, 1.0);
+    }
+    return first;
 }
 // Dehazing::apply: the photo's haze removed at Dehaze `s` > 0.
 fn dehaze_positive(pro: vec3<f32>, s: f32, pos: vec2<f32>, tone_gain: f32) -> vec3<f32> {
     if offset(P_HAZE) < 0 {
         return pro;
     }
-    let density = haze_density(pos);
     var gain = tone_gain;
     if (V_MASKS && masked) { gain *= exp2(delta[L_EXPOSURE]); }
     let air = max(vec3(p(P_HAZE_AIR), p(P_HAZE_AIR + 1u), p(P_HAZE_AIR + 2u)) * gain, vec3(1e-9));
     let lw = vec3(0.2880402, 0.7118741, 0.0000857);
     let y = max(dot(pro, lw), 0.0);
+    let y_rel = select(0.0, y / max(dot(air, lw), 1e-9), p(P_HAZE_RENDERED) != 0.0);
+    let density = haze_density(pos, y_rel);
     let pixel_dc = max(min(min(pro.x / air.x, pro.y / air.y), pro.z / air.z), 0.0);
     let d = min(density, pixel_dc) * haze_dark_weight(y);
-    let t = max(1.0 - haze_omega(s) * d, 0.28);
+    let omega = select(haze_omega(s), haze_omega_rendered(s), p(P_HAZE_RENDERED) != 0.0);
+    let t = max(1.0 - omega * d, 0.28);
     let j = (pro - air) / t + air;
     // haze.rs: no channel below half the color scaled by the luminance's change.
     let ratio = max(dot(j, lw), 0.0) / max(y, 1e-9);
@@ -1213,15 +1249,21 @@ fn dehaze_negative(pro: vec3<f32>, s: f32, pos: vec2<f32>, tone_gain: f32) -> ve
     if offset(P_HAZE) < 0 {
         return pro;
     }
-    let density = haze_density(pos);
     var gain = tone_gain;
     if (V_MASKS && masked) { gain *= exp2(delta[L_EXPOSURE]); }
     let air = vec3(p(P_HAZE_AIR), p(P_HAZE_AIR + 1u), p(P_HAZE_AIR + 2u)) * gain;
     let lw = vec3(0.2880402, 0.7118741, 0.0000857);
     let y = max(dot(pro, lw), 0.0);
     let ya = max(dot(air, lw), 1e-9);
-    let d = min(density, y / ya) * haze_dark_weight(y);
-    let t = exp(-haze_neg_strength(-s) * d);
+    let y_rel = y / ya;
+    let density = haze_density(pos, y_rel);
+    let d = min(density, y_rel) * haze_dark_weight(y);
+    var t: f32;
+    if p(P_HAZE_RENDERED) != 0.0 {
+        t = 1.0 / (1.0 + haze_neg_strength_rendered(-s) * d);
+    } else {
+        t = exp(-haze_neg_strength(-s) * d);
+    }
     return t * pro + (1.0 - t) * air;
 }
 fn level(v: f32) -> f32 {

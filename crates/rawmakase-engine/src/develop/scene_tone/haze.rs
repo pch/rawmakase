@@ -42,6 +42,16 @@ const DARK_FLOOR_HI: f32 = 0.003;
 const AIR_UNIT_RANGE: [f32; 2] = [0.1, 4.];
 /// Positive Dehaze amounts and the fraction of the haze they remove; linear between them.
 const OMEGA: [(f32, f32); 4] = [(0., 0.), (0.2, 0.23), (0.5, 0.46), (1., 0.88)];
+/// Positive Dehaze haze-removal fractions for SDR rendered files (Camera Raw 18.7 on
+/// `F⁻¹`-inverted JPEGs follows a slightly concave curve at intermediate amounts while
+/// sharing the same +100 endpoint).
+const OMEGA_RENDERED: [(f32, f32); 5] = [
+    (0., 0.),
+    (0.25, 0.26),
+    (0.50, 0.50),
+    (0.75, 0.72),
+    (1., 0.88),
+];
 /// Negative Dehaze magnitudes `|s|` and optical-depth multiplier `κ(|s|)` in
 /// `t = exp(−κ(|s|) · d)`; linear between knots.
 const NEG_STRENGTH: [(f32, f32); 5] = [
@@ -51,6 +61,19 @@ const NEG_STRENGTH: [(f32, f32); 5] = [
     (0.75, 2.30),
     (1.00, 4.30),
 ];
+/// Negative Dehaze magnitudes `|s|` and optical-depth multiplier `κ(|s|)` in
+/// `t = 1 / (1 + κ(|s|) · d)` for SDR rendered files.
+const NEG_STRENGTH_RENDERED: [(f32, f32); 5] = [
+    (0., 0.),
+    (0.25, 0.55),
+    (0.50, 1.45),
+    (0.75, 3.00),
+    (1.00, 6.50),
+];
+/// Guided-filter radius (relative to the measurement copy's long edge) and regularization
+/// ε on linear relative luminance `clamp(Y / Y_A, 0, 2)` for SDR rendered files.
+const RENDERED_GUIDE_RADIUS: f32 = 0.06;
+const RENDERED_GUIDE_EPS: f32 = 0.02;
 
 /// A photo's haze, from its measurement copy at the scene stage's input, Exposure 0.
 #[derive(Debug, PartialEq)]
@@ -59,9 +82,14 @@ pub(crate) struct Haze {
     pub(crate) height: usize,
     /// The airlight per channel, linear ProPhoto at Exposure 0.
     pub(crate) air: [f32; 3],
-    /// The haze's density on the copy's grid (0 to 1): the joint-bilateral-filtered
-    /// dark channel of the photo relative to `air`.
+    /// The haze's density on the copy's grid (0 to 1): the smoothed dark channel of
+    /// the photo relative to `air`. When `rendered` is `true`, holds the Fast Guided
+    /// Filter linear coefficient planes `[mean_a, mean_b]` (`2 * width * height`
+    /// unconstrained floats) reconstructed per pixel in [`Dehazing::sample_density`].
     pub(crate) density: Vec<f32>,
+    /// Whether this haze was measured for an SDR rendered file (guided-filtered density,
+    /// rendered `omega` knots, and `1 / (1 + κ·d)` negative transmission).
+    pub(crate) rendered: bool,
 }
 
 impl Haze {
@@ -70,6 +98,29 @@ impl Haze {
     /// space, where saturated lights retain more of their weakest channel than in
     /// ProPhoto).
     pub(crate) fn of(ranked: &[[f32; 3]], scene: &[[f32; 3]], width: usize, height: usize) -> Self {
+        Self::build(ranked, scene, width, height, false)
+    }
+
+    /// As [`Self::of`], for an SDR rendered file (`F⁻¹`-inverted JPEG/PNG/TIFF): refines
+    /// the dark-channel density with He et al.'s guided filter on linear relative
+    /// luminance `clamp(Y / Y_A, 0, 2)` rather than the 2-stop log joint bilateral
+    /// filter, preventing bright sky optical depth from bleeding across horizons.
+    pub(crate) fn of_rendered(
+        ranked: &[[f32; 3]],
+        scene: &[[f32; 3]],
+        width: usize,
+        height: usize,
+    ) -> Self {
+        Self::build(ranked, scene, width, height, true)
+    }
+
+    fn build(
+        ranked: &[[f32; 3]],
+        scene: &[[f32; 3]],
+        width: usize,
+        height: usize,
+        rendered: bool,
+    ) -> Self {
         assert_eq!(scene.len(), width * height);
         assert_eq!(ranked.len(), scene.len());
         if scene.is_empty() {
@@ -78,6 +129,7 @@ impl Haze {
                 height,
                 air: [1e-6; 3],
                 density: Vec::new(),
+                rendered,
             };
         }
         let long = width.max(height) as f32;
@@ -128,25 +180,42 @@ impl Haze {
             })
             .collect();
         let raw = min_filter(&relative, width, height, r);
-        let guide: Vec<f32> = scene
-            .iter()
-            .map(|p| {
-                (super::luminance(*p) / ya)
-                    .max(2f32.powf(GUIDE_LO))
-                    .log2()
-                    .clamp(GUIDE_LO, GUIDE_HI)
-            })
-            .collect();
-        let sigma_s = (BILATERAL_SIGMA_S * long).max(4.);
-        let density = joint_bilateral(&guide, &raw, width, height, sigma_s, BILATERAL_SIGMA_R)
-            .into_iter()
-            .map(|v| if v.is_finite() { v.clamp(0., 1.) } else { 0. })
-            .collect();
+        let density = if rendered {
+            let guide: Vec<f32> = scene
+                .iter()
+                .map(|p| clamp_guide(super::luminance(*p) / ya))
+                .collect();
+            let r_gf = ((RENDERED_GUIDE_RADIUS * long).round() as usize).max(1);
+            // Store Fast Guided Filter linear coefficients `[mean_a, mean_b]` (2 * w * h)
+            // so per-pixel evaluation reconstructs sharp optical depth against each
+            // full-resolution pixel's own `clamp(Y / Y_A, 0, 2)`.
+            let (ma, mb) = guided_filter_ab(&guide, &raw, width, height, r_gf, RENDERED_GUIDE_EPS);
+            ma.into_iter()
+                .chain(mb)
+                .map(|v| if v.is_finite() { v } else { 0. })
+                .collect()
+        } else {
+            let guide: Vec<f32> = scene
+                .iter()
+                .map(|p| {
+                    (super::luminance(*p) / ya)
+                        .max(2f32.powf(GUIDE_LO))
+                        .log2()
+                        .clamp(GUIDE_LO, GUIDE_HI)
+                })
+                .collect();
+            let sigma_s = (BILATERAL_SIGMA_S * long).max(4.);
+            joint_bilateral(&guide, &raw, width, height, sigma_s, BILATERAL_SIGMA_R)
+                .into_iter()
+                .map(|v| if v.is_finite() { v.clamp(0., 1.) } else { 0. })
+                .collect()
+        };
         Self {
             width,
             height,
             air,
             density,
+            rendered,
         }
     }
 }
@@ -186,6 +255,11 @@ pub(crate) fn omega(s: f32) -> f32 {
     piecewise(&OMEGA, s)
 }
 
+/// As [`omega`], for SDR rendered files.
+pub(crate) fn omega_rendered(s: f32) -> f32 {
+    piecewise(&OMEGA_RENDERED, s)
+}
+
 /// [`omega`] of an HDR master, whose masks' Dehaze can take a pixel past +100
 /// ([`super::hdr_mask_dehaze`]): beyond it the table's last segment continues.
 pub(crate) fn omega_hdr(s: f32) -> f32 {
@@ -199,6 +273,18 @@ pub(crate) fn omega_hdr(s: f32) -> f32 {
 /// Optical-depth multiplier `κ(|s|)` for negative Dehaze `s < 0` (`mag = -s`, 0 to 1).
 pub(crate) fn neg_strength(mag: f32) -> f32 {
     piecewise(&NEG_STRENGTH, mag)
+}
+
+/// As [`neg_strength`], for SDR rendered files (`t = 1 / (1 + κ(|s|) · d)`).
+pub(crate) fn neg_strength_rendered(mag: f32) -> f32 {
+    piecewise(&NEG_STRENGTH_RENDERED, mag)
+}
+
+/// Clamps linear relative luminance `Y / Y_A` to `[0, 2]`, mapping `NaN` to `0` so a
+/// non-finite pixel cannot poison the guided-filter running-sum blur.
+#[inline]
+fn clamp_guide(v: f32) -> f32 {
+    if v.is_nan() { 0. } else { v.clamp(0., 2.) }
 }
 
 /// Smooth dark luminance ramp (0 below [`DARK_FLOOR_LO`], 1 above [`DARK_FLOOR_HI`]).
@@ -232,6 +318,31 @@ impl Dehazing {
         }
     }
 
+    /// Samples the optical-depth density at camera-image position `pos`. For SDR rendered
+    /// files, reconstructs He et al.'s Fast Guided Filter `clamp(mean_a * clamp(y_rel, 0, 2) + mean_b, 0, 1)`.
+    #[inline]
+    fn sample_density(&self, pos: [f32; 2], y_rel: f32) -> f32 {
+        let size = [self.haze.width, self.haze.height];
+        if self.haze.rendered {
+            let n = self.haze.width * self.haze.height;
+            let ma = crate::develop::local_tone::grid_sample(
+                &self.haze.density[..n],
+                size,
+                self.scale,
+                pos,
+            );
+            let mb = crate::develop::local_tone::grid_sample(
+                &self.haze.density[n..],
+                size,
+                self.scale,
+                pos,
+            );
+            (ma * clamp_guide(y_rel) + mb).clamp(0., 1.)
+        } else {
+            crate::develop::local_tone::grid_sample(&self.haze.density, size, self.scale, pos)
+        }
+    }
+
     /// Positive Dehaze: pixel `p` at camera-image sample position `pos` with the
     /// fraction `omega` of the haze removed: `J = (p − A) / t + A`, with
     /// `t = max(1 − omega · d, MIN_TRANSMISSION)`, `d` capped at the pixel's own
@@ -242,17 +353,17 @@ impl Dehazing {
         if omega <= 0. || self.haze.density.is_empty() {
             return p;
         }
-        let density = crate::develop::local_tone::grid_sample(
-            &self.haze.density,
-            [self.haze.width, self.haze.height],
-            self.scale,
-            pos,
-        );
         // Haze was measured before local tone and mask Exposure. Apply the same
         // gain to its airlight as to the pixel, so negative Highlights cannot
         // subtract an unchanged bright sky from a now darker one (#600).
         let air = self.air.map(|v| (v * tone_gain).max(1e-9));
         let y = super::luminance(p).max(0.);
+        let y_rel = if self.haze.rendered {
+            y / super::luminance(air).max(1e-9)
+        } else {
+            0.
+        };
+        let density = self.sample_density(pos, y_rel);
         let pixel_dc = (p[0] / air[0])
             .min(p[1] / air[1])
             .min(p[2] / air[2])
@@ -266,8 +377,9 @@ impl Dehazing {
         std::array::from_fn(|c| j[c].max(CHANNEL_FLOOR * p[c] * ratio))
     }
 
-    /// Negative Dehaze: adds atmospheric haze `I = t · p + (1 − t) · A` with
-    /// `t = exp(−κ(|s|) · d)` using the same airlight and optical-depth map.
+    /// Negative Dehaze: adds atmospheric haze `I = t · p + (1 − t) · A` using the same
+    /// airlight and optical-depth map. RAW files use `t = exp(−κ(|s|) · d)` and SDR
+    /// rendered files use `t = 1 / (1 + κ(|s|) · d)`, both with `d ≤ Y / Y_A`.
     pub(crate) fn apply_negative(
         &self,
         p: [f32; 3],
@@ -278,19 +390,49 @@ impl Dehazing {
         if strength <= 0. || self.haze.density.is_empty() {
             return p;
         }
-        let density = crate::develop::local_tone::grid_sample(
-            &self.haze.density,
-            [self.haze.width, self.haze.height],
-            self.scale,
-            pos,
-        );
         let air = self.air.map(|v| v * tone_gain);
         let y = super::luminance(p).max(0.);
         let ya = super::luminance(air).max(1e-9);
-        let d = density.min(y / ya) * dark_weight(y);
-        let t = (-strength * d).exp();
+        let y_rel = y / ya;
+        let density = self.sample_density(pos, y_rel);
+        let d = density.min(y_rel) * dark_weight(y);
+        let t = if self.haze.rendered {
+            1. / (1. + strength * d)
+        } else {
+            (-strength * d).exp()
+        };
         std::array::from_fn(|c| t * p[c] + (1. - t) * air[c])
     }
+}
+
+/// He et al.'s Fast Guided Filter linear coefficients `(mean_a, mean_b)` of `p` guided by
+/// `guide` with box radius `r` and variance regularization `eps`, used to reconstruct
+/// sharp full-resolution optical depth on SDR rendered files.
+fn guided_filter_ab(
+    guide: &[f32],
+    p: &[f32],
+    w: usize,
+    h: usize,
+    r: usize,
+    eps: f32,
+) -> (Vec<f32>, Vec<f32>) {
+    let mean = |x: &[f32]| crate::develop::local_tone::blur(x, w, h, r);
+    let ii: Vec<f32> = guide.iter().map(|&v| v * v).collect();
+    let ip: Vec<f32> = guide.iter().zip(p).map(|(&g, &pv)| g * pv).collect();
+    let ((m_i, m_p), (m_ii, m_ip)) = rayon::join(
+        || rayon::join(|| mean(guide), || mean(p)),
+        || rayon::join(|| mean(&ii), || mean(&ip)),
+    );
+    let mut a = Vec::with_capacity(guide.len());
+    let mut b = Vec::with_capacity(guide.len());
+    for i in 0..guide.len() {
+        let var = (m_ii[i] - m_i[i] * m_i[i]).max(0.);
+        let cov = m_ip[i] - m_i[i] * m_p[i];
+        let ai = cov / (var + eps);
+        a.push(ai);
+        b.push(m_p[i] - ai * m_i[i]);
+    }
+    rayon::join(|| mean(&a), || mean(&b))
 }
 
 /// Minimum over a (2r+1)² window, clamped at the borders: rows, then columns.
@@ -600,5 +742,64 @@ mod tests {
                 assert_eq!(m[y * 7 + xx], if near { 0. } else { 1. }, "{xx} {y}");
             }
         }
+    }
+
+    #[test]
+    fn rendered_haze_preserves_horizon_edge_exposure_invariance_and_tables() {
+        let (w, h) = (120, 80);
+        // Bright hazy sky in top half, dark clean foreground in bottom half.
+        let scene: Vec<[f32; 3]> = (0..w * h)
+            .map(|i| {
+                let y = i / w;
+                if y < h / 2 {
+                    [0.75, 0.78, 0.85]
+                } else {
+                    [0.04, 0.05, 0.04]
+                }
+            })
+            .collect();
+        let raw_haze = Haze::of(&scene, &scene, w, h);
+        let ren_haze = Haze::of_rendered(&scene, &scene, w, h);
+        assert!(!raw_haze.rendered);
+        assert!(ren_haze.rendered);
+        assert_eq!(ren_haze.density.len(), 2 * w * h);
+        assert_eq!(raw_haze.air, ren_haze.air);
+
+        let ren_d = Dehazing::new(Arc::new(ren_haze), [w as u32, h as u32], 0.);
+        let sky_pos = [60., 15.];
+        let fg_pos = [60., (h / 2 + 2) as f32];
+        let sky_p = scene[15 * w + 60];
+        let fg_p = scene[(h / 2 + 2) * w + 60];
+        let ya = super::super::luminance(ren_d.air).max(1e-9);
+        let d_sky = ren_d.sample_density(sky_pos, super::super::luminance(sky_p) / ya);
+        let d_fg = ren_d.sample_density(fg_pos, super::super::luminance(fg_p) / ya);
+        assert!(
+            d_sky > 0.8 && d_fg < 0.2,
+            "horizon bleed: d_sky={d_sky}, d_fg={d_fg}"
+        );
+
+        // Monotonicity of rendered tables and exact identity at 0.
+        assert_eq!(omega_rendered(0.), 0.);
+        assert_eq!(neg_strength_rendered(0.), 0.);
+        assert!(omega_rendered(0.75) > omega(0.75));
+        assert!((omega_rendered(1.) - omega(1.)).abs() < 1e-6);
+
+        // Exposure and tone_gain invariance for both positive and negative rendered Dehaze.
+        let exposed = Dehazing::new(ren_d.haze.clone(), [w as u32, h as u32], 1.);
+        let p = [0.25, 0.28, 0.34];
+        let pos = [40., 25.];
+        let a = ren_d.apply(p, omega_rendered(0.75), pos, 1.);
+        let b = exposed.apply(p.map(|v| 2. * v), omega_rendered(0.75), pos, 1.);
+        let g = ren_d.apply(p.map(|v| 0.5 * v), omega_rendered(0.75), pos, 0.5);
+        for c in 0..3 {
+            assert!((b[c] - 2. * a[c]).abs() < 1e-5, "{a:?} {b:?}");
+            assert!((g[c] - 0.5 * a[c]).abs() < 1e-5, "{a:?} {g:?}");
+        }
+        let na = ren_d.apply_negative(p, neg_strength_rendered(0.75), pos, 1.);
+        let nb = exposed.apply_negative(p.map(|v| 2. * v), neg_strength_rendered(0.75), pos, 1.);
+        for c in 0..3 {
+            assert!((nb[c] - 2. * na[c]).abs() < 1e-5, "{na:?} {nb:?}");
+        }
+        assert!(super::super::luminance(na) > super::super::luminance(p));
     }
 }

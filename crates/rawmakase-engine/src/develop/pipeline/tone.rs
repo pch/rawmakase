@@ -402,10 +402,17 @@ impl CurveSet {
                         let lum = colors.par_iter().map(|c| scene(*c)).collect();
                         crate::develop::local_tone::MapBase::new(lum, size)
                             .with_crop(crate::develop::local_tone::active_crop_rect(&small))
+                            .with_rendered(
+                                small.metadata.is_rendered() && small.metadata.hdr_source.is_none(),
+                            )
+                            .with_exposure(r.exposure)
                     }),
-                    None => Arc::new(crate::develop::local_tone::MapBase::of(&small, |p| {
-                        scene(scene_color(p, r, &lut, camera, None))
-                    })),
+                    None => Arc::new(
+                        crate::develop::local_tone::MapBase::of(&small, |p| {
+                            scene(scene_color(p, r, &lut, camera, None))
+                        })
+                        .with_exposure(r.exposure),
+                    ),
                 }
             });
         lut.local = base.as_ref().map(|base| {
@@ -932,12 +939,21 @@ pub(super) fn photo_haze(
             })
         })
         .collect();
-    crate::develop::scene_tone::Haze::of(
-        &ranked,
-        &scene,
-        small.width as usize,
-        small.height as usize,
-    )
+    if small.metadata.is_rendered() && small.metadata.hdr_source.is_none() {
+        crate::develop::scene_tone::Haze::of_rendered(
+            &ranked,
+            &scene,
+            small.width as usize,
+            small.height as usize,
+        )
+    } else {
+        crate::develop::scene_tone::Haze::of(
+            &ranked,
+            &scene,
+            small.width as usize,
+            small.height as usize,
+        )
+    }
 }
 /// The recipe, camera stage and curves at as-shot white balance and Exposure 0, shared
 /// by [`photo_measures`] and post-Highlights maximum measurement.

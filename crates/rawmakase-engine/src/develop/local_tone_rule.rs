@@ -127,6 +127,13 @@ pub(super) struct RuleStats {
     pix_lo: f32,
     pix_hi: f32,
     pix_gains: [[f32; 4]; LEVELS],
+    /// Whether this photo is an SDR rendered file (`DefaultBlackRender::None`, `W* = 1`),
+    /// which trims the uncompensated deep-shadow toe on `ShadowsUp` and the `W* > 1`
+    /// shoulder overshoot on `HighlightsUp`.
+    rendered: bool,
+    /// Recipe `exposure` (EV) already baked into `logs`/`base`, used to anchor the SDR
+    /// rendered-file tapers to pre-Exposure file levels.
+    exposure: f32,
     /// How Shadows and Highlights act together on this photo ([`Self::pair`]).
     pair: std::sync::OnceLock<Pair>,
 }
@@ -150,8 +157,23 @@ const BOTTOM_GAP: f32 = 3.5;
 /// base's, and what the curve is made from is blurred.
 const STAT_BLUR: usize = 4;
 impl RuleStats {
-    /// From the map's log2 luminance and base level (a · log + b), `w` × `h`.
+    /// Test shorthand for [`Self::new_for`] on a RAW measurement map.
+    #[cfg(test)]
     pub(super) fn new(logs: &[f32], base: &[f32], w: usize, h: usize) -> Self {
+        Self::new_for(logs, base, w, h, false, 0.)
+    }
+
+    /// Builds statistics from the map's log2 luminance and base level (`a · log + b`),
+    /// `w` × `h`. When `rendered` is `true`, enables the SDR rendered-file extreme tapers
+    /// anchored to pre-Exposure levels (`x - exposure`).
+    pub(super) fn new_for(
+        logs: &[f32],
+        base: &[f32],
+        w: usize,
+        h: usize,
+        rendered: bool,
+        exposure: f32,
+    ) -> Self {
         if let Ok(path) = std::env::var("RAWMAKASE_RULE_DUMP") {
             // Diagnostics: the map's log luminance and base level as raw f32 (w, h, logs, base).
             let mut bytes = Vec::with_capacity(8 + 8 * logs.len());
@@ -234,6 +256,8 @@ impl RuleStats {
             pix_lo: 0.,
             pix_hi: 0.,
             pix_gains: [[0.; 4]; LEVELS],
+            rendered,
+            exposure,
             pair: Default::default(),
         };
         // The curves span the base levels too: a small region's level lies outside the
@@ -378,6 +402,28 @@ impl RuleStats {
         let k = RuleCurve::ALL.iter().position(|c| *c == kind).unwrap_or(0);
         let shadows = kind == RuleCurve::ShadowsUp;
         let mut table: [f32; LEVELS] = std::array::from_fn(|i| self.gains[i][k]);
+        if self.rendered {
+            for (i, g) in table.iter_mut().enumerate() {
+                let x_pre = lo + (i as f32 + 0.5) * step - self.exposure;
+                match kind {
+                    // Rendered files have no `default_black` toe, so `ShadowsUp` does not
+                    // need the extra deep-shadow lift fitted to compensate for it.
+                    RuleCurve::ShadowsUp => {
+                        let u = ((x_pre - (-11.0)) / (-7.0 - (-11.0))).clamp(0., 1.);
+                        let w = 0.65 + 0.35 * (u * u * (3. - 2. * u));
+                        *g *= w;
+                    }
+                    // Rendered files pin `W* = 1` (no highlight shoulder compression), so
+                    // `HighlightsUp` trims the extra near-white lift fitted against `W* > 1`.
+                    RuleCurve::HighlightsUp => {
+                        let u = ((x_pre - (-2.5)) / (0.0 - (-2.5))).clamp(0., 1.);
+                        let w = 1.0 - 0.20 * (u * u * (3. - 2. * u));
+                        *g *= w;
+                    }
+                    RuleCurve::HighlightsDown | RuleCurve::ShadowsDown => {}
+                }
+            }
+        }
         monotone(&mut table, step);
         let curve = Curve { lo, hi, table };
         if let Ok(path) = std::env::var("RAWMAKASE_RULE_DUMP") {
@@ -953,6 +999,72 @@ mod tests {
                         "{name} {kind:?} bin {i}: {out0} -> {out1}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn rendered_shadows_up_and_highlights_up_taper_extremes_while_staying_monotone() {
+        let (w, h) = (96, 64);
+        let logs: Vec<f32> = (0..w * h)
+            .map(|i| -11.5 + 11.5 * ((i % w) as f32 / (w - 1) as f32))
+            .collect();
+        let raw = RuleStats::new_for(&logs, &logs, w, h, false, 0.);
+        let ren = RuleStats::new_for(&logs, &logs, w, h, true, 0.);
+
+        // ShadowsDown and HighlightsDown stay identical between RAW and rendered.
+        for kind in [RuleCurve::ShadowsDown, RuleCurve::HighlightsDown] {
+            assert_eq!(raw.curve(kind).table, ren.curve(kind).table, "{kind:?}");
+        }
+
+        // ShadowsUp trims deep-shadow lift below -7 EV, HighlightsUp trims near-white shoulder.
+        let s_raw = raw.curve(RuleCurve::ShadowsUp);
+        let s_ren = ren.curve(RuleCurve::ShadowsUp);
+        assert!(
+            s_ren.eval(-10.5) < s_raw.eval(-10.5) - 0.05,
+            "raw={} ren={}",
+            s_raw.eval(-10.5),
+            s_ren.eval(-10.5)
+        );
+        let h_raw = raw.curve(RuleCurve::HighlightsUp);
+        let h_ren = ren.curve(RuleCurve::HighlightsUp);
+        assert!(
+            h_ren.eval(-0.5) <= h_raw.eval(-0.5) + 1e-5,
+            "raw={} ren={}",
+            h_raw.eval(-0.5),
+            h_ren.eval(-0.5)
+        );
+
+        // Pre-Exposure anchoring: shifting logs and exposure together by -1.5 EV keeps the
+        // HighlightsUp taper active at the file's original white ceiling (x = -1.5 EV).
+        let shifted: Vec<f32> = logs.iter().map(|&v| v - 1.5).collect();
+        let h_shifted_raw = RuleStats::new_for(&shifted, &shifted, w, h, false, -1.5)
+            .curve(RuleCurve::HighlightsUp);
+        let h_shifted_ren =
+            RuleStats::new_for(&shifted, &shifted, w, h, true, -1.5).curve(RuleCurve::HighlightsUp);
+        let h_shifted_unanchored =
+            RuleStats::new_for(&shifted, &shifted, w, h, true, 0.).curve(RuleCurve::HighlightsUp);
+        assert!(
+            h_shifted_ren.eval(-1.5) < h_shifted_unanchored.eval(-1.5) - 0.02
+                && h_shifted_ren.eval(-1.5) < h_shifted_raw.eval(-1.5) - 0.05,
+            "raw={} unanchored={} anchored={}",
+            h_shifted_raw.eval(-1.5),
+            h_shifted_unanchored.eval(-1.5),
+            h_shifted_ren.eval(-1.5)
+        );
+
+        // All rendered base + pix curves stay monotone.
+        for kind in RuleCurve::ALL {
+            let base = ren.curve(kind);
+            let pix = ren.curve_pix(kind, &base).unwrap();
+            let step = (pix.hi - pix.lo) / LEVELS as f32;
+            for i in 1..LEVELS {
+                let x0 = pix.lo + (i as f32 - 0.5) * step;
+                let x1 = pix.lo + (i as f32 + 0.5) * step;
+                assert!(
+                    x1 + base.eval(x1) + pix.eval(x1) >= x0 + base.eval(x0) + pix.eval(x0) - 1e-4,
+                    "rendered {kind:?} inverted at {i}"
+                );
             }
         }
     }

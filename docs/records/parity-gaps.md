@@ -44,6 +44,40 @@ Camera Raw's look renders match direct user sliders evaluated at `v'` (rounded t
 - Strong Parametric S-curve (−35/−45/+45/+35) at 200%: mean `0.511 → 0.334` (−35%), median `0.466 → 0.303`, p95 `0.977 → 0.659`, ΔL* `−0.237 → +0.072`.
 - Combined Editorial Look (Exposure +0.40, Parametric −20/−30/+30/−25, Saturation −15, Split Toning 35/25 Bal +15) at 200%: mean `3.075 → 0.468` (−85%), median `3.169 → 0.368`, p95 `4.451 → 1.071`, ΔL* `−2.911 → +0.224`.
 
+### Rendered-file S3 scene tone parity (2026-11-26)
+
+**SDR rendered-file (JPEG/TIFF) Dehaze, Clarity, and Highlights/Shadows parity.** Opening a rendered file inverts Camera Raw's default white curve and ACR3 curve (`develop::rendered`) into a pseudo-scene capped at `1.0` with no `default_black` toe and no sensor clip headroom (`photo_measures` pins `sensor_white` and `max` to `1.0`, `shift_white = false`). Evaluating the RAW-trained S3 tone operators unmodified on those pseudo-scenes caused four systematic residuals against Camera Raw 18.7:
+
+- **Dehaze (`scene_tone/haze.rs`, `scene_tone/mod.rs`, `pipeline/tone.rs`, `pipeline/pixel_params.rs`, `gpu/develop.wgsl`):** RAW Dehaze's `log2(Y / Y_A)` joint bilateral map bled bright sky optical depth across horizons and over-darkened bright regions on rendered JPEGs. For SDR rendered files (`is_rendered() && hdr_source.is_none()`, with HDR editing of SDR rendered files refused by `model::hdr::check_for`), `Haze::of_rendered` refines the dark-channel optical depth with He et al.'s Fast Guided Filter on linear relative luminance `clamp(Y / Y_A, 0, 2)` (`r = 0.06 × long_edge`, `eps = 0.02`), stores `[mean_a, mean_b]` in `Haze::density`, and reconstructs full-resolution per-pixel depth `mean_a · clamp(Y / Y_A, 0, 2) + mean_b` on both CPU and GPU (`P_HAZE_RENDERED`), preserving sharp horizon edges and Exposure/`tone_gain` invariance. Positive Dehaze uses `OMEGA_RENDERED` (`[0, 0.26, 0.50, 0.72, 0.88]`, slightly concave at intermediate amounts while sharing RAW's `0.88` endpoint at +100), and negative Dehaze uses rational transmission `t = 1 / (1 + κ(|s|) · d)` with `NEG_STRENGTH_RENDERED` (`[0, 0.55, 1.45, 3.00, 6.50]`) and `Ycap` (`density.min(Y / Y_A)`).
+- **Positive and negative Clarity (`clarity_rule.rs`, `local_tone.rs`):** RAW-trained `clarity_rule` systematically over-lifted rendered JPEGs (`+1.22 L*` mean on Dev, `+2.2 to +2.7 L*` on bright/hazy scenes). For SDR rendered files, positive Clarity adds a shift-invariant slope `+0.06 · clamp(x − q90(base), −3.5, 1.0)` to `G_flat` and scales `G_pix` by `1.08` prior to `monotone` projection; negative Clarity tapers `ClarityField` and `ClarityDetail` by `smoothstep(−7.5, −5.0, log2(Y))` in deep shadows where no `default_black` toe exists.
+- **Extreme Shadows/Highlights (`local_tone_rule.rs`, `local_tone.rs`):** For SDR rendered files, `RuleStats::curve` anchors `Shadows +` (`0.65 + 0.35 · smoothstep(−11, −7, x_pre)`) and `Highlights +` (`1 − 0.20 · smoothstep(−2.5, 0, x_pre)`) tapers to pre-Exposure file levels (`x_pre = x − exposure`) prior to `monotone` projection (improving `Exposure −1.5 + Highlights +100` from `1.28 → 1.17` mean and `7.24 → 6.82` `regMax` on 4 Dev JPEGs while keeping `Exposure = 0` identical). `Highlights −100` (`0.83` Dev / `1.03` Val) and `Shadows −100` (`0.71` Dev / `0.74` Val) already sit at RAW parity and stay untouched; extreme-exposure (`Exposure +2/+3`) saturated chart shifts were confirmed to be ProPhoto→sRGB gamut rolloff (`0.58` Dev / `0.62` Val mean ΔE00 on photos), not S3.
+
+**Before → After against Camera Raw 18.7 (1024 px, 8 Dev CC0 JPEGs and 8 unseen Held-Out Validation CC0 JPEGs):**
+
+| Setting | Dev Mean (B → A) | Dev p95 (B → A) | Dev regMax (B → A) | Val Mean (B → A) | Val p95 (B → A) | Val regMax (B → A) | Val B/W (`±0.02`) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `default` | 0.51 → 0.51 | 1.19 → 1.19 | 0.72 → 0.72 | 0.54 → 0.54 | 1.28 → 1.28 | 0.72 → 0.72 | 0 / 0 |
+| `dehaze+75` | 2.20 → 1.78 | 5.69 → 3.99 | 6.11 → 4.28 | 2.09 → 2.02 | 5.59 → 4.65 | 6.37 → 5.01 | 4 / 3 |
+| `dehaze+100` | 2.65 → 2.06 | 7.40 → 4.52 | 8.61 → 5.32 | 2.96 → 2.55 | 8.10 → 6.20 | 9.60 → 6.45 | 6 / 1 |
+| `dehaze-75` | 1.82 → 1.63 | 5.29 → 4.37 | 6.25 → 5.26 | 1.68 → 1.53 | 4.50 → 4.02 | 5.18 → 4.55 | 5 / 3 |
+| `clarity+100` | 2.01 → 1.58 | 4.72 → 3.84 | 5.33 → 4.30 | 1.87 → 1.80 | 4.71 → 4.64 | 4.15 → 4.12 | 5 / 3 |
+| `clarity+50` | 1.23 → 1.02 | 2.81 → 2.33 | 2.89 → 2.36 | 1.15 → 1.10 | 2.63 → 2.55 | 2.40 → 2.34 | 5 / 3 |
+| `clarity-100` | 1.33 → 1.27 | 4.17 → 4.00 | 3.65 → 3.59 | 1.23 → 1.19 | 3.54 → 3.44 | 3.39 → 3.32 | 5 / 0 |
+| `highlights+100` | 0.79 → 0.76 | 1.83 → 1.75 | 2.03 → 1.90 | 0.96 → 0.94 | 2.27 → 2.25 | 2.47 → 2.40 | 2 / 1 |
+| `shadows+100` | 1.04 → 1.03 | 3.07 → 3.06 | 3.02 → 3.01 | 1.20 → 1.16 | 3.14 → 3.01 | 3.48 → 3.25 | 1 / 0 |
+| `highlights-100` | 0.83 → 0.83 | 2.17 → 2.17 | 2.64 → 2.64 | 1.03 → 1.03 | 2.33 → 2.33 | 2.69 → 2.69 | 0 / 0 |
+| `shadows-100` | 0.71 → 0.71 | 1.87 → 1.87 | 1.85 → 1.85 | 0.74 → 0.74 | 1.78 → 1.78 | 2.13 → 2.13 | 0 / 0 |
+| `s+100_h-100` | 1.45 → 1.45 | 3.34 → 3.34 | 3.46 → 3.46 | 1.58 → 1.60 | 3.62 → 3.63 | 3.79 → 3.73 | 0 / 1 |
+| `exposure+2` | 0.58 → 0.58 | 1.71 → 1.71 | 1.45 → 1.45 | 0.62 → 0.62 | 1.81 → 1.81 | 1.49 → 1.49 | 0 / 0 |
+
+**Additional format & gamut verification (1024 px, 2 16-bit sRGB TIFFs and 2 Display P3 JPEGs vs. Camera Raw 18.7):**
+- **16-bit sRGB TIFF:** `default` `0.03`, `dehaze+75` `1.80`, `dehaze+100` `1.83`, `dehaze-75` `1.32`, `clarity+100` `2.01`, `clarity-100` `1.15`, `highlights+100` `0.54`, `shadows+100` `0.79` mean ΔE00.
+- **Display P3 JPEG:** `default` `0.55`, `dehaze+75` `1.90`, `dehaze+100` `1.91`, `dehaze-75` `1.41`, `clarity+100` `2.18`, `clarity-100` `1.45`, `highlights+100` `0.87`, `shadows+100` `1.15` mean ΔE00.
+
+**Invariants verified:**
+- **RAW bit-identity:** all 416/416 `camera_raw_parity_does_not_regress`, `colors_match_snapshots`, and `scene_probes_do_not_regress` tests pass untouched (`--release --test color`, 21/21).
+- **CPU vs. GPU parity & default identity:** worst channel difference across 20 real Apple Metal rendered-file exports (`default`, `dehaze+75/+100/-75`, `clarity±100`, `highlights±100`, `shadows+100`, `s+100_h-100`) is `0.0000/255`; `rendered_s3_tone_controls_match_cpu_and_preserve_default_identity` passes on hardware Metal with `< 1e-4` CPU/GPU difference and `<= 1/255` default identity.
+
 ### Unclipped S0 demosaic noise into the camera matrix (2026-11-26)
 
 **High-ISO `Exposure +2` deep-shadow magenta/blue cast (#1133).** Three-stage Camera Raw 18.7 ablations (matrix-only linear profile, `HueSatMap`, and `Auto` default black; `ColorNoiseReduction = 0`) on ISO 6400 X-Trans (`X100F DSCF7283`) and Bayer (`A7M2 DSC06564`) frames at `Exposure +2` isolated the shadow magenta/blue cast to S0 demosaic clipping before the camera matrix (`demosaic.rs`, `xtrans.rs`, `stripes.rs`):

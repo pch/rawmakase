@@ -134,6 +134,11 @@ pub(crate) struct MapBase {
     /// out-of-crop border cells stay in the map grids for alignment and halo-free blurs,
     /// while `RuleStats` tallies only the active crop.
     crop: Option<[usize; 4]>,
+    /// Whether the photo is an SDR rendered file (JPEG/PNG/SDR TIFF, not an HDR file).
+    rendered: bool,
+    /// Recipe `exposure` (EV) already baked into `lum`/`logs`, used to anchor SDR
+    /// rendered-file tapers to pre-Exposure file levels.
+    exposure: f32,
     detail: std::sync::OnceLock<super::clarity::ClarityDetail>,
     clarity_rule: std::sync::OnceLock<[Curve; 2]>,
     rule: std::sync::OnceLock<super::local_tone_rule::RuleStats>,
@@ -153,11 +158,23 @@ impl MapBase {
         scene: impl Fn([f32; 3]) -> f32 + Sync,
     ) -> Self {
         let lum: Vec<f32> = small.pixels.par_iter().map(|p| scene(*p)).collect();
-        Self::new(lum, [small.width, small.height]).with_crop(active_crop_rect(small))
+        Self::new(lum, [small.width, small.height])
+            .with_crop(active_crop_rect(small))
+            .with_rendered(small.metadata.is_rendered() && small.metadata.hdr_source.is_none())
     }
     /// Sets the active default-crop rectangle used when tallying `RuleStats`.
     pub(crate) fn with_crop(mut self, crop: Option<[usize; 4]>) -> Self {
         self.crop = crop;
+        self
+    }
+    /// Marks whether this measurement copy belongs to an SDR rendered file.
+    pub(crate) fn with_rendered(mut self, rendered: bool) -> Self {
+        self.rendered = rendered;
+        self
+    }
+    /// Records the recipe `exposure` (EV) already applied to `lum`/`logs`.
+    pub(crate) fn with_exposure(mut self, exposure: f32) -> Self {
+        self.exposure = exposure;
         self
     }
     /// From scene luminance at `size` pixels.
@@ -173,6 +190,8 @@ impl MapBase {
             laplacian,
             clarity_laplacian: Default::default(),
             crop: None,
+            rendered: false,
+            exposure: 0.,
             detail: Default::default(),
             clarity_rule: Default::default(),
             rule: Default::default(),
@@ -190,13 +209,22 @@ impl MapBase {
                     logs.extend_from_slice(&self.logs[row + x0..row + x1]);
                     lap.extend_from_slice(&self.laplacian[row + x0..row + x1]);
                 }
-                super::local_tone_rule::RuleStats::new(&logs, &lap, cw, ch)
+                super::local_tone_rule::RuleStats::new_for(
+                    &logs,
+                    &lap,
+                    cw,
+                    ch,
+                    self.rendered,
+                    self.exposure,
+                )
             } else {
-                super::local_tone_rule::RuleStats::new(
+                super::local_tone_rule::RuleStats::new_for(
                     &self.logs,
                     &self.laplacian,
                     self.width,
                     self.height,
+                    self.rendered,
+                    self.exposure,
                 )
             }
         })
@@ -220,9 +248,15 @@ impl MapBase {
                     logs.extend_from_slice(&self.logs[row + x0..row + x1]);
                     lap.extend_from_slice(&clarity_lap[row + x0..row + x1]);
                 }
-                super::clarity_rule::unit_curves(&logs, &lap, cw, ch)
+                super::clarity_rule::unit_curves_for(&logs, &lap, cw, ch, self.rendered)
             } else {
-                super::clarity_rule::unit_curves(&self.logs, clarity_lap, self.width, self.height)
+                super::clarity_rule::unit_curves_for(
+                    &self.logs,
+                    clarity_lap,
+                    self.width,
+                    self.height,
+                    self.rendered,
+                )
             }
         })
     }
@@ -588,13 +622,20 @@ impl LocalToneMap {
         let (w, h) = (base.width, base.height);
         let has_neg_clarity = sliders.clarity < 0. || sliders.mask_clarity;
         // An HDR master's negative Clarity is stronger beside light above white, a mask's
-        // too; positive Clarity renders without that near-white boost.
-        let hdr_weights = (has_neg_clarity && sliders.hdr).then(|| hdr_clarity_weights(base));
+        // too; positive Clarity renders without that near-white boost. On SDR rendered
+        // files, negative Clarity tapers smoothly from -5 EV down to zero at -7.5 EV.
+        let neg_clarity_weights = if has_neg_clarity && sliders.hdr {
+            Some(hdr_clarity_weights(base))
+        } else if has_neg_clarity && base.rendered {
+            Some(rendered_neg_clarity_weights(base))
+        } else {
+            None
+        };
         let detail = has_neg_clarity.then(|| base.detail());
         let clarity = detail
             .filter(|_| sliders.clarity < 0.)
             .map(|d| d.field(sliders.clarity))
-            .map(|f| match &hdr_weights {
+            .map(|f| match &neg_clarity_weights {
                 Some(weights) => f.scaled(weights),
                 None => f,
             });
@@ -696,12 +737,12 @@ impl LocalToneMap {
             clarity,
             clarity_pos,
             clarity_pos_unit,
-            clarity_detail: detail
-                .filter(|_| sliders.mask_clarity)
-                .map(|d| match &hdr_weights {
+            clarity_detail: detail.filter(|_| sliders.mask_clarity).map(|d| {
+                match &neg_clarity_weights {
                     Some(weights) => d.scaled(weights),
                     None => d.clone(),
-                }),
+                }
+            }),
             rule,
             rule_pix,
             pair,
@@ -955,8 +996,21 @@ fn dilate(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
     };
     pass(&pass(x, true), false)
 }
+/// Deep-shadow smoothstep taper for negative Clarity on SDR rendered files: fades
+/// negative Clarity smoothly from -5.0 EV down to zero at -7.5 EV, where rendered
+/// pseudo-scenes lack a RAW `default_black` toe and the RAW bilateral fit otherwise
+/// over-lifts deep shadows.
+fn rendered_neg_clarity_weights(base: &MapBase) -> Vec<f32> {
+    base.logs
+        .iter()
+        .map(|&l| {
+            let u = ((l - (-7.5)) / (-5.0 - (-7.5))).clamp(0., 1.);
+            u * u * (3. - 2. * u)
+        })
+        .collect()
+}
 /// Mean over a (2r+1)² window, clamped at the borders, via running sums.
-pub(super) fn blur(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+pub(crate) fn blur(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
     // One line: `out[i]` for `len` values read through `get`; lines are independent,
     // so they run in parallel with the same arithmetic.
     let line = |len: usize, get: &dyn Fn(usize) -> f32| -> Vec<f32> {
@@ -1708,6 +1762,63 @@ mod tests {
         assert!(
             (prev - (-14.0)).abs() < 1e-4,
             "at l=-14: expected -14, got {prev}"
+        );
+    }
+
+    #[test]
+    fn rendered_negative_clarity_tapers_in_deep_shadows_only() {
+        let (w, h) = (128usize, 64usize);
+        // Dark textured left half (-9 EV), midtone textured right half (-3 EV).
+        let lum: Vec<f32> = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                let tex = if (x / 2 + y / 2) % 2 == 0 { 1.25 } else { 0.8 };
+                let base = if x < w / 2 {
+                    (-9f32).exp2()
+                } else {
+                    (-3f32).exp2()
+                };
+                base * tex
+            })
+            .collect();
+        let sliders = Sliders {
+            clarity: -1.,
+            mask_clarity: true,
+            ..Default::default()
+        };
+        let raw = LocalToneMap::from_base(
+            &std::sync::Arc::new(MapBase::new(lum.clone(), [w as u32, h as u32])),
+            [w as u32, h as u32],
+            sliders,
+            false,
+        );
+        let ren = LocalToneMap::from_base(
+            &std::sync::Arc::new(
+                MapBase::new(lum.clone(), [w as u32, h as u32]).with_rendered(true),
+            ),
+            [w as u32, h as u32],
+            sliders,
+            false,
+        );
+        let dark_idx = 32 * w + 16;
+        let mid_idx = 32 * w + 96;
+        let dark_raw = raw.gain(16., 32., lum[dark_idx]).log2();
+        let dark_ren = ren.gain(16., 32., lum[dark_idx]).log2();
+        assert!(
+            dark_ren.abs() < 1e-4,
+            "expected deep shadow taper to zero on rendered: raw={dark_raw}, ren={dark_ren}"
+        );
+        let dark_mask = ren.gain_with(16., 32., lum[dark_idx], [0., 0., -1.]).log2();
+        assert!(
+            dark_mask.abs() < 1e-4,
+            "expected masked deep shadow taper on rendered: {dark_mask}"
+        );
+        // Midtones (-3 EV, well above -5 EV) stay untouched.
+        let mid_raw = raw.gain(96., 32., lum[mid_idx]).log2();
+        let mid_ren = ren.gain(96., 32., lum[mid_idx]).log2();
+        assert!(
+            (mid_ren - mid_raw).abs() < 1e-4,
+            "midtone changed: raw={mid_raw}, ren={mid_ren}"
         );
     }
 }
