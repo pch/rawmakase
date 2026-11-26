@@ -80,13 +80,15 @@ check: check-python check-tools check-msrv check-examples
 
 # The reference apps on the library (examples/*/), each a workspace of its own
 # with its own lock file, as CI's "Reference apps" job checks them: formatted,
-# linted and tested, the tests the desktop's binary is needed for included.
+# linted (with every feature too: examples/electron's Node addon) and tested,
+# the tests the desktop's binary is needed for included.
 EXAMPLES = $(patsubst %/Cargo.toml,%,$(shell git ls-files 'examples/*/Cargo.toml'))
 check-examples:
 	cargo build --locked --bin rawmakase
 	set -e; for example in $(EXAMPLES); do \
 		(cd "$$example" && cargo fmt --check \
 			&& cargo clippy --locked --all-targets -- -D warnings \
+			&& cargo clippy --locked --all-targets --all-features -- -D warnings \
 			&& cargo test --locked -- --include-ignored); \
 	done
 

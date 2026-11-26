@@ -1,0 +1,260 @@
+:root {
+  color-scheme: dark;
+  --stage: #1b1b1d;
+  --panel: #2a2a2d;
+  --line: #3a3a3e;
+  --text: #dcdcde;
+  --muted: #9a9aa0;
+  --control: #44444a;
+  --accent: #d9a441;
+  --danger: #f08a7c;
+  --gap: 8px;
+  --row: 28px;
+  font: 13px/1.4 system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  background: var(--stage);
+  color: var(--text);
+  user-select: none;
+  overflow: hidden;
+}
+
+#stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#viewport {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#photo {
+  box-shadow: 0 2px 24px rgb(0 0 0 / 50%);
+}
+
+#empty {
+  text-align: center;
+  color: var(--muted);
+}
+
+#empty h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+#empty p {
+  margin: 0 0 16px;
+}
+
+#status {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  height: var(--row);
+  padding: 0 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#photo-info {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#panel {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+
+/* The controls scroll in a short window; Open, Export and the message stay. */
+#sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--control) transparent;
+  border-bottom: 1px solid var(--line);
+}
+
+#panel > header {
+  display: flex;
+  gap: var(--gap);
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+#panel > header button {
+  flex: 1;
+}
+
+section {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+section:last-child {
+  border-bottom: 0;
+}
+
+#message:empty {
+  display: none;
+}
+
+h2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 var(--gap);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+button {
+  height: var(--row);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--control);
+  color: var(--text);
+  font: inherit;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+button:disabled {
+  opacity: 0.45;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1b1b1d;
+  font-weight: 600;
+}
+
+button.link {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+button.link:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.control {
+  display: grid;
+  grid-template-columns: 76px 1fr 48px;
+  align-items: center;
+  gap: var(--gap);
+  height: var(--row);
+}
+
+.control output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: none;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--control);
+  border-radius: 1px;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+input[type='range']:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#curve {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #222225;
+  touch-action: none;
+}
+
+.hint {
+  margin: var(--gap) 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#closed {
+  margin: 12px;
+}
+
+#message {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+#message.error {
+  color: var(--danger);
+}
+
+[hidden] {
+  display: none !important;
+}

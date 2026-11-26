@@ -424,7 +424,9 @@ jobs:
     # with its own lock file, as a stranger's app would be
     # (docs/embedding-plan.md, "Reference apps"): formatted, linted and tested
     # apart from the app's. examples/embed's export is compared with the
-    # desktop's `rawmakase render`, which is built first.
+    # desktop's `rawmakase render`, which is built first. examples/electron's
+    # Rust side is linted with and without its Node addon and tested without
+    # it; Node and Electron are not built here.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -444,6 +446,7 @@ jobs:
           workspaces: |
             .
             examples/embed
+            examples/electron
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - name: The desktop's binary, which an export is compared with
         run: cargo build --locked --bin rawmakase
@@ -453,6 +456,13 @@ jobs:
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked -- --include-ignored
+      - name: examples/electron
+        working-directory: examples/electron
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features addon -- -D warnings
+          cargo test --locked
 
   postgres:
     name: Portable catalog SQL

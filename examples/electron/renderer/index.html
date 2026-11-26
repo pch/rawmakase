@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'" />
+    <title>RAWmakase Electron example</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="stage">
+      <div id="viewport">
+        <canvas id="photo" hidden></canvas>
+        <div id="empty">
+          <h1>No photo open</h1>
+          <p>Open a RAW, DNG, JPEG or TIFF to edit it.</p>
+          <button id="open-first" class="primary">Open Photo…</button>
+        </div>
+      </div>
+      <footer id="status">
+        <span id="photo-info"></span>
+        <span id="frame-info"></span>
+      </footer>
+    </main>
+    <aside id="panel">
+      <header>
+        <button id="open">Open…</button>
+        <button id="export" class="primary" disabled>Export…</button>
+      </header>
+      <div id="sections">
+        <p id="closed" class="hint">The controls appear when a photo is open.</p>
+        <section id="basic" hidden>
+          <h2>Basic</h2>
+          <div id="controls"></div>
+        </section>
+        <section id="tone-curve" hidden>
+          <h2>
+            Tone Curve
+            <button id="curve-reset" class="link">Reset</button>
+          </h2>
+          <canvas id="curve"></canvas>
+          <p class="hint">Click to add a point, drag to move it, double-click it to remove it.</p>
+        </section>
+      </div>
+      <p id="message" role="status"></p>
+    </aside>
+    <script src="app.js"></script>
+    <script src="probe.js"></script>
+  </body>
+</html>

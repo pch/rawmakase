@@ -1,0 +1,42 @@
+[package]
+name = "rawmakase-electron"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+description = "A single-view photo editor in Electron on RAWmakase's library: the Rust side, a Node addon"
+license = "MIT"
+publish = false
+
+# A workspace of its own, outside RAWmakase's: this is an app built on the
+# library as a stranger's would be, with its own lock file.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# The Node addon's bindings (src/binding.rs). Off for the tests and the
+# command-line tool, which link no Node.
+addon = ["dep:napi", "dep:napi-derive"]
+
+[dependencies]
+# The one RAWmakase crate this app depends on.
+rawmakase-core = { path = "../../crates/rawmakase-core" }
+serde_json = "1"
+napi = { version = "3.16", features = ["napi8"], optional = true }
+napi-derive = { version = "3.7", optional = true }
+
+[build-dependencies]
+napi-build = "2.7"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["tiff", "png"] }
+tempfile = "3"
+
+# The renderer is unusable unoptimized, and the pixel comparison is against the
+# desktop's release build.
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+lto = "thin"

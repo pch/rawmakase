@@ -1090,6 +1090,21 @@ so the design is proved on one path before it is spread.
    file: one RAWmakase crate, and no app, GUI, C imaging library, SQLite,
    HTTP client or ONNX Runtime binding.
 
+   `examples/electron` moved from the prototype onto the library, a
+   workspace of its own with its own lock file. Its render thread is now the
+   library's `Mailbox` (`take`, then `take_within` after a draft), the
+   library's draft rule (`Renderer::draft_due` and `render_draft`) and
+   `Shown`, numbered by the mailbox, in place of the prototype's own
+   single-slot mailbox, its stale-frame checks and its fixed-size draft
+   while a control was held, which is gone from the addon and the page with
+   its `hold` call. Its controls come from `Parameter::named` and
+   `Photo::control`, its curve from `Inserted` and `ToneCurve::sampled`,
+   and its export from the photo, replacing the file the user chose. The
+   glue (lines that are neither blank nor comments) is 614 lines of Rust
+   (679 in the prototype) and 149 of JavaScript that talks to the addon
+   (152); measure 4 passes on three chart DNGs, and its Rust side is checked
+   in CI's "Reference apps" job.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in
