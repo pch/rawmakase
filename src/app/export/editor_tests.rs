@@ -182,6 +182,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 defaults: defaults.clone(),
                 lenses: crate::photo::LensProfiles::none(),
                 profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+                fits: Default::default(),
                 watermark: None,
                 demosaic: Default::default(),
                 cache: editor.decode_cache().clone(),

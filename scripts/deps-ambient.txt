@@ -13,7 +13,6 @@ crates/rawmakase-catalog/src/catalog/locations.rs env 1
 crates/rawmakase-catalog/src/catalog/locations.rs folder 1
 crates/rawmakase-catalog/src/catalog/preview_cache.rs folder 1
 crates/rawmakase-decode/src/ai/cache.rs folder 2
-crates/rawmakase-decode/src/camera_look/cache.rs folder 2
 crates/rawmakase-decode/src/decode_cache.rs env 5
 crates/rawmakase-decode/src/decode_cache.rs folder 2
 crates/rawmakase-denoise/src/bench.rs command 1

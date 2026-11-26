@@ -229,6 +229,7 @@ impl Fixture {
             cache: Default::default(),
             lenses: crate::photo::LensProfiles::none(),
             profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            fits: Default::default(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         }
     }
@@ -814,6 +815,7 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
             cache: Default::default(),
             lenses: crate::photo::LensProfiles::none(),
             profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            fits: Default::default(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         };
         run_all(&batch)
@@ -873,6 +875,7 @@ fn exporting_never_replaces_another_photos_original() -> Result<()> {
         cache: Default::default(),
         lenses: crate::photo::LensProfiles::none(),
         profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+        fits: Default::default(),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
     };
     assert_eq!(batch.plan.entries[0].target, jpeg);

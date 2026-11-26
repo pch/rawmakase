@@ -37,6 +37,7 @@ impl Editor {
         let profile = self.document.edit.recipe().profile.clone();
         let sent = profile.clone();
         let lenses = self.lens_profiles().clone();
+        let fits = self.libraries().fits;
         crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
@@ -44,13 +45,12 @@ impl Editor {
                 let inputs = crate::camera_look::FitInputs::default();
                 // The file as it was when the fit started: one replaced or changed
                 // meanwhile may have been fitted instead of the photo shown.
-                let key = crate::camera_look::cache::FitKey::of(&path).ok();
+                let key = fits.key(&path).ok();
                 let result = crate::camera_look::fit(&path, &lenses, &inputs, Cancel::new(&cancel))
                     .map(|f| Box::new(f.profile))
                     .map_err(|e| e.reason)
                     .and_then(|p| {
-                        let same = key.is_some()
-                            && crate::camera_look::cache::FitKey::of(&path).ok() == key;
+                        let same = key.is_some() && fits.key(&path).ok() == key;
                         match same {
                             true => Ok(p),
                             false => Err("the file changed while it was fitted".into()),

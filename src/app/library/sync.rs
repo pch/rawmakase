@@ -219,12 +219,8 @@ impl BatchChange {
 pub(in crate::app) struct Decoding {
     pub demosaic: crate::camera_data::Demosaic,
     pub cache: Option<crate::decode_cache::DecodeCache>,
-    /// The imported lens profiles each photo is opened with.
-    pub lenses: crate::photo::LensProfiles,
-    /// The camera profiles each photo's edit resolves among.
-    pub profiles: crate::camera_profiles::ProfileLibrary,
-    /// Lensfun's database, which a Lensfun lens resolves against.
-    pub lensfun: crate::lens::lensfun::installed::Handle,
+    /// What each photo is opened with and its edit resolved among.
+    pub libraries: crate::environment::Libraries,
 }
 #[cfg(test)]
 impl Default for Decoding {
@@ -233,9 +229,10 @@ impl Default for Decoding {
         Self {
             demosaic: Default::default(),
             cache: None,
-            lenses: Default::default(),
-            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
-            lensfun: crate::lens::lensfun::installed::Handle::none(),
+            libraries: crate::environment::Libraries {
+                profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+                ..Default::default()
+            },
         }
     }
 }
@@ -384,13 +381,7 @@ pub(in crate::app) fn synchronize(
         }
         Some(SyncSource::Open(settings)) => Some(settings.as_ref()),
         Some(SyncSource::Photo(photo)) => {
-            match photo_settings(
-                catalog,
-                photo,
-                defaults,
-                &decoding.lenses,
-                &decoding.profiles,
-            ) {
+            match photo_settings(catalog, photo, defaults, &decoding.libraries) {
                 Ok((settings, warnings)) => {
                     result
                         .notes
@@ -701,7 +692,7 @@ impl Opened {
             // Only its metadata may have been read so far.
             let opened = match self.opened.take() {
                 Some(opened) => opened,
-                None => crate::photo::open_source(&self.path, &decoding.lenses, cancel)?,
+                None => crate::photo::open_source(&self.path, &decoding.libraries.lenses, cancel)?,
             };
             let image = match opened {
                 crate::photo::Opened::Raw(raw) => match &decoding.cache {
@@ -750,13 +741,14 @@ fn prepare(
         _ => false,
     };
     let header = (sets_only && crate::storage::is_raw(&target.path))
-        .then(|| crate::photo::header_metadata(&target.path, &decoding.lenses).ok())
+        .then(|| crate::photo::header_metadata(&target.path, &decoding.libraries.lenses).ok())
         .flatten();
     let (metadata, opened) = match header {
         Some(metadata) => (metadata, None),
         None => {
-            let opened = crate::photo::open_source(&target.path, &decoding.lenses, Cancel::NEVER)
-                .with_context(|| format!("{} can't be read", target.name))?;
+            let opened =
+                crate::photo::open_source(&target.path, &decoding.libraries.lenses, Cancel::NEVER)
+                    .with_context(|| format!("{} can't be read", target.name))?;
             (opened.metadata().clone(), Some(opened))
         }
     };
@@ -765,10 +757,11 @@ fn prepare(
         opened,
         image: None,
     };
-    let (profiles, _) = decoding.profiles.installed(&metadata);
+    let (profiles, _) = decoding.libraries.profiles.installed(&metadata);
     let profiles = crate::camera_look::with_default(
         &target.path,
-        &decoding.lenses,
+        &decoding.libraries.lenses,
+        &decoding.libraries.fits,
         &metadata,
         profiles,
         cancel,
@@ -811,7 +804,7 @@ fn prepare(
                     metadata: &metadata,
                     profiles: &profiles,
                 },
-                &decoding.lensfun,
+                &decoding.libraries.lensfun,
             )
         }
         BatchChange::MatchTotalExposures => settings_groups::Transferred {
@@ -844,7 +837,7 @@ fn prepare(
                             metadata: &metadata,
                             profiles: &profiles,
                         },
-                        &decoding.lensfun,
+                        &decoding.libraries.lensfun,
                     );
                     for panel in &c.switches {
                         t.recipe
@@ -890,7 +883,7 @@ fn prepare(
                 measures
                     .as_ref()
                     .map(|m| m as &dyn crate::xmp::PhotoMeasures),
-                &decoding.lensfun,
+                &decoding.libraries.lensfun,
             )?;
             let mut notes: Vec<String> = applied
                 .substitute
@@ -1007,15 +1000,20 @@ fn photo_settings(
     catalog: &Catalog,
     photo: &SyncTarget,
     defaults: &DevelopDefaults,
-    lenses: &crate::photo::LensProfiles,
-    installed: &crate::camera_profiles::ProfileLibrary,
+    libraries: &crate::environment::Libraries,
 ) -> Result<(Settings, Vec<String>)> {
-    let opened = crate::photo::open_source(&photo.path, lenses, Cancel::NEVER)
+    let opened = crate::photo::open_source(&photo.path, &libraries.lenses, Cancel::NEVER)
         .with_context(|| format!("{} can't be read", photo.name))?;
     let metadata = opened.metadata().clone();
-    let (profiles, _) = installed.installed(&metadata);
-    let profiles =
-        crate::camera_look::with_default(&photo.path, lenses, &metadata, profiles, Cancel::NEVER);
+    let (profiles, _) = libraries.profiles.installed(&metadata);
+    let profiles = crate::camera_look::with_default(
+        &photo.path,
+        &libraries.lenses,
+        &libraries.fits,
+        &metadata,
+        profiles,
+        Cancel::NEVER,
+    );
     let record = catalog.edit_record(photo.id)?;
     let resolved = edits::resolve(&record, &photo.path, &metadata, &profiles, defaults)?;
     let warnings = starting_warnings(resolved.origin, resolved.warnings);
@@ -1038,8 +1036,7 @@ pub(in crate::app) fn starting_recipe(
     catalog: &Catalog,
     target: &SyncTarget,
     defaults: &Arc<DevelopDefaults>,
-    lenses: &crate::photo::LensProfiles,
-    installed: &crate::camera_profiles::ProfileLibrary,
+    libraries: &crate::environment::Libraries,
     cancel: Cancel<'_>,
 ) -> Result<Recipe> {
     let record = catalog.edit_record(target.id)?;
@@ -1048,18 +1045,24 @@ pub(in crate::app) fn starting_recipe(
         return Ok(saved.recipe);
     }
     let header = crate::storage::is_raw(&target.path)
-        .then(|| crate::photo::header_metadata(&target.path, lenses).ok())
+        .then(|| crate::photo::header_metadata(&target.path, &libraries.lenses).ok())
         .flatten();
     let metadata = match header {
         Some(metadata) => metadata,
-        None => crate::photo::open_source(&target.path, lenses, cancel)
+        None => crate::photo::open_source(&target.path, &libraries.lenses, cancel)
             .with_context(|| format!("{} can't be read", target.name))?
             .metadata()
             .clone(),
     };
-    let (profiles, _) = installed.installed(&metadata);
-    let profiles =
-        crate::camera_look::with_default(&target.path, lenses, &metadata, profiles, cancel);
+    let (profiles, _) = libraries.profiles.installed(&metadata);
+    let profiles = crate::camera_look::with_default(
+        &target.path,
+        &libraries.lenses,
+        &libraries.fits,
+        &metadata,
+        profiles,
+        cancel,
+    );
     Ok(start.resolve(&metadata, &profiles)?.recipe)
 }
 
@@ -1366,9 +1369,7 @@ impl Editor {
         let decoding = Decoding {
             demosaic: self.session.demosaic,
             cache: Some(self.decode_cache().clone()),
-            lenses: self.lens_profiles().clone(),
-            profiles: self.camera_profiles().clone(),
-            lensfun: self.lensfun_db().clone(),
+            libraries: crate::environment::libraries(&self.core),
         };
         let progress = Arc::new(BatchProgress::new(change.name(), targets.len()));
         // Moving to another photo or catalog waits, so neither can see an edit change

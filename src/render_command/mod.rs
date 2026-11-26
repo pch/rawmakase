@@ -289,6 +289,7 @@ pub fn render(
         let profiles = crate::camera_look::with_default(
             input,
             &libraries.lenses,
+            &libraries.fits,
             &r.metadata,
             libraries.profiles.installed(&r.metadata).0,
             cancel,

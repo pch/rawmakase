@@ -78,8 +78,14 @@ impl EditSource {
         cancel: Cancel<'_>,
     ) -> anyhow::Result<Recipe> {
         let (profiles, _) = libraries.profiles.installed(m);
-        let profiles =
-            crate::camera_look::with_default(path, &libraries.lenses, m, profiles, cancel);
+        let profiles = crate::camera_look::with_default(
+            path,
+            &libraries.lenses,
+            &libraries.fits,
+            m,
+            profiles,
+            cancel,
+        );
         let start = match edit {
             Some(Self::Recipe(saved)) => Start::Recipe(saved.recipe.clone()),
             Some(Self::Unreadable(why)) => anyhow::bail!("{why}"),

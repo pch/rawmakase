@@ -67,6 +67,9 @@ pub struct Libraries {
     pub profiles: crate::camera_profiles::ProfileLibrary,
     /// Lensfun's database, which a Lensfun lens an edit names resolves against.
     pub lensfun: crate::lens::lensfun::installed::Handle,
+    /// Camera Look's fit cache, which a photo without color data is fitted
+    /// through.
+    pub fits: crate::camera_look::cache::FitCache,
 }
 impl Default for Libraries {
     fn default() -> Self {
@@ -74,6 +77,7 @@ impl Default for Libraries {
             lenses: Default::default(),
             profiles: Default::default(),
             lensfun: crate::lens::lensfun::installed::Handle::none(),
+            fits: Default::default(),
         }
     }
 }
@@ -84,6 +88,7 @@ pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
         lenses: lens_profiles(ctx).clone(),
         profiles: camera_profiles(ctx).clone(),
         lensfun: lensfun(ctx).clone(),
+        fits: rawmakase_core::workspace::fit_cache(ctx),
     }
 }
 

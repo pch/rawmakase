@@ -99,10 +99,8 @@ pub(in crate::app) struct Item {
     pub demosaic: Demosaic,
     /// Where a full-size decode is looked up first.
     pub decode_cache: crate::decode_cache::DecodeCache,
-    /// The imported lens profiles the photo is opened with.
-    pub lenses: crate::photo::LensProfiles,
-    /// The camera profiles its edit resolves among.
-    pub profiles: crate::camera_profiles::ProfileLibrary,
+    /// What the photo is opened with and its edit resolved among.
+    pub libraries: crate::environment::Libraries,
     pub identity: String,
     pub kind: PreviewKind,
     /// The long edge asked for; 0 for full size.
@@ -203,12 +201,13 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 /// identity-checked record (a protected or unreadable edit fails, never falling
 /// back to the defaults), Upright completed, then a cancellable render.
 pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
-    let opened = crate::photo::open_source(&item.path, &item.lenses, cancel)
+    let opened = crate::photo::open_source(&item.path, &item.libraries.lenses, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
-    let (profiles, _) = item.profiles.installed(opened.metadata());
+    let (profiles, _) = item.libraries.profiles.installed(opened.metadata());
     let profiles = crate::camera_look::with_default(
         &item.path,
-        &item.lenses,
+        &item.libraries.lenses,
+        &item.libraries.fits,
         opened.metadata(),
         profiles,
         cancel,
@@ -384,7 +383,7 @@ impl Builder {
                         }
                         continue;
                     }
-                    Next::Build(item, cancel) => (item, cancel),
+                    Next::Build(item, cancel) => (*item, cancel),
                 };
                 let held = cache.as_mut();
                 let build = || build_one(&item, held, render, Cancel::new(&cancel));
@@ -538,7 +537,7 @@ impl Drop for Builder {
 enum Next {
     /// Upkeep, with the generation it was taken in.
     Op(Op, u64),
-    Build(Item, Arc<AtomicBool>),
+    Build(Box<Item>, Arc<AtomicBool>),
     /// A step of giving back the space discarded previews left.
     Release,
 }
@@ -630,7 +629,7 @@ impl Shared {
             if let Some(item) = state.waiting.pop_front() {
                 state.running = Some((item.photo, item.kind));
                 let cancel = state.cancel.clone();
-                return Some(Next::Build(item, cancel));
+                return Some(Next::Build(Box::new(item), cancel));
             }
             if release {
                 return Some(Next::Release);
@@ -882,8 +881,7 @@ impl Editor {
                 defaults: self.raw_defaults.clone(),
                 demosaic: self.session.demosaic,
                 decode_cache: self.decode_cache().clone(),
-                lenses: self.lens_profiles().clone(),
-                profiles: self.camera_profiles().clone(),
+                libraries: crate::environment::libraries(&self.core),
                 kind,
                 edge,
             });

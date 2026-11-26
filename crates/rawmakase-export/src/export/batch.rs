@@ -395,6 +395,9 @@ pub struct Batch {
     pub lenses: crate::photo::LensProfiles,
     /// The camera profiles a photo's stored edit resolves among.
     pub profiles: crate::camera_profiles::ProfileLibrary,
+    /// Camera Look's fit cache, which a photo without color data is fitted
+    /// through.
+    pub fits: rawmakase_decode::camera_look::cache::FitCache,
     /// Where AI Denoise sources come from.
     pub ai: crate::ai_denoise::AiService,
 }
@@ -786,6 +789,7 @@ fn render<'a>(
             let profiles = rawmakase_decode::camera_look::with_default(
                 &photo.source,
                 &batch.lenses,
+                &batch.fits,
                 opened.metadata(),
                 profiles,
                 cancel,

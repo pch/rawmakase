@@ -888,9 +888,8 @@ so the design is proved on one path before it is spread.
    made with the build they key entries by and the folder they return to
    when a chosen folder is given up (`set_folder(None)`), both from the
    context; the keys keep their form, and the desktop passes the
-   executable's identity as before, so its entries are still read. Camera
-   Look's fit cache still keys by the executable until its own change
-   below. The ambient check counts `build_identity()` calls now, and no
+   executable's identity as before, so its entries are still read. The
+   ambient check counts `build_identity()` calls now, and no
    longer counts a function's definition as a call to it.
 
    The lens profile library: `lens::lcp::Profiles`, a handle on the
@@ -940,6 +939,16 @@ so the design is proved on one path before it is spread.
    own settings, so it converts against none. In the app the Lensfun panel,
    the presets' thumbnails, Sync and Merge to HDR take the context's, and
    `rawmakase lensfun` installs into its folder.
+
+   Camera Look's cache: `camera_look::cache::FitCache`, the folder fits are
+   kept in (the context cache folder's `camera-look`) and the build they
+   are keyed by, both from the context; with no cache folder a fit is made
+   each time and kept nowhere. The default look of a photo without color
+   data (`with_default`) takes it, and the `environment::Libraries` bundle
+   carries it with the lens profiles, so the loader, the editable preview's
+   build, the Library's previews, Sync, export, Merge to HDR and the
+   command line fit through the context's. Develop's Fit Camera Look keys
+   its "the file changed meanwhile" check by it too.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

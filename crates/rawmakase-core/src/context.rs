@@ -2,6 +2,7 @@
 //! and what is made from them.
 use crate::{Error, ErrorKind, Result};
 use rawmakase_decode::ai::cache::{self as ai_cache, AiCache};
+use rawmakase_decode::camera_look::cache::FitCache;
 use rawmakase_decode::decode_cache::{self, DecodeCache};
 use rawmakase_decode::photo::LensProfiles;
 use rawmakase_interop::presets::PresetLibrary;
@@ -71,6 +72,8 @@ struct Cache {
     decoded: DecodeCache,
     #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     ai_denoise: AiCache,
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
+    fits: FitCache,
 }
 
 /// Builds a [`Context`]; made by [`Context::builder`].
@@ -122,6 +125,7 @@ impl ContextBuilder {
                 Some(Cache {
                     decoded: DecodeCache::under(&dir, limits.decoded, &build_id),
                     ai_denoise: AiCache::under(&dir, limits.ai_denoise, &build_id),
+                    fits: FitCache::under(&dir, &build_id),
                     dir,
                     build_id,
                 })
@@ -190,6 +194,17 @@ pub mod workspace {
     /// The context's AI Denoise cache, beside the decode cache.
     pub fn ai_denoise_cache(ctx: &Context) -> Option<&AiCache> {
         ctx.inner.cache.as_ref().map(|c| &c.ai_denoise)
+    }
+
+    /// Camera Look's fit cache, in the cache folder, keyed by the build id;
+    /// none without a cache.
+    pub fn fit_cache(ctx: &Context) -> rawmakase_decode::camera_look::cache::FitCache {
+        ctx.inner
+            .cache
+            .as_ref()
+            .map_or_else(rawmakase_decode::camera_look::cache::FitCache::none, |c| {
+                c.fits.clone()
+            })
     }
 
     /// The imported lens profiles in the context's data folders, which every

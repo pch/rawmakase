@@ -821,6 +821,7 @@ impl Editor {
             cache: self.decode_cache().clone(),
             lenses: self.lens_profiles().clone(),
             profiles: self.camera_profiles().clone(),
+            fits: self.libraries().fits,
             ai: self.ai_service(),
         };
         let ticket = self.export_queue().submit(batch);

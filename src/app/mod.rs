@@ -203,6 +203,10 @@ impl Editor {
     pub(in crate::app) fn lens_profiles(&self) -> &crate::photo::LensProfiles {
         crate::environment::lens_profiles(&self.core)
     }
+    /// The libraries a photo is opened and fitted with: the context's.
+    pub(in crate::app) fn libraries(&self) -> crate::environment::Libraries {
+        crate::environment::libraries(&self.core)
+    }
     /// The installed XMP presets and their layout: the context's.
     pub(in crate::app) fn preset_library(&self) -> &crate::presets::PresetLibrary {
         crate::environment::presets(&self.core)
@@ -389,8 +393,6 @@ impl Editor {
                 .send(worker::Event::AiDenoiseStored(path.to_path_buf()));
             stored_ctx.request_repaint();
         }));
-        let lenses = crate::environment::lens_profiles(&core).clone();
-        let profiles = crate::environment::camera_profiles(&core).clone();
         let libraries = crate::environment::libraries(&core);
         let lensfun = libraries.lensfun.clone();
         let profile_library = crate::environment::camera_profiles(&core).fingerprint();
@@ -398,12 +400,11 @@ impl Editor {
             tx.clone(),
             ctx.clone(),
             decode_cache.clone(),
-            lenses.clone(),
-            profiles.clone(),
+            libraries.clone(),
         );
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
         let reference_loader =
-            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache, libraries);
+            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache, libraries.clone());
         let standard_preview_size = session.standard_preview_size();
         let discard_one_to_one_after = session.discard_one_to_one_after();
         let stand_ins = crate::app::develop::stand_in::StandIns::new(
@@ -522,7 +523,7 @@ impl Editor {
                 standard_preview_size,
                 discard_one_to_one_after,
             ),
-            copies: crate::app::worker::editable_preview::decoder(lenses, profiles),
+            copies: crate::app::worker::editable_preview::decoder(libraries),
             editable_builds: Default::default(),
             stand_ins,
             autosave: Default::default(),

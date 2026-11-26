@@ -44,7 +44,7 @@ What the context takes today:
 | Value | What for | Default |
 | --- | --- | --- |
 | The data folders, in order | Imported lens profiles are looked for in each one's `lens-profiles` folder | None: no imported lens profile |
-| The cache folder, its limits and a build id, given together | Decoded photos and AI Denoise's results are kept there, up to the limits (4 GiB and 10 GiB by default) | No cache |
+| The cache folder, its limits and a build id, given together | Decoded photos and AI Denoise's results are kept there, up to the limits (4 GiB and 10 GiB by default), and Camera Look's fits | No cache |
 
 The build id names the build that made a cache's entries; entries of another
 id are not read. There is no default, since a default would let a newer

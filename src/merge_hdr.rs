@@ -136,7 +136,14 @@ pub fn publish(
         crate::photo::open(path, &libraries.lenses).context("The merged DNG can't be read")?;
     let m = raw.metadata.clone();
     let installed = libraries.profiles.installed(&m).0;
-    let profiles = crate::camera_look::with_default(path, &libraries.lenses, &m, installed, cancel);
+    let profiles = crate::camera_look::with_default(
+        path,
+        &libraries.lenses,
+        &libraries.fits,
+        &m,
+        installed,
+        cancel,
+    );
     let defaults =
         crate::edits::resolve(&EditRecord::default(), path, &m, &profiles, raw_defaults)?.recipe;
     let (recipe, notes) = starting_edit(
@@ -254,6 +261,7 @@ impl ActiveEdit {
         let profiles = crate::camera_look::with_default(
             path,
             &libraries.lenses,
+            &libraries.fits,
             &metadata,
             libraries.profiles.installed(&metadata).0,
             cancel,

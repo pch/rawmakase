@@ -241,11 +241,10 @@ impl Loader {
         tx: Sender<Event>,
         ctx: egui::Context,
         cache: DecodeCache,
-        lenses: crate::photo::LensProfiles,
-        profiles: crate::camera_profiles::ProfileLibrary,
+        libraries: crate::environment::Libraries,
     ) -> Self {
         let (ahead, between) = (Ahead::default(), Between::default());
-        Self::with_parts(tx, ctx, cache, lenses, profiles, ahead, between)
+        Self::with_parts(tx, ctx, cache, libraries, ahead, between)
     }
     /// A loader whose full-size decodes are kept in `cache`, whose prefetched
     /// rendered files in `ahead`, running `between` before each full-size stage.
@@ -253,14 +252,14 @@ impl Loader {
         tx: Sender<Event>,
         ctx: egui::Context,
         cache: DecodeCache,
-        lenses: crate::photo::LensProfiles,
-        profiles: crate::camera_profiles::ProfileLibrary,
+        libraries: crate::environment::Libraries,
         ahead: Ahead,
         between: Between,
     ) -> Self {
+        let lenses = libraries.lenses.clone();
         let prefetch = prefetcher(cache.clone(), lenses.clone(), ahead.clone());
-        let full = full_loader(tx.clone(), ctx.clone(), lenses.clone(), between);
-        let open = opener(tx, ctx, cache, lenses, profiles, ahead, full.mailbox());
+        let full = full_loader(tx.clone(), ctx.clone(), lenses, between);
+        let open = opener(tx, ctx, cache, libraries, ahead, full.mailbox());
         Self {
             open,
             full,
@@ -303,15 +302,15 @@ fn opener(
     tx: Sender<Event>,
     ctx: egui::Context,
     cache: DecodeCache,
-    lenses: crate::photo::LensProfiles,
-    profiles: crate::camera_profiles::ProfileLibrary,
+    libraries: crate::environment::Libraries,
     ahead: Ahead,
     full: Mailbox<FullJob>,
 ) -> Latest<LoadJob> {
     Latest::new(move |job: LoadJob| {
         if let Some(source) = job.from.editable_preview().cloned() {
             // Final as it is: no embedded preview or full-size stage follows it.
-            let result = caught(|| open_editable_preview(&job, &source, &profiles, &tx, &ctx));
+            let result =
+                caught(|| open_editable_preview(&job, &source, &libraries.profiles, &tx, &ctx));
             if let Err(e) = result
                 && !job.cancel.load(Ordering::Relaxed)
             {
@@ -361,7 +360,9 @@ fn opener(
             }
             let opened = match prefetched {
                 Some(image) => Opened::Rendered(image),
-                None => crate::photo::open_source(&path, &lenses, Cancel::new(&job.cancel))?,
+                None => {
+                    crate::photo::open_source(&path, &libraries.lenses, Cancel::new(&job.cancel))?
+                }
             };
             unchanged(&path, file.as_ref())?;
             let metadata = opened.metadata().clone();
@@ -369,12 +370,13 @@ fn opener(
                 profiles,
                 errors,
                 groups,
-            } = profiles.listed(&metadata);
+            } = libraries.profiles.listed(&metadata);
             // A photo without color data starts from its fitted camera look, fitted
             // (or read from the fit cache) before its defaults are installed.
             let profiles = crate::camera_look::with_default(
                 &path,
-                &lenses,
+                &libraries.lenses,
+                &libraries.fits,
                 &metadata,
                 profiles,
                 Cancel::new(&job.cancel),
@@ -618,8 +620,10 @@ pub(in crate::app) mod tests {
             tx,
             egui::Context::default(),
             DecodeCache::new(cache.into(), u64::MAX, "test"),
-            crate::photo::LensProfiles::none(),
-            crate::camera_profiles::ProfileLibrary::for_tests(),
+            crate::environment::Libraries {
+                profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+                ..Default::default()
+            },
             ahead,
             between,
         );
@@ -627,10 +631,7 @@ pub(in crate::app) mod tests {
             id: 7,
             path: path.into(),
             from: Default::default(),
-            copies: crate::app::worker::editable_preview::decoder(
-                Default::default(),
-                Default::default(),
-            ),
+            copies: crate::app::worker::editable_preview::decoder(Default::default()),
             cancel: Default::default(),
             defaults: Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
                 Default::default(),
@@ -960,8 +961,10 @@ pub(in crate::app) mod tests {
             tx,
             egui::Context::default(),
             cache.clone(),
-            crate::photo::LensProfiles::none(),
-            crate::camera_profiles::ProfileLibrary::for_tests(),
+            crate::environment::Libraries {
+                profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+                ..Default::default()
+            },
         );
         (
             loader,

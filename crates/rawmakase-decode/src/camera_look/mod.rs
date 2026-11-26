@@ -233,6 +233,7 @@ fn stage(
 pub fn with_default(
     path: &Path,
     lenses: &crate::photo::LensProfiles,
+    fits: &cache::FitCache,
     m: &Metadata,
     mut profiles: Vec<Arc<CameraProfile>>,
     cancel: Cancel<'_>,
@@ -240,28 +241,29 @@ pub fn with_default(
     if fitted::eligibility(m, &profiles) != fitted::Eligibility::Absent {
         return profiles;
     }
-    if let Some(p) = default_profile(path, lenses, m, &cache::dir(), cancel) {
+    if let Some(p) = default_profile(path, lenses, m, fits, cancel) {
         profiles.push(Arc::new(p));
     }
     profiles
 }
 
-/// The default fit of an `Absent` photo, through the fit cache in `dir`.
+/// The default fit of an `Absent` photo, through the fit cache `fits`.
 fn default_profile(
     path: &Path,
     lenses: &crate::photo::LensProfiles,
     m: &Metadata,
-    dir: &Path,
+    fits: &cache::FitCache,
     cancel: Cancel<'_>,
 ) -> Option<CameraProfile> {
-    let key = cache::FitKey::of(path).ok()?;
-    if let Some(result) = cache::load(dir, &key, m) {
+    let key = fits.key(path).ok()?;
+    let cached = || fits.dir().and_then(|dir| cache::load(dir, &key, m));
+    if let Some(result) = cached() {
         return result.ok();
     }
     // One fit of a file at a time where waiting is safe: another caller's is
     // waited for, and its result read from the cache (see `claim`).
     let _turn = claim(&key, cancel)?;
-    if let Some(result) = cache::load(dir, &key, m) {
+    if let Some(result) = cached() {
         return result.ok();
     }
     // A fit that panics must not stop the photo opening: it starts from what it
@@ -279,10 +281,12 @@ fn default_profile(
     let result = fitted.map(|f| f.profile).map_err(|e| e.reason);
     // A file replaced or changed while it was fitted: the result may be of either
     // file, so it is neither used nor stored.
-    if cancel.is_cancelled() || cache::FitKey::of(path).ok().as_ref() != Some(&key) {
+    if cancel.is_cancelled() || fits.key(path).ok().as_ref() != Some(&key) {
         return None;
     }
-    if let Err(e) = cache::store(dir, &key, &result) {
+    if let Some(dir) = fits.dir()
+        && let Err(e) = cache::store(dir, &key, &result)
+    {
         eprintln!(
             "Camera Look (fitted): the fit of {} isn't cached: {e:#}",
             path.display()
@@ -728,6 +732,7 @@ mod tests {
             with_default(
                 &named,
                 &crate::photo::LensProfiles::none(),
+                &cache::FitCache::none(),
                 &m,
                 profiles.clone(),
                 Cancel::new(&cancel)
@@ -752,18 +757,19 @@ mod tests {
             .unwrap()
             .metadata;
         assert_eq!(fitted::eligibility(&m, &[]), fitted::Eligibility::Absent);
-        let cache = dir.path().join("cache");
+        let fits = cache::FitCache::under(&dir.path().join("cache"), "test");
+        let cache = fits.dir().unwrap().to_path_buf();
         assert!(
             default_profile(
                 &bare,
                 &crate::photo::LensProfiles::none(),
                 &m,
-                &cache,
+                &fits,
                 Cancel::new(&cancel)
             )
             .is_none()
         );
-        let key = cache::FitKey::of(&bare).unwrap();
+        let key = fits.key(&bare).unwrap();
         assert!(
             matches!(cache::load(&cache, &key, &m), Some(Err(_))),
             "the refusal is kept"
@@ -778,12 +784,12 @@ mod tests {
                 &other,
                 &crate::photo::LensProfiles::none(),
                 &m,
-                &cache,
+                &fits,
                 Cancel::new(&AtomicBool::new(true))
             )
             .is_none()
         );
-        assert!(cache::load(&cache, &cache::FitKey::of(&other).unwrap(), &m).is_none());
+        assert!(cache::load(&cache, &fits.key(&other).unwrap(), &m).is_none());
     }
 
     /// While a file is fitted, another caller for it waits instead of fitting it
@@ -793,7 +799,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("photo.dng");
         std::fs::write(&path, b"one file, fitted once").unwrap();
-        let key = cache::FitKey::of(&path).unwrap();
+        let key = cache::FitCache::under(dir.path(), "test")
+            .key(&path)
+            .unwrap();
         let first = claim(&key, Cancel::NEVER).unwrap();
         // Cancelled while it waits.
         assert!(claim(&key, Cancel::new(&AtomicBool::new(true))).is_none());
@@ -821,7 +829,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("linked.dng");
         std::fs::write(&path, b"one file, two names").unwrap();
-        let key = cache::FitKey::of(&path).unwrap();
+        let key = cache::FitCache::under(dir.path(), "test")
+            .key(&path)
+            .unwrap();
         let held = claim(&key, Cancel::NEVER).unwrap();
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(1)
