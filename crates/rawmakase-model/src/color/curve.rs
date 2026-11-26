@@ -327,36 +327,130 @@ impl<'de> Deserialize<'de> for CurveLut {
     }
 }
 
-/// Luma weights (Rec. 601) with which Refine Saturation measures a color's lightness,
-/// in encoded ProPhoto RGB: fitted to Camera Raw 18.7 on the synthetic chart.
-const REFINE_LUMA: [f32; 3] = [0.299, 0.587, 0.114];
+/// Photoshop's luma weights with which Camera Raw 18.7's Refine Saturation measures a
+/// color's lightness in encoded ProPhoto RGB (measured to `[0.3000, 0.5900, 0.1100]` on
+/// the synthetic chart).
+const REFINE_LUMA: [f32; 3] = [0.30, 0.59, 0.11];
+
+/// Camera Raw 18.7's C1-smooth hue-preserving master point curve on encoded ProPhoto RGB.
+///
+/// Plain DNG RGBTone evaluates the curve at `lo` and `hi`, which creates a derivative kink
+/// wherever two channels cross (`mid == lo` or `mid == hi`). Camera Raw pulls the two
+/// evaluation points inward toward `mid` by `u = 0.5 * h * (1 - h)` where
+/// `h = (mid - lo) / (hi - lo)`, extrapolates the secant through `(a_in, curve(a_in))`
+/// and `(b_in, curve(b_in))` back to `lo` and `hi`, clamps those endpoints (`0..=1` when
+/// `white_bound`, `>= 0` in HDR), and maps `mid` linearly between them so
+/// `(mid - lo) / (hi - lo)` is preserved exactly. For any affine curve this reduces
+/// identically to applying `curve` per channel.
+fn master_tone(p: [f32; 3], curve: impl Fn(f32) -> f32, white_bound: bool) -> [f32; 3] {
+    let bound = |v: f32| {
+        if white_bound {
+            v.clamp(0., 1.)
+        } else {
+            v.max(0.)
+        }
+    };
+    let lo = p[0].min(p[1]).min(p[2]);
+    let hi = p[0].max(p[1]).max(p[2]);
+    let diff = hi - lo;
+    if diff <= 1e-8 {
+        return [bound(curve(lo)); 3];
+    }
+    let mid = (p[0] + p[1] + p[2] - lo - hi).clamp(lo, hi);
+    let h = (mid - lo) / diff;
+    let u = 0.5 * h * (1. - h);
+    let fa = curve(lo + u * (hi - mid));
+    let fb = curve(hi - u * (mid - lo));
+    let span = (fb - fa) / (1. - u);
+    let a = bound(fa - span * u * (1. - h));
+    let b = bound(fb + span * u * h);
+    p.map(|v| a + (b - a) * ((v - lo) / diff))
+}
+
+/// Camera Raw 18.7's master point curve with Refine Saturation (`amount` in 0–1; values
+/// above 1 render as 1) on encoded ProPhoto RGB `input`.
+///
+/// At 1 this renders the C1-smooth hue-preserving master curve. At 0 the color keeps its
+/// channel differences from `input` and takes its Photoshop luma (`0.30 R + 0.59 G + 0.11 B`)
+/// from the per-channel curved color `[curve(R), curve(G), curve(B)]`, scaled down only as
+/// far as needed to stay within 0–1. Intermediate amounts blend linearly between 0 and 1.
+pub fn apply_master(input: [f32; 3], curve: impl Fn(f32) -> f32, amount: f32) -> [f32; 3] {
+    apply_master_inner(input, curve, amount, true)
+}
+
+/// [`apply_master`] in an HDR master, on values that go on above white: kept within 0
+/// but not within 1 ([`super::hdr_curve::apply_master`]).
+pub(crate) fn apply_master_unbounded_above(
+    input: [f32; 3],
+    curve: impl Fn(f32) -> f32,
+    amount: f32,
+) -> [f32; 3] {
+    apply_master_inner(input, curve, amount, false)
+}
+
+fn apply_master_inner(
+    input: [f32; 3],
+    curve: impl Fn(f32) -> f32,
+    amount: f32,
+    white_bound: bool,
+) -> [f32; 3] {
+    let curved = master_tone(input, &curve, white_bound);
+    let amount = amount.clamp(0., 1.);
+    if amount == 1. {
+        return curved;
+    }
+    let bound = |v: f32| {
+        if white_bound {
+            v.clamp(0., 1.)
+        } else {
+            v.max(0.)
+        }
+    };
+    let per_channel = input.map(|v| bound(curve(v)));
+    refine(input, curved, per_channel, amount, white_bound)
+}
 
 /// Lightroom's Refine Saturation on the master point curve, in encoded ProPhoto RGB:
-/// `input` before the curve, `curved` after it. At 0 the color keeps its channel
-/// differences from before the curve and takes its luma from `curved`, scaled down only
-/// as far as it must to stay within 0–1. Other amounts blend linearly, and amounts above
-/// 1 render as 1, as Camera Raw does.
-pub fn refine_saturation(input: [f32; 3], curved: [f32; 3], amount: f32) -> [f32; 3] {
-    refine(input, curved, amount, true)
+/// `input` before the curve, `curved` after the hue-preserving master curve, and
+/// `per_channel` after applying the curve to each channel independently. At 0 the color
+/// keeps its channel differences from `input` and takes its luma from `per_channel`,
+/// scaled down only as far as it must to stay within 0–1. Other amounts blend linearly
+/// toward `curved`, and amounts above 1 render as 1, as Camera Raw does.
+#[cfg(test)]
+pub(crate) fn refine_saturation(
+    input: [f32; 3],
+    curved: [f32; 3],
+    per_channel: [f32; 3],
+    amount: f32,
+) -> [f32; 3] {
+    refine(input, curved, per_channel, amount, true)
 }
 
 /// [`refine_saturation`] in an HDR master, on values that go on above white: kept within
-/// 0 but not within 1 (super::hdr_curve::refine_saturation).
+/// 0 but not within 1 ([`super::hdr_curve::refine_saturation`]).
+#[cfg(test)]
 pub(crate) fn refine_saturation_unbounded_above(
     input: [f32; 3],
     curved: [f32; 3],
+    per_channel: [f32; 3],
     amount: f32,
 ) -> [f32; 3] {
-    refine(input, curved, amount, false)
+    refine(input, curved, per_channel, amount, false)
 }
 
-fn refine(input: [f32; 3], curved: [f32; 3], amount: f32, white_bound: bool) -> [f32; 3] {
+fn refine(
+    input: [f32; 3],
+    curved: [f32; 3],
+    per_channel: [f32; 3],
+    amount: f32,
+    white_bound: bool,
+) -> [f32; 3] {
     let amount = amount.clamp(0., 1.);
     if amount == 1. {
         return curved;
     }
     let luma = |p: [f32; 3]| (0..3).map(|c| p[c] * REFINE_LUMA[c]).sum::<f32>();
-    let target = luma(curved);
+    let target = luma(per_channel);
     let base = luma(input);
     let offset = input.map(|v| v - base);
     let high = offset.into_iter().fold(0f32, f32::max);
@@ -503,5 +597,64 @@ mod tests {
             assert!((0. ..=1.).contains(&c.evaluate(i as f32 / 1000.)));
         }
         Ok(())
+    }
+
+    #[test]
+    fn apply_master_is_exact_on_affine_curves_preserves_hue_and_is_c1_smooth() {
+        // Affine curve: reduces identically to f(p) at Refine Saturation = 100.
+        let affine = |x: f32| (0.7 * x + 0.15).clamp(0., 1.);
+        for p in [
+            [0.85, 0.55, 0.10],
+            [0.20, 0.70, 0.90],
+            [0.50, 0.50, 0.50],
+            [0.0, 0.30, 1.0],
+        ] {
+            let got = apply_master(p, affine, 1.);
+            let want = p.map(affine);
+            for c in 0..3 {
+                assert!(
+                    (got[c] - want[c]).abs() < 1e-6,
+                    "{p:?}: {got:?} vs {want:?}"
+                );
+            }
+        }
+
+        // Strong S-curve: preserves encoded hue (mid - lo) / (hi - lo) even when
+        // extrapolated endpoints clip to 0 or 1.
+        let s = ToneCurve {
+            points: vec![
+                [0., 0.],
+                [64. / 255., 28. / 255.],
+                [128. / 255., 128. / 255.],
+                [192. / 255., 228. / 255.],
+                [1., 1.],
+            ],
+            ..Default::default()
+        };
+        let lut = CurveLut::new(&s);
+        for p in [[0.833, 0.6445, 0.2894], [0.9126, 0.2808, 0.0]] {
+            let out = apply_master(p, |x| lut.evaluate(x), 1.);
+            let hue = |v: [f32; 3]| {
+                let mut s = v;
+                s.sort_by(f32::total_cmp);
+                (s[1] - s[0]) / (s[2] - s[0])
+            };
+            assert!((hue(out) - hue(p)).abs() < 1e-5, "{p:?} -> {out:?}");
+        }
+
+        // C1 smoothness across channel crossings (G crossing B at 0.25 with R = 0.85):
+        // left and right finite differences of R with respect to G agree at G == B.
+        let eps = 1e-3f32;
+        let below = apply_master([0.85, 0.25 - eps, 0.25], |x| lut.evaluate(x), 1.);
+        let at = apply_master([0.85, 0.25, 0.25], |x| lut.evaluate(x), 1.);
+        let above = apply_master([0.85, 0.25 + eps, 0.25], |x| lut.evaluate(x), 1.);
+        for c in 0..3 {
+            let left = (at[c] - below[c]) / eps;
+            let right = (above[c] - at[c]) / eps;
+            assert!(
+                (left - right).abs() < 0.02,
+                "kink on channel {c}: left={left} right={right}"
+            );
+        }
     }
 }

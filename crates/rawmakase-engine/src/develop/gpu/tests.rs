@@ -643,6 +643,20 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     let mut r = base(&rgb_tables[3]);
     r.grading[1] = [0.1, 0.3, 0.];
     recipes.push(r);
+    // Strong S master point curve across Refine Saturation 0, 50 and 100 (exercises both
+    // C1-smooth endpoint clamping and per-channel Photoshop-luma Refine Saturation).
+    for refine in [0., 0.5, 1.] {
+        let mut s = base(&tables);
+        s.curve.points = vec![
+            [0., 0.],
+            [64. / 255., 28. / 255.],
+            [128. / 255., 128. / 255.],
+            [192. / 255., 228. / 255.],
+            [1., 1.],
+        ];
+        s.curve_saturation = refine;
+        recipes.push(s);
+    }
     let mut r = base(&tables);
     r.exposure = 0.7;
     r.contrast = 0.4;
@@ -2325,9 +2339,19 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
     let mut channels = curves.clone();
     channels.effects.channels[0].points = vec![[0., 0.], [0.5, 0.63], [1., 1.]];
     channels.effects.channels[2].points = vec![[0., 0.], [0.5, 0.39], [1., 1.]];
-    // Refine Saturation at 60% on the master curve, light above white included.
+    // Refine Saturation at 50% (strong S-curve) and 60% (gentle S-curve), light above
+    // white included.
     let mut refine = curves.clone();
-    refine.curve_saturation = 0.6;
+    refine.curve.points = vec![
+        [0., 0.],
+        [64. / 255., 28. / 255.],
+        [128. / 255., 128. / 255.],
+        [192. / 255., 228. / 255.],
+        [1., 1.],
+    ];
+    refine.curve_saturation = 0.5;
+    let mut refine_60 = curves.clone();
+    refine_60.curve_saturation = 0.6;
     let mut together = curves.clone();
     together.contrast = 0.35;
     together.effects.parametric = parametric.effects.parametric;
@@ -2413,6 +2437,7 @@ fn hdr_recipes(image: &crate::camera_data::CameraImage) -> Vec<Recipe> {
         parametric,
         channels,
         refine,
+        refine_60,
         together,
     ]);
     // A steep master curve, whose output the hold takes back above 16 times white.

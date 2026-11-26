@@ -70,13 +70,12 @@ Every recipe renders with the measured curve; the earlier approximation, applied
 
 ## Refine Saturation
 
-Lightroom's Refine Saturation (`crs:CurveRefineSaturation`, default 100) sets how much of the saturation change a master point curve makes is kept. It was measured on the synthetic chart with Camera Raw 18.7, through an S curve, a strong S, a lift and a fade, at 0, 50, 100, 150 and 200:
+Camera Raw 18.7's master RGB point curve (`crs:ToneCurvePV2012`) and Refine Saturation (`crs:CurveRefineSaturation`, default 100) were measured on the synthetic chart through S curves, inverted S curves, lifts, darkens, affine fades and clips, and localized bumps, at 0, 25, 50, 75, 100, 150 and 200:
 
-- It changes only the master point curve. Channel curves, the parametric curve and Contrast render the same at every value.
-- At 0 a color keeps its channel differences from before the curve (in encoded ProPhoto RGB, where the curve runs) and takes its luma (Rec. 601 weights) from the curved color. Where that would leave 0–1, the differences are scaled down just enough to fit.
-- Other values blend linearly between 0 and 100 (exact to 0.0002 at 50). 150 and 200 render exactly as 100.
+- **Master point curve (`Refine Saturation = 100`):** instead of plain DNG RGBTone (which evaluates the curve at `lo` and `hi` and has a derivative kink wherever two channels cross), Camera Raw evaluates the curve in sRGB-encoded ProPhoto RGB at `a_in = lo + u · (hi − mid)` and `b_in = hi − u · (mid − lo)` where `h = (mid − lo) / (hi − lo)` and `u = 0.5 · h · (1 − h)`, extrapolates the secant through `(a_in, f(a_in))` and `(b_in, f(b_in))` back to `lo` and `hi`, clamps the endpoints to `0–1` (`>= 0` in HDR), and linearly interpolates `mid` between them so `(mid − lo) / (hi − lo)` is preserved exactly. For any affine curve this reduces identically to applying `f` per channel; applied to Camera Raw's own default render across 14 measured curves it matches to `0.000013–0.000052` MAE.
+- **Refine Saturation (`0–100`):** changes only the master point curve (channel curves, the parametric curve and Contrast render the same at every value). At 0 a color keeps its channel differences from before the curve in encoded ProPhoto RGB and takes its Photoshop luma (`0.30 R + 0.59 G + 0.11 B`) from the per-channel curved color `[f(R), f(G), f(B)]`, scaling the differences down only as far as needed to stay within `0–1` (`>= 0` in HDR). Other values blend linearly between 0 and 100 (exact to `0.00001` at 25, 50 and 75). 150 and 200 render exactly as 100.
 
-`curve::refine_saturation` implements it after the master curve on the CPU and the GPU. It is imported and written back with the edit. Tone Curve's point mode has a Refine › Saturation slider (0–100) under the RGB curve; an imported value above 100 shows as 100 and is kept until the slider is moved.
+`curve::apply_master` (and `hdr_curve::apply_master` in HDR) implements both on the CPU and the GPU. `CurveRefineSaturation` is imported and written back with the edit. Tone Curve's point mode has a Refine › Saturation slider (0–100) under the RGB curve; an imported value above 100 shows as 100 and is kept until the slider is moved.
 
 ## Point Curve menu
 

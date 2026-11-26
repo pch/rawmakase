@@ -146,8 +146,7 @@ impl HdrCurves {
             Some(curve) => rgb_tone(p, |e| parametric(e, |x| curve.eval(x))),
             None => p,
         };
-        let curved = rgb_tone(p, |e| self.master.evaluate(e));
-        let p = crate::color::hdr_curve::refine_saturation(p, curved, self.refine);
+        let p = crate::color::hdr_curve::apply_master(p, |e| self.master.evaluate(e), self.refine);
         // An identity channel curve leaves its channel as the master curve renders it.
         let channels = self.channels.as_ref();
         let p = std::array::from_fn(|c| match channels.and_then(|curves| curves[c].as_ref()) {
@@ -1105,16 +1104,7 @@ pub(super) fn apply_reference_curves(
     let p = curve_input(rgb, r, lut, local);
     // No region set: the identity.
     let p = lut.parametric.as_ref().map_or(p, |curve| curve.apply(p));
-    let lo = p.into_iter().fold(f32::INFINITY, f32::min);
-    let hi = p.into_iter().fold(0f32, f32::max);
-    let a = lut.master.evaluate(lo);
-    let b = lut.master.evaluate(hi);
-    let master = if hi - lo > 1e-8 {
-        p.map(|v| a + (b - a) * (v - lo) / (hi - lo))
-    } else {
-        [a; 3]
-    };
-    let master = refine_saturation(p, master, r.curve_saturation);
+    let master = apply_master(p, |x| lut.master.evaluate(x), r.curve_saturation);
     let channels = std::array::from_fn(|c| srgb_decode(lut.channels[c].evaluate(master[c])));
     mul(crate::camera_profiles::PRO_TO_RGB, channels)
 }
