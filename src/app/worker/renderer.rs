@@ -26,24 +26,7 @@ pub(in crate::app) enum RenderBackend {
 /// Long edges of the minimap's and the library thumbnail's copies.
 const NAVIGATOR: u32 = 360;
 const THUMBNAIL: u32 = 640;
-/// A full render presented within this needs no reduced preview first.
-const QUICK: std::time::Duration = std::time::Duration::from_millis(40);
-/// A reduced whole-photo preview halves the render's long edge until it has at most
-/// this many pixels.
-const DRAFT_PIXELS: f32 = 1_000_000.;
-
-/// The long edge of a reduced preview of a `width` by `height` render (after crop,
-/// as `max_edge` applies to it), or None when the render is small enough already.
-fn draft_edge(width: u32, height: u32) -> Option<u32> {
-    let aspect = width.min(height) as f32 / width.max(height).max(1) as f32;
-    let mut edge = width.max(height) as f32;
-    let mut halved = 0;
-    while edge * edge * aspect > DRAFT_PIXELS && halved < 4 {
-        edge /= 2.;
-        halved += 1;
-    }
-    (halved > 0).then_some(edge.round() as u32)
-}
+use crate::develop::draft::{Drafts, draft_edge};
 
 /// Which image a kept frame or histogram was rendered from, without keeping it
 /// alive: its address, which stays its own while this exists (the allocation
@@ -306,11 +289,12 @@ struct PaneState {
     /// Whether the last finished image was a 100% region: then the region is being
     /// edited or panned, and a reduced preview comes first.
     showing_region: bool,
-    /// Whether the last full 100% region was presented on the GPU quickly enough that a
-    /// reduced preview before it would only add work and a blurry frame.
-    quick_region: bool,
-    /// The same for the last full whole-photo render.
-    quick_fit: bool,
+    /// Whether a reduced preview comes before the next 100% region: not when
+    /// the last one was presented on the GPU quickly enough that it would only
+    /// add work and a blurry frame.
+    region_drafts: Drafts,
+    /// The same for the whole photo.
+    fit_drafts: Drafts,
     /// The whole photo's histogram for the last edit shown at 100%, so panning
     /// there does not render the whole photo again.
     whole_shown: Option<WholeHistogram>,
@@ -335,8 +319,8 @@ fn render(
         fit,
         zoomed,
         showing_region,
-        quick_region,
-        quick_fit,
+        region_drafts,
+        fit_drafts,
         whole_shown,
     } = match job.pane {
         Pane::After => after,
@@ -634,7 +618,7 @@ fn render(
                         !Origin::is_ai(&s.ai, &job.ai)
                             || s.recipe.ai_denoise != job.recipe.ai_denoise
                     });
-                    if *showing_region && !*quick_region && !ai_changed {
+                    if region_drafts.wanted(*showing_region) && !ai_changed {
                         let out = processor.render_region_preview_to(
                             &job.image,
                             &job.recipe,
@@ -669,7 +653,8 @@ fn render(
                         Cancel::new(&job.cancel),
                         zoomed_display.as_ref(),
                     )?;
-                    *quick_region = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
+                    // Only a frame presented on the GPU is finished when it returns.
+                    region_drafts.rendered(started.elapsed(), matches!(out, Output::Frame(_)));
                     out
                 };
                 let gpu = processor.used_gpu();
@@ -709,8 +694,7 @@ fn render(
                 let g = develop::Geometry::new(&job.image, &job.recipe, job.max_edge);
                 draft_edge(g.width, g.height)
             };
-            if editing
-                && !*quick_fit
+            if fit_drafts.wanted(editing)
                 && let Some(edge) = draft()
             {
                 let out = processor.render_to(
@@ -749,7 +733,7 @@ fn render(
                 Cancel::new(&job.cancel),
                 whole.as_ref(),
             )?;
-            *quick_fit = matches!(out, Output::Frame(_)) && started.elapsed() < QUICK;
+            fit_drafts.rendered(started.elapsed(), matches!(out, Output::Frame(_)));
             let gpu = processor.used_gpu();
             let hdr = hdr_frame(processor, &out, whole.as_ref(), &|p, headroom, display| {
                 p.render_hdr_to(
@@ -1085,16 +1069,6 @@ mod tests {
         let back = run(&worker, &rx, 6, &image, &recipe, None);
         assert_eq!(back.len(), 1);
         assert_ne!(back[0].1, fit[0].1);
-    }
-    #[test]
-    fn a_reduced_preview_halves_the_edge_to_at_most_a_megapixel() {
-        // A 3:2 photo's Fit on a large HiDPI view.
-        assert_eq!(draft_edge(2360, 1573), Some(1180));
-        assert_eq!(draft_edge(1200, 800), None);
-        // Cropped square, the same long edge has more pixels.
-        assert_eq!(draft_edge(1200, 1200), Some(600));
-        // Four halvings at most.
-        assert_eq!(draft_edge(20000, 13333), Some(1250));
     }
     #[test]
     fn editing_the_whole_photo_shows_a_reduced_preview_first() {

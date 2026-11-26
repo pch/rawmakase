@@ -14,6 +14,7 @@ mod color_grade_curves;
 pub mod color_mixer;
 pub mod color_noise;
 mod crop_constraint;
+pub mod draft;
 // Develop code names the curve primitives as `develop::curve`, where they began.
 use crate::color::curve;
 pub mod effects;

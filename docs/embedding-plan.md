@@ -1051,6 +1051,14 @@ so the design is proved on one path before it is spread.
    found one there or found the curve full (`Inserted`), and `move_point`
    whether there was a point to move; the app's curve behaves as before.
 
+   The draft rule, moved from the app's render worker to the engine
+   (`develop::draft`): `Drafts`, kept per view, says whether a render
+   starts with a draft (while that view is edited, unless its last full
+   render was quick) and is told how each full render went, how long it
+   took and whether it was finished with nothing left to do; the app tells
+   it a frame presented on the GPU is finished and one read back is not,
+   as it counted before. `draft_edge` sizes a whole-photo draft.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in
