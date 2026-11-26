@@ -24,6 +24,7 @@
 //! The devices and their mappings are kept in `midi.json` in the extension's
 //! data folder ([`config`]) and edited on its page in Preferences >
 //! Extensions, a panel the app draws ([`page`]).
+#![forbid(unsafe_code)]
 pub mod backend;
 pub mod config;
 pub mod midi;

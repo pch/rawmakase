@@ -86,6 +86,7 @@ endif
 check-python: $(CHECK_VENV)/.installed
 	$(CHECK_VENV)/bin/python -m unittest discover -s scripts/cameras
 	$(CHECK_VENV)/bin/python -m unittest discover -s scripts/corpus
+	python3 scripts/test_ambient.py
 
 $(CHECK_VENV)/.installed:
 	python3 -m venv $(CHECK_VENV)

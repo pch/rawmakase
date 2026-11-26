@@ -11,6 +11,7 @@
 //! tunnelled to it, can reach it. There are no credentials; anyone who can
 //! connect can ask for inferences, which is why the default is the loopback
 //! and the documentation pairs the worker with `ssh -L`.
+#![forbid(unsafe_code)]
 
 use rawmakase_inference::{LoadOptions, Provider};
 use rawmakase_remote::server::{Engine, Model, Server};

@@ -341,6 +341,7 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
       - run: python3 scripts/deps.py check
+      - run: python3 scripts/test_ambient.py
       - name: Camera calibration and comparison checks
         run: |
           python3 -m venv /tmp/rawmakase-parity-tests

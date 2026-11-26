@@ -29,6 +29,7 @@
 //! [`sources`] a third, of a photo source, [`remove`] a fourth, of retouch
 //! generators, and [`destinations`] a fifth, of export destinations, all
 //! built from this crate too.
+#![forbid(unsafe_code)]
 pub mod destinations;
 pub mod masks;
 pub mod remove;

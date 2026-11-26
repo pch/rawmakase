@@ -564,6 +564,24 @@ Some features span several owners; each module's docs describe its part:
   only C compiled comes with Rust crates' own sources (the catalog's bundled
   SQLite, ring, Wayland's backend on Linux); HEIC pixels come from the operating
   system's decoders, opened at run time ([dependencies](dependencies.md)).
+- **The app crate holds what needs a window; the library's crates take their
+  configuration as values.** The crates the library is made of
+  ([library plan](embedding-plan.md)) read no environment variable and start
+  no program: a folder, a font, the ONNX Runtime's path and the GPU's options
+  are given by their caller. `scripts/ambient.py check` (run by
+  `scripts/deps.py check`) searches their production code for `std::env`, the
+  `directories` crate, wgpu's `from_env` and `with_env`, `Command::new`, the
+  ambient data and cache folders (`data_dir()` and the like, and
+  `rawmakase_protocol::paths`) and temporary files made with no folder, and
+  compares the sites with `scripts/deps-ambient.txt`. The list only shrinks: a
+  new site fails, and so does a count the code has dropped below until the
+  list is lowered. What remains is listed until the plan moves it to the app's
+  startup.
+- Every workspace crate that has no unsafe code says so with
+  `#![forbid(unsafe_code)]`, binaries too. Unsafe code is where the operating
+  system or a decoder needs it (decoding, `rawmakase-fs`, inference, export's
+  memory-mapped font, the extension SDK and host, the app), each block with its
+  `SAFETY` note.
 - Keep `eframe`, `egui` and native chooser code in `app`. The CLI must be able to
   use domain operations without creating an editor or UI context. `render` and
   `render-batch` are `render_command`, and `merge-hdr` is `merge_command` (and

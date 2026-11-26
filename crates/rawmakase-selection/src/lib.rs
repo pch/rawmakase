@@ -15,6 +15,7 @@
 //! this one depends on is the cancellation token (`rawmakase-cancel`). Where the
 //! model files live, how they are downloaded and verified, job scheduling and cache
 //! identity belong to the callers.
+#![forbid(unsafe_code)]
 
 pub mod auto;
 #[cfg(target_vendor = "apple")]

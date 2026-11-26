@@ -1,0 +1,52 @@
+# Environment reads, programs started and temporary files made with no folder
+# given, in the production code of the library's crates: `path kind count`.
+# Checked by scripts/ambient.py (and scripts/deps.py check). It only shrinks:
+# docs/embedding-plan.md empties it. Never raise a count to make a change pass.
+crates/rawmakase-catalog/src/catalog/defaults.rs folder 2
+crates/rawmakase-catalog/src/catalog/file_ops/plan.rs env 2
+crates/rawmakase-catalog/src/catalog/file_ops/plan.rs folder 2
+crates/rawmakase-catalog/src/catalog/file_ops/tree.rs folder 2
+crates/rawmakase-catalog/src/catalog/legacy_sidecar.rs folder 3
+crates/rawmakase-catalog/src/catalog/lightroom/mod.rs temp 1
+crates/rawmakase-catalog/src/catalog/locations.rs command 1
+crates/rawmakase-catalog/src/catalog/locations.rs env 1
+crates/rawmakase-catalog/src/catalog/locations.rs folder 1
+crates/rawmakase-catalog/src/catalog/preview_cache.rs folder 1
+crates/rawmakase-decode/src/ai/cache.rs folder 1
+crates/rawmakase-decode/src/camera_look/cache.rs folder 1
+crates/rawmakase-decode/src/decode_cache.rs env 5
+crates/rawmakase-decode/src/decode_cache.rs folder 3
+crates/rawmakase-denoise/src/bench.rs command 1
+crates/rawmakase-denoise/src/bench.rs env 1
+crates/rawmakase-denoise/src/bench.rs temp 1
+crates/rawmakase-engine/src/develop/gpu/export.rs env 2
+crates/rawmakase-engine/src/develop/gpu/export.rs wgpu-env 1
+crates/rawmakase-engine/src/develop/gpu/mod.rs env 1
+crates/rawmakase-engine/src/develop/gpu/mod.rs wgpu-env 8
+crates/rawmakase-engine/src/develop/local_tone_rule.rs env 2
+crates/rawmakase-engine/src/develop/pipeline/tone.rs env 1
+crates/rawmakase-export/src/watermark/font_dirs.rs directories 1
+crates/rawmakase-export/src/watermark/font_dirs.rs env 5
+crates/rawmakase-export/src/watermark/fonts.rs command 1
+crates/rawmakase-export/src/watermark/fonts.rs env 1
+crates/rawmakase-export/src/watermark/fonts.rs temp 1
+crates/rawmakase-export/src/watermark/mod.rs folder 1
+crates/rawmakase-inference/src/runtime.rs env 3
+crates/rawmakase-interop/src/export_settings.rs directories 4
+crates/rawmakase-interop/src/export_settings.rs env 1
+crates/rawmakase-interop/src/export_settings.rs folder 1
+crates/rawmakase-interop/src/export_settings/rename.rs folder 1
+crates/rawmakase-interop/src/export_settings/saved.rs folder 1
+crates/rawmakase-interop/src/keyword_sets.rs directories 1
+crates/rawmakase-interop/src/keyword_sets.rs folder 1
+crates/rawmakase-interop/src/presets/curves.rs folder 1
+crates/rawmakase-interop/src/presets/library.rs folder 3
+crates/rawmakase-interop/src/presets/user.rs folder 1
+crates/rawmakase-model-install/src/lib.rs folder 2
+crates/rawmakase-model/src/camera_profiles/catalogue.rs folder 1
+crates/rawmakase-model/src/camera_profiles/catalogue.rs temp 1
+crates/rawmakase-model/src/camera_profiles/library.rs folder 4
+crates/rawmakase-model/src/camera_profiles/manage.rs folder 1
+crates/rawmakase-model/src/lens/lcp.rs folder 3
+crates/rawmakase-model/src/lens/lensfun/installed.rs folder 1
+crates/rawmakase-model/src/storage/files.rs folder 6

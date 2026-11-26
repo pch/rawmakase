@@ -2,6 +2,7 @@
 //! Lightroom's Develop settings, native and XMP presets, raw defaults, EXIF and
 //! JPEG segments, export settings, and which edit a photo develops with (`edits`). Like the model, it builds
 //! without the RAW decoders, the renderer, wgpu or the GUI.
+#![forbid(unsafe_code)]
 use rawmakase_model::{
     camera_data, camera_profiles, color, lens, metadata, model, storage, tiff, xml,
 };

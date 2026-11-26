@@ -390,13 +390,17 @@ builds the context, and which the command line shares.
 `rawmakase-protocol`'s `paths` stays what it was written as: where a control
 client finds the running app.
 
-A check in CI holds this, in the style of `scripts/deps.py`. It names the
-crates the library is made of and searches their code outside tests for
-`std::env`, the `directories` crate, wgpu's `from_env` and `with_env`,
-`std::process::Command` and a temporary file made with no folder given,
+A check in CI holds this, in the style of `scripts/deps.py`
+(`scripts/ambient.py`, which `deps.py check` runs). It names the crates the
+library is made of, and the selection crate, and searches their code
+outside tests for `std::env`, the `directories` crate, wgpu's `from_env` and
+`with_env`, `Command::new`, the ambient data and cache folders
+(`data_dir()` and the like called with no folder, and
+`rawmakase_protocol::paths`) and a temporary file made with no folder given,
 leaving out what is compiled only for tests (`cfg(test)` and the
 `test-support` features). It compares what it finds with a list in the
-repository, which may only shrink, and is empty when this plan is built.
+repository (`scripts/deps-ambient.txt`, a count per file and kind), which
+may only shrink, and is empty when this plan is built.
 
 ### What stays process-wide
 
@@ -442,9 +446,8 @@ deletes another's.
 No item of the library is `unsafe`, and using it needs none. The library
 crate and `rawmakase-editing` forbid unsafe code (`forbid`, which no
 attribute inside can lift), and so does every crate
-that has none today. The engine is the one doubt: its uniform structs
-derive `bytemuck`'s traits, and if the lint rejects the expansion it denies
-unsafe code with that allowance, or packs its uniforms without the derive.
+that has none today. The engine forbids it too: the lint accepts what
+`bytemuck`'s derive expands to for its GPU uniforms.
 What is left is where the operating system or a decoder requires it, each
 block with its `SAFETY` note: decoding's system HEIC decoders, AV1
 interface, thread priority and cache record; `rawmakase-fs`; Core ML; one
@@ -804,6 +807,12 @@ so the design is proved on one path before it is spread.
    engine as its uniforms allow; `docs/architecture.md` gains the rules (the
    app crate holds what needs a window; a library crate reads no
    environment and starts no program).
+
+   Built. The check found 82 sites in 45 files and kinds; counting the
+   ambient folders, which the plan's first list of patterns left out, is
+   what makes it see the sixty-odd `data_dir()` calls. Eighteen crate roots
+   gained `forbid(unsafe_code)`, the engine's among them, and the
+   extensions' and the remote worker's binaries.
 2. Typed causes: `Cancelled` in `rawmakase-cancel`, an invalid recipe or
    setting, a file's identity changed, a missing profile or preset. Each
    has today's text as its message.

@@ -1,5 +1,6 @@
 //! The bundled MIDI extension's program, which the app starts with its
 //! channel attached.
+#![forbid(unsafe_code)]
 fn main() -> std::process::ExitCode {
     match rawmakase_midi::extension().run() {
         Ok(()) => std::process::ExitCode::SUCCESS,

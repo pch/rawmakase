@@ -15,6 +15,7 @@
 //! follows docs/shutdown.md: [`Service::stop`] raises the stop flag and the running
 //! run's cancel flag (ONNX Runtime terminates the run within one poll), and hands back
 //! the thread for the caller's deadline; the thread owns its ONNX session.
+#![forbid(unsafe_code)]
 // The paths the service was written with when it was a module of the app, which
 // re-exports these crates' modules at its root.
 use rawmakase_decode::ai::cache as ai_cache;
