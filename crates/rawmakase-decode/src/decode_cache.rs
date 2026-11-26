@@ -14,12 +14,15 @@
 //! The user can move the directory to a folder of their choice, such as another
 //! drive.
 use crate::camera_data::{CameraImage, Demosaic, Metadata, Pixels};
+use crate::storage::{
+    zlib_compress_fast, zlib_compress_stored, zlib_decompress_exact, zlib_max_stored_len,
+};
 use anyhow::{Context, Result, ensure};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, RwLock,
@@ -28,11 +31,17 @@ use std::{
     time::SystemTime,
 };
 
-const MAGIC: &[u8; 8] = b"RMKDEC\0\x01";
-/// Pixels written at a time when an entry is stored.
-const PIECE: usize = 1 << 18;
-/// Changed pixels one task puts back at a time when an entry is loaded.
-const TAKE: usize = 1 << 14;
+const MAGIC: &[u8; 8] = b"RMKDEC\0\x02";
+/// Pixels per independently compressed stripe (768 KiB raw RGB `f32`).
+const STRIPE_PIXELS: usize = 65_536;
+const MAX_STRIPE_PIXELS: u32 = 1 << 20;
+/// Recovered-pixel delta entries per compressed stripe (1 MiB raw).
+const STRIPE_CHANGES: usize = 65_536;
+const MAX_STRIPE_CHANGES: u32 = 1 << 20;
+const WRITE_BATCH_STRIPES: usize = 16;
+const MAX_READ_BATCH_RAW_BYTES: usize = 24 << 20;
+const MAX_PIXELS: u64 = 150_000_000;
+const MAX_STRIPES: u64 = 65_536;
 /// Default size cap of the cache directory.
 pub const DEFAULT_LIMIT: u64 = 4 << 30;
 /// The subfolder of a chosen folder that holds the entries.
@@ -148,7 +157,9 @@ struct Header {
     fast: bool,
     scale_factor: f32,
     scale_clipped: u32,
-    /// Pixels changed by highlight recovery, stored after the image.
+    stripe_pixels: u32,
+    stripe_changes: u32,
+    /// Pixels changed by highlight recovery, stored in stripes after the image stripes.
     recovered: u64,
 }
 impl Default for DecodeCache {
@@ -245,37 +256,97 @@ impl DecodeCache {
     fn read(path: &Path, key: &str, metadata: &Metadata) -> Result<CameraImage> {
         let file = fs::File::open(path)?;
         let size = file.metadata()?.len();
-        let mut file = std::io::BufReader::new(file);
+        let mut reader = std::io::BufReader::new(file);
         let mut magic = [0; 8];
-        file.read_exact(&mut magic)?;
+        reader.read_exact(&mut magic)?;
         ensure!(&magic == MAGIC, "Not a decode cache entry");
         let mut len = [0; 4];
-        file.read_exact(&mut len)?;
+        reader.read_exact(&mut len)?;
         let len = u32::from_le_bytes(len) as usize;
         ensure!(len < 1 << 16, "Invalid decode cache header");
         let mut header = vec![0; len];
-        file.read_exact(&mut header)?;
+        reader.read_exact(&mut header)?;
         let header: Header = serde_json::from_slice(&header)?;
         ensure!(header.key == key, "Decode cache key collision");
-        let n = header.width as u64 * header.height as u64;
+        let n = u64::from(header.width) * u64::from(header.height);
         ensure!(
-            n > 0 && n <= 150_000_000 && header.recovered <= n,
+            n > 0 && n <= MAX_PIXELS && header.recovered <= n,
             "Invalid decode cache size"
         );
-        let start = 12 + len as u64;
+        let n_usize = usize::try_from(n).context("Invalid decode cache size")?;
         ensure!(
-            size == start + n * 12 + header.recovered * 16,
-            "Decode cache entry has the wrong size"
+            header.stripe_pixels > 0 && header.stripe_pixels <= MAX_STRIPE_PIXELS,
+            "Invalid decode cache stripe size"
         );
-        let file = file.into_inner();
-        let mut pixels = vec![[0f32; 3]; n as usize];
-        read_at(&file, start, bytemuck::cast_slice_mut(&mut pixels))?;
-        let mut changes = vec![Change::default(); header.recovered as usize];
-        read_at(
-            &file,
-            start + n * 12,
-            bytemuck::cast_slice_mut(&mut changes),
+        ensure!(
+            header.stripe_changes > 0 && header.stripe_changes <= MAX_STRIPE_CHANGES,
+            "Invalid decode cache recovery stripe size"
+        );
+        let stripe_pixels = header.stripe_pixels as usize;
+        let stripe_changes = header.stripe_changes as usize;
+        let pixel_stripe_count = n.div_ceil(u64::from(header.stripe_pixels));
+        let change_stripe_count = header.recovered.div_ceil(u64::from(header.stripe_changes));
+        ensure!(
+            pixel_stripe_count <= MAX_STRIPES && change_stripe_count <= MAX_STRIPES,
+            "Too many decode cache stripes"
+        );
+        let table_start = 12 + len as u64;
+        let total_stripes = pixel_stripe_count
+            .checked_add(change_stripe_count)
+            .context("Decode cache stripe count overflow")?;
+        let table_bytes = total_stripes
+            .checked_mul(4)
+            .context("Decode cache table overflow")?;
+        let stripes_start = table_start
+            .checked_add(table_bytes)
+            .context("Decode cache table overflow")?;
+        ensure!(size >= stripes_start, "Decode cache entry is truncated");
+        let mut table_buf = vec![0u8; table_bytes as usize];
+        reader.read_exact(&mut table_buf)?;
+        let (pixel_table, change_table) = table_buf.split_at((pixel_stripe_count as usize) * 4);
+        let mut cursor = stripes_start;
+        let pixel_stripes = parse_stripes(
+            pixel_table,
+            pixel_stripe_count as usize,
+            n_usize,
+            stripe_pixels,
+            12,
+            &mut cursor,
         )?;
+        let recovered_count =
+            usize::try_from(header.recovered).context("Decode cache recovery count overflow")?;
+        let change_stripes = parse_stripes(
+            change_table,
+            change_stripe_count as usize,
+            recovered_count,
+            stripe_changes,
+            16,
+            &mut cursor,
+        )?;
+        ensure!(size == cursor, "Decode cache entry has the wrong size");
+        let file = reader.into_inner();
+        let mut pixels = Vec::new();
+        let pixel_batch = (MAX_READ_BATCH_RAW_BYTES / (stripe_pixels * 12)).max(1);
+        for batch in pixel_stripes.chunks(pixel_batch) {
+            let decoded_batch: Vec<Vec<[f32; 3]>> = batch
+                .par_iter()
+                .map(|&(offset, comp_len, raw_pixels)| -> Result<Vec<[f32; 3]>> {
+                    let mut compressed = vec![0u8; comp_len];
+                    read_exact_at_file(&file, offset, &mut compressed)?;
+                    let mut raw = vec![0u8; raw_pixels * 12];
+                    zlib_decompress_exact(&compressed, &mut raw)?;
+                    let mut out = vec![[0f32; 3]; raw_pixels];
+                    unshuffle_pixels(&raw, &mut out)?;
+                    Ok(out)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let batch_pixels: usize = decoded_batch.iter().map(Vec::len).sum();
+            try_grow_bounded(&mut pixels, batch_pixels, n_usize)?;
+            for stripe in decoded_batch {
+                pixels.extend_from_slice(&stripe);
+            }
+        }
+        ensure!(pixels.len() == n_usize, "Decoded pixel length mismatch");
         // Like a decode of the file, the loaded image measures its own Auto CA
         // rather than sharing one measured on the image `metadata` came from.
         let metadata = Metadata {
@@ -284,10 +355,31 @@ impl DecodeCache {
         };
         // The entry's pixels become the recovered image's, and the decode keeps the
         // values the changed ones had: the two images hold one buffer between them.
-        let (changed, had) = exchange(&mut pixels, &changes)?;
-        drop(changes);
-        let (pixels, recovered) =
-            Pixels::pair_masked(pixels, changed, had).context("Invalid recovered pixel")?;
+        let (pixels, recovered) = if change_stripes.is_empty() {
+            let mut shared = Pixels::from(pixels);
+            shared.share();
+            (shared.clone(), shared)
+        } else {
+            let (changed, had) = apply_change_stripes(
+                &file,
+                &mut pixels,
+                &change_stripes,
+                stripe_changes,
+                MAX_READ_BATCH_RAW_BYTES,
+                || {
+                    let mut changed = Vec::new();
+                    changed
+                        .try_reserve_exact(n_usize.div_ceil(64))
+                        .context("Decode cache recovery mask allocation failed")?;
+                    changed.resize(n_usize.div_ceil(64), 0);
+                    let mut had = Vec::new();
+                    had.try_reserve_exact(recovered_count)
+                        .context("Decode cache recovery allocation failed")?;
+                    Ok((changed, had))
+                },
+            )?;
+            Pixels::pair_masked(pixels, changed, had).context("Invalid recovered pixel")?
+        };
         let image = CameraImage {
             recovered: Default::default(),
             width: header.width,
@@ -328,6 +420,11 @@ impl DecodeCache {
             recovered.pixels.len() == image.pixels.len(),
             "Recovered size mismatch"
         );
+        let n = u64::from(image.width) * u64::from(image.height);
+        ensure!(
+            n > 0 && n <= MAX_PIXELS && image.pixels.len() as u64 == n,
+            "Invalid decode cache size"
+        );
         let change = |i: usize| Change {
             index: i as u32,
             value: recovered.pixels[i],
@@ -338,9 +435,25 @@ impl DecodeCache {
         let changes: Vec<Change> = if image.pixels.shares_buffer(&recovered.pixels) {
             image.pixels.differing().map(change).collect()
         } else {
-            (image.pixels.iter().zip(recovered.pixels.iter()).enumerate())
-                .filter(|(_, (a, b))| a.map(f32::to_bits) != b.map(f32::to_bits))
-                .map(|(i, _)| change(i))
+            const CHUNK: usize = 1 << 20;
+            let total = image.pixels.len();
+            (0..total.div_ceil(CHUNK))
+                .into_par_iter()
+                .flat_map_iter(|chunk_idx| {
+                    let start = chunk_idx * CHUNK;
+                    let end = (start + CHUNK).min(total);
+                    let a = image.pixels.range(start..end);
+                    let b = recovered.pixels.range(start..end);
+                    a.iter()
+                        .zip(b.iter())
+                        .enumerate()
+                        .filter(|(_, (pa, pb))| pa.map(f32::to_bits) != pb.map(f32::to_bits))
+                        .map(|(offset, (_, pb))| Change {
+                            index: (start + offset) as u32,
+                            value: *pb,
+                        })
+                        .collect::<Vec<_>>()
+                })
                 .collect()
         };
         let header = serde_json::to_vec(&Header {
@@ -350,26 +463,69 @@ impl DecodeCache {
             fast: image.fast,
             scale_factor: image.scale_factor,
             scale_clipped: image.scale_clipped,
+            stripe_pixels: STRIPE_PIXELS as u32,
+            stripe_changes: STRIPE_CHANGES as u32,
             recovered: changes.len() as u64,
         })?;
+        ensure!(header.len() < 1 << 16, "Invalid decode cache header");
+        let pixel_stripe_count = (n as usize).div_ceil(STRIPE_PIXELS);
+        let change_stripe_count = changes.len().div_ceil(STRIPE_CHANGES);
+        ensure!(
+            pixel_stripe_count as u64 <= MAX_STRIPES && change_stripe_count as u64 <= MAX_STRIPES,
+            "Too many decode cache stripes"
+        );
+        let total_stripes = pixel_stripe_count + change_stripe_count;
+        let table_start = 12 + header.len() as u64;
         let dir = self.location();
         dir.create()?;
         let mut file = tempfile::NamedTempFile::new_in(&dir.path)?;
+        let mut stripe_lengths = Vec::with_capacity(total_stripes);
         {
             let mut out = std::io::BufWriter::new(file.as_file_mut());
             out.write_all(MAGIC)?;
             out.write_all(&(header.len() as u32).to_le_bytes())?;
             out.write_all(&header)?;
-            // A piece at a time: a decode kept as its recovered image's buffer
+            out.write_all(&vec![0u8; total_stripes * 4])?;
+
+            // A batch at a time: a decode kept as its recovered image's buffer
             // is never copied out whole.
-            let n = image.pixels.len();
-            for start in (0..n).step_by(PIECE) {
-                let piece = image.pixels.range(start..(start + PIECE).min(n));
-                out.write_all(bytemuck::cast_slice(&piece[..]))?;
+            let total = image.pixels.len();
+            let write_batch = STRIPE_PIXELS * WRITE_BATCH_STRIPES;
+            for start in (0..total).step_by(write_batch) {
+                let piece = image.pixels.range(start..(start + write_batch).min(total));
+                let compressed_batch: Vec<Vec<u8>> = piece
+                    .par_chunks(STRIPE_PIXELS)
+                    .map(|stripe| compress_block(&shuffle_pixels(stripe)))
+                    .collect::<Result<Vec<_>>>()?;
+                for stripe in compressed_batch {
+                    let len =
+                        u32::try_from(stripe.len()).context("Compressed stripe exceeds u32")?;
+                    stripe_lengths.push(len);
+                    out.write_all(&stripe)?;
+                }
             }
-            out.write_all(bytemuck::cast_slice(&changes))?;
+            for batch in changes.chunks(STRIPE_CHANGES * WRITE_BATCH_STRIPES) {
+                let compressed_batch: Vec<Vec<u8>> = batch
+                    .par_chunks(STRIPE_CHANGES)
+                    .map(|chunk| compress_block(&shuffle_changes(chunk)))
+                    .collect::<Result<Vec<_>>>()?;
+                for chunk in compressed_batch {
+                    let len = u32::try_from(chunk.len())
+                        .context("Compressed change stripe exceeds u32")?;
+                    stripe_lengths.push(len);
+                    out.write_all(&chunk)?;
+                }
+            }
             out.flush()?;
         }
+        debug_assert_eq!(stripe_lengths.len(), total_stripes);
+        let mut table_bytes = Vec::with_capacity(total_stripes * 4);
+        for len in stripe_lengths {
+            table_bytes.extend_from_slice(&len.to_le_bytes());
+        }
+        file.as_file_mut().seek(SeekFrom::Start(table_start))?;
+        file.as_file_mut().write_all(&table_bytes)?;
+        file.as_file_mut().flush()?;
         let path = file_in(&dir.path, key);
         file.persist(&path)?;
         // Moved meanwhile: the old directory's entries were removed, or are
@@ -426,6 +582,274 @@ pub(crate) fn purge(dir: &Path, extension: &str) -> usize {
         .filter(|e| fs::remove_file(e.path()).is_ok())
         .count()
 }
+fn max_compressed_len(raw_bytes: u64) -> u64 {
+    raw_bytes
+        .saturating_add(raw_bytes / 64)
+        .saturating_add(128)
+        .max(zlib_max_stored_len(raw_bytes))
+}
+
+fn min_compressed_len(raw_bytes: u64) -> u64 {
+    (raw_bytes / 1040).saturating_add(8)
+}
+
+fn compress_block(raw: &[u8]) -> Result<Vec<u8>> {
+    let raw_len = raw.len() as u64;
+    let cap = max_compressed_len(raw_len);
+    let compressed = zlib_compress_fast(raw)?;
+    if (compressed.len() as u64) <= cap {
+        return Ok(compressed);
+    }
+    let stored = zlib_compress_stored(raw)?;
+    ensure!(
+        (stored.len() as u64) <= cap && (stored.len() as u64) >= min_compressed_len(raw_len),
+        "Compressed decode cache block outside reader bound"
+    );
+    Ok(stored)
+}
+
+type StripeSpan = (u64, usize, usize);
+
+fn parse_stripes(
+    table: &[u8],
+    count: usize,
+    total_items: usize,
+    max_per_stripe: usize,
+    bytes_per_item: u64,
+    cursor: &mut u64,
+) -> Result<Vec<StripeSpan>> {
+    let mut stripes = Vec::with_capacity(count);
+    let mut remaining = total_items;
+    ensure!(table.len() == count * 4, "Decode cache table size mismatch");
+    for &chunk in table.as_chunks::<4>().0 {
+        let comp_len = u32::from_le_bytes(chunk) as u64;
+        let raw_items = remaining.min(max_per_stripe);
+        remaining -= raw_items;
+        let raw_bytes = (raw_items as u64) * bytes_per_item;
+        ensure!(
+            raw_items > 0
+                && comp_len >= min_compressed_len(raw_bytes)
+                && comp_len <= max_compressed_len(raw_bytes),
+            "Invalid decode cache stripe length"
+        );
+        let next = cursor
+            .checked_add(comp_len)
+            .context("Decode cache stripe offset overflow")?;
+        stripes.push((*cursor, comp_len as usize, raw_items));
+        *cursor = next;
+    }
+    ensure!(remaining == 0, "Decode cache stripe count mismatch");
+    Ok(stripes)
+}
+
+fn try_grow_bounded<T>(vec: &mut Vec<T>, needed_additional: usize, max_cap: usize) -> Result<()> {
+    let required = vec
+        .len()
+        .checked_add(needed_additional)
+        .context("Decode cache allocation overflow")?;
+    ensure!(required <= max_cap, "Decode cache decoded past image size");
+    if vec.capacity() >= required {
+        return Ok(());
+    }
+    let target = vec.capacity().saturating_mul(2).max(required).min(max_cap);
+    vec.try_reserve_exact(target - vec.len())
+        .context("Decode cache pixel allocation failed")?;
+    Ok(())
+}
+
+fn decode_change_batch(
+    file: &fs::File,
+    batch: &[StripeSpan],
+    pixel_len: usize,
+    last_index: &mut Option<u32>,
+) -> Result<Vec<Vec<Change>>> {
+    let decoded_batch = batch
+        .par_iter()
+        .map(|&(offset, comp_len, count)| -> Result<Vec<Change>> {
+            let mut compressed = vec![0u8; comp_len];
+            read_exact_at_file(file, offset, &mut compressed)?;
+            let mut raw = vec![0u8; count * 16];
+            zlib_decompress_exact(&compressed, &mut raw)?;
+            unshuffle_changes(&raw, count)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for changes in &decoded_batch {
+        for change in changes {
+            ensure!(
+                (change.index as usize) < pixel_len,
+                "Invalid recovered pixel"
+            );
+            if let Some(prev) = *last_index {
+                ensure!(change.index > prev, "Invalid recovered pixel");
+            }
+            *last_index = Some(change.index);
+        }
+    }
+    Ok(decoded_batch)
+}
+
+fn apply_change_stripes(
+    file: &fs::File,
+    pixels: &mut [[f32; 3]],
+    change_stripes: &[StripeSpan],
+    stripe_changes: usize,
+    max_batch_raw_bytes: usize,
+    alloc_recovery: impl FnOnce() -> Result<(Vec<u64>, Vec<[f32; 3]>)>,
+) -> Result<(Vec<u64>, Vec<[f32; 3]>)> {
+    let pixel_len = pixels.len();
+    let change_batch = (max_batch_raw_bytes / (stripe_changes * 16)).max(1);
+    let (first_batch, rest) = change_stripes.split_at(change_stripes.len().min(change_batch));
+    let mut last_index = None;
+    let first_decoded = decode_change_batch(file, first_batch, pixel_len, &mut last_index)?;
+    let first_last_index = last_index;
+    // Validate every remaining delta batch in bounded scratch before allocating
+    // the recovery mask and original-pixel storage, so corrupt, out-of-range,
+    // or out-of-order trailing batches fail without a gigabyte-scale allocation.
+    for batch in rest.chunks(change_batch) {
+        let _ = decode_change_batch(file, batch, pixel_len, &mut last_index)?;
+    }
+    let (mut changed, mut had) = alloc_recovery()?;
+    ensure!(
+        changed.len() == pixel_len.div_ceil(64) && had.is_empty(),
+        "Recovery buffer size mismatch"
+    );
+    let mut apply_batch = |batch_changes: Vec<Vec<Change>>| -> Result<()> {
+        for changes in batch_changes {
+            for change in changes {
+                let idx = change.index as usize;
+                let word = changed
+                    .get_mut(idx / 64)
+                    .context("Recovery mask size mismatch")?;
+                *word |= 1u64 << (idx % 64);
+                let prev = std::mem::replace(
+                    pixels.get_mut(idx).context("Invalid recovered pixel")?,
+                    change.value,
+                );
+                had.push(prev);
+            }
+        }
+        Ok(())
+    };
+    apply_batch(first_decoded)?;
+    let mut apply_last = first_last_index;
+    for batch in rest.chunks(change_batch) {
+        let decoded = decode_change_batch(file, batch, pixel_len, &mut apply_last)?;
+        apply_batch(decoded)?;
+    }
+    let expected_changes: usize = change_stripes.iter().map(|&(_, _, count)| count).sum();
+    ensure!(had.len() == expected_changes, "Recovery count mismatch");
+    Ok((changed, had))
+}
+
+/// Transposes each channel's 4 little-endian `f32` bytes into contiguous byte
+/// planes across a stripe so exponent and sign bytes group for deflate.
+fn shuffle_pixels(pixels: &[[f32; 3]]) -> Vec<u8> {
+    let n = pixels.len();
+    let mut out = vec![0u8; n * 12];
+    for (i, px) in pixels.iter().enumerate() {
+        for (c, &sample) in px.iter().enumerate() {
+            let bytes = sample.to_bits().to_le_bytes();
+            let plane = c * 4 * n + i;
+            out[plane] = bytes[0];
+            out[plane + n] = bytes[1];
+            out[plane + 2 * n] = bytes[2];
+            out[plane + 3 * n] = bytes[3];
+        }
+    }
+    out
+}
+
+fn unshuffle_pixels(shuffled: &[u8], out: &mut [[f32; 3]]) -> Result<()> {
+    let n = out.len();
+    ensure!(shuffled.len() == n * 12, "Unexpected stripe payload length");
+    for (i, px) in out.iter_mut().enumerate() {
+        for (c, sample) in px.iter_mut().enumerate() {
+            let plane = c * 4 * n + i;
+            let bytes = [
+                shuffled[plane],
+                shuffled[plane + n],
+                shuffled[plane + 2 * n],
+                shuffled[plane + 3 * n],
+            ];
+            *sample = f32::from_bits(u32::from_le_bytes(bytes));
+        }
+    }
+    Ok(())
+}
+
+fn shuffle_changes(changes: &[Change]) -> Vec<u8> {
+    let n = changes.len();
+    let mut out = vec![0u8; n * 16];
+    for (i, change) in changes.iter().enumerate() {
+        let idx = change.index.to_le_bytes();
+        out[i] = idx[0];
+        out[n + i] = idx[1];
+        out[2 * n + i] = idx[2];
+        out[3 * n + i] = idx[3];
+        for (c, &sample) in change.value.iter().enumerate() {
+            let bytes = sample.to_bits().to_le_bytes();
+            let plane = (c + 1) * 4 * n + i;
+            out[plane] = bytes[0];
+            out[plane + n] = bytes[1];
+            out[plane + 2 * n] = bytes[2];
+            out[plane + 3 * n] = bytes[3];
+        }
+    }
+    out
+}
+
+fn unshuffle_changes(shuffled: &[u8], count: usize) -> Result<Vec<Change>> {
+    ensure!(
+        shuffled.len() == count * 16,
+        "Unexpected recovered block length"
+    );
+    let mut changes = Vec::with_capacity(count);
+    for i in 0..count {
+        let index = u32::from_le_bytes([
+            shuffled[i],
+            shuffled[count + i],
+            shuffled[2 * count + i],
+            shuffled[3 * count + i],
+        ]);
+        let mut value = [0f32; 3];
+        for (c, sample) in value.iter_mut().enumerate() {
+            let plane = (c + 1) * 4 * count + i;
+            let bytes = [
+                shuffled[plane],
+                shuffled[plane + count],
+                shuffled[plane + 2 * count],
+                shuffled[plane + 3 * count],
+            ];
+            *sample = f32::from_bits(u32::from_le_bytes(bytes));
+        }
+        changes.push(Change { index, value });
+    }
+    Ok(changes)
+}
+
+fn read_exact_at_file(file: &fs::File, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::FileExt::read_exact_at(file, buf, offset)
+    }
+    #[cfg(windows)]
+    {
+        let mut done = 0;
+        while done < buf.len() {
+            let n = std::os::windows::fs::FileExt::seek_read(
+                file,
+                &mut buf[done..],
+                offset + done as u64,
+            )?;
+            if n == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            done += n;
+        }
+        Ok(())
+    }
+}
+
 /// Fills `buf` from `offset`, in parallel chunks: one reader leaves most of an SSD's
 /// bandwidth unused on a 700 MB image.
 pub(crate) fn read_at(file: &fs::File, offset: u64, buf: &mut [u8]) -> Result<()> {
@@ -433,93 +857,16 @@ pub(crate) fn read_at(file: &fs::File, offset: u64, buf: &mut [u8]) -> Result<()
     buf.par_chunks_mut(CHUNK)
         .enumerate()
         .try_for_each(|(i, chunk)| -> std::io::Result<()> {
-            let at = offset + (i * CHUNK) as u64;
-            #[cfg(unix)]
-            {
-                std::os::unix::fs::FileExt::read_exact_at(file, chunk, at)
-            }
-            #[cfg(windows)]
-            {
-                let mut done = 0;
-                while done < chunk.len() {
-                    let n = std::os::windows::fs::FileExt::seek_read(
-                        file,
-                        &mut chunk[done..],
-                        at + done as u64,
-                    )?;
-                    if n == 0 {
-                        return Err(std::io::ErrorKind::UnexpectedEof.into());
-                    }
-                    done += n;
-                }
-                Ok(())
-            }
+            read_exact_at_file(file, offset + (i * CHUNK) as u64, chunk)
         })?;
     Ok(())
 }
-/// Puts each change's recovered value in `pixels`, the image as decoded, which
-/// become the recovered image's. Returns which pixels changed, one bit a pixel
-/// (64 a word, from the lowest bit), and the values those had, in pixel order:
-/// what [`Pixels::pair_masked`] takes. `changes` must be in ascending order of
-/// index, each within `pixels`, as [`DecodeCache::store`] writes them.
-fn exchange(pixels: &mut [[f32; 3]], changes: &[Change]) -> Result<(Vec<u64>, Vec<[f32; 3]>)> {
-    let n = pixels.len();
-    ensure!(
-        changes.par_windows(2).all(|w| w[0].index < w[1].index)
-            && changes.last().is_none_or(|c| (c.index as usize) < n),
-        "Invalid recovered pixel"
-    );
-    let mut changed = vec![0u64; n.div_ceil(64)];
-    let mut had = vec![[0f32; 3]; changes.len()];
-    // A photo recovery changed much of has millions of changes (17 million in one
-    // measured), so they are shared out: each task takes a run of changes and the
-    // whole words of the mask they fall in, with those words' pixels, so no two
-    // tasks write to the same word, pixel or value.
-    let mut tasks = Vec::new();
-    let (mut words, mut pixels, mut values) = (&mut changed[..], pixels, &mut had[..]);
-    let (mut start, mut first_word) = (0, 0);
-    while start < changes.len() {
-        let mut end = (start + TAKE).min(changes.len());
-        // On to the first change that falls in another word.
-        while end < changes.len() && changes[end].index / 64 == changes[end - 1].index / 64 {
-            end += 1;
-        }
-        let next_word = match changes.get(end) {
-            Some(change) => change.index as usize / 64,
-            None => n.div_ceil(64),
-        };
-        let count = next_word - first_word;
-        let (task_words, rest) = std::mem::take(&mut words).split_at_mut(count);
-        words = rest;
-        let split = (count * 64).min(pixels.len());
-        let (task_pixels, rest) = std::mem::take(&mut pixels).split_at_mut(split);
-        pixels = rest;
-        let (task_values, rest) = std::mem::take(&mut values).split_at_mut(end - start);
-        values = rest;
-        let run = &changes[start..end];
-        tasks.push((run, task_words, task_pixels, task_values, first_word * 64));
-        (start, first_word) = (end, next_word);
-    }
-    tasks
-        .into_par_iter()
-        .for_each(|(run, words, pixels, values, first)| {
-            for (change, had) in run.iter().zip(values) {
-                let i = change.index as usize - first;
-                *had = std::mem::replace(&mut pixels[i], change.value);
-                words[i / 64] |= 1 << (i % 64);
-            }
-        });
-    Ok((changed, had))
-}
+
 #[derive(Clone, Copy, Default)]
-#[repr(C)]
 struct Change {
     index: u32,
     value: [f32; 3],
 }
-// SAFETY: four 4-byte fields, `repr(C)`, no padding; every bit pattern is valid.
-unsafe impl bytemuck::Zeroable for Change {}
-unsafe impl bytemuck::Pod for Change {}
 
 #[cfg(test)]
 mod tests {
@@ -724,6 +1071,7 @@ mod tests {
     /// Both: a stretch without any where one task's share ends and the next begins.
     #[test]
     fn many_changes_load_as_they_were_stored() -> Result<()> {
+        const TAKE: usize = 1 << 14;
         let dir = tempfile::tempdir()?;
         let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
         let dense = |i: usize, n: usize| !i.is_multiple_of(3) || i == 3 || i == n - 1;
@@ -782,18 +1130,43 @@ mod tests {
         cache.store("a", &a)?;
         let stored = fs::read(cache.file("a"))?;
         assert!(cache.load("a", &Metadata::default()).is_some());
-        // The two changes (pixels 3 and 700) are the entry's last 32 bytes.
-        let (rest, changes) = stored.split_at(stored.len() - 32);
-        let swapped = [rest, &changes[16..], &changes[..16]].concat();
-        fs::write(cache.file("a"), swapped)?;
+
+        // 40x30 has 1 pixel stripe and 1 change stripe (2 x 4-byte table entries).
+        let header_len = u32::from_le_bytes(stored[8..12].try_into().unwrap()) as usize;
+        let table_start = 12 + header_len;
+        let pixel_stripe_len =
+            u32::from_le_bytes(stored[table_start..table_start + 4].try_into().unwrap()) as usize;
+        let change_table_at = table_start + 4;
+        let prefix = &stored[..table_start + 8 + pixel_stripe_len];
+        let write_with_changes = |changes: &[Change]| -> Result<()> {
+            let block = compress_block(&shuffle_changes(changes))?;
+            let mut out = prefix.to_vec();
+            out[change_table_at..change_table_at + 4]
+                .copy_from_slice(&(block.len() as u32).to_le_bytes());
+            out.extend_from_slice(&block);
+            fs::write(cache.file("a"), out)?;
+            Ok(())
+        };
+
+        let c3 = Change {
+            index: 3,
+            value: [2., 3., 4.],
+        };
+        let c700 = Change {
+            index: 700,
+            value: [7.; 3],
+        };
+        write_with_changes(&[c700, c3])?;
         assert!(cache.load("a", &Metadata::default()).is_none());
-        let repeated = [rest, &changes[..16], &changes[..16]].concat();
-        fs::write(cache.file("a"), repeated)?;
+        write_with_changes(&[c3, c3])?;
         assert!(cache.load("a", &Metadata::default()).is_none());
-        let mut outside = stored.clone();
-        let at = outside.len() - 16;
-        outside[at..at + 4].copy_from_slice(&1200u32.to_le_bytes());
-        fs::write(cache.file("a"), outside)?;
+        write_with_changes(&[
+            c3,
+            Change {
+                index: 1200,
+                value: [7.; 3],
+            },
+        ])?;
         assert!(cache.load("a", &Metadata::default()).is_none());
         fs::write(cache.file("a"), stored)?;
         assert!(cache.load("a", &Metadata::default()).is_some());
@@ -802,14 +1175,22 @@ mod tests {
     #[test]
     fn entries_round_trip_and_stay_within_the_cap() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let bytes = 40 * 30 * 12 + 200;
-        let cache = DecodeCache::new(dir.path().join("decoded"), 2 * bytes);
+        let a = image(40, 30, 0.2);
+        let b = image(40, 30, 0.4);
+        let probe = DecodeCache::new(dir.path().join("probe"), u64::MAX);
+        probe.store("a", &a)?;
+        probe.store("b", &b)?;
+        let size_a = fs::metadata(probe.file("a"))?.len();
+        let size_b = fs::metadata(probe.file("b"))?.len();
+        let cache = DecodeCache::new(
+            dir.path().join("decoded"),
+            size_a + size_b + (size_a.min(size_b) / 2),
+        );
         let metadata = Metadata {
             make: "Test".into(),
             ..Default::default()
         };
         assert!(cache.load("a", &metadata).is_none());
-        let a = image(40, 30, 0.2);
         cache.store("a", &a)?;
         assert!(cache.contains("a"));
         let loaded = cache.load("a", &metadata).unwrap();
@@ -828,13 +1209,479 @@ mod tests {
         assert!(cache.load("a", &metadata).is_none());
         cache.store("a", &a)?;
         std::thread::sleep(std::time::Duration::from_millis(20));
-        cache.store("b", &image(40, 30, 0.4))?;
+        cache.store("b", &b)?;
         std::thread::sleep(std::time::Duration::from_millis(20));
         assert!(cache.load("a", &metadata).is_some());
         std::thread::sleep(std::time::Duration::from_millis(20));
         // The least recently used entry goes first.
         cache.store("c", &image(40, 30, 0.6))?;
         assert!(cache.contains("a") && cache.contains("c") && !cache.contains("b"));
+        Ok(())
+    }
+
+    #[test]
+    fn bit_exact_f32_multi_stripe_roundtrip_with_recovered_diffs() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        // 300x300 spans two 65,536-pixel stripes and mixes special f32 bit patterns.
+        let width = 300u32;
+        let height = 300u32;
+        let total = (width * height) as usize;
+        let specials = [
+            [0.0f32, -0.0, f32::from_bits(1)],
+            [f32::MIN_POSITIVE, -1.25, 16.5],
+            [f32::MAX, f32::INFINITY, f32::NEG_INFINITY],
+        ];
+        let pixels: Vec<[f32; 3]> = (0..total)
+            .map(|i| {
+                if i < specials.len() {
+                    specials[i]
+                } else {
+                    let t = i as f32 / total as f32;
+                    [t, (t * 7.0).sin() * 0.5 + 0.5, t * t]
+                }
+            })
+            .collect();
+        let im = CameraImage {
+            recovered: Default::default(),
+            width,
+            height,
+            pixels: pixels.into(),
+            metadata: Metadata::default(),
+            fast: true,
+            scale_factor: 2.25,
+            scale_clipped: 12,
+            hdr: Default::default(),
+        };
+        let mut recovered = im.clone();
+        // Flip -0.0 -> +0.0 on pixel 0 and touch indices in both stripes.
+        recovered.pixels[0] = [0.0, 0.0, f32::from_bits(1)];
+        recovered.pixels[5] = [1.5, 2.5, 3.5];
+        recovered.pixels[STRIPE_PIXELS + 123] = [4.25, 0.0, -0.5];
+        recovered.pixels[total - 1] = [9.0, 8.0, 7.0];
+        let _ = im.recovered.set(Arc::new(recovered));
+
+        cache.store("multi", &im)?;
+        let loaded = cache
+            .load("multi", &Metadata::default())
+            .context("Cache miss")?;
+        let orig_rec = im.recovered.get().unwrap();
+        let load_rec = loaded.recovered.get().unwrap();
+        assert!(loaded.pixels.shares_buffer(&load_rec.pixels));
+        for (a, b) in loaded
+            .pixels
+            .range(0..loaded.pixels.len())
+            .iter()
+            .zip(im.pixels.range(0..im.pixels.len()).iter())
+        {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        for (a, b) in load_rec.pixels.iter().zip(orig_rec.pixels.iter()) {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn truncated_and_corrupted_stripes_are_misses() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let im = image(300, 300, 0.3);
+        cache.store("k", &im)?;
+        let raw = fs::read(cache.file("k"))?;
+        let metadata = Metadata::default();
+        assert!(cache.load("k", &metadata).is_some());
+
+        let header_len = u32::from_le_bytes(raw[8..12].try_into().unwrap()) as usize;
+        let table_start = 12 + header_len;
+        let stripe0_len =
+            u32::from_le_bytes(raw[table_start..table_start + 4].try_into().unwrap()) as usize;
+        // 300x300 has 2 pixel stripes plus 1 recovered-delta stripe (3 x 4 bytes).
+        let stripe0_start = table_start + 12;
+
+        // Truncate inside the first stripe.
+        fs::write(cache.file("k"), &raw[..stripe0_start + stripe0_len / 2])?;
+        assert!(cache.load("k", &metadata).is_none());
+
+        // Corrupt a payload byte inside the first stripe.
+        let mut bad_stripe = raw.clone();
+        bad_stripe[stripe0_start + stripe0_len / 2] ^= 0xff;
+        fs::write(cache.file("k"), &bad_stripe)?;
+        assert!(cache.load("k", &metadata).is_none());
+
+        // Corrupt a payload byte inside the recovered-changes block.
+        let mut bad_recovered = raw.clone();
+        let tail = bad_recovered.len() - 2;
+        bad_recovered[tail] ^= 0xff;
+        fs::write(cache.file("k"), &bad_recovered)?;
+        assert!(cache.load("k", &metadata).is_none());
+
+        // Corrupt stripe length in the index table.
+        let mut bad_table = raw;
+        bad_table[table_start] ^= 0x01;
+        fs::write(cache.file("k"), &bad_table)?;
+        assert!(cache.load("k", &metadata).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn v1_magic_entry_is_treated_as_miss() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        fs::create_dir_all(cache.dir())?;
+        let mut legacy = Vec::from(*b"RMKDEC\0\x01");
+        let header = serde_json::to_vec(&serde_json::json!({
+            "key": "legacy",
+            "width": 2,
+            "height": 2,
+            "fast": false,
+            "scale_factor": 1.0,
+            "scale_clipped": 0,
+            "recovered": 0
+        }))?;
+        legacy.extend_from_slice(&(header.len() as u32).to_le_bytes());
+        legacy.extend_from_slice(&header);
+        legacy.extend_from_slice(&[0u8; 2 * 2 * 12]);
+        fs::write(cache.file("legacy"), &legacy)?;
+        assert!(cache.load("legacy", &Metadata::default()).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn smooth_ramp_compresses_substantially() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let width = 512u32;
+        let height = 512u32;
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let r = x as f32 / (width - 1) as f32;
+                let g = y as f32 / (height - 1) as f32;
+                let b = (r + g) * 0.5;
+                pixels.push([r, g, b]);
+            }
+        }
+        let im = CameraImage {
+            recovered: Default::default(),
+            width,
+            height,
+            pixels: pixels.into(),
+            metadata: Metadata::default(),
+            fast: false,
+            scale_factor: 1.0,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let _ = im.recovered.set(Arc::new(im.clone()));
+        cache.store("ramp", &im)?;
+        let on_disk = fs::metadata(cache.file("ramp"))?.len();
+        let raw_bytes = (width as u64) * (height as u64) * 12;
+        assert!(
+            on_disk < raw_bytes / 3,
+            "expected smooth ramp ({on_disk} B) to compress below 1/3 of raw ({raw_bytes} B)"
+        );
+        let loaded = cache
+            .load("ramp", &Metadata::default())
+            .context("Cache miss")?;
+        for (a, b) in loaded.pixels.iter().zip(im.pixels.iter()) {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn corrupt_giant_header_entry_is_rejected_without_allocating_image() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        fs::create_dir_all(cache.dir())?;
+        let width = 15_000u32;
+        let height = 10_000u32;
+        let n = u64::from(width) * u64::from(height);
+        let stripe_pixels = STRIPE_PIXELS as u32;
+        let stripe_changes = STRIPE_CHANGES as u32;
+        let pixel_stripes = n.div_ceil(u64::from(stripe_pixels)) as usize;
+        let change_stripes = n.div_ceil(u64::from(stripe_changes)) as usize;
+        let header = serde_json::to_vec(&Header {
+            key: "giant".into(),
+            width,
+            height,
+            fast: false,
+            scale_factor: 1.0,
+            scale_clipped: 0,
+            stripe_pixels,
+            stripe_changes,
+            recovered: n,
+        })?;
+
+        // Case A: 1-byte claimed stripe length must fail during table validation.
+        let mut tiny = Vec::from(*MAGIC);
+        tiny.extend_from_slice(&(header.len() as u32).to_le_bytes());
+        tiny.extend_from_slice(&header);
+        for _ in 0..(pixel_stripes + change_stripes) {
+            tiny.extend_from_slice(&1u32.to_le_bytes());
+        }
+        tiny.resize(tiny.len() + pixel_stripes + change_stripes, 0xaa);
+        fs::write(cache.file("giant"), &tiny)?;
+        assert!(cache.load("giant", &Metadata::default()).is_none());
+
+        // Case B: minimum-sized garbage stripes matching file length must fail on stripe 0 inflate.
+        let mut min_garbage = Vec::from(*MAGIC);
+        min_garbage.extend_from_slice(&(header.len() as u32).to_le_bytes());
+        min_garbage.extend_from_slice(&header);
+        let mut payload_len = 0usize;
+        for idx in 0..pixel_stripes {
+            let items = if idx + 1 == pixel_stripes {
+                n - (idx as u64) * u64::from(stripe_pixels)
+            } else {
+                u64::from(stripe_pixels)
+            };
+            let len = min_compressed_len(items * 12) as u32;
+            min_garbage.extend_from_slice(&len.to_le_bytes());
+            payload_len += len as usize;
+        }
+        for idx in 0..change_stripes {
+            let items = if idx + 1 == change_stripes {
+                n - (idx as u64) * u64::from(stripe_changes)
+            } else {
+                u64::from(stripe_changes)
+            };
+            let len = min_compressed_len(items * 16) as u32;
+            min_garbage.extend_from_slice(&len.to_le_bytes());
+            payload_len += len as usize;
+        }
+        min_garbage.resize(min_garbage.len() + payload_len, 0x55);
+        fs::write(cache.file("giant"), &min_garbage)?;
+        assert!(cache.load("giant", &Metadata::default()).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn multi_stripe_recovered_deltas_roundtrip_bit_exactly() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let width = 300u32;
+        let height = 300u32;
+        let total = (width * height) as usize;
+        let im = CameraImage {
+            recovered: Default::default(),
+            width,
+            height,
+            pixels: vec![[-0.0, 0.25, 0.5]; total].into(),
+            metadata: Metadata::default(),
+            fast: false,
+            scale_factor: 1.0,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let mut recovered = im.clone();
+        // Modify 70,000 pixels to span two STRIPE_CHANGES (65,536) blocks.
+        for (i, px) in recovered.pixels[..70_000].iter_mut().enumerate() {
+            *px = [0.0, f32::from_bits((i as u32) | 1), 1.0 + i as f32 * 0.001];
+        }
+        let _ = im.recovered.set(Arc::new(recovered));
+
+        cache.store("multi_delta", &im)?;
+        let loaded = cache
+            .load("multi_delta", &Metadata::default())
+            .context("Cache miss")?;
+        let orig_rec = im.recovered.get().unwrap();
+        let load_rec = loaded.recovered.get().unwrap();
+        assert!(loaded.pixels.shares_buffer(&load_rec.pixels));
+        for (a, b) in load_rec.pixels.iter().zip(orig_rec.pixels.iter()) {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn incompressible_stripe_stays_within_reader_cap_and_roundtrips() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let width = 256u32;
+        let height = 256u32;
+        let total = (width * height) as usize;
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next_u32 = || {
+            state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            z ^= z >> 31;
+            z as u32
+        };
+        let pixels: Vec<[f32; 3]> = (0..total)
+            .map(|_| {
+                [
+                    f32::from_bits(next_u32()),
+                    f32::from_bits(next_u32()),
+                    f32::from_bits(next_u32()),
+                ]
+            })
+            .collect();
+        let im = CameraImage {
+            recovered: Default::default(),
+            width,
+            height,
+            pixels: pixels.into(),
+            metadata: Metadata::default(),
+            fast: false,
+            scale_factor: 1.0,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let _ = im.recovered.set(Arc::new(im.clone()));
+
+        cache.store("random", &im)?;
+        let raw = fs::read(cache.file("random"))?;
+        let header_len = u32::from_le_bytes(raw[8..12].try_into().unwrap()) as usize;
+        let stripe0_len = u32::from_le_bytes(
+            raw[12 + header_len..12 + header_len + 4]
+                .try_into()
+                .unwrap(),
+        ) as u64;
+        assert!(stripe0_len <= max_compressed_len((total as u64) * 12));
+
+        let loaded = cache
+            .load("random", &Metadata::default())
+            .context("Cache miss")?;
+        for (a, b) in loaded.pixels.iter().zip(im.pixels.iter()) {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_pixel_growth_caps_capacity_at_validated_size() -> Result<()> {
+        let max_cap = 150usize;
+        let mut buf: Vec<[f32; 3]> = Vec::new();
+        for i in 0..8usize {
+            let chunk_len = if i == 7 { 10 } else { 20 };
+            try_grow_bounded(&mut buf, chunk_len, max_cap)?;
+            assert!(
+                buf.capacity() <= max_cap,
+                "capacity {} exceeded validated max {max_cap}",
+                buf.capacity()
+            );
+            buf.resize(buf.len() + chunk_len, [i as f32; 3]);
+        }
+        assert_eq!(buf.len(), max_cap);
+        assert_eq!(buf.capacity(), max_cap);
+        assert!(try_grow_bounded(&mut buf, 1, max_cap).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn corrupt_or_oob_later_delta_batch_never_allocates_recovery() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let write_batches =
+            |name: &str, batches: &[&[Change]]| -> Result<(fs::File, Vec<StripeSpan>)> {
+                let path = dir.path().join(name);
+                let mut blob = Vec::new();
+                let mut stripes = Vec::new();
+                for &changes in batches {
+                    let compressed = compress_block(&shuffle_changes(changes))?;
+                    stripes.push((blob.len() as u64, compressed.len(), changes.len()));
+                    blob.extend_from_slice(&compressed);
+                }
+                fs::write(&path, &blob)?;
+                Ok((fs::File::open(&path)?, stripes))
+            };
+
+        let batch0 = [
+            Change {
+                index: 1,
+                value: [1.0, 2.0, 3.0],
+            },
+            Change {
+                index: 5,
+                value: [4.0, 5.0, 6.0],
+            },
+        ];
+        let batch1_ok = [Change {
+            index: 50,
+            value: [7.0, 8.0, 9.0],
+        }];
+
+        // (a) Valid multi-batch deltas allocate recovery once and apply all changes.
+        let (file_ok, stripes_ok) = write_batches("ok.bin", &[&batch0, &batch1_ok])?;
+        let mut pixels_ok = vec![[0.0; 3]; 100];
+        let mut allocs = 0usize;
+        let (changed, had) =
+            apply_change_stripes(&file_ok, &mut pixels_ok, &stripes_ok, 4, 4 * 16, || {
+                allocs += 1;
+                Ok((vec![0u64; 100usize.div_ceil(64)], Vec::with_capacity(3)))
+            })?;
+        assert_eq!(allocs, 1);
+        assert_eq!(pixels_ok[1], [1.0, 2.0, 3.0]);
+        assert_eq!(pixels_ok[5], [4.0, 5.0, 6.0]);
+        assert_eq!(pixels_ok[50], [7.0, 8.0, 9.0]);
+        assert_eq!(had, vec![[0.0; 3]; 3]);
+        assert!(Pixels::pair_masked(pixels_ok, changed, had).is_some());
+
+        // (b) Corrupt checksum in trailing batch must fail without calling alloc_recovery.
+        let path_bad = dir.path().join("bad.bin");
+        let mut raw_bad = fs::read(dir.path().join("ok.bin"))?;
+        let last = raw_bad.len() - 2;
+        raw_bad[last] ^= 0xff;
+        fs::write(&path_bad, &raw_bad)?;
+        let file_bad = fs::File::open(&path_bad)?;
+        let mut pixels_bad = vec![[0.0; 3]; 100];
+        let mut allocs_bad = 0usize;
+        assert!(
+            apply_change_stripes(&file_bad, &mut pixels_bad, &stripes_ok, 4, 4 * 16, || {
+                allocs_bad += 1;
+                Ok((vec![0u64; 100usize.div_ceil(64)], Vec::with_capacity(3)))
+            })
+            .is_err()
+        );
+        assert_eq!(allocs_bad, 0);
+        assert!(pixels_bad.iter().all(|p| *p == [0.0; 3]));
+
+        // (c) Out-of-range pixel index in trailing batch must fail without calling alloc_recovery.
+        let batch1_oob = [Change {
+            index: 100,
+            value: [7.0, 8.0, 9.0],
+        }];
+        let (file_oob, stripes_oob) = write_batches("oob.bin", &[&batch0, &batch1_oob])?;
+        let mut pixels_oob = vec![[0.0; 3]; 100];
+        let mut allocs_oob = 0usize;
+        assert!(
+            apply_change_stripes(&file_oob, &mut pixels_oob, &stripes_oob, 4, 4 * 16, || {
+                allocs_oob += 1;
+                Ok((vec![0u64; 100usize.div_ceil(64)], Vec::with_capacity(3)))
+            })
+            .is_err()
+        );
+        assert_eq!(allocs_oob, 0);
+        assert!(pixels_oob.iter().all(|p| *p == [0.0; 3]));
+
+        // (d) Out-of-order or duplicate index across batches must fail without calling alloc_recovery.
+        for (name, bad_idx) in [("dup.bin", 5u32), ("backwards.bin", 4u32)] {
+            let batch1_bad_order = [Change {
+                index: bad_idx,
+                value: [7.0, 8.0, 9.0],
+            }];
+            let (file_order, stripes_order) = write_batches(name, &[&batch0, &batch1_bad_order])?;
+            let mut pixels_order = vec![[0.0; 3]; 100];
+            let mut allocs_order = 0usize;
+            assert!(
+                apply_change_stripes(
+                    &file_order,
+                    &mut pixels_order,
+                    &stripes_order,
+                    4,
+                    4 * 16,
+                    || {
+                        allocs_order += 1;
+                        Ok((vec![0u64; 100usize.div_ceil(64)], Vec::with_capacity(3)))
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(allocs_order, 0);
+            assert!(pixels_order.iter().all(|p| *p == [0.0; 3]));
+        }
         Ok(())
     }
 }
