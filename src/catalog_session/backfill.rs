@@ -343,7 +343,7 @@ pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
     if !can_read(path) {
         return None;
     }
-    Some(if crate::storage::is_raw(path) {
+    Some(if crate::photo::source(path).is_raw() {
         // An X3F's, which RAWmakase doesn't decode, from its header alone.
         // One with none may not have been read whole (its preview); its
         // header is read again later, which costs little.
@@ -401,6 +401,21 @@ mod tests {
         let before = crate::raw::whole_file_reads();
         assert!(read_info(&chart).is_some());
         assert_eq!(crate::raw::whole_file_reads(), before + 1);
+    }
+
+    /// A JPEG saved under a RAW's name has a JPEG's info, its size among it.
+    /// Read as a RAW, it could never be read, and so was read whole again on
+    /// every pass.
+    #[test]
+    fn a_jpeg_named_as_a_raw_has_a_jpeg_s_info() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("IMG_1.CR2");
+        image::RgbImage::new(8, 4).save_with_format(&path, image::ImageFormat::Jpeg)?;
+        let before = crate::raw::whole_file_reads();
+        let info = read_info(&path).expect("read now").expect("its info");
+        assert_eq!(info.dimensions, Some((8, 4)));
+        assert_eq!(crate::raw::whole_file_reads(), before, "read as a RAW");
+        Ok(())
     }
 
     /// An X3F, whose sensor data RAWmakase doesn't decode, has the info of

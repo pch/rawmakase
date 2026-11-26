@@ -111,6 +111,13 @@ pub(crate) fn camera_exif(path: &Path) -> Option<rawmakase_interop::exif::Camera
 pub(crate) fn embedded_xmp(path: &Path) -> Option<Vec<u8>> {
     rawmakase_raw::embedded_xmp(&mut std::fs::File::open(path).ok()?)
 }
+/// Whether the file at `path` is a JPEG or a PNG and not a RAW, whatever its
+/// name says ([`rawmakase_raw::is_rendered`]). `false` when it can't be read.
+pub(crate) fn is_rendered(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .and_then(|mut file| rawmakase_raw::is_rendered(&mut file))
+        .unwrap_or(false)
+}
 /// What RAWmakase reads of a RAW whose sensor data it doesn't decode, an
 /// X3F: its photo info and its make and model as the file writes them.
 #[derive(Clone, Debug, Default, PartialEq)]

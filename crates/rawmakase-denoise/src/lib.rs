@@ -315,7 +315,7 @@ fn neural_engine_stalled() -> bool {
 
 /// Opens the RAW at `path` and packs its mosaic.
 fn open_mosaic(path: &Path, cancel: Cancel<'_>) -> Result<PackedBayer> {
-    if !crate::storage::is_raw(path) {
+    if !crate::photo::source(path).is_raw() {
         return Err(anyhow::Error::new(Unsupported(
             "AI Denoise works on RAW files only.",
         )));

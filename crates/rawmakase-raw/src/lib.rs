@@ -57,6 +57,23 @@ pub fn open(bytes: &[u8]) -> Result<RawInfo> {
     variant::open(bytes)
 }
 
+/// Whether the file `file` reads is a JPEG or a PNG, whatever its name says.
+/// [`open`] says such a file is not RAW. Some photo tools save an edited
+/// JPEG under its RAW's name. A JPEG followed by a Raspberry Pi's raw block
+/// is a RAW, not a rendered file. Reads the first 8 bytes of any other
+/// file, and a JPEG or a PNG whole, since the raw block follows the JPEG's
+/// end.
+pub fn is_rendered(file: &mut impl std::io::Read) -> std::io::Result<bool> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    file.by_ref().take(8).read_to_end(&mut bytes)?;
+    if !variant::may_be_rendered(&bytes) {
+        return Ok(false);
+    }
+    file.read_to_end(&mut bytes)?;
+    Ok(variant::is_rendered(&bytes))
+}
+
 /// A camera's make and model as its file writes them, before RAWmakase's
 /// naming: "Canon" and "Canon EOS R6m2" where [`RawInfo`] says "Canon" and
 /// "EOS R6 Mark II".

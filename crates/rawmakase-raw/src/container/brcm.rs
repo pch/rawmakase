@@ -359,4 +359,15 @@ mod tests {
         f.resize(24_000_000, 0);
         assert_eq!(crate::open(&f).unwrap_err(), Error::NotRaw);
     }
+
+    /// A Raspberry Pi's RAW starts as a JPEG does, but is no rendered file,
+    /// whatever its name; the same JPEG without the block is one.
+    #[test]
+    fn a_raspberry_pi_raw_is_not_a_rendered_file() -> std::io::Result<()> {
+        let raw = file("imx219 version 1.0", 10);
+        assert!(!crate::is_rendered(&mut std::io::Cursor::new(&raw))?);
+        let jpeg = jpeg_with_app2(b"x");
+        assert!(crate::is_rendered(&mut std::io::Cursor::new(&jpeg))?);
+        Ok(())
+    }
 }

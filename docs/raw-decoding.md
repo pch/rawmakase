@@ -77,6 +77,14 @@ property list, which the SD9 and SD10 write instead. It is none when a section
 holding them can't be read, so what a file still being copied hides is read
 again later, and only the properties asked for are decoded.
 
+`is_rendered(file)` says whether a file is a JPEG or a PNG, which `open`
+says is not RAW, whatever the file is named. A JPEG followed by a
+Raspberry Pi's raw block is still a RAW. Only the first 8 bytes of any
+other file are read; a JPEG or a PNG is read whole, because the raw block
+follows the JPEG's end. `rawmakase-decode`'s `photo::source` uses it so
+that a JPEG saved under a RAW's name (some photo tools write an edited
+JPEG back over the RAW's name) opens as the JPEG it is.
+
 `preview_from_file(file, edge)` reads a RAW's preview for a thumbnail `edge`
 pixels on its long side without the rest of the file, for Library thumbnails
 on every volume. Unlike the reads above, it gives the existing readers a

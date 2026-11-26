@@ -325,6 +325,35 @@ impl Editor {
                 photos.push(Entry::Closed(sync_target(photo)));
                 continue;
             }
+            let open = Some((self.document.load_id(), self.automation.revision));
+            // Without its facts, the open photo's load failed: Develop never
+            // installed its edit (`header_ready` installs both), so it has no
+            // settings to give. Reading its file here would hold up the UI. It
+            // carries the load's error, as a photo whose settings can't be read
+            // does, and its token refuses any proposal for it.
+            let Some(metadata) = self.document.metadata.as_ref() else {
+                let error = self
+                    .document
+                    .failed
+                    .clone()
+                    .unwrap_or_else(|| "The photo could not be opened".into());
+                photos.push(Entry::Open(
+                    Photo {
+                        id: id.0,
+                        path: photo.path.clone(),
+                        settings: Map::new(),
+                        error: Some(error),
+                    },
+                    TokenPhoto {
+                        id: id.0,
+                        file: self.document.file.clone(),
+                        fingerprint: None,
+                        open,
+                        clean: false,
+                    },
+                ));
+                continue;
+            };
             let fingerprint = library
                 .session
                 .catalog()
@@ -334,20 +363,14 @@ impl Editor {
                 Photo {
                     id: id.0,
                     path: photo.path.clone(),
-                    settings: settings_of(
-                        self.document.edit.recipe(),
-                        self.document
-                            .metadata
-                            .as_ref()
-                            .map_or_else(|| crate::photo::source(&photo.path), |m| m.source),
-                    ),
+                    settings: settings_of(self.document.edit.recipe(), metadata.source),
                     error: None,
                 },
                 TokenPhoto {
                     id: id.0,
                     file: self.document.file.clone(),
                     fingerprint,
-                    open: Some((self.document.load_id(), self.automation.revision)),
+                    open,
                     clean: self.develop_as_saved(),
                 },
             ));
