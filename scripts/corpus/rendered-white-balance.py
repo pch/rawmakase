@@ -1,5 +1,6 @@
-"""Measure a rendered file's Temp/Tint tables (model/white_balance.rs: RENDERED_TEMPERATURE,
-RENDERED_TINT) from Lightroom renders of synthetic JPEG charts.
+"""Measure a rendered file's Temp/Tint mapping (model/white_balance.rs:
+RENDERED_TEMPERATURE and rendered_dng_tint) from Camera Raw 18.7 renders of synthetic
+JPEG charts.
 Usage: rendered-white-balance.py GAINS.json [GAINS.json ...]
 Each GAINS.json maps a file name ending in `__temp+25.jpg`, `__tint-50.jpg` or
 `__temp+25_tint-50.jpg` to its [r, g, b] ProPhoto log2 gains: Lightroom's export over
@@ -10,11 +11,14 @@ repository.
 
 Lightroom treats the pseudo-scene as a camera whose RGB is linear ProPhoto, as the DNG
 SDK would: the gains are the file's D50 white Bradford-adapted from the white Temp and
-Tint name to D50, scaled by that white's largest ProPhoto channel. Each file's gains
-therefore give its white; this prints that white as a DNG reciprocal temperature and
-tint, both tables, and the tables' error against every file's gains. Greys need only
-that; colors and the cool magenta corner need the whole of
-white_balance::rendered_white_balance (a matrix with the SDK's limits, and a clip)."""
+Tint name to D50, scaled by that white's largest ProPhoto channel, with camera white
+floored at 0.001 and per-channel WB gain capped at 16× (`wb_scale = clip(cw * 16, 0, 1)`
+on each column of the matrix). Where the gain spread is extreme (Temp −100…−75 or
+Tint +100), inverting all three channels through F⁻¹ on dark greys picks up rgb_tone
+cross-channel bias; unbiased endpoints are measured from the rgb_tone-invariant
+`(mid - lo) / (hi - lo)` ratio and the 16× cool-magenta ramp, giving 500 mired (2000 K)
+with zero tint drift at Temp −100 and the quadratic curve
+`t = 0.5 * u * (1 + |u|), dng_tint = 9.6 * (1 - t^2) + 150 * t` for Tint −100…+100."""
 import json
 import re
 import sys
@@ -43,6 +47,9 @@ T = np.array(rust_rows((MODEL / 'camera_profiles/temperature.rs').read_text()
                        .split('const TABLE')[1].split('= [', 1)[1].split('];')[0]))
 XYZ_TO_PRO = rust_matrix('camera_profiles/mod.rs', 'XYZ_TO_PRO')
 BRADFORD = rust_matrix('model/white_balance.rs', 'BRADFORD')
+RUST_TEMP = np.array(rust_rows((MODEL / 'model/white_balance.rs').read_text()
+                               .split('const RENDERED_TEMPERATURE:')[1]
+                               .split('= [', 1)[1].split('];')[0]))
 D50 = np.linalg.solve(XYZ_TO_PRO, np.ones(3))
 
 
@@ -67,14 +74,29 @@ def white_xyz(mired, tint):
     return np.array([x / y, 1, (1 - x - y) / y])
 
 
-def gains(white):  # log2, Bradford-adapted as the module docstring describes
-    cone = BRADFORD @ white
-    d50 = BRADFORD @ D50
-    adapted = np.linalg.solve(BRADFORD, d50 * d50 / cone)
-    # In the cool magenta corner the adapted white leaves ProPhoto: its gains are NaN,
-    # and the error column shows that channel gains cannot describe it.
+def rendered_dng_tint(n):
+    u = np.clip(n / 100., -1., 1.)
+    t = 0.5 * u * (1. + abs(u))
+    return 9.6 * (1. - t * t) + 150. * t
+
+
+def map_white(fr, to):
+    f, t = BRADFORD @ fr, BRADFORD @ to
+    sc = [np.clip(max(t[c], 0.) / max(f[c], 0.) if max(f[c], 0.) > 0 else 10., 0.1, 10.)
+          for c in range(3)]
+    return np.linalg.solve(BRADFORD, np.diag(sc) @ BRADFORD)
+
+
+def gains(white):  # log2, matching model::white_balance::camera_to_prophoto
+    to_cam = XYZ_TO_PRO @ map_white(D50, white)
+    to_cam = to_cam / np.max(to_cam @ D50)
+    cw = XYZ_TO_PRO @ white
+    cw = np.clip(cw / np.max(cw), 0.001, 1.)
+    wb_scale = np.clip(cw * 16., 0., 1.)
+    m = (XYZ_TO_PRO @ np.linalg.inv(to_cam)) @ np.diag(wb_scale)
+    # Deep in the cool magenta corner the 16× cap leaves grey blue <= 0 (log2 NaN).
     with np.errstate(invalid='ignore'):
-        return np.log2((XYZ_TO_PRO @ white).max() * (XYZ_TO_PRO @ adapted))
+        return np.log2(m @ np.ones(3))
 
 
 def white_of(g):  # the white whose gains have the shape of g
@@ -124,24 +146,21 @@ temp = {s: (np.mean([m for m, _ in v]), np.mean([t for _, t in v]) - d50_tint)
         for s, v in temp.items()}
 tint = {n: np.mean(v) for n, v in tint.items()}
 print(f'D50: mired {d50_mired:.2f}, DNG tint {d50_tint:.2f}')
-print('RENDERED_TEMPERATURE [Temp, mired, tint drift]')
+print('RENDERED_TEMPERATURE [Temp, mired]')
 for s in sorted(temp):
-    drift = temp[s][1] if abs(temp[s][1]) >= 0.2 else 0.
-    print(f'    [{s}., {temp[s][0]:.1f}, {drift:.1f}],')
-print('RENDERED_TINT [Tint, DNG tint]')
+    print(f'    [{s}., {temp[s][0]:.1f}],')
+print('Measured Tint vs quadratic rendered_dng_tint(n)')
 for n in sorted(tint):
-    print(f'    [{n}., {tint[n]:.2f}],')
+    print(f'    Tint {n:+4d}: measured {tint[n]:+7.2f}  formula {rendered_dng_tint(n):+7.2f}')
 
 
 def table_gains(s, n):
-    ks, kn = sorted(temp), sorted(tint)
-    m = np.interp(s, ks, [temp[k][0] for k in ks])
-    drift = np.interp(s, ks, [temp[k][1] for k in ks])
-    t = np.interp(n, kn, [tint[k] for k in kn])
-    return gains(white_xyz(m, t + drift)) - gains(white_xyz(d50_mired, d50_tint))
+    """Evaluate the Rust RENDERED_TEMPERATURE table + rendered_dng_tint at (s, n)."""
+    m = np.interp(s, RUST_TEMP[:, 0], RUST_TEMP[:, 1])
+    return gains(white_xyz(m, rendered_dng_tint(n))) - gains(white_xyz(d50_mired, d50_tint))
 
 
-print('Tables against each file (largest |log2| error per channel)')
+print('Rust RENDERED_TEMPERATURE + rendered_dng_tint against each file (largest |log2| error per channel)')
 for k, (s, n, (m, t)) in sorted(measured.items(), key=lambda kv: kv[1][:2]):
     error = np.abs(table_gains(s, n) - np.array(files[k])).max()
     print(f'  {k:36s} mired {m:6.1f} tint {t:+7.2f}  {error:.3f}')
