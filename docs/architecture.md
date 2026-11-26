@@ -77,7 +77,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-model` | What an edit is, as values: the recipe and its settings, camera and lens profiles, color primitives, DNG hints, output buffers, file identity and storage helpers; whether a photo matches the filter bar or a smart collection's rules, and Lightroom's rule text (`collection_rules`, over a plain `Entry` the catalog session builds) | The RAW decoders, the renderer, wgpu, the GUI |
 | `rawmakase-interop` | The file formats and presets over the model: XMP, Lightroom's Develop settings, presets, raw defaults, EXIF and JPEG, export settings, and which edit a photo develops with (`edits`) | The same |
 | `rawmakase-catalog` | The SQLite catalog, Lightroom catalog import, file operations, and the stored edit records `edits` resolves | The same |
-| `rawmakase-engine` | The renderer (`develop`): the CPU pipeline, which is the reference, and the GPU preview port | The RAW decoders, the catalog, the GUI |
+| `rawmakase-engine` | The renderer (`develop`): the CPU pipeline, which is the reference, the GPU preview port, and the headless GPU export core (`ExportBackend`, without exposing `wgpu` outside the crate) | The RAW decoders, the catalog, the GUI |
 | `rawmakase-raw` | RAWmakase's own RAW decoders ([RAW decoding](raw-decoding.md)) | Everything but `rawmakase-tiff` and `rawmakase-cancel` |
 | `rawmakase-tiff` | The bounded TIFF reader DNGs and RAW containers use; no RAW knowledge | Everything |
 | `rawmakase-fs` | What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system, with the unsafe system calls the model used to hold. The catalog's file operations and the app's Trash use it | Every other workspace crate; the value, file-format, rendering, decoding and export crates never reach it |
@@ -388,11 +388,16 @@ photo, cancels the running ones, and a result older than the one shown is droppe
 
 `develop::PreviewRenderer` owns the optional GPU processor and fallback state.
 The desktop renderer creates it on its worker thread. Headless UI tests and the
-legacy `worker::renderer` entry point remain CPU-only. Domain color processing,
-RAW development and exports use the existing CPU implementation, which is the
-reference: the GPU port covers recipes resolved with a camera profile, and
-everything else renders on the CPU. Any GPU failure falls back to the CPU and turns
-the failing path off for the session. GPU work already submitted cannot be
+legacy `worker::renderer` entry point remain CPU-only. Domain color processing
+and RAW development keep the CPU pipeline as the authoritative reference: the GPU
+preview port covers recipes resolved with a camera profile, and everything else
+renders on the CPU. For exports, `develop::ExportBackend` provides a separate
+dedicated headless compute device (decoupled from eframe's UI device and
+`SURFACE` lock, with no `wgpu` types exported outside `rawmakase-engine`),
+executing banded SDR renders with deterministic two-tier fallback to the CPU
+`develop::render_export` oracle (`rawmakase-export` and desktop/CLI wiring follow
+in subsequent milestones). Any GPU failure falls back to the CPU and turns the
+failing path off for the session. GPU work already submitted cannot be
 interrupted, so obsolete results are discarded before they are published;
 full-quality CPU stages check cancellation within pixel, row and column work.
 

@@ -6,49 +6,233 @@
 //! space's profile, nor a wide-gamut one handed to an sRGB encoder as a
 //! [`Rendered`].
 use crate::color::OutputSpace;
-use crate::rendered::Rendered;
+use crate::rendered::{Rendered, unit_to_u8};
+use std::borrow::Cow;
+
+/// Pixel format requested for an export render.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExportFormat {
+    /// Floating-point RGB (`[f32; 3]`, 12 bytes/pixel). Required when CPU
+    /// post-processing such as floating-point watermark compositing runs on
+    /// the rendered pixels.
+    #[default]
+    F32,
+    /// Packed 8-bit unsigned RGB (`3 * width * height` bytes).
+    Rgb8,
+    /// Packed 16-bit unsigned RGB (`3 * width * height` `u16` samples).
+    Rgb16,
+}
+
+/// Owned pixel storage of an [`ExportImage`], preserving its [`OutputSpace`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExportPixels {
+    F32(Vec<[f32; 3]>),
+    Rgb8(Vec<u8>),
+    Rgb16(Vec<u16>),
+}
+
+/// A value from 0 to 1 as a 16-bit sample, rounded; out-of-range values are clamped.
+fn unit_to_u16(v: f32) -> u16 {
+    (v.clamp(0., 1.) * 65535. + 0.5) as u16
+}
 
 /// Finished export pixels, encoded in [`ExportImage::space`].
 #[derive(Clone)]
 pub struct ExportImage {
-    image: Rendered,
+    width: u32,
+    height: u32,
+    pixels: ExportPixels,
     space: OutputSpace,
 }
 impl ExportImage {
     /// `image`, encoded sRGB as every render but [`crate::develop::render_export`]'s is.
     pub fn srgb(image: Rendered) -> Self {
-        Self {
-            image,
-            space: OutputSpace::Srgb,
-        }
+        Self::rendered_in(image, OutputSpace::Srgb)
     }
     pub(crate) fn rendered_in(image: Rendered, space: OutputSpace) -> Self {
-        Self { image, space }
+        Self {
+            width: image.width,
+            height: image.height,
+            pixels: ExportPixels::F32(image.pixels),
+            space,
+        }
+    }
+    pub(crate) fn from_pixels(
+        width: u32,
+        height: u32,
+        pixels: ExportPixels,
+        space: OutputSpace,
+    ) -> Self {
+        let count = width as usize * height as usize;
+        match &pixels {
+            ExportPixels::F32(v) => debug_assert_eq!(v.len(), count),
+            ExportPixels::Rgb8(v) => debug_assert_eq!(v.len(), count * 3),
+            ExportPixels::Rgb16(v) => debug_assert_eq!(v.len(), count * 3),
+        }
+        Self {
+            width,
+            height,
+            pixels,
+            space,
+        }
+    }
+    /// Converts this image's pixel storage to `format` while preserving [`Self::space`].
+    pub(crate) fn into_format(self, format: ExportFormat) -> Self {
+        let (width, height, space) = (self.width, self.height, self.space);
+        match (format, &self.pixels) {
+            (ExportFormat::F32, ExportPixels::F32(_))
+            | (ExportFormat::Rgb8, ExportPixels::Rgb8(_))
+            | (ExportFormat::Rgb16, ExportPixels::Rgb16(_)) => self,
+            (ExportFormat::Rgb8, _) => {
+                let bytes = self.into_rgb8();
+                Self::from_pixels(width, height, ExportPixels::Rgb8(bytes), space)
+            }
+            (ExportFormat::Rgb16, _) => {
+                let samples = self.into_rgb16();
+                Self::from_pixels(width, height, ExportPixels::Rgb16(samples), space)
+            }
+            (ExportFormat::F32, ExportPixels::Rgb8(bytes)) => {
+                let pixels = bytes
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|c| {
+                        [
+                            f32::from(c[0]) / 255.,
+                            f32::from(c[1]) / 255.,
+                            f32::from(c[2]) / 255.,
+                        ]
+                    })
+                    .collect();
+                Self::from_pixels(width, height, ExportPixels::F32(pixels), space)
+            }
+            (ExportFormat::F32, ExportPixels::Rgb16(samples)) => {
+                let pixels = samples
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|c| {
+                        [
+                            f32::from(c[0]) / 65535.,
+                            f32::from(c[1]) / 65535.,
+                            f32::from(c[2]) / 65535.,
+                        ]
+                    })
+                    .collect();
+                Self::from_pixels(width, height, ExportPixels::F32(pixels), space)
+            }
+        }
     }
     pub fn space(&self) -> OutputSpace {
         self.space
     }
     pub fn width(&self) -> u32 {
-        self.image.width
+        self.width
     }
     pub fn height(&self) -> u32 {
-        self.image.height
+        self.height
     }
-    /// The pixels, encoded in [`ExportImage::space`], row by row.
+    /// Storage format of this image's pixels.
+    pub fn format(&self) -> ExportFormat {
+        match &self.pixels {
+            ExportPixels::F32(_) => ExportFormat::F32,
+            ExportPixels::Rgb8(_) => ExportFormat::Rgb8,
+            ExportPixels::Rgb16(_) => ExportFormat::Rgb16,
+        }
+    }
+    /// Underlying pixel storage.
+    pub fn storage(&self) -> &ExportPixels {
+        &self.pixels
+    }
+    /// Consumes this image and returns its underlying pixel storage.
+    pub fn into_pixels(self) -> ExportPixels {
+        self.pixels
+    }
+    /// Borrowed floating-point pixels, if stored as [`ExportPixels::F32`].
+    pub fn as_f32(&self) -> Option<&[[f32; 3]]> {
+        match &self.pixels {
+            ExportPixels::F32(v) => Some(v),
+            _ => None,
+        }
+    }
+    /// Borrowed packed 8-bit RGB bytes, if stored as [`ExportPixels::Rgb8`].
+    pub fn as_rgb8(&self) -> Option<&[u8]> {
+        match &self.pixels {
+            ExportPixels::Rgb8(v) => Some(v),
+            _ => None,
+        }
+    }
+    /// Borrowed packed 16-bit RGB samples, if stored as [`ExportPixels::Rgb16`].
+    pub fn as_rgb16(&self) -> Option<&[u16]> {
+        match &self.pixels {
+            ExportPixels::Rgb16(v) => Some(v),
+            _ => None,
+        }
+    }
+    /// The floating-point pixels, encoded in [`ExportImage::space`], row by row.
+    ///
+    /// Panics if this image was produced in packed `Rgb8` or `Rgb16` format; request
+    /// [`ExportFormat::F32`] when floating-point pixel access is needed.
     pub fn pixels(&self) -> &[[f32; 3]] {
-        &self.image.pixels
+        self.as_f32()
+            .expect("ExportImage is not stored as f32 pixels; request ExportFormat::F32")
     }
-    /// The pixels, to draw on (a watermark) in [`ExportImage::space`].
+    /// The floating-point pixels, to draw on (a watermark) in [`ExportImage::space`].
+    ///
+    /// Panics if this image was produced in packed `Rgb8` or `Rgb16` format; request
+    /// [`ExportFormat::F32`] when floating-point pixel editing is needed.
     pub fn pixels_mut(&mut self) -> &mut [[f32; 3]] {
-        &mut self.image.pixels
+        match &mut self.pixels {
+            ExportPixels::F32(v) => v,
+            _ => panic!("ExportImage is not stored as f32 pixels; request ExportFormat::F32"),
+        }
+    }
+    /// Borrowed or converted 8-bit RGB bytes (zero-copy when stored as [`ExportPixels::Rgb8`]).
+    pub fn rgb8_cow(&self) -> Cow<'_, [u8]> {
+        match &self.pixels {
+            ExportPixels::Rgb8(v) => Cow::Borrowed(v),
+            _ => Cow::Owned(self.rgb8()),
+        }
+    }
+    /// Borrowed or converted 16-bit RGB samples (zero-copy when stored as [`ExportPixels::Rgb16`]).
+    pub fn rgb16_cow(&self) -> Cow<'_, [u16]> {
+        match &self.pixels {
+            ExportPixels::Rgb16(v) => Cow::Borrowed(v),
+            _ => Cow::Owned(self.rgb16()),
+        }
     }
     /// [`Rendered::rgb8`] of the pixels.
     pub fn rgb8(&self) -> Vec<u8> {
-        self.image.rgb8()
+        match &self.pixels {
+            ExportPixels::F32(pixels) => pixels.iter().flatten().map(|v| unit_to_u8(*v)).collect(),
+            ExportPixels::Rgb8(bytes) => bytes.clone(),
+            ExportPixels::Rgb16(samples) => samples
+                .iter()
+                .map(|&v| unit_to_u8(f32::from(v) / 65535.))
+                .collect(),
+        }
     }
     /// [`Rendered::rgb16`] of the pixels.
     pub fn rgb16(&self) -> Vec<u16> {
-        self.image.rgb16()
+        match &self.pixels {
+            ExportPixels::F32(pixels) => pixels.iter().flatten().map(|v| unit_to_u16(*v)).collect(),
+            ExportPixels::Rgb8(bytes) => bytes.iter().map(|&v| u16::from(v) * 257).collect(),
+            ExportPixels::Rgb16(samples) => samples.clone(),
+        }
+    }
+    /// Consumes this image and returns 8-bit RGB bytes without copying when already [`ExportPixels::Rgb8`].
+    pub fn into_rgb8(self) -> Vec<u8> {
+        match self.pixels {
+            ExportPixels::Rgb8(bytes) => bytes,
+            _ => self.rgb8(),
+        }
+    }
+    /// Consumes this image and returns 16-bit RGB samples without copying when already [`ExportPixels::Rgb16`].
+    pub fn into_rgb16(self) -> Vec<u16> {
+        match self.pixels {
+            ExportPixels::Rgb16(samples) => samples,
+            _ => self.rgb16(),
+        }
     }
 }
 

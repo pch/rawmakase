@@ -43,7 +43,10 @@ pub mod texture;
 mod tone_lut;
 pub mod upright;
 pub use ai_denoise::AiSource;
-pub use export_image::ExportImage;
+pub use export_image::{ExportFormat, ExportImage, ExportPixels};
+pub use gpu::{
+    EXPORT_GPU_ENV, ExportBackend, ExportBackendPolicy, ExportBackendStatus, ExportFallbackKind,
+};
 pub use preview_renderer::{PreviewRenderer, render_fitted};
 pub mod quality;
 mod recipe;

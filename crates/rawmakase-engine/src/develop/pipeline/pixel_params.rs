@@ -719,4 +719,22 @@ impl PixelParams {
         }
         true
     }
+    /// Replaces only the packed per-pixel mask weights for a new band of the same
+    /// photo and recipe, reusing the mask header and tables installed by [`Self::set_masks`].
+    pub(crate) fn update_mask_weights(&mut self, w: &crate::develop::masks::MaskWeights) {
+        let n = w.groups();
+        if n == 0 {
+            self.weights.clear();
+            return;
+        }
+        let words = n.div_ceil(4);
+        let pixels = w.data.len() / n;
+        self.weights.clear();
+        self.weights.resize(pixels * words, 0);
+        for (i, pixel) in w.data.chunks_exact(n).enumerate() {
+            for (k, v) in pixel.iter().enumerate() {
+                self.weights[i * words + k / 4] |= u32::from(*v) << (8 * (k % 4));
+            }
+        }
+    }
 }

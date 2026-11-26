@@ -2,6 +2,7 @@
 //! stage cache stay on the device while only the recipe changes; parameters and tables
 //! are uploaded per render. The result is read back for the CPU finishing steps.
 use super::Processor;
+use crate::color::OutputSpace;
 use crate::develop::pipeline::{
     Samples,
     pixel_params::{PixelParams, slot},
@@ -38,6 +39,8 @@ pub(crate) struct Variant {
     /// HDR finish, written unclipped as linear ProPhoto in place of display values
     /// (`pixel_params_hdr`).
     pub(crate) hdr: bool,
+    /// Target export color space; sRGB (0) compiles out the matrix and alternate transfer curves.
+    pub(crate) output_space: OutputSpace,
 }
 impl Variant {
     /// Everything.
@@ -48,6 +51,7 @@ impl Variant {
         local: true,
         dehaze: true,
         hdr: false,
+        output_space: OutputSpace::Srgb,
     };
     /// An HDR master's: what an HDR edit uses (`model::hdr::check_recipe`).
     #[cfg(test)]
@@ -57,16 +61,34 @@ impl Variant {
         local: false,
         dehaze: false,
         hdr: true,
+        output_space: OutputSpace::Srgb,
     };
+    /// Numeric code for `OutputSpace` matching `develop.wgsl` and `export_finish.wgsl`.
+    pub(crate) const fn output_space_code(space: OutputSpace) -> u32 {
+        match space {
+            OutputSpace::Srgb => 0,
+            OutputSpace::AdobeRgb => 1,
+            OutputSpace::ProPhoto => 2,
+        }
+    }
     /// The WGSL constants `develop.wgsl` reads.
     pub(crate) fn constants(self) -> String {
         format!(
-            "const V_MASKS: bool = {};\nconst V_COLOR: bool = {};\nconst V_LOCAL: bool = {};\nconst V_DEHAZE: bool = {};\nconst V_HDR: bool = {};\n",
-            self.masks, self.color, self.local, self.dehaze, self.hdr
+            "const V_MASKS: bool = {};\nconst V_COLOR: bool = {};\nconst V_LOCAL: bool = {};\nconst V_DEHAZE: bool = {};\nconst V_HDR: bool = {};\nconst V_OUTPUT_SPACE: u32 = {}u;\n",
+            self.masks,
+            self.color,
+            self.local,
+            self.dehaze,
+            self.hdr,
+            Self::output_space_code(self.output_space),
         )
     }
-    /// What a pass with `params` needs.
-    fn of(params: &PixelParams) -> Self {
+    /// What a pass with `params` needs in sRGB.
+    pub(super) fn of(params: &PixelParams) -> Self {
+        Self::of_in(params, OutputSpace::Srgb)
+    }
+    /// What a pass with `params` needs in `output_space`.
+    pub(super) fn of_in(params: &PixelParams, output_space: OutputSpace) -> Self {
         let set = |at: Range<usize>| params.get(at)[0] != 0.;
         let at = |at: Range<usize>| params.get(at)[0] >= 0.;
         let masks = !params.weights.is_empty();
@@ -81,6 +103,7 @@ impl Variant {
             // A mask's Dehaze adds to the recipe's.
             dehaze: set(slot::DEHAZE) || masks,
             hdr: at(slot::HDR),
+            output_space,
         }
     }
 }
@@ -170,7 +193,9 @@ struct Uploaded {
     staging: wgpu::Buffer,
 }
 impl Developer {
-    pub(super) fn new(device: &wgpu::Device) -> Self {
+    pub(super) fn create_layouts(
+        device: &wgpu::Device,
+    ) -> (wgpu::BindGroupLayout, wgpu::PipelineLayout) {
         let entries: Vec<_> = (0..9)
             .map(|binding| wgpu::BindGroupLayoutEntry {
                 binding,
@@ -198,6 +223,31 @@ impl Developer {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
+        (layout, pipeline_layout)
+    }
+    pub(super) fn compile_pipeline(
+        device: &wgpu::Device,
+        pipeline_layout: &wgpu::PipelineLayout,
+        variant: Variant,
+    ) -> wgpu::ComputePipeline {
+        let source = crate::develop::pipeline::pixel_params::wgsl_prelude()
+            + &variant.constants()
+            + include_str!("develop.wgsl");
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Develop"),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Develop"),
+            layout: Some(pipeline_layout),
+            module: &shader,
+            entry_point: Some("develop"),
+            compilation_options: Default::default(),
+            cache: None,
+        })
+    }
+    pub(super) fn new(device: &wgpu::Device) -> Self {
+        let (layout, pipeline_layout) = Self::create_layouts(device);
         Self {
             layout,
             pipelines: Vec::new(),
@@ -277,21 +327,7 @@ impl Developer {
         if let Some((_, p)) = self.pipelines.iter().find(|(v, _)| *v == variant) {
             return p.clone();
         }
-        let source = crate::develop::pipeline::pixel_params::wgsl_prelude()
-            + &variant.constants()
-            + include_str!("develop.wgsl");
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Develop"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Develop"),
-            layout: Some(&self.pipeline_layout),
-            module: &shader,
-            entry_point: Some("develop"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = Self::compile_pipeline(device, &self.pipeline_layout, variant);
         self.pipelines.push((variant, pipeline.clone()));
         pipeline
     }

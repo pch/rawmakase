@@ -37,6 +37,19 @@ const RGB_TO_PRO = mat3x3<f32>(
     vec3(0.330072, 0.873462, 0.117673),
     vec3(0.140583, 0.028164, 0.865444),
 );
+// `color::output::SRGB_TO_ADOBE` and `SRGB_TO_PROPHOTO` (column-major).
+const SRGB_TO_ADOBE = mat3x3<f32>(
+    vec3(0.7151256, 0.0, 0.0),
+    vec3(0.2848744, 1.0, 0.04116195),
+    vec3(0.0, 0.0, 0.95883805),
+);
+const SRGB_TO_PROPHOTO = mat3x3<f32>(
+    vec3(0.5292804, 0.09836622, 0.016875341),
+    vec3(0.330153, 0.8734639, 0.11765941),
+    vec3(0.14056661, 0.028169824, 0.8654652),
+);
+const ADOBE_GAMMA: f32 = 563.0 / 256.0;
+const ROMM_LINEAR: f32 = 1.0 / 512.0;
 const TAU: f32 = 6.28318530717958647692;
 const OUTSIDE: f32 = -1e38;
 
@@ -1819,10 +1832,24 @@ fn process_pixel(i: u32, pos: vec2<f32>) -> vec3<f32> {
         lab.x = clamp(lab.x, 0.0, 1.0);
         rgb = lab_to_srgb(lab);
     }
-    // Each channel clipped on its own, as Camera Raw does.
+    // Each channel clipped on its own, as Camera Raw does (`OutputSpace::from_srgb_linear`).
     var out: vec3<f32>;
-    for (var k = 0; k < 3; k++) {
-        out[k] = clamp(srgb_encode(clamp(rgb[k], 0.0, 1.0)), 0.0, 1.0);
+    if V_OUTPUT_SPACE == 0u {
+        for (var k = 0; k < 3; k++) {
+            out[k] = clamp(srgb_encode(clamp(rgb[k], 0.0, 1.0)), 0.0, 1.0);
+        }
+    } else if V_OUTPUT_SPACE == 1u {
+        let linear = SRGB_TO_ADOBE * rgb;
+        for (var k = 0; k < 3; k++) {
+            out[k] = clamp(powf(clamp(linear[k], 0.0, 1.0), 1.0 / ADOBE_GAMMA), 0.0, 1.0);
+        }
+    } else {
+        let linear = SRGB_TO_PROPHOTO * rgb;
+        for (var k = 0; k < 3; k++) {
+            let v = clamp(linear[k], 0.0, 1.0);
+            let encoded = select(powf(v, 1.0 / 1.8), 16.0 * v, v < ROMM_LINEAR);
+            out[k] = clamp(encoded, 0.0, 1.0);
+        }
     }
     if V_COLOR && point_selection >= 0.0 {
         out = visualize(out);

@@ -24,7 +24,7 @@ pub(crate) fn texture_detail(
 }
 /// `im` with the measured Texture `amount`: its detail made once per image and kept,
 /// with the result for the amount, in the stage cache when there is one.
-pub(super) fn textured(
+pub(crate) fn textured(
     im: &Arc<CameraImage>,
     amount: f32,
     scale: f32,
@@ -72,7 +72,7 @@ fn measurement_copy(
 }
 /// The photo's measurement copies: the retouched photo's (`Toned::measured`) and the
 /// unretouched one's (`Toned::unretouched`), one copy when they are the same image.
-pub(super) fn measurement_copies(
+pub(crate) fn measurement_copies(
     full: &Retouched,
     mut cache: Option<&mut StageCache>,
     cancel: Cancel<'_>,
