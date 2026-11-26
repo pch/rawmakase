@@ -150,7 +150,9 @@ fn a_folder_without_the_onnx_model_is_refused_and_a_size_without_a_function_is_n
 }
 
 /// A folder holding RAWmakase's installed sky model, named by `RAWMAKASE_SKY_MODEL`; the
-/// model is too large for the repository. Unset, the test says so and passes.
+/// model is too large for the repository. Unset, the test says so and passes. The test
+/// compares with ONNX Runtime on the CPU too, so it also needs `RAWMAKASE_ORT_LIB`, the
+/// runtime's library (the app's is `runtime/libonnxruntime.dylib` in its data folder).
 fn installed() -> Option<PathBuf> {
     let dir = PathBuf::from(std::env::var_os("RAWMAKASE_SKY_MODEL")?);
     assert!(

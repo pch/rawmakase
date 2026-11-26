@@ -108,12 +108,17 @@ impl Engine for Onnx {
         cancel: Cancel<'_>,
     ) -> Result<Coverage, InferenceError> {
         if self.sky_session.is_none() {
-            // On Apple Silicon, Sky's network runs on the GPU, converted for Core ML: about
-            // 15 times as fast as on the CPU, where it runs elsewhere.
+            // On Apple Silicon, Sky's network runs on the GPU, converted for Core ML: the
+            // whole selection about 6 times as fast as on the CPU, where it runs elsewhere.
             self.sky_session = Some(Sky::load_on_gpu(models, &crate::runtime::load_options())?);
         }
         let session = self.sky_session.as_mut().expect("loaded above");
-        session.select(photo, cancel)
+        let selected = session.select(photo, cancel);
+        // The photo went on to the CPU; the program's stderr is the extension's log.
+        if let Some(why) = session.take_gpu_failure() {
+            eprintln!("rawmakase-ai-masks: Select Sky left the GPU for the CPU: {why}");
+        }
+        selected
     }
 
     fn unload(&mut self) {

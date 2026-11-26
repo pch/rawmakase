@@ -94,6 +94,7 @@ impl Sky {
             options: options.clone(),
             #[cfg(target_vendor = "apple")]
             gpu: None,
+            gpu_failure: None,
         })
     }
 
@@ -113,6 +114,7 @@ impl Sky {
                 dir: dir.to_path_buf(),
                 options: options.clone(),
                 gpu: Some(crate::core_ml::CoreMlSky::new(dir)),
+                gpu_failure: None,
             });
         }
         Self::load_with(dir, options)
@@ -164,6 +166,8 @@ pub struct SkySession {
     /// The converted model on the GPU ([`Sky::load_on_gpu`]), until it fails.
     #[cfg(target_vendor = "apple")]
     gpu: Option<crate::core_ml::CoreMlSky>,
+    /// Why the converted model was let go of, until [`SkySession::take_gpu_failure`].
+    gpu_failure: Option<InferenceError>,
 }
 
 /// Where the time of one [`SkySession::select`] went.
@@ -190,6 +194,12 @@ impl SkySession {
         self.provider
     }
 
+    /// Why the converted model failed and was let go of, once: the selection itself goes on
+    /// on the CPU, so this is the only place the reason is kept, for the caller's log.
+    pub fn take_gpu_failure(&mut self) -> Option<InferenceError> {
+        self.gpu_failure.take()
+    }
+
     /// Where the time of the last successful [`SkySession::select`] went.
     pub fn last_timings(&self) -> Option<SkyTimings> {
         self.last
@@ -209,13 +219,10 @@ impl SkySession {
         let (width, height) = sky_input_size(image.width, image.height);
         let tensor = process::preprocess_sized(image, width, height, SKY.mean, SKY.std)?;
         cancelled(cancel)?;
-        let answered = match self.on_gpu(&tensor, width, height) {
-            Some(answer) => {
-                cancelled(cancel)?;
-                Some(answer?)
-            }
-            None => None,
-        };
+        let answered = self.on_gpu(&tensor, width, height);
+        // The converted model's run can't be cancelled: a cancel that came meanwhile is
+        // seen here, before its answer is used or ONNX Runtime is opened in its place.
+        cancelled(cancel)?;
         let (probability, kinds) = match answered {
             Some(answer) => answer,
             None => self.on_cpu(&tensor, width, height, cancel)?,
@@ -236,14 +243,15 @@ impl SkySession {
     /// The converted model's answer for `tensor`, an input of `width` x `height`: the sky's
     /// probability and the classes read from the class scores. `None` when there is no
     /// converted model or it has no function for the size; a failure lets go of it, so this
-    /// photo and the later ones are selected on the CPU.
+    /// photo and the later ones are selected on the CPU, and keeps why
+    /// ([`SkySession::take_gpu_failure`]).
     #[cfg(target_vendor = "apple")]
     fn on_gpu(
         &mut self,
         tensor: &[f32],
         width: usize,
         height: usize,
-    ) -> Option<Result<(Vec<f32>, kinds::Kinds), InferenceError>> {
+    ) -> Option<(Vec<f32>, kinds::Kinds)> {
         let gpu = self.gpu.as_mut()?;
         if !crate::core_ml::CoreMlSky::fits(width, height) {
             return None;
@@ -259,22 +267,18 @@ impl SkySession {
         match answer {
             Ok(answer) => {
                 self.provider = Provider::CoreML;
-                Some(Ok(answer))
+                Some(answer)
             }
-            Err(_) => {
+            Err(e) => {
                 self.gpu = None;
+                self.gpu_failure = Some(e);
                 None
             }
         }
     }
 
     #[cfg(not(target_vendor = "apple"))]
-    fn on_gpu(
-        &mut self,
-        _: &[f32],
-        _: usize,
-        _: usize,
-    ) -> Option<Result<(Vec<f32>, kinds::Kinds), InferenceError>> {
+    fn on_gpu(&mut self, _: &[f32], _: usize, _: usize) -> Option<(Vec<f32>, kinds::Kinds)> {
         None
     }
 
@@ -288,6 +292,8 @@ impl SkySession {
         cancel: Cancel<'_>,
     ) -> Result<(Vec<f32>, kinds::Kinds), InferenceError> {
         if self.network.is_none() {
+            // Opening the session reads the whole sky model: not for a photo already cancelled.
+            cancelled(cancel)?;
             self.network = Some(Sky::network(&self.dir, &self.options)?);
         }
         let (network, provider) = self.network.as_mut().expect("opened above");
@@ -746,11 +752,39 @@ mod tests {
         };
         assert!(session.select(&photo, Cancel::NEVER).is_err());
         assert!(session.gpu.is_none(), "the converted model is let go of");
+        let why = session.take_gpu_failure().expect("why is kept");
+        assert!(
+            why.to_string().contains("not the one RAWmakase installs"),
+            "{why}"
+        );
+        assert!(session.take_gpu_failure().is_none(), "and given once");
         assert!(
             session.network.is_none(),
             "ONNX Runtime couldn't open it either"
         );
         assert!(!crate::core_ml::folder(dir.path()).join("NOTICE").exists());
+    }
+
+    /// A photo the converted model couldn't answer goes to ONNX Runtime, but not once it is
+    /// cancelled: the session isn't opened for it, and the selection says it was cancelled.
+    #[test]
+    fn a_cancelled_photo_never_opens_onnx_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = SkySession {
+            network: None,
+            provider: Provider::Cpu,
+            last: None,
+            dir: dir.path().to_path_buf(),
+            options: LoadOptions::default(),
+            #[cfg(target_vendor = "apple")]
+            gpu: None,
+            gpu_failure: None,
+        };
+        let raised = std::sync::atomic::AtomicBool::new(true);
+        let tensor = vec![0.; 3 * 4 * 4];
+        let answer = session.on_cpu(&tensor, 4, 4, Cancel::new(&raised));
+        assert!(matches!(answer, Err(InferenceError::Cancelled)));
+        assert!(session.network.is_none());
     }
 
     #[test]
