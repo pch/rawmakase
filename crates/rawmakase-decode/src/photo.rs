@@ -32,8 +32,8 @@ impl Opened {
     }
 }
 
-/// Opens `path` as a RAW when its extension is a RAW's, otherwise as a
-/// rendered file ([`raster`]). A rendered file opens as the scene its default rendering is of
+/// Opens `path` as [`source`] says: as a RAW, or as a rendered file
+/// ([`raster`]). A rendered file opens as the scene its default rendering is of
 /// (`develop::rendered`), which Develop renders as a raw scene.
 pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
     match source(path) {
@@ -48,10 +48,15 @@ pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
     }
 }
 
-/// What [`open_source`] opens `path` as, told from its name alone: a RAW, or
-/// a rendered file.
+/// What [`open_source`] opens `path` as, and so how a photo's file is
+/// decoded wherever that matters: a RAW, or a rendered file. A file is a RAW
+/// when its extension is a RAW's, unless its content is a JPEG or a PNG
+/// ([`crate::raw::is_rendered`]), as when a photo tool has saved an edited
+/// JPEG under its RAW's name. Reads the first bytes of a file named as a RAW
+/// (a JPEG or a PNG whole). A file that can't be read is a RAW, whose
+/// opening then says what is wrong.
 pub fn source(path: &Path) -> Source {
-    if rawmakase_model::storage::is_raw(path) {
+    if rawmakase_model::storage::is_raw(path) && !crate::raw::is_rendered(path) {
         Source::Raw
     } else {
         Source::Rendered
@@ -867,5 +872,98 @@ mod tests {
         let frame = [m.crop_left, m.crop_top, m.crop_width, m.crop_height];
         assert_eq!(frame, [20, 100, 900, 500]);
         assert_eq!(m.camera_crop, None);
+    }
+
+    /// A 2×1 JPEG whose EXIF says Orientation 6 (turned a quarter clockwise).
+    fn turned_jpeg() -> Vec<u8> {
+        use image::ImageEncoder;
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 95)
+            .write_image(
+                &[200, 0, 0, 0, 0, 200],
+                2,
+                1,
+                image::ExtendedColorType::Rgb8,
+            )
+            .unwrap();
+        // Big-endian TIFF: one IFD entry, Orientation (0x0112), SHORT, 1, 6.
+        let mut exif = b"Exif\0\0MM\0\x2a\0\0\0\x08\0\x01".to_vec();
+        exif.extend([0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0]);
+        let mut app1 = vec![0xff, 0xe1];
+        app1.extend(((exif.len() + 2) as u16).to_be_bytes());
+        app1.extend(exif);
+        jpeg.splice(2..2, app1);
+        jpeg
+    }
+
+    /// Some photo tools save an edited JPEG under its RAW's name. It opens as
+    /// the JPEG it is, upright by its EXIF, just as it does when named .jpg.
+    #[test]
+    fn a_jpeg_named_as_a_raw_opens_as_a_jpeg() -> anyhow::Result<()> {
+        use rawmakase_model::camera_data::Source;
+        let dir = tempfile::tempdir()?;
+        for name in ["IMG_1.jpg", "IMG_1.CR2", "DSC_1.NEF", "IMG_1.dng"] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, turned_jpeg())?;
+            assert_eq!(super::source(&path), Source::Rendered, "{name}");
+            let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER)? else {
+                panic!("{name} opened as a RAW");
+            };
+            assert_eq!((image.width, image.height), (1, 2), "{name}");
+            assert_eq!(image.metadata.source, Source::Rendered, "{name}");
+        }
+        Ok(())
+    }
+
+    /// A PNG under a RAW's name opens as a PNG.
+    #[test]
+    fn a_png_named_as_a_raw_opens_as_a_png() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("IMG_1.CR2");
+        image::RgbImage::new(3, 2).save_with_format(&path, image::ImageFormat::Png)?;
+        let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER)? else {
+            panic!("opened as a RAW");
+        };
+        assert_eq!((image.width, image.height), (3, 2));
+        Ok(())
+    }
+
+    /// A RAW still opens as a RAW. A file under a RAW's name that is neither a
+    /// RAW nor a JPEG or PNG is not taken for a rendered file: it fails to
+    /// open, as a RAW that can't be read does.
+    #[test]
+    fn a_raw_and_a_file_of_no_known_kind_named_as_a_raw_open_as_raws() {
+        use rawmakase_model::camera_data::Source;
+        let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/corpus/charts/synthetic-d65.dng");
+        assert_eq!(super::source(&chart), Source::Raw);
+        assert!(matches!(
+            super::open_source(&chart, Cancel::NEVER),
+            Ok(super::Opened::Raw(_))
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        for (name, bytes, source) in [
+            (
+                "garbage.CR2",
+                &b"not a photo at all, only some text"[..],
+                Source::Raw,
+            ),
+            ("empty.NEF", b"", Source::Raw),
+            // A JPEG's first bytes and nothing a JPEG decoder can read: a
+            // JPEG, which fails as one.
+            ("cut.CR2", &[0xff, 0xd8, 0xff], Source::Rendered),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            assert_eq!(super::source(&path), source, "{name}");
+            assert!(
+                super::open_source(&path, Cancel::NEVER).is_err(),
+                "{name} opened"
+            );
+        }
+        // A file that can't be read fails as a RAW, as before.
+        let missing = dir.path().join("missing.CR2");
+        assert_eq!(super::source(&missing), Source::Raw);
+        assert!(super::open_source(&missing, Cancel::NEVER).is_err());
     }
 }

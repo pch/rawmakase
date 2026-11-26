@@ -123,7 +123,7 @@ fn prefetcher(cache: DecodeCache, ahead: Ahead) -> Latest<Prefetch> {
         if job.cancel.load(Ordering::Relaxed) {
             return;
         }
-        if !crate::storage::is_raw(&job.path) {
+        if !crate::photo::source(&job.path).is_raw() {
             // What the open photo's first render freed goes before the neighbour
             // is opened, as before a RAW's decode below.
             release_kept_blocks();

@@ -411,8 +411,8 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
     // Files of a known non-RAW kind are not RAW whatever their size: JPEG
     // (without Broadcom's block), PNG, GIF, RIFF, PDF and ZIP.
     const NOT_RAW: [&[u8]; 7] = [
-        &[0xff, 0xd8, 0xff],
-        b"\x89PNG\r\n\x1a\n",
+        JPEG,
+        PNG,
         b"GIF87a",
         b"GIF89a",
         b"RIFF",
@@ -424,6 +424,24 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
     }
     // Last: a file of no container may be one the table knows by size.
     crate::container::headerless::open(bytes).ok_or(Error::NotRaw)
+}
+
+/// A JPEG's first bytes: its start of image marker and the next marker's.
+const JPEG: &[u8] = &[0xff, 0xd8, 0xff];
+/// A PNG's signature.
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+/// Whether a file starting with `head` may be a rendered file by
+/// [`is_rendered`], which then needs the whole file.
+pub(crate) fn may_be_rendered(head: &[u8]) -> bool {
+    head.starts_with(JPEG) || head.starts_with(PNG)
+}
+
+/// Whether the file in `bytes` is a JPEG or a PNG, and so no RAW: [`open`]
+/// says such a file is not RAW. A JPEG followed by Broadcom's raw block is a
+/// Raspberry Pi's RAW, not a rendered file.
+pub(crate) fn is_rendered(bytes: &[u8]) -> bool {
+    may_be_rendered(bytes) && !crate::container::brcm::is_brcm(bytes)
 }
 
 /// Decodes the sensor data `info` describes.
@@ -537,5 +555,37 @@ pub(crate) fn decode(info: &RawInfo, bytes: &[u8], cancel: Cancel<'_>) -> Result
             "{} with another container's plan",
             variant.name()
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A JPEG or a PNG is a rendered file, which `open` says is not RAW.
+    /// A TIFF, a file of another kind or an empty one is not rendered.
+    #[test]
+    fn a_jpeg_or_png_is_rendered_and_not_raw() {
+        let mut jpeg = vec![0xff, 0xd8, 0xff, 0xe0, 0, 16];
+        jpeg.extend(b"JFIF\0");
+        jpeg.resize(4096, 0);
+        let mut png = PNG.to_vec();
+        png.resize(4096, 0);
+        for bytes in [&jpeg[..], &png, JPEG] {
+            assert!(may_be_rendered(bytes));
+            assert!(is_rendered(bytes));
+            assert!(matches!(open(bytes), Err(Error::NotRaw)));
+        }
+        for bytes in [
+            &b"II*\0\x08\0\0\0"[..],
+            b"MM\0*\0\0\0\x08",
+            b"FUJIFILMCCD-RAW ",
+            b"GIF89a",
+            b"not a photo at all",
+            &[0xff, 0xd8],
+            b"",
+        ] {
+            assert!(!is_rendered(bytes), "{bytes:?}");
+        }
     }
 }
