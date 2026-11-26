@@ -7,6 +7,7 @@
 //! in the mailbox is numbered, and a frame carries the number of the edit it
 //! renders, so [`Shown`] can drop a frame older than the one on screen.
 use std::sync::{Condvar, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 /// A single-slot mailbox: [`Mailbox::put`] replaces what waits, and
 /// [`Mailbox::take`] gives the render thread the newest. `Send` and `Sync`,
@@ -24,6 +25,17 @@ struct State<T> {
     /// photo's first frame is numbered after the edits made before it.
     next: u64,
     closed: bool,
+}
+
+/// What [`Mailbox::take_within`] gave.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Taken<T> {
+    /// A newer edit, to render in place of the draft's frame.
+    Job(Numbered<T>),
+    /// None came: render the draft's frame now.
+    Quiet,
+    /// The mailbox was closed.
+    Closed,
 }
 
 /// An edit taken from a [`Mailbox`], with its number.
@@ -82,6 +94,31 @@ impl<T> Mailbox<T> {
                 .wake
                 .wait(state)
                 .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// The newest job put within `quiet`: what a render thread asks after
+    /// showing a draft, so that the draft's frame is rendered only once no
+    /// newer edit has come for that long, and a newer edit goes first.
+    pub fn take_within(&self, quiet: Duration) -> Taken<T> {
+        let deadline = Instant::now() + quiet;
+        let mut state = self.lock();
+        loop {
+            if state.closed {
+                return Taken::Closed;
+            }
+            if let Some(job) = state.waiting.take() {
+                return Taken::Job(job);
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Taken::Quiet;
+            }
+            state = self
+                .wake
+                .wait_timeout(state, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
         }
     }
 
@@ -157,6 +194,20 @@ mod tests {
         assert_eq!(mailbox.take(), None, "closed: what waited is dropped");
         assert_eq!(mailbox.put("d"), 4, "numbers go on, the job is dropped");
         assert_eq!(mailbox.try_take(), None);
+    }
+
+    #[test]
+    fn after_a_draft_a_newer_edit_goes_first_or_the_frame_follows() {
+        let mailbox = Mailbox::new();
+        let quiet = Duration::from_millis(20);
+        assert_eq!(mailbox.take_within(quiet), Taken::Quiet);
+        mailbox.put(1);
+        assert_eq!(
+            mailbox.take_within(quiet),
+            Taken::Job(Numbered { number: 1, job: 1 })
+        );
+        mailbox.close();
+        assert_eq!(mailbox.take_within(quiet), Taken::Closed);
     }
 
     #[test]

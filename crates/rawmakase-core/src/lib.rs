@@ -93,7 +93,7 @@ pub use error::{Error, ErrorKind, Result};
 #[cfg(feature = "export")]
 pub use export::ExportSettings;
 pub use image::{DecodeStats, Image};
-pub use mailbox::{Mailbox, Numbered, Shown};
+pub use mailbox::{Mailbox, Numbered, Shown, Taken};
 pub use photo::{Decode, Photo};
 pub use render::{Frame, Renderer, View};
 

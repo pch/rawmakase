@@ -149,7 +149,8 @@ which CI compares with the code. Each change to them is noted here.
   `Context::open`, `presets`, `load_preset`, `renderer`, `render` and
   `export` (the `export` feature, on by default); `Photo`, `Decode`, `Image`
   and `DecodeStats`; `Parameter`, `Control`, `Scale`, `Preset` and `Applied`;
-  `Renderer`, `Frame` and `View`; `Mailbox`, `Numbered` and `Shown`; and the
+  `Photo::save_recipe` and `Context::load_recipe`;
+  `Renderer`, `Frame` and `View`; `Mailbox`, `Numbered`, `Taken` and `Shown`; and the
   model's `Recipe`, `Metadata`, `CameraProfile`, `ToneCurve` and `Inserted`,
   interop's `RawDefaults` and `ExportSettings`, and `Cancel`, re-exported.
   `ExportSettings::load` and `save` still read and write the desktop's own

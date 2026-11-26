@@ -163,15 +163,21 @@ impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::RawDefaults where
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Recipe where rawmakase_core::Recipe: core::default::Default
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::ToneCurve
 impl<T: core::clone::Clone> core::clone::Clone for rawmakase_core::Numbered<T>
+impl<T: core::clone::Clone> core::clone::Clone for rawmakase_core::Taken<T>
 impl<T: core::cmp::Eq> core::cmp::Eq for rawmakase_core::Numbered<T>
+impl<T: core::cmp::Eq> core::cmp::Eq for rawmakase_core::Taken<T>
 impl<T: core::cmp::PartialEq> core::cmp::PartialEq for rawmakase_core::Numbered<T>
+impl<T: core::cmp::PartialEq> core::cmp::PartialEq for rawmakase_core::Taken<T>
 impl<T: core::fmt::Debug> core::fmt::Debug for rawmakase_core::Mailbox<T>
 impl<T: core::fmt::Debug> core::fmt::Debug for rawmakase_core::Numbered<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for rawmakase_core::Taken<T>
 impl<T> core::default::Default for rawmakase_core::Mailbox<T>
 impl<T> core::marker::Send for rawmakase_core::Mailbox<T> where std::sync::poison::mutex::Mutex<State<T>>: core::marker::Send
 impl<T> core::marker::Send for rawmakase_core::Numbered<T> where T: core::marker::Send
+impl<T> core::marker::Send for rawmakase_core::Taken<T> where rawmakase_core::Numbered<T>: core::marker::Send
 impl<T> core::marker::Sync for rawmakase_core::Mailbox<T> where std::sync::poison::mutex::Mutex<State<T>>: core::marker::Sync
 impl<T> core::marker::Sync for rawmakase_core::Numbered<T> where T: core::marker::Sync
+impl<T> core::marker::Sync for rawmakase_core::Taken<T> where rawmakase_core::Numbered<T>: core::marker::Sync
 pub const fn rawmakase_core::Parameter::name(self) -> &'static str
 pub const rawmakase_core::Cancel::NEVER: Self [impl<'a> rawmakase_core::Cancel<'a>]
 pub const rawmakase_core::Parameter::ALL: [Self; 60]
@@ -183,6 +189,7 @@ pub enum rawmakase_core::ErrorKind #[non_exhaustive]
 pub enum rawmakase_core::Inserted
 pub enum rawmakase_core::Parameter
 pub enum rawmakase_core::Scale
+pub enum rawmakase_core::Taken<T>
 pub enum rawmakase_core::View
 pub fn rawmakase_core::CameraProfile::as_shot_white_balance(&self, m: &rawmakase_core::Metadata) -> core::option::Option<[f32; 2]>
 pub fn rawmakase_core::CameraProfile::at_amount(&self, amount: f32) -> Self
@@ -263,6 +270,7 @@ pub fn rawmakase_core::Mailbox::close(&self) [impl<T> rawmakase_core::Mailbox<T>
 pub fn rawmakase_core::Mailbox::new() -> Self [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::Mailbox::put(&self, job: T) -> u64 [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::Mailbox::take(&self) -> core::option::Option<rawmakase_core::Numbered<T>> [impl<T> rawmakase_core::Mailbox<T>]
+pub fn rawmakase_core::Mailbox::take_within(&self, quiet: core::time::Duration) -> rawmakase_core::Taken<T> [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::Mailbox::try_take(&self) -> core::option::Option<rawmakase_core::Numbered<T>> [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::Metadata::apply_default_crop(&mut self, [left, top, width, height]: [u32; 4])
 pub fn rawmakase_core::Metadata::is_rendered(&self) -> bool
@@ -618,6 +626,9 @@ pub rawmakase_core::Recipe::white_point: f32
 pub rawmakase_core::Recipe::whites: f32
 pub rawmakase_core::Scale::Linear
 pub rawmakase_core::Scale::Reciprocal
+pub rawmakase_core::Taken::Closed
+pub rawmakase_core::Taken::Job(rawmakase_core::Numbered<T>)
+pub rawmakase_core::Taken::Quiet
 pub rawmakase_core::ToneCurve::natural: bool
 pub rawmakase_core::ToneCurve::points: alloc::vec::Vec<[f32; 2]>
 pub rawmakase_core::ToneCurve::smooth: bool
