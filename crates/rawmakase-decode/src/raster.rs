@@ -240,8 +240,15 @@ impl HdrDecoding {
         if out.is_empty() {
             return Ok(out);
         }
+        // Match `image::DynamicImage::into_rgb32f`: RGB/RGBA divide by the
+        // integer maximum (`FromPrimitive`), while Luma/LumaA go through the
+        // CICP fallback that multiplies by the rounded `f32` reciprocal.
         let u8_f = |v: u8| f32::from(v) / 255.;
         let u16_f = |v: u16| f32::from(v) / 65535.;
+        const LUMA8_R: f32 = 1.0 / u8::MAX as f32;
+        const LUMA16_R: f32 = 1.0 / u16::MAX as f32;
+        let luma8_f = |v: u8| f32::from(v) * LUMA8_R;
+        let luma16_f = |v: u16| f32::from(v) * LUMA16_R;
         let apply = |rgb| self.light(rgb);
         match image {
             DynamicImage::ImageLuma8(img) => {
@@ -251,7 +258,7 @@ impl HdrDecoding {
                     1,
                     &mut out,
                     cancel,
-                    |p| [u8_f(p[0]); 3],
+                    |p| [luma8_f(p[0]); 3],
                     apply,
                 )?;
             }
@@ -262,7 +269,7 @@ impl HdrDecoding {
                     2,
                     &mut out,
                     cancel,
-                    |p| [u8_f(p[0]); 3],
+                    |p| [luma8_f(p[0]); 3],
                     apply,
                 )?;
             }
@@ -291,7 +298,7 @@ impl HdrDecoding {
                     1,
                     &mut out,
                     cancel,
-                    |p| [u16_f(p[0]); 3],
+                    |p| [luma16_f(p[0]); 3],
                     apply,
                 )?;
             }
@@ -302,7 +309,7 @@ impl HdrDecoding {
                     2,
                     &mut out,
                     cancel,
-                    |p| [u16_f(p[0]); 3],
+                    |p| [luma16_f(p[0]); 3],
                     apply,
                 )?;
             }
@@ -3726,12 +3733,30 @@ mod tests {
         use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
         use std::sync::atomic::AtomicBool;
 
-        let decoding = super::HdrDecoding::Signal(HdrOutput {
-            gamut: HdrGamut::DisplayP3,
-            transfer: HdrTransfer::Pq,
-            gain_map: false,
-        });
+        let decodings = [
+            (
+                "pq",
+                super::HdrDecoding::Signal(HdrOutput {
+                    gamut: HdrGamut::DisplayP3,
+                    transfer: HdrTransfer::Pq,
+                    gain_map: false,
+                }),
+            ),
+            (
+                "linear_rec709",
+                super::HdrDecoding::Signal(HdrOutput {
+                    gamut: HdrGamut::Rec709,
+                    transfer: HdrTransfer::Linear,
+                    gain_map: false,
+                }),
+            ),
+            (
+                "linear_identity",
+                super::HdrDecoding::Colorants([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]),
+            ),
+        ];
         let (w, h) = (16u32, 16u32);
+        // 16×16 covers every u8 value 0..=255 (including 3) and u16 multiples of 257 (including 257).
         let variants: Vec<(&str, DynamicImage)> = vec![
             (
                 "luma8",
@@ -3801,28 +3826,36 @@ mod tests {
             ),
         ];
 
-        for (name, img) in variants {
-            let expected: Vec<[f32; 3]> = img
-                .clone()
-                .into_rgb32f()
-                .into_raw()
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .map(|px| decoding.light(*px))
-                .collect();
-            let got = decoding.apply(img.clone(), Cancel::NEVER).unwrap();
-            assert_eq!(got.len(), expected.len(), "{name}");
-            for (g, e) in got.iter().zip(&expected) {
-                for c in 0..3 {
-                    assert_eq!(g[c].to_bits(), e[c].to_bits(), "{name} channel {c}");
+        for (mode, decoding) in decodings {
+            for (name, img) in &variants {
+                let expected: Vec<[f32; 3]> = img
+                    .clone()
+                    .into_rgb32f()
+                    .into_raw()
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|px| decoding.light(*px))
+                    .collect();
+                let got = decoding.apply(img.clone(), Cancel::NEVER).unwrap();
+                assert_eq!(got.len(), expected.len(), "{mode} {name}");
+                for (idx, (g, e)) in got.iter().zip(&expected).enumerate() {
+                    for c in 0..3 {
+                        assert_eq!(
+                            g[c].to_bits(),
+                            e[c].to_bits(),
+                            "{mode} {name} pixel {idx} channel {c}"
+                        );
+                    }
                 }
+                let cancelled = AtomicBool::new(true);
+                assert!(
+                    decoding
+                        .apply(img.clone(), Cancel::new(&cancelled))
+                        .is_err(),
+                    "{mode} {name}"
+                );
             }
-            let cancelled = AtomicBool::new(true);
-            assert!(
-                decoding.apply(img, Cancel::new(&cancelled)).is_err(),
-                "{name}"
-            );
         }
     }
 
