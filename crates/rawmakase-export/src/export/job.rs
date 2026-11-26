@@ -562,6 +562,18 @@ mod tests {
             assert!(error.is::<rawmakase_model::error::Invalid>(), "{error:#}");
             assert!(!target.exists());
         }
+        // A target that names no export format.
+        let target = dir.path().join("out.webp");
+        let error = run(
+            photo(&source, &dir.path().join("cache")),
+            &ExportSettings::default(),
+            &target,
+            super::super::Replace::NoClobber,
+            Cancel::NEVER,
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(error.is::<rawmakase_model::error::Invalid>(), "{error:#}");
         Ok(())
     }
 

@@ -335,7 +335,9 @@ pub fn stage_gain_map(
     let format = Format::from_path(path)
         .filter(|f| matches!(f, Format::Jpeg | Format::Jxl))
         .ok_or_else(|| {
-            anyhow::anyhow!("A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl")
+            rawmakase_model::error::Invalid::new(
+                "A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl",
+            )
         })?;
     let parent = crate::storage::parent_dir(path);
     let mut temp = crate::storage::staging_file(parent)?;
@@ -402,7 +404,9 @@ pub fn stage_hdr(
     let format = Format::from_path(path)
         .filter(|f| matches!(f, Format::Tiff | Format::Jxl))
         .ok_or_else(|| {
-            anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
+            rawmakase_model::error::Invalid::new(
+                "An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl",
+            )
         })?;
     ensure!(
         image.pixels.len() == image.width as usize * image.height as usize,
@@ -440,7 +444,10 @@ pub fn stage_image(
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     options.validate()?;
     let format = Format::from_path(path).ok_or_else(|| {
-        anyhow::anyhow!("Export extension must be {}", Format::extensions_listed())
+        rawmakase_model::error::Invalid::new(format!(
+            "Export extension must be {}",
+            Format::extensions_listed()
+        ))
     })?;
     format.supports(space)?;
     let parent = crate::storage::parent_dir(path);
