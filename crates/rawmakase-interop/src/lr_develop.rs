@@ -320,87 +320,95 @@ pub fn convert_develop(
     }
     // Spots and masks convert on their own and report what they skip.
     let local_settings = std::mem::take(&mut preset.local);
-    // Build a compatible patch before application. Related fields are validated together.
-    let mut accepted = preset.clone();
-    accepted.settings.clear();
-    let mut grouped = std::collections::BTreeSet::new();
-    // Upright's mode and the corrections Lightroom stored for it.
-    let upright: Vec<&str> = std::iter::once("PerspectiveUpright")
-        .chain(
-            preset
-                .settings
-                .keys()
-                .map(String::as_str)
-                .filter(|k| k.starts_with("Upright")),
-        )
-        .collect();
-    // Auto black & white is judged with the mix Lightroom resolved for it; without
-    // Auto, each mixer channel stands on its own.
-    let auto_gray_mix = preset
-        .settings
-        .get("AutoGrayscaleMix")
-        .is_some_and(|v| v == "true");
-    let gray_mix: Vec<&str> = if auto_gray_mix {
-        preset
-            .settings
-            .keys()
-            .map(String::as_str)
-            .filter(|k| *k == "AutoGrayscaleMix" || k.starts_with("GrayMixer"))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    for keys in [
-        vec!["WhiteBalance", "Temperature", "Tint"],
-        vec![
-            "CropLeft",
-            "CropTop",
-            "CropRight",
-            "CropBottom",
-            "CropAngle",
-        ],
-        vec![
-            "ParametricShadowSplit",
-            "ParametricMidtoneSplit",
-            "ParametricHighlightSplit",
-        ],
-        upright,
-        gray_mix,
-        vec!["PointColors", "ColorVariance"],
-    ] {
-        let mut p = preset.clone();
-        p.settings.retain(|k, _| keys.contains(&k.as_str()));
-        for k in &keys {
-            grouped.insert(k.to_string());
-        }
-        match p.apply(&Recipe::with_profiles(m, profiles), m, profiles, image) {
-            Ok(_) => accepted.settings.extend(p.settings),
-            Err(e) => warnings.push(e.to_string()),
-        }
-    }
-    for (key, value) in &preset.settings {
-        if grouped.contains(key) {
-            continue;
-        }
-        let mut p = preset.clone();
-        p.settings.clear();
-        p.settings.insert(key.clone(), value.clone());
-        // A tone slider is read with Auto, whose placeholder it may hold.
-        if crate::xmp::AUTO_TONE_KEYS.contains(&key.as_str())
-            && let Some(auto) = preset.settings.get("AutoTone")
-        {
-            p.settings.insert("AutoTone".into(), auto.clone());
-        }
-        match p.apply(&Recipe::with_profiles(m, profiles), m, profiles, image) {
-            Ok(_) => {
-                accepted.settings.insert(key.clone(), value.clone());
-            }
-            Err(e) => warnings.push(e.to_string()),
-        }
-    }
     let base = Recipe::with_profiles(m, profiles);
-    let mut recipe = accepted.apply(&base, m, profiles, image)?;
-    if let Some((asked, used)) = accepted.profile_substitute(m, profiles) {
+    let (mut recipe, substitute) = match preset.apply(&base, m, profiles, image) {
+        Ok(recipe) => (recipe, preset.profile_substitute(m, profiles)),
+        Err(_) => {
+            // Build a compatible patch before application. Related fields are validated together.
+            let mut accepted = preset.clone();
+            accepted.settings.clear();
+            let mut grouped = std::collections::BTreeSet::new();
+            // Upright's mode and the corrections Lightroom stored for it.
+            let upright: Vec<&str> = std::iter::once("PerspectiveUpright")
+                .chain(
+                    preset
+                        .settings
+                        .keys()
+                        .map(String::as_str)
+                        .filter(|k| k.starts_with("Upright")),
+                )
+                .collect();
+            // Auto black & white is judged with the mix Lightroom resolved for it; without
+            // Auto, each mixer channel stands on its own.
+            let auto_gray_mix = preset
+                .settings
+                .get("AutoGrayscaleMix")
+                .is_some_and(|v| v == "true");
+            let gray_mix: Vec<&str> = if auto_gray_mix {
+                preset
+                    .settings
+                    .keys()
+                    .map(String::as_str)
+                    .filter(|k| *k == "AutoGrayscaleMix" || k.starts_with("GrayMixer"))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            for keys in [
+                vec!["WhiteBalance", "Temperature", "Tint"],
+                vec![
+                    "CropLeft",
+                    "CropTop",
+                    "CropRight",
+                    "CropBottom",
+                    "CropAngle",
+                ],
+                vec![
+                    "ParametricShadowSplit",
+                    "ParametricMidtoneSplit",
+                    "ParametricHighlightSplit",
+                ],
+                upright,
+                gray_mix,
+                vec!["PointColors", "ColorVariance"],
+            ] {
+                let mut p = preset.clone();
+                p.settings.retain(|k, _| keys.contains(&k.as_str()));
+                for k in &keys {
+                    grouped.insert(k.to_string());
+                }
+                match p.apply(&base, m, profiles, image) {
+                    Ok(_) => accepted.settings.extend(p.settings),
+                    Err(e) => warnings.push(e.to_string()),
+                }
+            }
+            for (key, value) in &preset.settings {
+                if grouped.contains(key) {
+                    continue;
+                }
+                let mut p = preset.clone();
+                p.settings.clear();
+                p.settings.insert(key.clone(), value.clone());
+                // A tone slider is read with Auto, whose placeholder it may hold.
+                if crate::xmp::AUTO_TONE_KEYS.contains(&key.as_str())
+                    && let Some(auto) = preset.settings.get("AutoTone")
+                {
+                    p.settings.insert("AutoTone".into(), auto.clone());
+                }
+                match p.apply(&base, m, profiles, image) {
+                    Ok(_) => {
+                        accepted.settings.insert(key.clone(), value.clone());
+                    }
+                    Err(e) => warnings.push(e.to_string()),
+                }
+            }
+            (
+                accepted.apply(&base, m, profiles, image)?,
+                accepted.profile_substitute(m, profiles),
+            )
+        }
+    };
+    if let Some((asked, used)) = substitute {
         warnings.push(format!("{asked} isn't imported; rendered with {used}"));
     }
     warnings.extend(recipe.missing_lens_profile(m));

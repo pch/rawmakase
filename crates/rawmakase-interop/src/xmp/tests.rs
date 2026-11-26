@@ -3235,3 +3235,82 @@ fn a_merged_dngs_packet_is_its_starting_settings() -> Result<()> {
     assert!(!export.contains("IsMergedHDR"));
     Ok(())
 }
+
+/// With `HasCrop` off, invalid crop keys still trigger validation warnings and are
+/// dropped rather than silently succeeding on the fast path, while valid uncropped
+/// records and valid four-corner crops apply cleanly.
+#[test]
+fn has_crop_false_still_validates_and_drops_invalid_crop_fields() -> Result<()> {
+    let m = Metadata::default();
+    for (source, expected) in [
+        ("s = { HasCrop = false, CropLeft = 2 }", "CropLeft"),
+        ("s = { HasCrop = 0, CropLeft = 2 }", "CropLeft"),
+        ("s = { HasCrop = false, CropAngle = 90 }", "CropAngle"),
+    ] {
+        let (r, warnings) = crate::lr_develop::convert_develop(source, &m, &[], None)?;
+        assert_eq!(r.crop, [0., 0., 1., 1.], "{source}");
+        assert_eq!(r.straighten, 0., "{source}");
+        assert!(
+            warnings.iter().any(|w| w.contains(expected)),
+            "expected {expected} validation warning for {source}, got {warnings:?}"
+        );
+    }
+    // Uncropped record takes the fast path with no warnings.
+    let (r, warnings) = crate::lr_develop::convert_develop(
+        "s = { HasCrop = false, Exposure2012 = 0.5 }",
+        &m,
+        &[],
+        None,
+    )?;
+    assert_eq!(r.crop, [0., 0., 1., 1.]);
+    assert_eq!(r.exposure, 0.5);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    // Valid partial corners are filled by CORNERS and applied consistently.
+    let (r, warnings) = crate::lr_develop::convert_develop(
+        "s = { HasCrop = false, CropLeft = 0.2, CropRight = 0.8 }",
+        &m,
+        &[],
+        None,
+    )?;
+    assert_eq!(r.crop, [0.2, 0., 0.8, 1.]);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    Ok(())
+}
+
+/// Unknown XMP settings stay deterministically sorted after switching `seen` to a
+/// `HashSet<&str>`, and `convert_develop`'s fast path and per-key fallback both
+/// preserve metadata keys, `Table_*` keys, profile fallbacks and partial warnings.
+#[test]
+fn unknown_xmp_keys_stay_sorted_and_lr_develop_fallback_keeps_valid_keys() -> Result<()> {
+    let m = Metadata::default();
+    let bad = parse(
+        Path::new("unknown.xmp"),
+        &xml(
+            r#"c:Version="15.4" c:ZetaUnknown="1" c:AlphaUnknown="2" c:Table_ABCD="data""#,
+            "",
+        ),
+    )?;
+    let err = bad
+        .apply(&Recipe::default(), &m, &[], None)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err,
+        "Unsupported preset settings: AlphaUnknown, ZetaUnknown"
+    );
+
+    // Fallback when an unknown key sits alongside valid develop settings.
+    let (r, warnings) = crate::lr_develop::convert_develop(
+        r#"s = { Version = "15.4", HasCrop = false, Exposure2012 = 0.75, Table_ABCD = "data", UnknownFutureKey = 1 }"#,
+        &m,
+        &[],
+        None,
+    )?;
+    assert_eq!(r.exposure, 0.75);
+    assert_eq!(r.crop, [0., 0., 1., 1.]);
+    assert!(
+        warnings.iter().any(|w| w.contains("UnknownFutureKey")),
+        "{warnings:?}"
+    );
+    Ok(())
+}

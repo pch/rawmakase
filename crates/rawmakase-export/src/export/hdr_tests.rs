@@ -674,3 +674,97 @@ fn gain_map_jpeg_xl(lossy: bool) -> Result<()> {
     assert_eq!(map.image_header().metadata.xyb_encoded, lossy);
     Ok(())
 }
+
+/// [`crate::export::HdrPixels::encode`] produces bit-exact samples matching
+/// [`HdrOutput::encode`] across every gamut, transfer and edge-case pixel, and
+/// [`crate::export::GainMapPixels::new`] matches buffered [`crate::export::gain_map::compute`].
+#[test]
+fn hdr_pixels_and_gain_map_fast_paths_are_bit_exact() -> Result<()> {
+    use crate::export::{GainMapPixels, HdrPixels, gain_map};
+    let pixels = vec![
+        [0.0, 0.0, 0.0],
+        [-0.25, 0.5, 1.5],
+        [1.0, 1.0, 1.0],
+        [5.0, 12.0, 20.0],
+        [f32::NAN, f32::INFINITY, f32::NEG_INFINITY],
+        [0.18, 0.02, 3.2],
+    ];
+    let master = crate::rendered::HdrImage {
+        width: 3,
+        height: 2,
+        pixels: pixels.clone(),
+        peak: 16.0,
+    };
+    for gamut in HdrGamut::ALL {
+        for transfer in HdrTransfer::ALL {
+            let output = HdrOutput {
+                gamut,
+                transfer,
+                gain_map: false,
+            };
+            let encoded = HdrPixels::encode(&master, output);
+            let expected: Vec<[f32; 3]> = pixels
+                .iter()
+                .map(|p| output.encode(*p, master.peak))
+                .collect();
+            assert_eq!(encoded.pixels.len(), expected.len());
+            for (got, want) in encoded.pixels.iter().zip(&expected) {
+                assert_eq!(
+                    got.map(f32::to_bits),
+                    want.map(f32::to_bits),
+                    "{gamut:?} {transfer:?}"
+                );
+            }
+        }
+    }
+    let finite_master = crate::rendered::HdrImage {
+        width: 3,
+        height: 2,
+        pixels: vec![
+            [0.0, 0.0, 0.0],
+            [-0.25, 0.5, 1.5],
+            [1.0, 1.0, 1.0],
+            [4.0, 2.0, 0.5],
+            [0.18, 0.02, 3.2],
+            [8.0, 8.0, 8.0],
+        ],
+        peak: 8.0,
+    };
+    let sdr_pixels = vec![
+        [0.0, 0.0, 0.0],
+        [0.1, 0.4, 0.8],
+        [0.9, 0.9, 0.9],
+        [1.0, 0.8, 0.5],
+        [0.3, 0.1, 0.7],
+        [1.0, 1.0, 1.0],
+    ];
+    let base = crate::develop::ExportImage::srgb(crate::rendered::Rendered {
+        width: 3,
+        height: 2,
+        pixels: sdr_pixels.clone(),
+    });
+    let streamed = GainMapPixels::new(base, &finite_master)?;
+    let to_rgb = HdrGamut::Rec709.prophoto_to_rgb();
+    let hdr_buf: Vec<[f32; 3]> = finite_master
+        .pixels
+        .iter()
+        .map(|p| crate::color::mul(to_rgb, *p))
+        .collect();
+    let sdr_buf: Vec<[f32; 3]> = sdr_pixels
+        .iter()
+        .map(|p| p.map(|v| crate::color::srgb_decode(v.clamp(0., 1.))))
+        .collect();
+    let (ref_map, ref_meta) = gain_map::compute(&sdr_buf, &hdr_buf, finite_master.peak)?;
+    assert_eq!(streamed.map, ref_map);
+    assert_eq!(streamed.metadata.min.to_bits(), ref_meta.min.to_bits());
+    assert_eq!(streamed.metadata.max.to_bits(), ref_meta.max.to_bits());
+    assert_eq!(
+        streamed.metadata.base_headroom.to_bits(),
+        ref_meta.base_headroom.to_bits()
+    );
+    assert_eq!(
+        streamed.metadata.alternate_headroom.to_bits(),
+        ref_meta.alternate_headroom.to_bits()
+    );
+    Ok(())
+}

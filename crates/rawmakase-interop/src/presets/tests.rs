@@ -129,6 +129,7 @@ fn every_builtin_file_is_listed_and_parses() {
         .map(|p| builtin::group_rank(&p.group))
         .collect();
     assert!(ranks.is_sorted(), "built-in presets out of group order");
+    assert_eq!(builtin::presets(), (presets, errors));
 }
 
 #[test]

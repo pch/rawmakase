@@ -6,7 +6,7 @@ use crate::model::recipe::Recipe;
 use crate::{camera_data::Metadata, camera_profiles::CameraProfile};
 use anyhow::{Context, Result, ensure};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, HashSet},
     sync::Arc,
 };
 fn number(values: &BTreeMap<String, String>, key: &str) -> Result<Option<f32>> {
@@ -59,14 +59,14 @@ fn unmeasured(values: &BTreeMap<String, String>, key: &str) -> Result<bool> {
 }
 struct Settings<'a> {
     values: &'a BTreeMap<String, String>,
-    seen: BTreeSet<String>,
+    seen: HashSet<&'a str>,
 }
 impl Settings<'_> {
     /// [`Self::assign`], leaving `out` as it is for an Auto Settings still to be
     /// measured (see [`unmeasured`]).
     fn assign_tone(&mut self, slider: crs::Slider, out: &mut f32) -> Result<()> {
         if unmeasured(self.values, slider.key)? {
-            self.seen.insert(slider.key.to_string());
+            self.seen.insert(slider.key);
             return Ok(());
         }
         let limit = if slider == crs::EXPOSURE { 8. } else { 1. };
@@ -76,7 +76,7 @@ impl Settings<'_> {
     /// `lo..=hi` (in recipe units).
     fn assign(&mut self, slider: crs::Slider, out: &mut f32, lo: f32, hi: f32) -> Result<()> {
         let key = slider.key;
-        self.seen.insert(key.to_string());
+        self.seen.insert(key);
         if let Some(value) = number(self.values, key)? {
             let value = value * slider.scale();
             ensure!(
@@ -155,7 +155,7 @@ impl Preset {
         ensure!(self.blockers.is_empty(), "{}", self.blockers.join("; "));
         let mut settings = Settings {
             values: &self.settings,
-            seen: METADATA.iter().map(|key| key.to_string()).collect(),
+            seen: HashSet::new(),
         };
         let mut recipe = base.clone();
         self.apply_profile(&mut settings, &mut recipe, m, profiles)?;
@@ -212,7 +212,7 @@ impl Preset {
         warnings.extend(self.ignored_white_balance(m));
         let mut settings = Settings {
             values: &self.settings,
-            seen: METADATA.iter().map(|key| key.to_string()).collect(),
+            seen: HashSet::new(),
         };
         let mut recipe = base.clone();
         let mut stage = |recipe: &mut Recipe, result: &dyn Fn(&mut Recipe) -> Result<()>| {
@@ -287,7 +287,7 @@ impl Preset {
         trial.upright.corrections.clear();
         let mut settings = Settings {
             values: &self.settings,
-            seen: BTreeSet::new(),
+            seen: HashSet::new(),
         };
         let brought = self.apply_upright(&mut settings, &mut trial).is_ok()
             && !trial.upright.corrections.is_empty();
@@ -448,14 +448,14 @@ impl Preset {
                 "Preset is restricted to {model}"
             );
         }
-        settings.seen.insert("RequiresRGBTables".into());
+        settings.seen.insert("RequiresRGBTables");
         ensure!(
             boolean(v, "RequiresRGBTables")? != Some(true),
             "Preset requires external RGB tables"
         );
-        settings.seen.insert("CameraProfile".into());
-        settings.seen.insert(super::FITTED_PROFILE_KEY.into());
-        settings.seen.insert("RAWmakaseLookUUID".into());
+        settings.seen.insert("CameraProfile");
+        settings.seen.insert(super::FITTED_PROFILE_KEY);
+        settings.seen.insert("RAWmakaseLookUUID");
         // A fitted camera look renders from the profile the settings carry, checked,
         // never from a profile of its name: no other photo's fit is this one.
         if let Some(fitted) = self.fitted_profile(m)? {
@@ -477,7 +477,7 @@ impl Preset {
             }
         }
         // A new profile starts at 100%; a look that supports Amount takes the preset's.
-        settings.seen.insert(super::look::SETTING.into());
+        settings.seen.insert(super::look::SETTING);
         if v.contains_key("CameraProfile") || !self.look.is_empty() {
             r.profile_amount = 1.;
         }
@@ -511,7 +511,7 @@ impl Preset {
         // Lightroom's Denoise, from the Enhance filter (`filter_list`): AI Denoise at its
         // Amount. Without one, the photo's own setting stays.
         let key = super::filter_list::AI_DENOISE;
-        settings.seen.insert(key.into());
+        settings.seen.insert(key);
         if let Some(amount) = number(settings.values, key)? {
             ensure!(
                 (0. ..=100.).contains(&amount),
@@ -533,9 +533,9 @@ impl Preset {
         image: Option<&dyn PhotoMeasures>,
     ) -> Result<()> {
         let v = settings.values;
-        settings.seen.insert("WhiteBalance".into());
-        settings.seen.insert("Temperature".into());
-        settings.seen.insert("Tint".into());
+        settings.seen.insert("WhiteBalance");
+        settings.seen.insert("Temperature");
+        settings.seen.insert("Tint");
         if m.is_rendered() {
             return self.apply_relative_white_balance(settings, r, m, image);
         }
@@ -610,7 +610,7 @@ impl Preset {
     ) -> Result<()> {
         let v = settings.values;
         let keys = ["IncrementalTemperature", "IncrementalTint"];
-        settings.seen.extend(keys.map(String::from));
+        settings.seen.extend(keys);
         let given = keys.iter().any(|key| v.contains_key(*key));
         match v.get("WhiteBalance").map(String::as_str) {
             Some("As Shot") => r.reset_white_balance(m),
@@ -657,8 +657,8 @@ impl Preset {
 
     fn apply_color_mixer(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         let v = settings.values;
-        settings.seen.insert("PointColors".into());
-        settings.seen.insert("ColorVariance".into());
+        settings.seen.insert("PointColors");
+        settings.seen.insert("ColorVariance");
         if let Some(points) = v.get("PointColors") {
             r.point_colors = crate::model::point_color::parse_list(
                 points,
@@ -728,8 +728,8 @@ impl Preset {
         profiles: &[Arc<CameraProfile>],
     ) -> Result<()> {
         let v = settings.values;
-        settings.seen.insert("ConvertToGrayscale".into());
-        settings.seen.insert(super::look::GRAYSCALE.into());
+        settings.seen.insert("ConvertToGrayscale");
+        settings.seen.insert(super::look::GRAYSCALE);
         if let Some(b) = boolean(v, "ConvertToGrayscale")? {
             r.effects.monochrome = b;
         }
@@ -760,7 +760,7 @@ impl Preset {
         m: &Metadata,
         image: Option<&dyn PhotoMeasures>,
     ) -> Result<()> {
-        settings.seen.insert("AutoGrayscaleMix".into());
+        settings.seen.insert("AutoGrayscaleMix");
         if self.leaves_auto_gray_mix(r)?
             && let Some(photo) = image
         {
@@ -824,7 +824,7 @@ impl Preset {
         settings.assign(crs::GRAIN_AMOUNT, &mut r.effects.grain, 0., 1.)?;
         settings.assign(crs::GRAIN_SIZE, &mut r.effects.grain_size, 0., 1.)?;
         settings.assign(crs::GRAIN_FREQUENCY, &mut r.effects.grain_roughness, 0., 1.)?;
-        settings.seen.insert("GrainSeed".into());
+        settings.seen.insert("GrainSeed");
         if let Some(seed) = v.get("GrainSeed") {
             r.effects.grain_seed = seed.parse().context("Invalid grain seed")?;
         }
@@ -858,7 +858,7 @@ impl Preset {
             0.,
             1.,
         )?;
-        settings.seen.insert("PostCropVignetteStyle".into());
+        settings.seen.insert("PostCropVignetteStyle");
         if let Some(style) = v.get("PostCropVignetteStyle") {
             r.effects.vignette_style = style
                 .parse::<u8>()
@@ -929,7 +929,7 @@ impl Preset {
         r: &mut Recipe,
         image: Option<&dyn PhotoMeasures>,
     ) -> Result<()> {
-        settings.seen.insert("AutoTone".into());
+        settings.seen.insert("AutoTone");
         if self.auto_tone_pending()?
             && let Some(photo) = image
         {
@@ -960,7 +960,7 @@ impl Preset {
         for panel in Panel::ALL {
             let mut state = None;
             for key in panel.lightroom_keys() {
-                settings.seen.insert(key.to_string());
+                settings.seen.insert(key);
                 match boolean(settings.values, key)? {
                     Some(false) => state = Some(PanelState::Off),
                     Some(true) if state.is_none() => state = Some(PanelState::On),
@@ -988,7 +988,7 @@ impl Preset {
         if v.contains_key("CropAngle") {
             r.straighten_auto = None;
         }
-        settings.seen.insert("LensProfileEnable".into());
+        settings.seen.insert("LensProfileEnable");
         // Which Adobe profile the edit uses. Whether Lightroom took it from the RAW
         // instead does not change which profile is named.
         for key in [
@@ -998,7 +998,7 @@ impl Preset {
             "LensProfileDigest",
             "LensProfileIsEmbedded",
         ] {
-            settings.seen.insert(key.into());
+            settings.seen.insert(key);
         }
         let embedded = boolean(v, "LensProfileIsEmbedded")?.unwrap_or(false);
         let text = |key: &str| v.get(key).map(|s| s.trim().to_string()).unwrap_or_default();
@@ -1025,7 +1025,7 @@ impl Preset {
         // ("Auto"): resolved against the installed database now, which is the edit;
         // without it, or without the lens, it stays named, unresolved.
         for key in super::LENSFUN_KEYS {
-            settings.seen.insert(key.into());
+            settings.seen.insert(key);
         }
         if let Some(choice) = lensfun_choice(v)? {
             let choice = lensfun
@@ -1060,7 +1060,7 @@ impl Preset {
             -1.,
             1.,
         )?;
-        settings.seen.insert("AutoLateralCA".into());
+        settings.seen.insert("AutoLateralCA");
         if let Some(ca) = number(v, "AutoLateralCA")? {
             r.lens_ca = ca != 0.;
         }
@@ -1084,8 +1084,8 @@ impl Preset {
             settings.assign(crs::CROP_ANGLE, &mut angle, -45., 45.)?;
             r.crop = [0., 0., 1., 1.];
             r.straighten = 0.;
-            for name in ["Left", "Top", "Right", "Bottom"] {
-                settings.seen.insert(format!("Crop{name}"));
+            for key in ["CropLeft", "CropTop", "CropRight", "CropBottom"] {
+                settings.seen.insert(key);
             }
         } else {
             // Lightroom records the crop on the frame before the camera orientation, as
@@ -1141,7 +1141,7 @@ impl Preset {
             }
         }
         // Lightroom's Constrain Crop, not to be confused with `CropConstrainToUnitSquare`.
-        settings.seen.insert("CropConstrainToWarp".into());
+        settings.seen.insert("CropConstrainToWarp");
         if let Some(constrain) = number(v, "CropConstrainToWarp")? {
             r.constrain_crop = constrain != 0.;
         }
@@ -1152,15 +1152,18 @@ impl Preset {
     fn apply_upright(&self, settings: &mut Settings<'_>, r: &mut Recipe) -> Result<()> {
         use crate::model::transform::UprightMode;
         let v = settings.values;
-        settings.seen.insert("PerspectiveUpright".into());
+        settings.seen.insert("PerspectiveUpright");
         let mut lightroom = BTreeMap::new();
         let mut corrections = Vec::new();
         let mut guides = Vec::new();
-        for (key, value) in v.range("Upright".to_string()..) {
+        for (key, value) in v.range::<str, _>((
+            std::ops::Bound::Included("Upright"),
+            std::ops::Bound::Unbounded,
+        )) {
             let Some(name) = key.strip_prefix("Upright") else {
                 break;
             };
-            settings.seen.insert(key.clone());
+            settings.seen.insert(key.as_str());
             if name == "TransformCount" || name == "FourSegmentsCount" {
                 continue;
             }
@@ -1267,12 +1270,12 @@ impl Preset {
         use crate::model::hdr::{DEFAULT_LIMIT, LIMIT_RANGE};
         let v = settings.values;
         let mode = "HDREditMode";
-        settings.seen.insert(mode.into());
+        settings.seen.insert(mode);
         if let Some(on) = number(v, mode)? {
             ensure!(on == 0. || on == 1., "Invalid {mode}");
             r.hdr.enabled = on == 1.;
         }
-        settings.seen.insert(crs::HDR_MAX_VALUE.key.into());
+        settings.seen.insert(crs::HDR_MAX_VALUE.key);
         if let Some(limit) = number(v, crs::HDR_MAX_VALUE.key)? {
             r.hdr.limit = if LIMIT_RANGE.contains(&limit) {
                 limit
@@ -1281,7 +1284,7 @@ impl Preset {
             };
         }
         for (slider, out) in crs::SDR_RENDITION.iter().zip(r.hdr.sdr.values_mut()) {
-            settings.seen.insert(slider.key.into());
+            settings.seen.insert(slider.key);
             if let Some(value) = number(v, slider.key)? {
                 let value = value * slider.scale();
                 *out = if (-1. ..=1.).contains(&value) {
@@ -1307,7 +1310,7 @@ impl Preset {
             if m.is_rendered() && key.starts_with("Incremental") {
                 continue;
             }
-            settings.seen.insert(key.into());
+            settings.seen.insert(key);
             if let Some(value) = v.get(key) {
                 ensure!(
                     value.parse::<f32>().ok() == default.parse::<f32>().ok(),
@@ -1317,25 +1320,28 @@ impl Preset {
         }
         // Lightroom 15 records whether the crop is kept inside the image; it only
         // constrains the crop tool and does not change rendering.
-        settings.seen.insert("CropConstrainToUnitSquare".into());
+        settings.seen.insert("CropConstrainToUnitSquare");
         // Lightroom 15 writes these into every record. Glow's own controls do nothing
         // while Glow is 0 (an active Glow is refused above), and Distraction Removal's
         // switch changes nothing without removals, which are reported on their own.
         let at_rest = |key: &str| v.get(key).is_none_or(|value| value.parse() == Ok(0f32));
-        let mut neutral = vec!["EnableDistractionRemoval"];
+        settings.seen.insert("EnableDistractionRemoval");
         if at_rest("Glow") {
-            neutral.extend(["GlowRange", "GlowSpread", "GlowStyle", "GlowWarmth"]);
+            settings
+                .seen
+                .extend(["GlowRange", "GlowSpread", "GlowStyle", "GlowWarmth"]);
         }
-        settings.seen.extend(neutral.into_iter().map(String::from));
         // Tables a look or a filter names, which Lightroom writes beside the settings
         // as `Table_<md5>` (a user look's table, #666). The look renders from the
         // profile library and the filter list reads its own, so they are data here.
-        settings
-            .seen
-            .extend(v.keys().filter(|k| k.starts_with("Table_")).cloned());
+        settings.seen.extend(
+            v.keys()
+                .map(String::as_str)
+                .filter(|k| k.starts_with("Table_")),
+        );
         let unknown: Vec<_> = v
             .keys()
-            .filter(|k| !settings.seen.contains(*k))
+            .filter(|k| !settings.seen.contains(k.as_str()) && !METADATA.contains(&k.as_str()))
             .cloned()
             .collect();
         ensure!(

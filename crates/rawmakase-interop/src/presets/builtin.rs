@@ -58,16 +58,21 @@ fn load(path: &str, text: &str) -> Result<Preset> {
 /// The built-in presets, grouped in `GROUPS` order. A file that fails to parse is a
 /// bug caught by the tests; at run time it is reported like an imported one.
 pub fn presets() -> (Vec<Preset>, Vec<String>) {
-    let mut presets = Vec::new();
-    let mut errors = Vec::new();
-    for (path, text) in FILES {
-        match load(path, text) {
-            Ok(p) => presets.push(p),
-            Err(e) => errors.push(format!("Built-in {path}: {e:#}")),
-        }
-    }
-    presets.sort_by_key(|p| group_rank(&p.group));
-    (presets, errors)
+    static CACHED: std::sync::OnceLock<(Vec<Preset>, Vec<String>)> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            let mut presets = Vec::new();
+            let mut errors = Vec::new();
+            for (path, text) in FILES {
+                match load(path, text) {
+                    Ok(p) => presets.push(p),
+                    Err(e) => errors.push(format!("Built-in {path}: {e:#}")),
+                }
+            }
+            presets.sort_by_key(|p| group_rank(&p.group));
+            (presets, errors)
+        })
+        .clone()
 }
 
 /// Where a built-in group sorts in the panel.

@@ -11,8 +11,7 @@ use rawmakase_cancel::Cancel;
 use std::env;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 use ort::environment::Environment;
@@ -275,19 +274,46 @@ pub fn guarded<T>(
     work: impl FnOnce(&RunOptions) -> Result<T, InferenceError>,
 ) -> Result<T, InferenceError> {
     let options = RunOptions::new().map_err(failed)?;
-    let done = AtomicBool::new(false);
+    run_guarded(
+        cancel,
+        || {
+            let _ = options.terminate();
+        },
+        || work(&options),
+    )
+}
+
+/// Runs `work` while a scoped watcher polls `cancel` via a condvar wait and invokes
+/// `terminate` if cancellation is observed. The condvar wakes the watcher immediately
+/// on normal completion or panic so fast calls do not wait out [`CANCEL_POLL`].
+fn run_guarded<T>(
+    cancel: Cancel<'_>,
+    terminate: impl Fn() + Sync,
+    work: impl FnOnce() -> Result<T, InferenceError>,
+) -> Result<T, InferenceError> {
+    let state = (Mutex::new(false), Condvar::new());
     let result = std::thread::scope(|scope| {
         scope.spawn(|| {
-            while !done.load(Ordering::Acquire) {
+            let (lock, cvar) = &state;
+            let mut done = lock.lock().unwrap_or_else(|e| e.into_inner());
+            while !*done {
                 if cancel.is_cancelled() {
-                    let _ = options.terminate();
+                    drop(done);
+                    terminate();
                     return;
                 }
-                std::thread::sleep(CANCEL_POLL);
+                done = cvar
+                    .wait_timeout(done, CANCEL_POLL)
+                    .unwrap_or_else(|e| e.into_inner())
+                    .0;
             }
         });
-        let result = catch_unwind(AssertUnwindSafe(|| work(&options)));
-        done.store(true, Ordering::Release);
+        let result = catch_unwind(AssertUnwindSafe(work));
+        {
+            let (lock, cvar) = &state;
+            *lock.lock().unwrap_or_else(|e| e.into_inner()) = true;
+            cvar.notify_all();
+        }
         result
     });
     if cancel.is_cancelled() {
@@ -577,5 +603,78 @@ mod tests {
             runtime_candidates(None, Some("".into()), &[], std::slice::from_ref(&own)),
             [own.join(runtime_file_names()[0])]
         );
+    }
+
+    #[test]
+    fn run_guarded_completes_propagates_errors_and_recovers_from_panics() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let terminated = AtomicUsize::new(0);
+        let value = run_guarded(
+            Cancel::NEVER,
+            || {
+                terminated.fetch_add(1, Ordering::SeqCst);
+            },
+            || Ok(42),
+        )
+        .unwrap();
+        assert_eq!(value, 42);
+        assert_eq!(terminated.load(Ordering::SeqCst), 0);
+
+        let err = run_guarded::<()>(
+            Cancel::NEVER,
+            || {
+                terminated.fetch_add(1, Ordering::SeqCst);
+            },
+            || Err(InferenceError::Failed("boom".into())),
+        )
+        .unwrap_err();
+        assert_eq!(err, InferenceError::Failed("boom".into()));
+
+        let panicked = run_guarded::<()>(
+            Cancel::NEVER,
+            || {
+                terminated.fetch_add(1, Ordering::SeqCst);
+            },
+            || panic!("runtime crash"),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(panicked, InferenceError::Failed(ref msg) if msg.contains("panicked")),
+            "{panicked:?}"
+        );
+        assert_eq!(terminated.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn run_guarded_triggers_terminate_when_cancelled() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let cancel = AtomicBool::new(false);
+        let unblocked = (Mutex::new(false), Condvar::new());
+        let result = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(5));
+                cancel.store(true, Ordering::Relaxed);
+            });
+            run_guarded(
+                Cancel::new(&cancel),
+                || {
+                    let (lock, cvar) = &unblocked;
+                    *lock.lock().unwrap() = true;
+                    cvar.notify_all();
+                },
+                || {
+                    let (lock, cvar) = &unblocked;
+                    let mut flag = lock.lock().unwrap();
+                    while !*flag {
+                        let (guard, timeout) =
+                            cvar.wait_timeout(flag, Duration::from_secs(2)).unwrap();
+                        assert!(!timeout.timed_out(), "watcher never called terminate");
+                        flag = guard;
+                    }
+                    Ok(())
+                },
+            )
+        });
+        assert_eq!(result, Err(InferenceError::Cancelled));
     }
 }

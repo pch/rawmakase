@@ -123,23 +123,20 @@ pub(super) fn tiff_hdr(
         HdrTransfer::Pq | HdrTransfer::Hlg => {
             let data: Vec<u16> = image
                 .pixels
+                .as_flattened()
                 .iter()
-                .flatten()
                 .map(|v| (v.clamp(0., 1.) * 65535. + 0.5) as u16)
                 .collect();
             tiff_of::<RGB16, _>(out, size, &data, profile, directories, embed)
         }
-        HdrTransfer::Linear => {
-            let data: Vec<f32> = image.pixels.iter().flatten().copied().collect();
-            tiff_of::<tiff::encoder::colortype::RGB32Float, _>(
-                out,
-                size,
-                &data,
-                profile,
-                directories,
-                embed,
-            )
-        }
+        HdrTransfer::Linear => tiff_of::<tiff::encoder::colortype::RGB32Float, _>(
+            out,
+            size,
+            image.pixels.as_flattened(),
+            profile,
+            directories,
+            embed,
+        ),
     }
 }
 
@@ -293,7 +290,12 @@ pub(super) fn jxl_hdr(
     };
     let codestream = match jxl_distance(options) {
         None => {
-            let samples: Vec<u16> = image.pixels.iter().flatten().map(|v| sample(*v)).collect();
+            let samples: Vec<u16> = image
+                .pixels
+                .as_flattened()
+                .iter()
+                .map(|v| sample(*v))
+                .collect();
             super::jxl::codestream(
                 image.width,
                 image.height,
@@ -304,16 +306,21 @@ pub(super) fn jxl_hdr(
         }
         Some(distance) => {
             let weights = image.output.gamut.luminance();
-            let pq: Vec<u16> = image
-                .pixels
-                .iter()
-                .flat_map(|p| match image.output.transfer {
-                    HdrTransfer::Hlg => {
-                        hlg_decode(*p, weights).map(|v| sample(pq_encode(v * GRAPHICS_WHITE_NITS)))
+            let mut pq = Vec::with_capacity(image.pixels.len() * 3);
+            match image.output.transfer {
+                HdrTransfer::Hlg => {
+                    for p in &image.pixels {
+                        for v in hlg_decode(*p, weights) {
+                            pq.push(sample(pq_encode(v * GRAPHICS_WHITE_NITS)));
+                        }
                     }
-                    _ => p.map(sample),
-                })
-                .collect();
+                }
+                _ => {
+                    for v in image.pixels.as_flattened() {
+                        pq.push(sample(*v));
+                    }
+                }
+            }
             super::jxl::lossy_hdr_codestream(image.width, image.height, &pq, colour, distance)?
         }
     };

@@ -95,22 +95,33 @@ fn numerator(v: f32) -> i32 {
     (v * DENOMINATOR as f32).round() as i32
 }
 
-/// The gain map of `hdr` over `sdr`, both linear sRGB-primaries RGB of the same size
-/// (1 = graphics white), as 8-bit samples, with its metadata; `peak` is the master's
-/// brightest value.
-pub fn compute(sdr: &[[f32; 3]], hdr: &[[f32; 3]], peak: f32) -> Result<(Vec<u8>, Metadata)> {
+/// Rec. 709 luminance of `p` with negative channels clamped at 0.
+pub(super) fn luminance(p: [f32; 3]) -> f32 {
+    LUMINANCE[0] * p[0].max(0.) + LUMINANCE[1] * p[1].max(0.) + LUMINANCE[2] * p[2].max(0.)
+}
+
+/// The gain map of `hdr_lum` over `sdr_lum` (both Rec. 709 linear luminance,
+/// 1 = graphics white), as 8-bit samples, with its metadata; `peak` is the
+/// master's brightest value.
+pub(super) fn compute_from_luminances(
+    sdr_lum: impl ExactSizeIterator<Item = f32>,
+    hdr_lum: impl ExactSizeIterator<Item = f32>,
+    peak: f32,
+) -> Result<(Vec<u8>, Metadata)> {
     ensure!(
-        sdr.len() == hdr.len() && !sdr.is_empty(),
+        sdr_lum.len() == hdr_lum.len() && sdr_lum.len() > 0,
         "Gain map renditions differ in size"
     );
-    let lum = |p: &[f32; 3]| (0..3).map(|c| LUMINANCE[c] * p[c].max(0.)).sum::<f32>();
-    let gains: Vec<f32> = sdr
-        .iter()
-        .zip(hdr)
-        .map(|(s, h)| ((lum(h) + OFFSET) / (lum(s) + OFFSET)).log2())
-        .collect();
-    let min = gains.iter().copied().fold(f32::INFINITY, f32::min).min(0.);
-    let mut max = gains.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    let mut gains = Vec::with_capacity(sdr_lum.len());
+    for (s, h) in sdr_lum.zip(hdr_lum) {
+        let g = ((h + OFFSET) / (s + OFFSET)).log2();
+        min = min.min(g);
+        max = max.max(g);
+        gains.push(g);
+    }
+    min = min.min(0.);
     if max - min < 1. / 256. {
         max = min + 1. / 256.;
     }
@@ -127,6 +138,17 @@ pub fn compute(sdr: &[[f32; 3]], hdr: &[[f32; 3]], peak: f32) -> Result<(Vec<u8>
             alternate_headroom: peak.max(1.).log2(),
         },
     ))
+}
+
+/// The gain map of `hdr` over `sdr`, both linear sRGB-primaries RGB of the same size
+/// (1 = graphics white), as 8-bit samples, with its metadata; `peak` is the master's
+/// brightest value.
+pub fn compute(sdr: &[[f32; 3]], hdr: &[[f32; 3]], peak: f32) -> Result<(Vec<u8>, Metadata)> {
+    compute_from_luminances(
+        sdr.iter().map(|p| luminance(*p)),
+        hdr.iter().map(|p| luminance(*p)),
+        peak,
+    )
 }
 
 /// The APP2 payload naming ISO 21496-1, before its metadata.
@@ -516,5 +538,54 @@ mod tests {
         assert_eq!(m.alternate_headroom, 2.);
         let (flat, _) = compute(&sdr, &sdr, 1.).unwrap();
         assert!(flat.iter().all(|v| *v == 0));
+    }
+
+    #[test]
+    fn streaming_luminances_match_buffered_gain_map_bit_for_bit() {
+        let sdr = [
+            [-0.2, 0.0, 0.5],
+            [0.18, 0.25, 0.31],
+            [1.0, 0.8, 0.6],
+            [0.0, 0.0, 0.0],
+        ];
+        let hdr = [
+            [-0.5, 0.1, 0.2],
+            [0.18, 0.5, 0.9],
+            [4.5, 2.2, 1.1],
+            [0.01, -0.02, 0.0],
+        ];
+        let (stream_map, stream_meta) = compute_from_luminances(
+            sdr.iter().map(|p| luminance(*p)),
+            hdr.iter().map(|p| luminance(*p)),
+            4.5,
+        )
+        .unwrap();
+        // Reference: sum channels via iterator fold and two-pass min/max.
+        let lum = |p: &[f32; 3]| (0..3).map(|c| LUMINANCE[c] * p[c].max(0.)).sum::<f32>();
+        let gains: Vec<f32> = sdr
+            .iter()
+            .zip(&hdr)
+            .map(|(s, h)| ((lum(h) + OFFSET) / (lum(s) + OFFSET)).log2())
+            .collect();
+        let min = gains.iter().copied().fold(f32::INFINITY, f32::min).min(0.);
+        let mut max = gains.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        if max - min < 1. / 256. {
+            max = min + 1. / 256.;
+        }
+        let ref_map: Vec<u8> = gains
+            .iter()
+            .map(|g| (((g - min) / (max - min)).clamp(0., 1.) * 255. + 0.5) as u8)
+            .collect();
+        assert_eq!(stream_map, ref_map);
+        assert_eq!(stream_meta.min.to_bits(), min.to_bits());
+        assert_eq!(stream_meta.max.to_bits(), max.to_bits());
+        assert_eq!(stream_meta.base_headroom.to_bits(), 0f32.to_bits());
+        assert_eq!(
+            stream_meta.alternate_headroom.to_bits(),
+            4.5f32.log2().to_bits()
+        );
+        // Empty and mismatched sizes still fail.
+        assert!(compute_from_luminances([].into_iter(), [].into_iter(), 1.).is_err());
+        assert!(compute_from_luminances([0.5].into_iter(), [0.5, 1.0].into_iter(), 1.).is_err());
     }
 }
