@@ -750,15 +750,13 @@ pub(super) fn photo_measures(
     };
     let lut = CurveSet::new(&base);
     let scene = measured_scene(&small, &base, &lut, camera);
-    // The copy without retouching, when it differs, for the darkest level.
-    let unretouched: Vec<f32> = match (im.measured, im.unretouched) {
+    // The copy without retouching, when it differs, for the darkest level so a local
+    // repair (red eye, spot removal) does not move the whole photo's black.
+    let unretouched_scene: Option<Vec<[f32; 3]>> = match (im.measured, im.unretouched) {
         (Some(copy), Some(plain)) if !Arc::ptr_eq(copy, plain) => {
-            measured_scene(plain, &base, &lut, camera)
-                .into_iter()
-                .map(crate::develop::scene_tone::luminance)
-                .collect()
+            Some(measured_scene(plain, &base, &lut, camera))
         }
-        _ => Vec::new(),
+        _ => None,
     };
     // The white point and the photo's maximum are the camera's: measured at the as-shot
     // white balance, so a white balance change keeps them (the synthetic chart's). A
@@ -766,7 +764,7 @@ pub(super) fn photo_measures(
     // matrices: `CameraProfile::camera_matrix_at`), so its as-shot one is used too.
     let metadata = &small.metadata;
     let (as_shot, shot_camera, base_lut) = as_shot_stage(metadata, r);
-    let camera: Vec<[f32; 3]> = small
+    let camera_as_shot: Vec<[f32; 3]> = small
         .pixels
         .par_iter()
         .map(|p| {
@@ -778,57 +776,10 @@ pub(super) fn photo_measures(
         })
         .collect();
     let edge = crate::develop::scene_tone::MAX_EDGE;
-    let max = box_reduce(&camera, small.width, small.height, edge)
+    let max = box_reduce(&camera_as_shot, small.width, small.height, edge)
         .into_iter()
         .flatten()
         .fold(f32::MIN_POSITIVE, f32::max);
-    let crop = crate::develop::local_tone::active_crop_rect(&small).filter(|&[x0, y0, x1, y1]| {
-        // Tiny sub-percent sensor margins are already clamped at raw resolution by
-        // `crop_clamped_preview`; only slice `small` when a substantial optical-black
-        // border (>2% of pixels, e.g. Sony A7R VI) would bias quantiles like `p99`.
-        (x1 - x0) * (y1 - y0) < small.pixels.len() * 98 / 100
-    });
-    let in_crop = |vals: Vec<f32>| -> Vec<f32> {
-        let Some([x0, y0, x1, y1]) = crop else {
-            return vals;
-        };
-        if vals.is_empty() {
-            return vals;
-        }
-        let w = small.width as usize;
-        let mut out = Vec::with_capacity((x1 - x0) * (y1 - y0));
-        for y in y0..y1 {
-            out.extend_from_slice(&vals[y * w + x0..y * w + x1]);
-        }
-        out
-    };
-    let mut lum: Vec<f32> = in_crop(
-        scene
-            .iter()
-            .map(|p| crate::develop::scene_tone::luminance(*p))
-            .collect(),
-    );
-    let mut unretouched = in_crop(unretouched);
-    let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
-    // The 0.1th percentile, before red eye corrections and spot removal: a few dark
-    // pixels do not move it, and a local repair does not move the whole photo's black.
-    let dark_lum = if unretouched.is_empty() {
-        &mut lum
-    } else {
-        &mut unretouched
-    };
-    let dark = if dark_lum.is_empty() {
-        min
-    } else {
-        let k = (dark_lum.len() - 1) / 1000;
-        *dark_lum.select_nth_unstable_by(k, f32::total_cmp).1
-    };
-    let k = (lum.len().max(1) - 1) * 99 / 100;
-    let p99 = if lum.is_empty() {
-        1.
-    } else {
-        *lum.select_nth_unstable_by(k, f32::total_cmp).1
-    };
     // A neutral whose last channel just clips (highlight recovery rebuilds the others
     // up to it): the sensor clips at 1 in camera values divided by the as-shot white
     // balance, before the recipe's. Measured on the synthetic chart, whose white
@@ -845,6 +796,101 @@ pub(super) fn photo_measures(
     // its pseudo-scene was made with (`develop::rendered`), whatever the scene measures:
     // so the file renders back as it is at default settings.
     let rendered = metadata.is_rendered();
+    let crop = crate::develop::local_tone::active_crop_rect(&small).filter(|&[x0, y0, x1, y1]| {
+        // Tiny sub-percent sensor margins are already clamped at raw resolution by
+        // `crop_clamped_preview`; only slice `small` when a substantial optical-black
+        // border (>2% of pixels, e.g. Sony A7R VI) would bias quantiles like `p99`.
+        (x1 - x0) * (y1 - y0) < small.pixels.len() * 98 / 100
+    });
+    let [cx0, cy0, cx1, cy1] = crop.unwrap_or([0, 0, small.width as usize, small.height as usize]);
+    let (cw, ch) = (cx1 - cx0, cy1 - cy0);
+    let crop_lum = |pixels: &[[f32; 3]]| -> Vec<f32> {
+        match crop {
+            Some([x0, y0, x1, y1]) => {
+                let w = small.width as usize;
+                let mut out = Vec::with_capacity(cw * ch);
+                for y in y0..y1 {
+                    out.extend(
+                        pixels[y * w + x0..y * w + x1]
+                            .iter()
+                            .map(|p| crate::develop::scene_tone::luminance(*p)),
+                    );
+                }
+                out
+            }
+            None => pixels
+                .iter()
+                .map(|p| crate::develop::scene_tone::luminance(*p))
+                .collect(),
+        }
+    };
+    let mut lum = crop_lum(&scene);
+    let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
+    // For SDR positive Whites (`whites_p99`), exclude flat sensor-clipped highlight
+    // regions (e.g. a small blown-out sky) so they do not hold positive Whites back on
+    // an otherwise dark scene, while keeping all textured highlights and dark pixels.
+    // The clip test runs on `camera_as_shot` (the same as-shot white balance as `white`)
+    // so dragging Temp or Tint never flips a clipped region in or out. Plain `p99` is
+    // kept untouched for HDR positive Whites (`PhotoMeasures::hdr_whites_level`).
+    let mut whites_p99 = if !lum.is_empty() && !rendered && white > 1e-6 {
+        let as_shot_lum = crop_lum(&camera_as_shot);
+        let hi_thr = 0.95 * white;
+        let flat_thr = 1e-4 * white;
+        let mut kept = Vec::with_capacity(lum.len());
+        for y in 0..ch {
+            let row = y * cw;
+            for x in 0..cw {
+                let av = as_shot_lum[row + x];
+                if av >= hi_thr {
+                    let mut diff = 0f32;
+                    if y > 0 {
+                        diff = diff.max((av - as_shot_lum[row - cw + x]).abs());
+                    }
+                    if y + 1 < ch {
+                        diff = diff.max((av - as_shot_lum[row + cw + x]).abs());
+                    }
+                    if x > 0 {
+                        diff = diff.max((av - as_shot_lum[row + x - 1]).abs());
+                    }
+                    if x + 1 < cw {
+                        diff = diff.max((av - as_shot_lum[row + x + 1]).abs());
+                    }
+                    if diff < flat_thr {
+                        continue;
+                    }
+                }
+                kept.push(lum[row + x]);
+            }
+        }
+        (kept.len() >= 100).then(|| {
+            let k = (kept.len() - 1) * 99 / 100;
+            *kept.select_nth_unstable_by(k, f32::total_cmp).1
+        })
+    } else {
+        None
+    };
+    let p99 = if lum.is_empty() {
+        1.
+    } else {
+        let k = (lum.len() - 1) * 99 / 100;
+        *lum.select_nth_unstable_by(k, f32::total_cmp).1
+    };
+    let whites_p99 = whites_p99.take().unwrap_or(p99);
+    let mut dark_lum = match unretouched_scene {
+        Some(ref plain) => crop_lum(plain),
+        None => Vec::new(),
+    };
+    let dark_slice = if dark_lum.is_empty() {
+        &mut lum
+    } else {
+        &mut dark_lum
+    };
+    let dark = if dark_slice.is_empty() {
+        min
+    } else {
+        let k_dark = (dark_slice.len() - 1) / 1000;
+        *dark_slice.select_nth_unstable_by(k_dark, f32::total_cmp).1
+    };
     crate::develop::scene_tone::PhotoMeasures {
         sensor_white: if rendered { 0. } else { white.max(1e-6).log2() },
         // Highlights rebuilt above the sensor's clip do not raise it.
@@ -852,6 +898,7 @@ pub(super) fn photo_measures(
         min: min.max(2f32.powi(-20)).log2(),
         dark: dark.max(2f32.powi(-20)).log2(),
         p99: crate::develop::local_tone::level(p99),
+        whites_p99: crate::develop::local_tone::level(whites_p99),
     }
 }
 /// The haze Dehaze uses (`scene_tone::Haze`), on the scene values `photo_measures`
@@ -1389,6 +1436,87 @@ mod tests {
         assert_eq!(
             white_at(&im_ren, &ren_hl, false),
             white_at(&im_ren, &ren_def, false)
+        );
+    }
+
+    /// `photo_measures`'s `p99` excludes flat sensor-clipped highlight regions while
+    /// keeping dark scenes and textured highlights intact.
+    #[test]
+    fn photo_measures_p99_ignores_flat_clipped_highlights_but_keeps_dark_scenes() {
+        let make = |pixels: Vec<[f32; 3]>| CameraImage {
+            width: 128,
+            height: 128,
+            recovered: Default::default(),
+            pixels: pixels.into(),
+            metadata: Metadata {
+                source: rawmakase_model::camera_data::Source::Raw,
+                wb: [1., 1., 1.],
+                matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let measure = |im: &CameraImage, r: &Recipe| {
+            let cam = camera_stage(&im.metadata, r);
+            photo_measures(Source::new(im), r, cam)
+        };
+        // Textured mid-dark scene (~0.125) plus a 12.5% flat clipped white block (1.0):
+        // flat clipped sky is excluded from SDR `whites_p99` (near −3 EV), while plain
+        // `p99` (used by HDR) stays near 0 EV.
+        let mut clipped = Vec::with_capacity(128 * 128);
+        for y in 0..128 {
+            for x in 0..128 {
+                let v = if y < 16 {
+                    1.0
+                } else {
+                    0.125 * (1. + 0.1 * ((x as f32 * 0.4).sin() * (y as f32 * 0.4).cos()))
+                };
+                clipped.push([v; 3]);
+            }
+        }
+        let clipped_im = make(clipped);
+        let m_clip = measure(&clipped_im, &Recipe::default());
+        assert!(
+            m_clip.whites_p99 < -2.5,
+            "flat clipped sky leaked into whites_p99: {}",
+            m_clip.whites_p99
+        );
+        assert!(
+            m_clip.p99 > -0.2,
+            "plain p99 (HDR) should keep the clipped block: {}",
+            m_clip.p99
+        );
+        // Shifting white balance lowers the recipe-WB luminance of the clipped region,
+        // yet `whites_p99` still excludes it because the clip test uses as-shot WB.
+        let shifted_wb = Recipe {
+            wb: [0.6, 0.85, 1.4],
+            ..Recipe::default()
+        };
+        let m_shifted = measure(&clipped_im, &shifted_wb);
+        assert!(
+            m_shifted.whites_p99 < -2.5,
+            "white balance shift re-admitted flat clipped sky: {}",
+            m_shifted.whites_p99
+        );
+
+        // Dark scene (~0.004) with tiny gradient (< 1e-4) plus 0.5% bright speculars (0.5):
+        // dark pixels must NOT be dropped, so both `whites_p99` and `p99` stay near −8 EV.
+        let mut dark = Vec::with_capacity(128 * 128);
+        for y in 0..128 {
+            for x in 0..128 {
+                let v = if y == 0 && x < 64 { 0.5 } else { 0.004 };
+                dark.push([v; 3]);
+            }
+        }
+        let m_dark = measure(&make(dark), &Recipe::default());
+        assert!(
+            m_dark.whites_p99 < -7.0 && m_dark.p99 < -7.0,
+            "dark pixels were dropped from p99/whites_p99: {} / {}",
+            m_dark.p99,
+            m_dark.whites_p99
         );
     }
 }

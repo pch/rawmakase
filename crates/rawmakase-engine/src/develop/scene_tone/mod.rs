@@ -228,6 +228,7 @@ mod tests {
                 min: -12.,
                 dark: -12.,
                 p99: -3.,
+                whites_p99: -3.,
             };
             let r = Recipe {
                 whites: 1.,
