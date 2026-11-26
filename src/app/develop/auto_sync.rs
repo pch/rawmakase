@@ -300,6 +300,7 @@ impl Editor {
             demosaic: self.session.demosaic,
             cache: Some(self.decode_cache().clone()),
             lenses: self.lens_profiles().clone(),
+            profiles: self.camera_profiles().clone(),
         };
         let change = BatchChange::AutoSync(Box::new(waiting.change));
         let source = SyncSource::Open(Box::new(waiting.source));

@@ -820,6 +820,7 @@ impl Editor {
             demosaic: self.session.demosaic,
             cache: self.decode_cache().clone(),
             lenses: self.lens_profiles().clone(),
+            profiles: self.camera_profiles().clone(),
             ai: self.ai_service(),
         };
         let ticket = self.export_queue().submit(batch);

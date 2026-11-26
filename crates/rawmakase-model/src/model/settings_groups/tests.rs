@@ -789,7 +789,9 @@ fn syncing_from_a_raw_to_a_jpeg_keeps_the_jpegs_white_balance_and_profile() {
     let mut to = Recipe::for_rendered(&jpeg);
     to.incremental_temperature = 30.;
     to.update_wb(&jpeg);
-    let profiles = crate::camera_profiles::installed(&jpeg).0;
+    let profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+        .installed(&jpeg)
+        .0;
     let out = transfer(
         from(&source, &raw),
         &to,

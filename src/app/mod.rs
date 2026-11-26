@@ -164,7 +164,7 @@ pub(crate) struct Editor {
     /// Library's previews.
     raw_defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
     /// The profile library as unedited photos' previews were last built from
-    /// (`camera_profiles::library_fingerprint`): read at start and after every
+    /// (`ProfileLibrary::fingerprint` of the context's): read at start and after every
     /// profile import, rather than scanned for each preview.
     profile_library: String,
     /// Shared automation queue and independently configured input adapters.
@@ -202,6 +202,10 @@ impl Editor {
     /// The imported lens profiles every photo is opened with: the context's.
     pub(in crate::app) fn lens_profiles(&self) -> &crate::photo::LensProfiles {
         crate::environment::lens_profiles(&self.core)
+    }
+    /// The installed camera profiles: the context's.
+    pub(in crate::app) fn camera_profiles(&self) -> &crate::camera_profiles::ProfileLibrary {
+        crate::environment::camera_profiles(&self.core)
     }
 }
 impl Editor {
@@ -378,15 +382,19 @@ impl Editor {
             stored_ctx.request_repaint();
         }));
         let lenses = crate::environment::lens_profiles(&core).clone();
+        let profiles = crate::environment::camera_profiles(&core).clone();
+        let libraries = crate::environment::libraries(&core);
+        let profile_library = crate::environment::camera_profiles(&core).fingerprint();
         let loader = worker::Loader::new(
             tx.clone(),
             ctx.clone(),
             decode_cache.clone(),
             lenses.clone(),
+            profiles.clone(),
         );
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
         let reference_loader =
-            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache, lenses.clone());
+            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache, libraries);
         let standard_preview_size = session.standard_preview_size();
         let discard_one_to_one_after = session.discard_one_to_one_after();
         let stand_ins = crate::app::develop::stand_in::StandIns::new(
@@ -505,7 +513,7 @@ impl Editor {
                 standard_preview_size,
                 discard_one_to_one_after,
             ),
-            copies: crate::app::worker::editable_preview::decoder(lenses),
+            copies: crate::app::worker::editable_preview::decoder(lenses, profiles),
             editable_builds: Default::default(),
             stand_ins,
             autosave: Default::default(),
@@ -554,7 +562,7 @@ impl Editor {
             raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
                 session.raw_defaults.clone(),
             )),
-            profile_library: crate::camera_profiles::library_fingerprint(),
+            profile_library,
             controls: crate::app::shell::automation::Hub::inactive(),
             automation: crate::app::shell::commands::Automation::default(),
             keymap: crate::app::shell::keymap::file::KeymapFile::defaults(),

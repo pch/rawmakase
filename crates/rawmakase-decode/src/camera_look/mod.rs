@@ -721,7 +721,8 @@ mod tests {
         let m = crate::photo::open(&named, &crate::photo::LensProfiles::none())
             .unwrap()
             .metadata;
-        let (profiles, _) = rawmakase_model::camera_profiles::installed(&m);
+        let (profiles, _) =
+            rawmakase_model::camera_profiles::ProfileLibrary::for_tests().installed(&m);
         let cancel = AtomicBool::new(false);
         assert_eq!(
             with_default(

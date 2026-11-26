@@ -799,6 +799,7 @@ fn editor_with_a_neighbour_waiting(
         ctx.clone(),
         cache.clone(),
         crate::photo::LensProfiles::none(),
+        crate::camera_profiles::ProfileLibrary::for_tests(),
     );
     task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
     let (taken, _) = std::sync::mpsc::channel();

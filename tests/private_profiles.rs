@@ -74,7 +74,7 @@ fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<(
         &std::path::PathBuf::from(std::env::var("RAWMAKASE_PROFILE_RAW")?),
         &rawmakase::photo::LensProfiles::none(),
     )?;
-    let (profiles, errors) = camera_profiles::installed(&raw.metadata);
+    let (profiles, errors) = camera_profiles::ProfileLibrary::for_tests().installed(&raw.metadata);
     assert!(errors.is_empty(), "{errors:?}");
     for name in [
         "Adobe Color",

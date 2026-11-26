@@ -19,7 +19,7 @@ fn supplied_library_audit() -> anyhow::Result<()> {
             model: model.into(),
             ..Default::default()
         };
-        let (profiles, _) = camera_profiles::installed(&m);
+        let (profiles, _) = camera_profiles::ProfileLibrary::for_tests().installed(&m);
         let base = Recipe::for_metadata(&m);
         let mut okay = 0;
         let mut errors = std::collections::BTreeMap::<String, usize>::new();

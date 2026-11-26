@@ -19,7 +19,7 @@ pub(in crate::app) enum EditSource {
 }
 /// What a photo without an edit is previewed with: the raw defaults, and the
 /// profile library they are resolved against
-/// (`camera_profiles::library_fingerprint`), as the app last read it. Which
+/// (`ProfileLibrary::fingerprint`), as the app last read it. Which
 /// profile a default picks, and a photo without color data's fitted look,
 /// depend on the library, so a preview made before profiles were imported or
 /// removed is not found again under the same identity.
@@ -74,11 +74,12 @@ impl EditSource {
         edit: Option<&Self>,
         m: &crate::camera_data::Metadata,
         path: &Path,
-        lenses: &crate::photo::LensProfiles,
+        libraries: &crate::environment::Libraries,
         cancel: Cancel<'_>,
     ) -> anyhow::Result<Recipe> {
-        let (profiles, _) = crate::camera_profiles::installed(m);
-        let profiles = crate::camera_look::with_default(path, lenses, m, profiles, cancel);
+        let (profiles, _) = libraries.profiles.installed(m);
+        let profiles =
+            crate::camera_look::with_default(path, &libraries.lenses, m, profiles, cancel);
         let start = match edit {
             Some(Self::Recipe(saved)) => Start::Recipe(saved.recipe.clone()),
             Some(Self::Unreadable(why)) => anyhow::bail!("{why}"),

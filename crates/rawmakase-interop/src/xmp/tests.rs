@@ -2301,7 +2301,9 @@ fn rendered() -> Metadata {
 #[test]
 fn xmp_reads_and_writes_relative_white_balance_for_a_jpeg() -> Result<()> {
     let m = rendered();
-    let profiles = crate::camera_profiles::installed(&m).0;
+    let profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+        .installed(&m)
+        .0;
     let attrs = r#"c:IncrementalTemperature="+25" c:IncrementalTint="-10" c:WhiteBalance="Custom" c:CameraProfile="Embedded""#;
     let sidecar = parse(Path::new("photo.xmp"), &xml(attrs, ""))?;
     let r = sidecar.apply(&Recipe::for_rendered(&m), &m, &profiles, None)?;

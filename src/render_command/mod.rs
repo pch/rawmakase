@@ -229,7 +229,7 @@ fn replace(overwrite: bool) -> crate::export::Replace {
 /// as its AI Denoise source is made, so its worker and model are gone before the render.
 pub fn render(
     o: &Render,
-    lenses: &crate::photo::LensProfiles,
+    libraries: &crate::environment::Libraries,
     raw_defaults: &dyn Fn() -> DevelopDefaults,
     ai_denoise: &dyn Fn() -> CommandLine,
     cancel: Cancel<'_>,
@@ -268,7 +268,7 @@ pub fn render(
     let t = Instant::now();
     // Read before decoding: AI Denoise's result must be of the same file.
     let file = crate::storage::Identity::read(input)?;
-    let r = crate::photo::open(input, lenses)?;
+    let r = crate::photo::open(input, &libraries.lenses)?;
     let mut edit = if let Some(p) = &o.recipe {
         crate::presets::load_preset(p)?.recipe
     } else if let Some(sidecar) = o
@@ -288,9 +288,9 @@ pub fn render(
         // camera look.
         let profiles = crate::camera_look::with_default(
             input,
-            lenses,
+            &libraries.lenses,
             &r.metadata,
-            crate::camera_profiles::installed(&r.metadata).0,
+            libraries.profiles.installed(&r.metadata).0,
             cancel,
         );
         let resolved =
@@ -304,7 +304,7 @@ pub fn render(
         edit.exposure = e;
     }
     if let Some(p) = &o.profile {
-        edit.profile = Some(crate::camera_profiles::load(p, &r.metadata)?);
+        edit.profile = Some(libraries.profiles.load(p, &r.metadata)?);
         // A chosen profile starts at 100%, as in the app.
         edit.profile_amount = 1.;
         edit.use_camera_baseline(&r.metadata);
@@ -319,7 +319,7 @@ pub fn render(
     let im = r.develop(decode, cancel)?;
     if let Some(path) = &o.xmp {
         let preset = crate::xmp::parse(path, &std::fs::read_to_string(path)?)?;
-        let (profiles, _) = crate::camera_profiles::installed(&im.metadata);
+        let (profiles, _) = libraries.profiles.installed(&im.metadata);
         edit = preset.apply(
             &edit,
             &im.metadata,
@@ -485,7 +485,7 @@ pub fn render(
 /// photo is developed, and serves every job, so its model loads once.
 pub fn render_batch(
     o: &RenderBatch,
-    lenses: &crate::photo::LensProfiles,
+    libraries: &crate::environment::Libraries,
     ai_denoise: &dyn Fn() -> CommandLine,
     cancel: Cancel<'_>,
     console: &mut Console<'_>,
@@ -494,9 +494,9 @@ pub fn render_batch(
     let jobs: Vec<Job> = serde_json::from_str(&std::fs::read_to_string(&o.jobs)?)?;
     // Read before decoding: AI Denoise's result must be of the same file.
     let file = crate::storage::Identity::read(input)?;
-    let photo = crate::photo::open(input, lenses)?;
+    let photo = crate::photo::open(input, &libraries.lenses)?;
     let im = Arc::new(photo.develop(camera_data::Decode::full(Default::default()), cancel)?);
-    let (profiles, _) = crate::camera_profiles::installed(&im.metadata);
+    let (profiles, _) = libraries.profiles.installed(&im.metadata);
     let base = Recipe::with_profiles(&im.metadata, &profiles);
     let camera = Some(camera(input, &im.metadata));
     // One AI Denoise service and one export backend for every job: the model and GPU

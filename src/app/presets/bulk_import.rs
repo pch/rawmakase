@@ -780,10 +780,10 @@ impl Editor {
     }
     /// Lists the open photo's profiles again once an import has added some.
     pub(in crate::app) fn list_profiles_after_import(&mut self) {
-        self.profile_library = crate::camera_profiles::library_fingerprint();
+        self.profile_library = self.camera_profiles().fingerprint();
         let before = self.document.edit.recipe().clone();
         if let Some(m) = &self.document.metadata {
-            let listed = crate::camera_profiles::listed(m);
+            let listed = self.camera_profiles().listed(m);
             self.document.profiles = crate::app::develop::camera_look::keep_fitted_default(
                 &self.document.profiles,
                 m,

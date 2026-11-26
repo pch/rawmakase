@@ -69,7 +69,7 @@ impl From<DeghostLevel> for Deghost {
 /// `cancel` is set.
 pub fn merge_hdr(
     args: &MergeHdr,
-    lenses: &crate::photo::LensProfiles,
+    libraries: &crate::environment::Libraries,
     raw_defaults: &dyn Fn() -> DevelopDefaults,
     cancel: Cancel<'_>,
     err: &mut (dyn Write + Send),
@@ -108,7 +108,7 @@ pub fn merge_hdr(
         &record,
         &args.raws[0],
         &raw_defaults,
-        lenses,
+        libraries,
         cancel,
     )?;
     for warning in &active.warnings {
@@ -181,7 +181,7 @@ pub fn merge_hdr(
         &merged,
         active.active(),
         &raw_defaults,
-        lenses,
+        libraries,
         &destination,
         &options.software,
         cancel,
@@ -259,7 +259,7 @@ mod tests {
         let mut err = Vec::new();
         let got = merge_hdr(
             &args,
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &Default::default,
             Cancel::NEVER,
             &mut err,
@@ -277,7 +277,7 @@ mod tests {
         };
         let got = merge_hdr(
             &args,
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &Default::default,
             Cancel::NEVER,
             &mut err,
@@ -313,7 +313,7 @@ mod tests {
                     metadata: &m,
                 },
                 &Default::default(),
-                &crate::photo::LensProfiles::none(),
+                &crate::environment::Libraries::default(),
                 &Destination::beside(&merged.inputs[0].path),
                 "RAWmakase test",
                 Cancel::NEVER,

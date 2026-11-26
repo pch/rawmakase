@@ -393,6 +393,8 @@ pub struct Batch {
     pub cache: crate::decode_cache::DecodeCache,
     /// The imported lens profiles each photo is opened with.
     pub lenses: crate::photo::LensProfiles,
+    /// The camera profiles a photo's stored edit resolves among.
+    pub profiles: crate::camera_profiles::ProfileLibrary,
     /// Where AI Denoise sources come from.
     pub ai: crate::ai_denoise::AiService,
 }
@@ -557,7 +559,7 @@ struct Shared<'a> {
 }
 
 /// Every [`crate::camera_data::Metadata`] field inspected by
-/// `camera_profiles::installed` for a RAW without an embedded DCP.
+/// `ProfileLibrary::installed` for a RAW without an embedded DCP.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ProfileCacheKey {
     make: String,
@@ -607,9 +609,14 @@ struct ProfileCache {
 }
 
 impl ProfileCache {
-    fn installed(&self, m: &crate::camera_data::Metadata) -> ProfileList {
+    /// The profiles of `library` installed for the camera of `m`.
+    fn installed(
+        &self,
+        library: &crate::camera_profiles::ProfileLibrary,
+        m: &crate::camera_data::Metadata,
+    ) -> ProfileList {
         let Some(key) = ProfileCacheKey::of(m) else {
-            return crate::camera_profiles::installed(m).0;
+            return library.installed(m).0;
         };
         let slot = {
             let mut map = self
@@ -620,8 +627,7 @@ impl ProfileCache {
                 .or_insert_with(|| Arc::new(OnceLock::new()))
                 .clone()
         };
-        slot.get_or_init(|| crate::camera_profiles::installed(m).0)
-            .clone()
+        slot.get_or_init(|| library.installed(m).0).clone()
     }
 }
 
@@ -774,7 +780,9 @@ fn render<'a>(
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
         Edit::Catalog(record) => {
-            let profiles = shared.profiles.installed(opened.metadata());
+            let profiles = shared
+                .profiles
+                .installed(&batch.profiles, opened.metadata());
             let profiles = rawmakase_decode::camera_look::with_default(
                 &photo.source,
                 &batch.lenses,

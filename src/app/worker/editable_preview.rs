@@ -54,7 +54,10 @@ pub(crate) type Copies = Arc<dyn CopyFiles>;
 
 /// The copy files export writes and the decoder reads, opened with the
 /// imported lens profiles it holds.
-pub(crate) struct Decoder(crate::photo::LensProfiles);
+pub(crate) struct Decoder(
+    crate::photo::LensProfiles,
+    crate::camera_profiles::ProfileLibrary,
+);
 
 impl CopyFiles for Decoder {
     fn open(&self, path: &Path, cancel: Cancel<'_>) -> anyhow::Result<OpenedCopy> {
@@ -75,7 +78,7 @@ impl CopyFiles for Decoder {
         use anyhow::Context as _;
         let raw = crate::photo::open(input.path, &self.0)
             .with_context(|| format!("{} can't be read", input.path.display()))?;
-        let (profiles, _) = crate::camera_profiles::installed(&raw.metadata);
+        let (profiles, _) = self.1.installed(&raw.metadata);
         let listed = profiles.len();
         let profiles =
             crate::camera_look::with_default(input.path, &self.0, &raw.metadata, profiles, cancel);
@@ -97,8 +100,11 @@ impl CopyFiles for Decoder {
 }
 
 /// The copy files the app uses, opening photos with `lenses`.
-pub(crate) fn decoder(lenses: crate::photo::LensProfiles) -> Copies {
-    Arc::new(Decoder(lenses))
+pub(crate) fn decoder(
+    lenses: crate::photo::LensProfiles,
+    profiles: crate::camera_profiles::ProfileLibrary,
+) -> Copies {
+    Arc::new(Decoder(lenses, profiles))
 }
 
 /// A stand-in for the decoder in tests: a copy's file holds the identity it
@@ -202,10 +208,10 @@ mod decoder_tests {
             demosaic: Demosaic::default(),
             decode_cache: &cache,
         };
-        decoder(Default::default())
+        decoder(Default::default(), Default::default())
             .build(&input, &dest, Cancel::NEVER)
             .unwrap();
-        let opened = decoder(Default::default())
+        let opened = decoder(Default::default(), Default::default())
             .open(&dest, Cancel::NEVER)
             .unwrap();
         assert!(opened.image.fast, "a reduced decode");
@@ -219,11 +225,11 @@ mod decoder_tests {
         );
         assert!(opened.image.recovered.get().is_some(), "recovered once");
         // Built again over it: replaced, still opening.
-        decoder(Default::default())
+        decoder(Default::default(), Default::default())
             .build(&input, &dest, Cancel::NEVER)
             .unwrap();
         assert!(
-            decoder(Default::default())
+            decoder(Default::default(), Default::default())
                 .open(&dest, Cancel::NEVER)
                 .is_ok()
         );

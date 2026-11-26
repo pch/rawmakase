@@ -4,6 +4,7 @@ use crate::{Error, ErrorKind, Result};
 use rawmakase_decode::ai::cache::{self as ai_cache, AiCache};
 use rawmakase_decode::decode_cache::{self, DecodeCache};
 use rawmakase_decode::photo::LensProfiles;
+use rawmakase_model::camera_profiles::ProfileLibrary;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -49,6 +50,8 @@ struct Inner {
     // RAWmakase's app through `workspace`.
     #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     lenses: LensProfiles,
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
+    profiles: ProfileLibrary,
     cache: Option<Cache>,
 }
 
@@ -75,8 +78,8 @@ pub struct ContextBuilder {
 impl ContextBuilder {
     /// The data folders, in order. The first is where RAWmakase would write
     /// what an app imports; all are searched for what has been imported: the
-    /// lens profiles in each folder's `lens-profiles`. Without any, no
-    /// imported lens profile is found.
+    /// camera profiles in each folder's `camera-profiles` and the lens profiles
+    /// in its `lens-profiles`. Without any, no installed profile is found.
     pub fn data_dirs<P: Into<PathBuf>>(mut self, dirs: impl IntoIterator<Item = P>) -> Self {
         self.data_dirs = dirs.into_iter().map(Into::into).collect();
         self
@@ -119,6 +122,7 @@ impl ContextBuilder {
         Ok(Context {
             inner: Arc::new(Inner {
                 lenses: LensProfiles::in_data_dirs(&self.data_dirs),
+                profiles: ProfileLibrary::in_data_dirs(&self.data_dirs),
                 data_dirs: self.data_dirs,
                 cache,
             }),
@@ -159,6 +163,7 @@ pub mod workspace {
     use rawmakase_decode::ai::cache::AiCache;
     use rawmakase_decode::decode_cache::DecodeCache;
     use rawmakase_decode::photo::LensProfiles;
+    use rawmakase_model::camera_profiles::ProfileLibrary;
 
     /// The context's decode cache, when it has a cache. A clone is the same
     /// cache, and its folder and limit can be changed while it is in use, as
@@ -176,6 +181,13 @@ pub mod workspace {
     /// photo is opened with. A clone shares what was read.
     pub fn lens_profiles(ctx: &Context) -> &LensProfiles {
         &ctx.inner.lenses
+    }
+
+    /// The camera profiles installed in the context's data folders, which a
+    /// photo's profiles are listed from and its edit resolved among. A clone
+    /// shares what was read.
+    pub fn camera_profiles(ctx: &Context) -> &ProfileLibrary {
+        &ctx.inner.profiles
     }
 }
 
@@ -244,8 +256,15 @@ mod tests {
                 PathBuf::from("/older/lens-profiles")
             ]
         );
+        assert_eq!(
+            ctx.inner.profiles.dirs(),
+            [
+                PathBuf::from("/data/camera-profiles"),
+                PathBuf::from("/older/camera-profiles")
+            ]
+        );
         let none = Context::builder().build().unwrap();
-        assert!(none.inner.lenses.dirs().is_empty());
+        assert!(none.inner.lenses.dirs().is_empty() && none.inner.profiles.dirs().is_empty());
     }
 
     #[test]

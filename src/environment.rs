@@ -38,6 +38,37 @@ pub fn lens_profiles(ctx: &rawmakase_core::Context) -> &crate::photo::LensProfil
     rawmakase_core::workspace::lens_profiles(ctx)
 }
 
+/// The installed camera profiles of a context [`context`] made: those in the
+/// data folder and the older Linux one.
+pub fn camera_profiles(ctx: &rawmakase_core::Context) -> &crate::camera_profiles::ProfileLibrary {
+    rawmakase_core::workspace::camera_profiles(ctx)
+}
+
+/// The profile manager's folder: where a context [`context`] made imports
+/// camera profiles to, the data folder's `camera-profiles`.
+pub fn profile_manager(ctx: &rawmakase_core::Context) -> crate::camera_profiles::manage::Library {
+    camera_profiles(ctx)
+        .manager()
+        .expect("the environment's context has a data folder")
+}
+
+/// What photos are opened with and their edits resolved among, taken
+/// together from a context: its imported lens profiles and installed camera
+/// profiles. Cheap to clone; the default has neither.
+#[derive(Clone, Debug, Default)]
+pub struct Libraries {
+    pub lenses: crate::photo::LensProfiles,
+    pub profiles: crate::camera_profiles::ProfileLibrary,
+}
+
+/// The libraries of a context [`context`] made.
+pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
+    Libraries {
+        lenses: lens_profiles(ctx).clone(),
+        profiles: camera_profiles(ctx).clone(),
+    }
+}
+
 /// What the caches' entries made by this build are keyed by: the executable's
 /// size and time, as the decode cache has always keyed them, so entries made
 /// before survive. When the executable can't be read, its version.

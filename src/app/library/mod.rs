@@ -1778,12 +1778,12 @@ impl Library {
         self.cache.edit_tx.set_ai_cache(cache.clone());
         self.screen.set_ai_cache(cache);
     }
-    /// The imported lens profiles the Library's previews open photos with (the
-    /// context's), set before it is shown.
-    pub(in crate::app) fn set_lens_profiles(&mut self, lenses: &crate::photo::LensProfiles) {
-        self.cache.edit_tx.set_lens_profiles(lenses.clone());
-        self.screen.set_lens_profiles(lenses);
-        self.session.set_lens_profiles(lenses.clone());
+    /// The libraries the Library's previews open and resolve photos with, and
+    /// its photo info is read with (the context's), set before it is shown.
+    pub(in crate::app) fn set_libraries(&mut self, libraries: &crate::environment::Libraries) {
+        self.cache.edit_tx.set_libraries(libraries.clone());
+        self.screen.set_libraries(libraries);
+        self.session.set_lens_profiles(libraries.lenses.clone());
     }
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does

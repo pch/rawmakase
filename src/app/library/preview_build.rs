@@ -101,6 +101,8 @@ pub(in crate::app) struct Item {
     pub decode_cache: crate::decode_cache::DecodeCache,
     /// The imported lens profiles the photo is opened with.
     pub lenses: crate::photo::LensProfiles,
+    /// The camera profiles its edit resolves among.
+    pub profiles: crate::camera_profiles::ProfileLibrary,
     pub identity: String,
     pub kind: PreviewKind,
     /// The long edge asked for; 0 for full size.
@@ -203,7 +205,7 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
     let opened = crate::photo::open_source(&item.path, &item.lenses, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
-    let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
+    let (profiles, _) = item.profiles.installed(opened.metadata());
     let profiles = crate::camera_look::with_default(
         &item.path,
         &item.lenses,
@@ -881,6 +883,7 @@ impl Editor {
                 demosaic: self.session.demosaic,
                 decode_cache: self.decode_cache().clone(),
                 lenses: self.lens_profiles().clone(),
+                profiles: self.camera_profiles().clone(),
                 kind,
                 edge,
             });

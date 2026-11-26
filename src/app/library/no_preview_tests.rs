@@ -139,7 +139,9 @@ fn library_with(make: impl FnOnce(&Path) -> PathBuf) -> Result<(tempfile::TempDi
         textures::PreviewTextures::with_cache(&library.ctx, directory.path().join("previews"));
     library.set_defaults(PreviewDefaults {
         develop: Default::default(),
-        profiles: crate::camera_profiles::library_fingerprint().into(),
+        profiles: crate::camera_profiles::ProfileLibrary::default()
+            .fingerprint()
+            .into(),
     });
     Ok((directory, library))
 }

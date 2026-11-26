@@ -10,8 +10,12 @@ app -> merge_hdr
 app -> platform
 app -> updates
 catalog_session -> platform
+comparison -> environment
 diagnostics -> platform
 diagnostics -> updates
 merge_command -> catalog_command
+merge_command -> environment
 merge_command -> merge_hdr
+merge_hdr -> environment
 render_command -> catalog_command
+render_command -> environment

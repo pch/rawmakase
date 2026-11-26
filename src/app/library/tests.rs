@@ -95,7 +95,9 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
             cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
             ..Default::default()
         };
-        editor.document.profiles = crate::camera_profiles::listed(&metadata).profiles;
+        editor.document.profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+            .listed(&metadata)
+            .profiles;
         editor.document.metadata = Some(metadata.clone());
         editor.refresh_photo_defaults();
         if dirty {

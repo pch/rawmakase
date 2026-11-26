@@ -84,7 +84,8 @@ fn main() -> Result<()> {
         camera_data::Decode::full(Default::default()),
         Cancel::new(&cancel),
     )?;
-    let (profiles, _) = rawmakase::camera_profiles::installed(&image.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&image.metadata);
     let mut recipe = Recipe::with_profiles(&image.metadata, &profiles);
     recipe.contrast = -0.76;
     recipe.highlights = -0.03;

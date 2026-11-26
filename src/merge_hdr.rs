@@ -106,7 +106,7 @@ pub fn publish(
     merged: &Merged,
     active: Active<'_>,
     raw_defaults: &DevelopDefaults,
-    lenses: &crate::photo::LensProfiles,
+    libraries: &crate::environment::Libraries,
     destination: &Destination,
     software: &str,
     cancel: Cancel<'_>,
@@ -130,10 +130,11 @@ pub fn publish(
             .map_err(|e| failed(&e))?;
     }
     let path = provisional.path();
-    let raw = crate::photo::open(path, lenses).context("The merged DNG can't be read")?;
+    let raw =
+        crate::photo::open(path, &libraries.lenses).context("The merged DNG can't be read")?;
     let m = raw.metadata.clone();
-    let installed = crate::camera_profiles::installed(&m).0;
-    let profiles = crate::camera_look::with_default(path, lenses, &m, installed, cancel);
+    let installed = libraries.profiles.installed(&m).0;
+    let profiles = crate::camera_look::with_default(path, &libraries.lenses, &m, installed, cancel);
     let defaults =
         crate::edits::resolve(&EditRecord::default(), path, &m, &profiles, raw_defaults)?.recipe;
     let (recipe, notes) = starting_edit(&defaults, active, &m, &profiles, merged.crop);
@@ -236,16 +237,16 @@ impl ActiveEdit {
         record: &EditRecord,
         path: &Path,
         raw_defaults: &DevelopDefaults,
-        lenses: &crate::photo::LensProfiles,
+        libraries: &crate::environment::Libraries,
         cancel: Cancel<'_>,
     ) -> Result<Self> {
-        let metadata = crate::photo::header_metadata(path, lenses)
-            .or_else(|_| crate::photo::open(path, lenses).map(|raw| raw.metadata))?;
+        let metadata = crate::photo::header_metadata(path, &libraries.lenses)
+            .or_else(|_| crate::photo::open(path, &libraries.lenses).map(|raw| raw.metadata))?;
         let profiles = crate::camera_look::with_default(
             path,
-            lenses,
+            &libraries.lenses,
             &metadata,
-            crate::camera_profiles::installed(&metadata).0,
+            libraries.profiles.installed(&metadata).0,
             cancel,
         );
         let resolved = crate::edits::resolve(record, path, &metadata, &profiles, raw_defaults)?;
@@ -436,7 +437,7 @@ pub(crate) mod tests {
                 metadata: &m,
             },
             &DevelopDefaults::default(),
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &Destination::beside(&dir.join("IMG_1.CR3")),
             "RAWmakase test",
             cancel,

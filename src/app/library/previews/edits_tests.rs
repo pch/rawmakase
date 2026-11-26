@@ -10,7 +10,7 @@ fn counting(
 ) -> (Renders, Receiver<EditResult>) {
     fn render(
         _: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -31,7 +31,7 @@ fn counting(
         },
         render,
         render_ai: render_edited_with_ai,
-        profiles: String::new,
+        profiles: |_| String::new(),
     };
     (renders, rx)
 }

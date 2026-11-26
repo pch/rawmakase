@@ -38,7 +38,7 @@ fn an_edited_jpeg_renders_with_its_edit() -> anyhow::Result<()> {
     let edit = edited_jpeg(&path)?;
     let image = render_edited(
         &path,
-        &crate::photo::LensProfiles::none(),
+        &crate::environment::Libraries::default(),
         &edit,
         Cancel::NEVER,
     )?;
@@ -78,13 +78,13 @@ fn an_edited_preview_is_rendered_as_develops_fit_draws_it() -> anyhow::Result<()
     let cancel = AtomicBool::new(false);
     let preview = render_edited(
         &path,
-        &crate::photo::LensProfiles::none(),
+        &crate::environment::Libraries::default(),
         &edit,
         Cancel::new(&cancel),
     )?;
     let (image, recipe) = open_quickly(
         &path,
-        &crate::photo::LensProfiles::none(),
+        &crate::environment::Libraries::default(),
         Some(&edit),
         Cancel::new(&cancel),
     )?;
@@ -194,7 +194,7 @@ fn a_panicking_edited_preview_fails_and_the_next_one_is_rendered() -> anyhow::Re
     }
     fn render(
         path: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -285,11 +285,11 @@ fn render_of_the_defaults(
     profiles: &str,
     render: fn(
         &Path,
-        &crate::photo::LensProfiles,
+        &crate::environment::Libraries,
         &EditSource,
         Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage>,
-    library: fn() -> String,
+    library: fn(&crate::camera_profiles::ProfileLibrary) -> String,
 ) -> anyhow::Result<(bool, bool)> {
     let directory = tempfile::tempdir()?;
     let cache = directory.path().join("previews.sqlite3");
@@ -342,12 +342,12 @@ fn a_render_of_the_defaults_is_kept_only_under_the_library_it_was_resolved_again
     let path = edited_png(directory.path(), "scan.png")?;
 
     static STEADY: Mutex<&str> = Mutex::new("before");
-    fn steady() -> String {
+    fn steady(_: &crate::camera_profiles::ProfileLibrary) -> String {
         STEADY.lock().unwrap().to_string()
     }
     fn renders(
         _: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -359,13 +359,13 @@ fn a_render_of_the_defaults_is_kept_only_under_the_library_it_was_resolved_again
     );
 
     static CHANGING: Mutex<&str> = Mutex::new("before");
-    fn changing() -> String {
+    fn changing(_: &crate::camera_profiles::ProfileLibrary) -> String {
         CHANGING.lock().unwrap().to_string()
     }
     // Profiles imported as the render resolves the defaults.
     fn renders_as_profiles_are_imported(
         _: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -458,7 +458,7 @@ fn renders_of(path: &Path, kind: PreviewAi) -> usize {
 
 fn plain(
     path: &Path,
-    _: &crate::photo::LensProfiles,
+    _: &crate::environment::Libraries,
     _: &EditSource,
     _: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
@@ -471,7 +471,7 @@ fn plain(
 
 fn with_ai(
     path: &Path,
-    _: &crate::photo::LensProfiles,
+    _: &crate::environment::Libraries,
     _: &crate::storage::Identity,
     _: &EditSource,
     _: &rawmakase_decode::ai::cache::AiEntry,
@@ -605,7 +605,7 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
     let source = EditSource::saved(recipe.clone());
     let (plain, shows) = develop_for_preview(
         &path,
-        &crate::photo::LensProfiles::none(),
+        &crate::environment::Libraries::default(),
         &source,
         256,
         None,
@@ -614,7 +614,7 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
     assert_eq!(shows, PreviewAi::Plain);
     let (denoised, shows) = develop_for_preview(
         &path,
-        &crate::photo::LensProfiles::none(),
+        &crate::environment::Libraries::default(),
         &source,
         256,
         Some(&ai),
@@ -769,7 +769,7 @@ fn edited_previews_render_side_by_side_at_full_pace() -> anyhow::Result<()> {
     // Ends once the other render is under way too.
     fn render(
         path: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -809,7 +809,7 @@ fn edited_previews_render_one_at_a_time_in_the_background() -> anyhow::Result<()
     static MOST: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     fn render(
         path: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -850,7 +850,7 @@ fn full_pace_renders_give_way_when_the_pace_drops() -> anyhow::Result<()> {
     static STARTED: AtomicBool = AtomicBool::new(false);
     fn render(
         _: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         cancel: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -888,7 +888,7 @@ fn photos_asked_ahead_are_kept_and_then_shown_from_the_cache() -> anyhow::Result
     static RENDERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     fn render(
         path: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -966,7 +966,7 @@ fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
     static STARTED: AtomicBool = AtomicBool::new(false);
     fn render(
         _: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         cancel: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {
@@ -1208,7 +1208,7 @@ fn edited_previews_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow:
     const RED: [u8; 3] = [200, 40, 30];
     fn render(
         _: &Path,
-        _: &crate::photo::LensProfiles,
+        _: &crate::environment::Libraries,
         _: &EditSource,
         _: Cancel<'_>,
     ) -> anyhow::Result<image::RgbImage> {

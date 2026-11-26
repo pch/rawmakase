@@ -242,8 +242,10 @@ impl Loader {
         ctx: egui::Context,
         cache: DecodeCache,
         lenses: crate::photo::LensProfiles,
+        profiles: crate::camera_profiles::ProfileLibrary,
     ) -> Self {
-        Self::with_parts(tx, ctx, cache, lenses, Ahead::default(), Between::default())
+        let (ahead, between) = (Ahead::default(), Between::default());
+        Self::with_parts(tx, ctx, cache, lenses, profiles, ahead, between)
     }
     /// A loader whose full-size decodes are kept in `cache`, whose prefetched
     /// rendered files in `ahead`, running `between` before each full-size stage.
@@ -252,12 +254,13 @@ impl Loader {
         ctx: egui::Context,
         cache: DecodeCache,
         lenses: crate::photo::LensProfiles,
+        profiles: crate::camera_profiles::ProfileLibrary,
         ahead: Ahead,
         between: Between,
     ) -> Self {
         let prefetch = prefetcher(cache.clone(), lenses.clone(), ahead.clone());
         let full = full_loader(tx.clone(), ctx.clone(), lenses.clone(), between);
-        let open = opener(tx, ctx, cache, lenses, ahead, full.mailbox());
+        let open = opener(tx, ctx, cache, lenses, profiles, ahead, full.mailbox());
         Self {
             open,
             full,
@@ -301,13 +304,14 @@ fn opener(
     ctx: egui::Context,
     cache: DecodeCache,
     lenses: crate::photo::LensProfiles,
+    profiles: crate::camera_profiles::ProfileLibrary,
     ahead: Ahead,
     full: Mailbox<FullJob>,
 ) -> Latest<LoadJob> {
     Latest::new(move |job: LoadJob| {
         if let Some(source) = job.from.editable_preview().cloned() {
             // Final as it is: no embedded preview or full-size stage follows it.
-            let result = caught(|| open_editable_preview(&job, &source, &tx, &ctx));
+            let result = caught(|| open_editable_preview(&job, &source, &profiles, &tx, &ctx));
             if let Err(e) = result
                 && !job.cancel.load(Ordering::Relaxed)
             {
@@ -365,7 +369,7 @@ fn opener(
                 profiles,
                 errors,
                 groups,
-            } = crate::camera_profiles::listed(&metadata);
+            } = profiles.listed(&metadata);
             // A photo without color data starts from its fitted camera look, fitted
             // (or read from the fit cache) before its defaults are installed.
             let profiles = crate::camera_look::with_default(
@@ -514,6 +518,7 @@ fn opener(
 fn open_editable_preview(
     job: &LoadJob,
     source: &super::EditablePreviewSource,
+    installed: &crate::camera_profiles::ProfileLibrary,
     tx: &Sender<Event>,
     ctx: &egui::Context,
 ) -> anyhow::Result<()> {
@@ -537,7 +542,7 @@ fn open_editable_preview(
         mut profiles,
         errors,
         groups,
-    } = crate::camera_profiles::listed(&metadata);
+    } = installed.listed(&metadata);
     profiles.extend(opened.default_look.map(Arc::new));
     let recipe = crate::edits::Start::Defaults(job.defaults.clone())
         .resolve(&metadata, &profiles)?
@@ -614,6 +619,7 @@ pub(in crate::app) mod tests {
             egui::Context::default(),
             DecodeCache::new(cache.into(), u64::MAX, "test"),
             crate::photo::LensProfiles::none(),
+            crate::camera_profiles::ProfileLibrary::for_tests(),
             ahead,
             between,
         );
@@ -621,7 +627,10 @@ pub(in crate::app) mod tests {
             id: 7,
             path: path.into(),
             from: Default::default(),
-            copies: crate::app::worker::editable_preview::decoder(Default::default()),
+            copies: crate::app::worker::editable_preview::decoder(
+                Default::default(),
+                Default::default(),
+            ),
             cancel: Default::default(),
             defaults: Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
                 Default::default(),
@@ -952,6 +961,7 @@ pub(in crate::app) mod tests {
             egui::Context::default(),
             cache.clone(),
             crate::photo::LensProfiles::none(),
+            crate::camera_profiles::ProfileLibrary::for_tests(),
         );
         (
             loader,

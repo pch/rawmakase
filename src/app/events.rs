@@ -551,7 +551,7 @@ impl Editor {
                 l.set_defaults(self.preview_defaults());
                 l.set_ai_cache(self.ai_denoise_cache());
                 l.set_cache_dir(self.core.cache_dir());
-                l.set_lens_profiles(self.lens_profiles());
+                l.set_libraries(&crate::environment::libraries(&self.core));
                 let selected = self.document.catalog_photo;
                 self.library = Some(l);
                 if let (Some(library), Some(id)) = (&mut self.library, selected) {
@@ -594,7 +594,7 @@ impl Editor {
                 l.set_defaults(self.preview_defaults());
                 l.set_ai_cache(self.ai_denoise_cache());
                 l.set_cache_dir(self.core.cache_dir());
-                l.set_lens_profiles(self.lens_profiles());
+                l.set_libraries(&crate::environment::libraries(&self.core));
                 // A catalog opened (not read again) may have file
                 // operations a crash left unfinished.
                 if !reloaded {

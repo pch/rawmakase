@@ -92,7 +92,7 @@ fn exposure_rendered(
     let run = run(|console| {
         render(
             &options,
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &|| raw_defaults.clone(),
             &ai,
             Cancel::NEVER,
@@ -204,7 +204,7 @@ fn render_refuses_an_existing_output_without_overwrite() {
     let refused = run(|console| {
         render(
             &options,
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &|| raw_defaults.clone(),
             &ai,
             Cancel::NEVER,
@@ -220,7 +220,7 @@ fn render_refuses_an_existing_output_without_overwrite() {
                 overwrite: true,
                 ..options.clone()
             },
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &|| raw_defaults.clone(),
             &ai,
             Cancel::NEVER,
@@ -261,7 +261,7 @@ fn render_asks_for_what_the_desktop_keeps_only_when_it_needs_it() {
         let run = run(|console| {
             render(
                 &options,
-                &crate::photo::LensProfiles::none(),
+                &crate::environment::Libraries::default(),
                 &read_defaults,
                 &make_denoise,
                 Cancel::NEVER,
@@ -323,7 +323,7 @@ fn render_writes_a_jpeg_at_the_quality_asked_for() {
         let run = run(|console| {
             render(
                 &options,
-                &crate::photo::LensProfiles::none(),
+                &crate::environment::Libraries::default(),
                 &|| raw_defaults.clone(),
                 &ai,
                 Cancel::NEVER,
@@ -373,7 +373,7 @@ fn render_batch_writes_its_jpegs_at_the_quality_asked_for() {
         let run = run(|console| {
             render_batch(
                 &options,
-                &crate::photo::LensProfiles::none(),
+                &crate::environment::Libraries::default(),
                 &ai,
                 Cancel::NEVER,
                 console,
@@ -418,7 +418,7 @@ fn render_batch_skips_existing_outputs_and_reports_failed_jobs() {
                 quality: None,
                 gpu: false,
             },
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             &ai,
             Cancel::NEVER,
             console,
@@ -519,7 +519,7 @@ fn render_and_render_batch_with_gpu_flag_match_cpu_output() {
             let res = run(|console| {
                 render(
                     &options,
-                    &crate::photo::LensProfiles::none(),
+                    &crate::environment::Libraries::default(),
                     &DevelopDefaults::default,
                     &ai,
                     Cancel::NEVER,
@@ -580,7 +580,7 @@ fn render_and_render_batch_with_gpu_flag_match_cpu_output() {
         let res = run(|console| {
             render_batch(
                 &options,
-                &crate::photo::LensProfiles::none(),
+                &crate::environment::Libraries::default(),
                 &ai,
                 Cancel::NEVER,
                 console,

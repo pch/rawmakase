@@ -909,6 +909,17 @@ so the design is proved on one path before it is spread.
    Merge to HDR, AI Denoise and its benchmark open photos with no imported
    profiles: they read the sensor data and the camera's EXIF, and take a
    lens name from the decoder only when a frame's EXIF can't be read.
+
+   The camera profile library: `camera_profiles::ProfileLibrary`, the same
+   kind of handle with its header cache its own, made by the context from
+   its data folders, replaces the process-wide cache and the free functions
+   that read the ambient folders. It lists and installs (`installed`,
+   `listed`), loads a look over its base (`load`), fingerprints the library,
+   finds Adobe's own profiles to import, and gives the profile manager its
+   folder; the community catalogue's status takes it. In the app, a bundle
+   of the libraries photos are opened and resolved with
+   (`environment::Libraries`) travels where one did, through the Library's
+   previews, Reference View, Merge to HDR and the command line.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

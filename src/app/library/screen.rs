@@ -36,7 +36,7 @@ type Key = (PhotoId, PathBuf, u32, u64);
 /// Renders a preview, giving up once the flag is set.
 type Render = fn(
     &Path,
-    &crate::photo::LensProfiles,
+    &crate::environment::Libraries,
     u32,
     Option<&EditSource>,
     Cancel<'_>,
@@ -77,7 +77,7 @@ struct Shared {
     ai: Mutex<Option<AiCache>>,
     /// The imported lens profiles photos are opened with: the app's context's,
     /// set before anything is shown; none until then.
-    lenses: Mutex<crate::photo::LensProfiles>,
+    libraries: Mutex<crate::environment::Libraries>,
 }
 
 /// What a view can draw for a photo.
@@ -115,9 +115,9 @@ impl ScreenPreviews {
     pub(super) fn set_ai_cache(&self, cache: &AiCache) {
         *self.shared.ai.lock().unwrap() = Some(cache.clone());
     }
-    /// Photos are opened with `lenses` from now on.
-    pub(super) fn set_lens_profiles(&self, lenses: &crate::photo::LensProfiles) {
-        *self.shared.lenses.lock().unwrap() = lenses.clone();
+    /// Photos are opened with `libraries` from now on.
+    pub(super) fn set_libraries(&self, libraries: &crate::environment::Libraries) {
+        *self.shared.libraries.lock().unwrap() = libraries.clone();
     }
     fn with(ctx: &egui::Context, render: Render) -> Self {
         let shared: Arc<Shared> = Default::default();
@@ -334,14 +334,14 @@ fn work(
             Outcome::Skipped
         } else {
             let ai = shared.ai.lock().unwrap().clone();
-            let lenses = shared.lenses.lock().unwrap().clone();
+            let libraries = shared.libraries.lock().unwrap().clone();
             let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 match (&edit, &ai) {
                     // As the Library's edited previews: from a finished result, else plain.
                     (Some(source), Some(_)) if source.renders_ai() => {
                         super::previews::develop_for_preview(
                             &key.1,
-                            &lenses,
+                            &libraries,
                             source,
                             key.2,
                             ai.as_ref(),
@@ -351,7 +351,7 @@ fn work(
                     }
                     _ => render(
                         &key.1,
-                        &lenses,
+                        &libraries,
                         key.2,
                         edit.as_ref(),
                         Cancel::new(&shared.cancel),
@@ -385,7 +385,7 @@ fn work(
 /// AI Denoise renders from a finished result instead (see `work`).
 fn render(
     path: &Path,
-    lenses: &crate::photo::LensProfiles,
+    libraries: &crate::environment::Libraries,
     edge: u32,
     edit: Option<&EditSource>,
     cancel: Cancel<'_>,
@@ -397,7 +397,7 @@ fn render(
     if !edited && !crate::storage::is_raw(path) {
         return Ok(thumbnails::downscale(&crate::raster::decode(path)?, edge));
     }
-    super::previews::develop_quickly(path, lenses, edit, edge, cancel)
+    super::previews::develop_quickly(path, libraries, edit, edge, cancel)
 }
 
 #[cfg(test)]
@@ -412,7 +412,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let edited = render(
             &path,
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             64,
             Some(&edit),
             Cancel::new(&cancel),
@@ -424,7 +424,7 @@ mod tests {
         );
         let unedited = render(
             &path,
-            &crate::photo::LensProfiles::none(),
+            &crate::environment::Libraries::default(),
             64,
             None,
             Cancel::new(&cancel),
@@ -466,7 +466,7 @@ mod tests {
     fn a_failed_or_panicking_render_is_reported_and_the_rest_go_on() {
         fn render(
             path: &Path,
-            _: &crate::photo::LensProfiles,
+            _: &crate::environment::Libraries,
             _: u32,
             _: Option<&EditSource>,
             _: Cancel<'_>,
@@ -611,7 +611,7 @@ mod tests {
         static STARTED: AtomicBool = AtomicBool::new(false);
         fn render(
             _: &Path,
-            _: &crate::photo::LensProfiles,
+            _: &crate::environment::Libraries,
             _: u32,
             _: Option<&EditSource>,
             cancel: Cancel<'_>,

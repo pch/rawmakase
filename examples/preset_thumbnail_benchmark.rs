@@ -102,7 +102,8 @@ fn main() -> Result<()> {
         image.metadata.model,
         ms(t)
     );
-    let (profiles, _) = rawmakase::camera_profiles::installed(&image.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&image.metadata);
     let base = Recipe::with_profiles(&image.metadata, &profiles);
     let library = if installed {
         rawmakase::presets::load_library()

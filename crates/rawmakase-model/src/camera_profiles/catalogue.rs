@@ -336,11 +336,12 @@ impl Entry {
     /// Where the profile is in the user's library, if it is. Reads at most a few
     /// file headers and one file of the pinned size per library folder: call it
     /// when the photo's camera or the library changes, not every frame.
-    pub fn status(&self) -> Status {
-        self.status_in(
-            &library::library_dirs(),
-            &crate::storage::data_dir().join("camera-profiles"),
-        )
+    pub fn status(&self, library: &library::ProfileLibrary) -> Status {
+        // A library without folders holds nothing, and has nowhere to install to.
+        match library.destination() {
+            Some(destination) => self.status_in(library.dirs(), destination),
+            None => Status::Available,
+        }
     }
 
     fn status_in(&self, roots: &[PathBuf], destination: &Path) -> Status {

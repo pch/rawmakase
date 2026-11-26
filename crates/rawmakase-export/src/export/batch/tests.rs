@@ -228,6 +228,7 @@ impl Fixture {
             demosaic: Default::default(),
             cache: Default::default(),
             lenses: crate::photo::LensProfiles::none(),
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         }
     }
@@ -272,7 +273,7 @@ fn every_photo_is_exported_with_its_own_edit_or_said_why_not() -> Result<()> {
         panic!("five photos");
     };
     let m = crate::photo::open(a_path, &crate::photo::LensProfiles::none())?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut brighter = Recipe::with_profiles(&m, &profiles);
     brighter.exposure = 1.;
     let mut save = |id: PhotoId, path: &Path| {
@@ -469,7 +470,7 @@ fn a_batch_exports_the_edits_as_they_were_when_export_was_pressed() -> Result<()
     let mut f = fixture(&["a.dng"])?;
     let (id, path) = &f.photos[0];
     let m = crate::photo::open(path, &crate::photo::LensProfiles::none())?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut edit = Recipe::with_profiles(&m, &profiles);
     edit.exposure = 0.5;
     f.catalog.save_edit(
@@ -812,6 +813,7 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
             demosaic: Default::default(),
             cache: Default::default(),
             lenses: crate::photo::LensProfiles::none(),
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         };
         run_all(&batch)
@@ -870,6 +872,7 @@ fn exporting_never_replaces_another_photos_original() -> Result<()> {
         demosaic: Default::default(),
         cache: Default::default(),
         lenses: crate::photo::LensProfiles::none(),
+        profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
     };
     assert_eq!(batch.plan.entries[0].target, jpeg);
@@ -970,7 +973,7 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
         panic!("two photos");
     };
     let m = crate::photo::open(a_path, &crate::photo::LensProfiles::none())?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut denoised = Recipe::with_profiles(&m, &profiles);
     denoised.ai_denoise = crate::model::ai_denoise::AiDenoise {
         enabled: true,
@@ -1007,7 +1010,7 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
     let mut f = fixture(&["a.dng", "b.dng"])?;
     let m = crate::photo::open(&f.photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut hdr = Recipe::with_profiles(&m, &profiles);
     hdr.hdr.enabled = true;
     hdr.hdr.limit = 4.;
@@ -1610,44 +1613,45 @@ fn queue_with_backend_runs_batches_and_closes_cleanly() -> Result<()> {
 }
 
 /// The batch-scoped `ProfileCache` produces identical profile lists to
-/// `camera_profiles::installed` and keeps distinct cameras / lenses / matrices apart.
+/// `ProfileLibrary::installed` and keeps distinct cameras / lenses / matrices apart.
 #[test]
 fn profile_cache_matches_installed_and_separates_distinct_cameras() {
     let cache = ProfileCache::default();
+    let library = crate::camera_profiles::ProfileLibrary::for_tests();
     let base = crate::camera_data::Metadata {
         make: "TestMake".into(),
         model: "TestModel".into(),
         cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         ..Default::default()
     };
-    let expected = crate::camera_profiles::installed(&base).0;
-    assert_eq!(cache.installed(&base), expected);
+    let expected = library.installed(&base).0;
+    assert_eq!(cache.installed(&library, &base), expected);
     // Second lookup hits the cached slot and returns the exact same profiles.
-    assert_eq!(cache.installed(&base), expected);
+    assert_eq!(cache.installed(&library, &base), expected);
 
     // Changing cam_xyz must produce a distinct cache entry and match `installed`.
     let mut different_matrix = base.clone();
     different_matrix.cam_xyz = [[0.9, 0.1, 0.], [0., 1., 0.], [0., 0.1, 0.9]];
     assert_eq!(
-        cache.installed(&different_matrix),
-        crate::camera_profiles::installed(&different_matrix).0
+        cache.installed(&library, &different_matrix),
+        library.installed(&different_matrix).0
     );
-    assert_ne!(cache.installed(&different_matrix), expected);
+    assert_ne!(cache.installed(&library, &different_matrix), expected);
 
     // Changing only dng_matrix_profile_signature must produce a distinct entry
     // so matrix-only DNGs keep their own calibration signature separate from
     // native RAWs with the same camera matrix.
     let mut different_sig = base.clone();
     different_sig.dng_matrix_profile_signature = Some("org.example.dng-writer".into());
-    let expected_sig = crate::camera_profiles::installed(&different_sig).0;
-    assert_eq!(cache.installed(&different_sig), expected_sig);
+    let expected_sig = library.installed(&different_sig).0;
+    assert_eq!(cache.installed(&library, &different_sig), expected_sig);
     assert_ne!(expected_sig, expected);
 
     // Rendered metadata bypasses the cache without panicking or colliding.
     let mut rendered = base;
     rendered.source = crate::camera_data::Source::Rendered;
     assert_eq!(
-        cache.installed(&rendered),
-        crate::camera_profiles::installed(&rendered).0
+        cache.installed(&library, &rendered),
+        library.installed(&rendered).0
     );
 }

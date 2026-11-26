@@ -31,7 +31,8 @@ fn imported_profiles(im: &CameraImage) -> Vec<Arc<CameraProfile>> {
     files.sort_by_key(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("xmp")));
     let mut profiles = embedded_profiles(im);
     for f in files {
-        if let Ok(p) = rawmakase::camera_profiles::load(&f, &im.metadata)
+        if let Ok(p) =
+            rawmakase::camera_profiles::ProfileLibrary::for_tests().load(&f, &im.metadata)
             && p.ensure_camera(&im.metadata).is_ok()
         {
             profiles.push(p);

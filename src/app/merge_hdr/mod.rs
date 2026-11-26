@@ -94,7 +94,7 @@ pub(in crate::app) struct Job {
     options: MergeOptions,
     raw_defaults: Arc<DevelopDefaults>,
     /// The imported lens profiles the photos and the merge are opened with.
-    lenses: crate::photo::LensProfiles,
+    libraries: crate::environment::Libraries,
 }
 
 /// A merge under way, from Merge until its DNG is in the catalog.
@@ -396,7 +396,7 @@ impl Editor {
                 software: format!("RAWmakase {}", env!("CARGO_PKG_VERSION")),
             },
             raw_defaults: self.raw_defaults.clone(),
-            lenses: self.lens_profiles().clone(),
+            libraries: crate::environment::libraries(&self.core),
             sources,
         };
         let (generation, cancel) = self.merge_hdr.task.start();
@@ -797,7 +797,7 @@ fn run(job: &Job, progress: &Mutex<Progress>, cancel: Cancel<'_>) -> Result<Publ
         &job.record,
         active_path,
         &job.raw_defaults,
-        &job.lenses,
+        &job.libraries,
         cancel,
     )?;
     let set = |p: Progress| *progress.lock().unwrap_or_else(|e| e.into_inner()) = p;
@@ -812,7 +812,7 @@ fn run(job: &Job, progress: &Mutex<Progress>, cancel: Cancel<'_>) -> Result<Publ
         &merged,
         active.active(),
         &job.raw_defaults,
-        &job.lenses,
+        &job.libraries,
         &Destination::beside(active_path),
         &job.options.software,
         cancel,

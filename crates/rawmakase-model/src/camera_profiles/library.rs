@@ -11,7 +11,105 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-pub fn load(path: &Path, m: &Metadata) -> Result<Arc<CameraProfile>> {
+/// The camera profiles installed in a set of folders: what a photo's profile
+/// menu lists, what a recipe naming a profile resolves to, and where imports
+/// go (the first folder). A clone shares the folders and the header cache, so
+/// each file's camera is read once for every thread that lists profiles.
+#[derive(Clone)]
+pub struct ProfileLibrary(Arc<LibraryIn>);
+struct LibraryIn {
+    dirs: Vec<PathBuf>,
+    cameras: Cameras,
+}
+impl std::fmt::Debug for ProfileLibrary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ProfileLibrary").field(&self.0.dirs).finish()
+    }
+}
+impl Default for ProfileLibrary {
+    /// [`ProfileLibrary::none`].
+    fn default() -> Self {
+        Self::none()
+    }
+}
+impl ProfileLibrary {
+    /// The profiles in `dirs`, searched in order; imports go to the first.
+    pub fn in_dirs(dirs: Vec<PathBuf>) -> Self {
+        Self(Arc::new(LibraryIn {
+            dirs,
+            cameras: Cameras::default(),
+        }))
+    }
+    /// The profiles in the `camera-profiles` folder of each data folder, where
+    /// RAWmakase imports them.
+    pub fn in_data_dirs(data_dirs: &[PathBuf]) -> Self {
+        Self::in_dirs(
+            data_dirs
+                .iter()
+                .map(|d| d.join("camera-profiles"))
+                .collect(),
+        )
+    }
+    /// No installed profiles at all.
+    pub fn none() -> Self {
+        Self::in_dirs(Vec::new())
+    }
+    /// The library in the data folders the tests read (`storage::asset_dirs`),
+    /// for tests written before libraries were given.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_tests() -> Self {
+        Self::in_data_dirs(&crate::storage::asset_dirs())
+    }
+    /// The folders searched, in order.
+    pub fn dirs(&self) -> &[PathBuf] {
+        &self.0.dirs
+    }
+    /// The folder imports write to: the first, if there is one.
+    pub fn destination(&self) -> Option<&Path> {
+        self.0.dirs.first().map(PathBuf::as_path)
+    }
+    /// The folder imports write to, for the profile manager.
+    pub fn manager(&self) -> Option<super::manage::Library> {
+        self.destination().map(super::manage::Library::at)
+    }
+    /// The profiles that fit `m`, and the files that failed to read.
+    pub fn installed(&self, m: &Metadata) -> (Vec<Arc<CameraProfile>>, Vec<String>) {
+        let listed = self.listed(m);
+        (listed.profiles, listed.errors)
+    }
+    /// The profiles for a photo, as [`Self::installed`] lists them, with where
+    /// the profile menu shows each.
+    pub fn listed(&self, m: &Metadata) -> Listed {
+        listed_in(&self.0.dirs, m, &self.0.cameras)
+    }
+    /// What the library holds, as one hash: each file's path, size and
+    /// modification time. Unedited photos' previews follow the library (which
+    /// profile a default picks, and whether a photo without color data gets a
+    /// fitted look, depend on it), so importing or removing any profile
+    /// changes it.
+    pub fn fingerprint(&self) -> String {
+        fingerprint_of(&self.0.dirs)
+    }
+    /// The profile file at `path` for the photo `m`: a DCP, or an XMP look
+    /// composed over its base among this library's profiles.
+    pub fn load(&self, path: &Path, m: &Metadata) -> Result<Arc<CameraProfile>> {
+        load_with(path, m, || self.installed(m).0)
+    }
+    /// Adobe's own profiles for this camera from a local Lightroom / Camera
+    /// Raw installation (Adobe Standard plus Camera Matching), skipping ones
+    /// already in the folder imports go to, so the app can offer to import
+    /// them. Nothing is read from those folders otherwise; rendering only sees
+    /// imported profiles.
+    pub fn adobe_installed(&self, m: &Metadata) -> Vec<PathBuf> {
+        adobe_installed_beside(m, self.destination())
+    }
+}
+
+fn load_with(
+    path: &Path,
+    m: &Metadata,
+    installed: impl FnOnce() -> Vec<Arc<CameraProfile>>,
+) -> Result<Arc<CameraProfile>> {
     if path
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("xmp"))
@@ -21,7 +119,7 @@ pub fn load(path: &Path, m: &Metadata) -> Result<Arc<CameraProfile>> {
             "Profile too large"
         );
         let look = LookFile::read(path)?;
-        let (profiles, _) = installed(m);
+        let profiles = installed();
         let base = look_base(&look, &profiles, builtin(m).as_deref())
             .context("Unsupported XMP look or missing matching base camera profile")?;
         return Ok(Arc::new(look.compose(base)?));
@@ -93,27 +191,11 @@ impl Cameras {
         map.retain(|path, _| found.contains(path.as_path()));
     }
 }
-static CAMERAS: std::sync::LazyLock<Cameras> = std::sync::LazyLock::new(Cameras::default);
 /// The profile a DNG embeds for its camera, which Lightroom lists as the file's own.
 /// No Adobe profiles are bundled; RAWmakase's own profiles are in `open`.
 pub fn builtin(m: &Metadata) -> Option<Arc<CameraProfile>> {
     let dcp = m.embedded_dcp.as_deref()?;
     super::from_bytes(dcp).ok().map(Arc::new)
-}
-/// User-installed profiles stay outside the source tree and are filtered by camera.
-pub fn library_dirs() -> Vec<std::path::PathBuf> {
-    crate::storage::asset_dirs()
-        .into_iter()
-        .map(|p| p.join("camera-profiles"))
-        .collect()
-}
-
-/// What the profile library holds, as one hash: each file's path, size and
-/// modification time. Unedited photos' previews follow the library (which profile
-/// a default picks, and whether a photo without color data gets a fitted look,
-/// depend on it), so importing or removing any profile changes it.
-pub fn fingerprint() -> String {
-    fingerprint_of(&library_dirs())
 }
 pub(crate) fn fingerprint_of(dirs: &[std::path::PathBuf]) -> String {
     use sha2::Digest;
@@ -142,15 +224,6 @@ pub(crate) fn fingerprint_of(dirs: &[std::path::PathBuf]) -> String {
         .collect()
 }
 
-pub fn installed(m: &Metadata) -> (Vec<Arc<CameraProfile>>, Vec<String>) {
-    let listed = listed(m);
-    (listed.profiles, listed.errors)
-}
-/// The profiles for a photo, as [`installed`] lists them, with where the profile
-/// menu shows each.
-pub fn listed(m: &Metadata) -> Listed {
-    listed_in(&library_dirs(), m, &CAMERAS)
-}
 /// The profiles that fit a photo, name-sorted, the files that failed to read, and
 /// the groups of the looks among them.
 #[derive(Clone, Debug, Default)]
@@ -222,7 +295,8 @@ impl Groups {
         }
     }
 }
-/// [`listed`] from `dirs` instead of the user's library, for tests.
+/// [`ProfileLibrary::listed`] from `dirs`, with a header cache of its own, for
+/// tests.
 #[cfg(any(test, feature = "test-support"))]
 pub fn listed_from(dirs: &[PathBuf], m: &Metadata) -> Listed {
     listed_in(dirs, m, &Cameras::default())
@@ -767,11 +841,8 @@ fn module_of_camera(name: &str, m: &Metadata) -> bool {
     })
 }
 
-/// Adobe's own profiles for this camera from a local Lightroom / Camera Raw
-/// installation (Adobe Standard plus Camera Matching), skipping ones already
-/// in the library, so the app can offer to import them. Nothing is read from
-/// those folders otherwise; rendering only sees imported profiles.
-pub fn adobe_installed(m: &Metadata) -> Vec<std::path::PathBuf> {
+/// [`ProfileLibrary::adobe_installed`], skipping what is in `installed`.
+fn adobe_installed_beside(m: &Metadata, installed: Option<&Path>) -> Vec<std::path::PathBuf> {
     let root = Path::new(if cfg!(target_os = "macos") {
         "/Library/Application Support/Adobe/CameraRaw/CameraProfiles"
     } else if cfg!(windows) {
@@ -810,13 +881,13 @@ pub fn adobe_installed(m: &Metadata) -> Vec<std::path::PathBuf> {
             }
         }
     }
-    let installed = crate::storage::data_dir().join("camera-profiles");
     paths
         .into_iter()
         .filter(|p| {
             p.is_file()
                 && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dcp"))
-                && p.file_name().is_some_and(|n| !installed.join(n).exists())
+                && p.file_name()
+                    .is_some_and(|n| installed.is_none_or(|dir| !dir.join(n).exists()))
         })
         .collect()
 }
@@ -928,6 +999,39 @@ pub(super) mod tests {
         std::fs::write(&other, dcp("Sony ILCE-7M4", "Other"))?;
         let (profiles, _) = installed_in(&dirs, &camera("ILCE-7M4"), &cameras);
         assert_eq!(names(&profiles), ["Other"]);
+        Ok(())
+    }
+    /// Two libraries on two data folders each list their own profiles, with a
+    /// header cache each; a clone is the same library; imports go to the first
+    /// folder.
+    #[test]
+    fn each_library_lists_its_own_folders() -> Result<()> {
+        let (a, b) = (tempfile::tempdir()?, tempfile::tempdir()?);
+        for dir in [a.path(), b.path()] {
+            std::fs::create_dir(dir.join("camera-profiles"))?;
+        }
+        std::fs::write(
+            a.path().join("camera-profiles/mine.dcp"),
+            dcp("Sony ILCE-7M2", "Mine"),
+        )?;
+        let first = ProfileLibrary::in_data_dirs(&[a.path().to_path_buf(), b.path().to_path_buf()]);
+        let second = ProfileLibrary::in_data_dirs(&[b.path().to_path_buf()]);
+        let m = camera("ILCE-7M2");
+        assert_eq!(names(&first.installed(&m).0), ["Mine"]);
+        assert!(second.installed(&m).0.is_empty());
+        assert_ne!(first.fingerprint(), second.fingerprint());
+        assert_eq!(
+            first.destination(),
+            Some(a.path().join("camera-profiles").as_path())
+        );
+        // A clone lists through the same header cache.
+        let reads =
+            |l: &ProfileLibrary| l.0.cameras.reads.load(std::sync::atomic::Ordering::Relaxed);
+        let before = reads(&first);
+        let shared = first.clone();
+        assert_eq!(names(&shared.installed(&m).0), ["Mine"]);
+        assert_eq!((reads(&first), reads(&shared)), (before + 1, before + 1));
+        assert!(ProfileLibrary::none().installed(&m).0.is_empty());
         Ok(())
     }
     #[cfg(unix)]
@@ -1137,7 +1241,7 @@ pub(super) mod tests {
             model: "iPhone 15".into(),
             ..Default::default()
         };
-        let (profiles, errors) = installed_in(&[], &m, &CAMERAS);
+        let (profiles, errors) = installed_in(&[], &m, &Cameras::default());
         assert_eq!(names_all(&profiles), ["Embedded"]);
         assert!(errors.is_empty());
     }

@@ -82,16 +82,13 @@ fn reserved(name: &str) -> bool {
     .contains(&name)
 }
 
-/// A profile library folder: the user's ([`Library::user`]) or a test's.
+/// A profile library folder: the one imports go to
+/// ([`super::ProfileLibrary::manager`]) or a test's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Library {
     dir: PathBuf,
 }
 impl Library {
-    /// The library imports write to.
-    pub fn user() -> Self {
-        Self::at(crate::storage::data_dir().join("camera-profiles"))
-    }
     pub fn at(dir: impl Into<PathBuf>) -> Self {
         Self { dir: dir.into() }
     }

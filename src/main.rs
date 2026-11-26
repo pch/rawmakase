@@ -430,7 +430,8 @@ fn main() -> Result<()> {
     // The library's context, as the environment configures it, which the
     // commands open photos with. Making it reads nothing.
     let core = rawmakase::environment::context();
-    let lenses = rawmakase::environment::lens_profiles(&core);
+    let libraries = &rawmakase::environment::libraries(&core);
+    let lenses = &libraries.lenses;
     match a.command {
         Some(Command::Mcp { data_dir }) => mcp(data_dir)?,
         Some(Command::Control(cli)) => rawmakase_ctl::run(cli).map_err(anyhow::Error::msg)?,
@@ -532,7 +533,7 @@ fn main() -> Result<()> {
         }) => {
             rawmakase::comparison::compare(
                 &input,
-                lenses,
+                libraries,
                 &reference,
                 &output,
                 recipe.as_deref(),
@@ -552,10 +553,10 @@ fn main() -> Result<()> {
         }
         Some(Command::Inspect { input }) => {
             let r = rawmakase::photo::open(&input, lenses)?;
-            let (profiles, errors) = rawmakase::camera_profiles::installed(&r.metadata);
+            let (profiles, errors) = libraries.profiles.installed(&r.metadata);
             eprintln!(
                 "Profile folders: {:?}\nAvailable profiles: {:?}\nProfile errors: {:?}",
-                rawmakase::camera_profiles::library_dirs(),
+                libraries.profiles.dirs().to_vec(),
                 profiles.iter().map(|p| &p.name).collect::<Vec<_>>(),
                 errors
             );
@@ -568,7 +569,7 @@ fn main() -> Result<()> {
         Some(Command::RenderBatch(options)) => {
             rawmakase::render_command::render_batch(
                 &options,
-                lenses,
+                libraries,
                 &user_ai_denoise,
                 Cancel::NEVER,
                 &mut rawmakase::render_command::Console {
@@ -589,7 +590,7 @@ fn main() -> Result<()> {
         Some(Command::Render(options)) => {
             rawmakase::render_command::render(
                 &options,
-                lenses,
+                libraries,
                 &rawmakase::app::user_raw_defaults,
                 &user_ai_denoise,
                 Cancel::NEVER,
@@ -603,7 +604,7 @@ fn main() -> Result<()> {
             let flag = interrupt::flag();
             let path = rawmakase::merge_command::merge_hdr(
                 &options,
-                lenses,
+                libraries,
                 &rawmakase::app::user_raw_defaults,
                 Cancel::new(flag),
                 &mut std::io::stderr(),

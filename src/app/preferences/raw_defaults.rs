@@ -719,13 +719,17 @@ mod tests {
             egui::Context::default(),
             crate::decode_cache::DecodeCache::default(),
             crate::photo::LensProfiles::none(),
+            crate::camera_profiles::ProfileLibrary::for_tests(),
         );
         let defaults = Arc::new(crate::raw_defaults::brighter_defaults());
         loader.submit(crate::app::worker::LoadJob {
             id: 1,
             path: chart,
             from: Default::default(),
-            copies: crate::app::worker::editable_preview::decoder(Default::default()),
+            copies: crate::app::worker::editable_preview::decoder(
+                Default::default(),
+                Default::default(),
+            ),
             cancel: Default::default(),
             defaults: defaults.clone(),
             demosaic: crate::camera_data::Demosaic::default(),
@@ -737,7 +741,8 @@ mod tests {
                 _ => {}
             }
         };
-        let (profiles, _) = crate::camera_profiles::installed(&header.metadata);
+        let (profiles, _) =
+            crate::camera_profiles::ProfileLibrary::for_tests().installed(&header.metadata);
         assert_eq!(header.recipe.exposure, 0.7);
         assert_eq!(
             header.recipe,

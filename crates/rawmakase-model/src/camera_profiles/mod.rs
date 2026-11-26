@@ -1188,9 +1188,8 @@ pub fn table_bytes(text: &str) -> Result<Vec<u8>> {
 #[cfg(any(test, feature = "test-support"))]
 pub use library::listed_from;
 pub use library::{
-    CubeImport, Groups, Imported, ImportedProfile, Listed, MenuEntry, adobe_installed, builtin,
-    compose_look, fingerprint as library_fingerprint, found_hald, import_files, import_into_dir,
-    import_readable, installed, library_dirs, listed, load, read_lut,
+    CubeImport, Groups, Imported, ImportedProfile, Listed, MenuEntry, ProfileLibrary, builtin,
+    compose_look, found_hald, import_files, import_into_dir, import_readable, read_lut,
 };
 pub use look_settings::{LookSettings, Toning};
 pub use rgb_table::{Dimensions, Gamma, Gamut, Primaries};

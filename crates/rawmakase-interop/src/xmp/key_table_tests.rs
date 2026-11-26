@@ -327,7 +327,9 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
         source: crate::camera_data::Source::Rendered,
         ..Default::default()
     };
-    let rendered_profiles = crate::camera_profiles::installed(&rendered).0;
+    let rendered_profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+        .installed(&rendered)
+        .0;
     let jpeg =
         read(r#"c:IncrementalTemperature="+25" c:IncrementalTint="-10" c:WhiteBalance="Custom""#)?
             .apply(

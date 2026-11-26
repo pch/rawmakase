@@ -66,7 +66,8 @@ fn main() -> Result<()> {
         image.height,
         ms(start)
     );
-    let (profiles, _) = rawmakase::camera_profiles::installed(&image.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&image.metadata);
     let recipe = Recipe::with_profiles(&image.metadata, &profiles);
     println!(
         "Camera: {} {}; profile: {:?}",

@@ -39,7 +39,8 @@ fn main() -> Result<()> {
 
     // Building the Standard preview, as Build Standard-Sized Previews does for a
     // photo with the default edit: the half-size decode when it is large enough.
-    let (profiles, _) = rawmakase::camera_profiles::installed(&raw.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&raw.metadata);
     let recipe = Recipe::with_profiles(&raw.metadata, &profiles);
     let g = develop::Geometry::for_metadata(&raw.metadata, &recipe);
     // FULL=1 builds from the full decode, to tell its share of the handoff difference.
