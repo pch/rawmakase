@@ -15,6 +15,7 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use image::{ImageEncoder, codecs::jpeg::JpegEncoder};
+use std::borrow::Cow;
 use std::io::{Seek, Write};
 use tiff::{
     encoder::{DirectoryEncoder, Rational, SRational, TiffEncoder, TiffKind, colortype::RGB16},
@@ -23,23 +24,23 @@ use tiff::{
 
 /// A JPEG export's pixels and metadata, ready to encode at any quality, so a size
 /// limit can try several.
-pub(super) struct Jpeg {
-    rgb: Vec<u8>,
+pub(super) struct Jpeg<'a> {
+    rgb: Cow<'a, [u8]>,
     width: u32,
     height: u32,
     profile: Vec<u8>,
     exif: Vec<u8>,
     xmp: Option<String>,
 }
-impl Jpeg {
+impl<'a> Jpeg<'a> {
     pub(super) fn new(
-        image: &ExportImage,
+        image: &'a ExportImage,
         profile: Vec<u8>,
         directories: Directories,
         xmp: Option<String>,
     ) -> Self {
         Self {
-            rgb: image.rgb8(),
+            rgb: image.rgb8_cow(),
             width: image.width(),
             height: image.height(),
             profile,
@@ -98,10 +99,11 @@ pub(super) fn tiff(
     directories: &Directories,
     embed: &Embed,
 ) -> Result<()> {
+    let rgb16 = image.rgb16_cow();
     tiff_of::<RGB16, _>(
         out,
         [image.width(), image.height()],
-        &image.rgb16(),
+        &rgb16,
         profile,
         directories,
         embed,
@@ -238,10 +240,11 @@ pub(super) fn jxl(
         image.space() == crate::color::OutputSpace::Srgb,
         "JPEG XL exports are sRGB"
     );
+    let rgb8 = image.rgb8_cow();
     let codestream = super::jxl::codestream(
         image.width(),
         image.height(),
-        super::jxl::Samples::Eight(&image.rgb8()),
+        super::jxl::Samples::Eight(&rgb8),
         super::jxl::Colour::Srgb,
         jxl_distance(options),
     )?;
@@ -373,10 +376,11 @@ pub(super) fn jxl_gain_map(
         base.space() == crate::color::OutputSpace::Srgb,
         "A gain map's base is sRGB"
     );
+    let rgb8 = base.rgb8_cow();
     let codestream = super::jxl::codestream(
         base.width(),
         base.height(),
-        super::jxl::Samples::Eight(&base.rgb8()),
+        super::jxl::Samples::Eight(&rgb8),
         super::jxl::Colour::Srgb,
         jxl_distance(options),
     )?;
@@ -425,7 +429,8 @@ pub(super) fn png(
     let mut e = png::Encoder::with_info(out, info)?;
     e.set_compression(png::Compression::High);
     let mut w = e.write_header()?;
-    w.write_image_data(&image.rgb8())?;
+    let rgb8 = image.rgb8_cow();
+    w.write_image_data(&rgb8)?;
     w.finish()?;
     Ok(())
 }

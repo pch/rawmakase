@@ -887,8 +887,9 @@ impl Editor {
         self.exports.queue.get_or_insert_with(|| {
             let logical = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
             let (each_tx, each_ctx) = (tx.clone(), ctx.clone());
-            Queue::with_each(
+            Queue::with_backend(
                 batch::Lanes::for_machine(logical, crate::platform::memory::total()),
+                Arc::new(crate::develop::ExportBackend::auto()),
                 move |ticket, index, outcome| {
                     let outcome = outcome.clone();
                     let _ = each_tx.send(Event::PhotoExported {

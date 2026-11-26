@@ -84,7 +84,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; color management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, opening editable previews and their record's format, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, image encoders, the catalog, export, the GUI |
 | `rawmakase-hdr-merge` | Merge to HDR ([Merge to HDR](hdr-merge.md)): checking a bracket, decoding its frames through `rawmakase-decode` (`Raw::develop_frame`), aligning them to the reference frame (Auto Align), deghosting, measuring their exposure ratios and noise, the noise-weighted merge, and the DNG writer, a linear raw image of half-precision samples with the camera's color, levels, EXIF, maker note, XMP and preview, in a TIFF writer of its own (`rawmakase-tiff` stays the bounded reader); `write_dng` publishes it beside the sources without replacing a file | The catalog, export, the app, the GUI, inference and the extension crates |
-| `rawmakase-export` | Developing and writing exports, with their watermarks (system default and installed fonts loaded without egui), and writing editable previews | The app, the GUI, a window or GPU backend |
+| `rawmakase-export` | Developing and writing exports (through `rawmakase-engine`'s opaque `ExportBackend`), with their watermarks (system default and installed fonts loaded without egui), and writing editable previews | The app, the GUI, a window, or direct `wgpu` types |
 | `rawmakase-inference` | The lazily loaded ONNX Runtime, the provider choice and the session helpers every model shares, `InferenceError`, the `ModelFile` record, and AI Denoise's model: its contract, tiler and gain fit, packed mosaic in, denoised camera RGB out; on Apple platforms its Neural Engine form, run through Core ML by the converted-model loader (`core_ml`) that Sky's GPU form shares | Every workspace crate but `rawmakase-cancel` |
 | `rawmakase-selection` | The selection models (Subject, Background and Sky): their pinned contracts, the image and coverage mappings, automatic selection, edge refinement and their sessions, run through inference's runtime, and on Apple platforms Sky's network converted for Core ML, run through inference's converted-model loader: pixels in, coverage out. The AI masks extension's program runs them; the app never links them | Everything but inference |
 | `rawmakase-denoise` | AI Denoise's service, shared by the app and the command line (re-exported as `rawmakase::ai_denoise`): the queue, the worker and its ONNX session, job keys, the finished-result lookup, `AiBase` for export, `CommandLine` for `render` and `render-batch`, the `rawmakase denoise` development command, and the model pack it runs (`model_install`). Its callers pass the cache, the model's and the runtime's folders and the cancel in | The app, the catalog, export, the selection models and the GUI; it reaches wgpu only through the renderer, whose `AiSource` it hands on |
@@ -395,11 +395,14 @@ renders on the CPU. For exports, `develop::ExportBackend` provides a separate
 dedicated headless compute device (decoupled from eframe's UI device and
 `SURFACE` lock, with no `wgpu` types exported outside `rawmakase-engine`),
 executing banded SDR renders with deterministic two-tier fallback to the CPU
-`develop::render_export` oracle (`rawmakase-export` and desktop/CLI wiring follow
-in subsequent milestones). Any GPU failure falls back to the CPU and turns the
+`develop::render_export` oracle. Desktop exports share one `ExportBackend::auto()`
+instance through `export::queue::Queue` (releasing working GPU buffers when the
+queue drains to idle), while CLI `rawmakase render` and `render-batch` default to
+CPU and opt in with `--gpu`. Any GPU failure falls back to the CPU and turns the
 failing path off for the session. GPU work already submitted cannot be
 interrupted, so obsolete results are discarded before they are published;
-full-quality CPU stages check cancellation within pixel, row and column work.
+full-quality CPU stages check cancellation within pixel, row and column work, and
+banded GPU exports check cancellation between bands and in 2 ms poll slices.
 
 ### AI Denoise
 
@@ -446,12 +449,17 @@ operation step by step; in terms of the crates:
   saving. The renderer gets the captured recipe and view; autosave writes the edit
   through `catalog::edit_rows` on its own thread.
 - **Exporting.** The export job captures each photo's recipe and options, decodes
-  with `DecodePolicy::Export`, renders on the CPU, and `rawmakase-export` encodes and
-  publishes the file atomically. With AI Denoise on it asks the service for the
-  photo's complete AI source first. A batch runs several photos at once when the
-  computer has the CPUs for it, each on its own background pool, decoding a photo once its estimated
-  memory fits beside the others' within half the computer's (`batch::Lanes`);
-  outcomes keep the photos' order.
+  with `DecodePolicy::Export`, renders SDR outputs through `develop::ExportBackend`
+  (dedicated headless GPU compute with zero-copy `Rgb8`/`Rgb16` readback for
+  unwatermarked outputs and deterministic fallback to the CPU `develop::render_export`
+  oracle; HDR masters still render on the CPU until GPU HDR export lands), and
+  `rawmakase-export` encodes and publishes the file atomically. With AI Denoise on
+  it asks the service for the photo's complete AI source first. A batch snapshots
+  installed camera profiles per camera and runs several photos at once when the
+  computer has the CPUs for it, each on its own background pool, overlapping CPU
+  decode and encoding with the queue's shared `ExportBackend` and decoding a photo
+  once its estimated memory fits beside the others' within half the computer's
+  (`batch::Lanes`); outcomes keep the photos' order.
 - **Settings in and out.** XMP and presets enter through `rawmakase-interop`
   (parse, then apply to a recipe, which is validated); exports' XMP and Lightroom
   presets leave through it. A Lightroom catalog is imported by
