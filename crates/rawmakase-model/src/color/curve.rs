@@ -53,6 +53,28 @@ impl<'de> Deserialize<'de> for ToneCurve {
 }
 /// The most points a curve has.
 pub const MAX_POINTS: usize = 32;
+
+/// What [`ToneCurve::insert`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Inserted {
+    /// Added a point, at this index.
+    Added(usize),
+    /// Nothing: a point is already at that input, at this index.
+    Existing(usize),
+    /// Nothing: the curve holds [`MAX_POINTS`]. The index is of the point
+    /// nearest where it would have gone.
+    Full(usize),
+}
+
+impl Inserted {
+    /// The index of the point added, or of the one that was already there or
+    /// is nearest.
+    pub fn index(self) -> usize {
+        match self {
+            Self::Added(i) | Self::Existing(i) | Self::Full(i) => i,
+        }
+    }
+}
 /// How far apart consecutive inputs must be.
 pub const MIN_INPUT_SPACING: f32 = 0.00049;
 
@@ -81,23 +103,28 @@ impl ToneCurve {
         );
         Ok(())
     }
-    pub fn insert(&mut self, p: [f32; 2]) -> usize {
+    /// Adds a point at `p` (each clamped to 0..1), unless one is already at
+    /// that input or the curve holds [`MAX_POINTS`]; says which.
+    pub fn insert(&mut self, p: [f32; 2]) -> Inserted {
         let x = p[0].clamp(0., 1.);
         let y = p[1].clamp(0., 1.);
         if let Some(i) = self.points.iter().position(|q| (q[0] - x).abs() < 0.001) {
-            return i;
+            return Inserted::Existing(i);
         }
         let i = self.points.partition_point(|q| q[0] < x);
         if self.points.len() == MAX_POINTS {
-            return i.min(MAX_POINTS - 1);
+            return Inserted::Full(i.min(MAX_POINTS - 1));
         }
         self.points.insert(i, [x, y]);
         self.smooth = true;
-        i
+        Inserted::Added(i)
     }
-    pub fn move_point(&mut self, i: usize, p: [f32; 2]) {
+    /// Moves point `i` to `p`, kept between its neighbours' inputs (an end
+    /// point keeps its input unless the curve is natural); false, with
+    /// nothing changed, when there is no point `i`.
+    pub fn move_point(&mut self, i: usize, p: [f32; 2]) -> bool {
         if i >= self.points.len() {
-            return;
+            return false;
         }
         let last = self.points.len() - 1;
         let x = if i == 0 {
@@ -120,6 +147,7 @@ impl ToneCurve {
         };
         self.points[i] = [x, p[1].clamp(0., 1.)];
         self.smooth = true;
+        true
     }
     pub fn remove(&mut self, i: usize) -> bool {
         if i == 0 || i + 1 >= self.points.len() {
@@ -529,16 +557,33 @@ mod tests {
     #[test]
     fn insert_move_remove_and_endpoints() -> Result<()> {
         let mut c = ToneCurve::default();
-        let i = c.insert([0.4, 0.3]);
-        assert_eq!(i, 1);
-        c.move_point(i, [0.65, 0.7]);
-        assert_eq!(c.points[i], [0.65, 0.7]);
-        c.move_point(0, [0.2, 0.1]);
+        assert_eq!(c.insert([0.4, 0.3]), Inserted::Added(1));
+        assert_eq!(c.insert([0.4005, 0.9]), Inserted::Existing(1));
+        assert!(c.move_point(1, [0.65, 0.7]));
+        assert_eq!(c.points[1], [0.65, 0.7]);
+        assert!(c.move_point(0, [0.2, 0.1]));
         assert_eq!(c.points[0], [0.2, 0.1]);
+        let before = c.clone();
+        assert!(!c.move_point(3, [0.5, 0.5]), "no point 3");
+        assert_eq!(c, before);
         assert!(!c.remove(0));
         assert!(c.remove(1));
         assert_eq!(c.points.len(), 2);
         c.validate()
+    }
+    #[test]
+    fn a_full_curve_takes_no_point_and_says_so() {
+        let mut c = ToneCurve::default();
+        for k in 1..MAX_POINTS - 1 {
+            assert!(matches!(
+                c.insert([k as f32 / 40., 0.5]),
+                Inserted::Added(_)
+            ));
+        }
+        assert_eq!(c.points.len(), MAX_POINTS);
+        let before = c.clone();
+        assert_eq!(c.insert([0.99, 0.2]), Inserted::Full(MAX_POINTS - 1));
+        assert_eq!(c, before);
     }
     #[test]
     fn legacy_curve_keeps_exact_linear_shape() -> Result<()> {

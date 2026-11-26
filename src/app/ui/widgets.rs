@@ -955,7 +955,7 @@ pub(in crate::app) fn tone_curve_ui(
                     } else {
                         y
                     };
-                    curve.insert([x, y])
+                    curve.insert([x, y]).index()
                 });
                 state.selected = Some(i);
                 if primary_drag_started {
@@ -1430,8 +1430,9 @@ pub(in crate::app) struct SliderStyle<'a> {
     pub display: Option<(f32, usize)>,
     /// A colored rail, from its left end to its right.
     pub gradient: Option<(Color32, Color32)>,
-    /// The rail is even in the value's reciprocal, as Temp moves in mireds.
-    pub reciprocal: bool,
+    /// How the rail's positions map to values: evenly in the value's
+    /// reciprocal for Temp, which moves in mireds.
+    pub scale: params::Scale,
     /// What dragging snaps to, as Exposure's 0.05 EV; typed values stay exact.
     pub drag_step: Option<f32>,
     /// A hue wheel of 0–360° as the rail.
@@ -1520,7 +1521,7 @@ fn descriptor_slider<Id>(
         name: None,
         display: Some((d.display.scale, d.display.decimals)),
         gradient,
-        reciprocal: matches!(d.tick, params::Tick::Mireds(_)),
+        scale: d.scale(),
         drag_step: d.drag_step,
         hue_rail: false,
         typed: Some((*d.valid.start(), *d.valid.end())),
@@ -1573,7 +1574,7 @@ pub(in crate::app) fn slider_styled(
         name,
         display,
         gradient,
-        reciprocal,
+        scale: rail_scale,
         drag_step: snap,
         hue_rail,
         typed,
@@ -1596,20 +1597,12 @@ pub(in crate::app) fn slider_styled(
     let signed = start < 0. && default == 0.;
     let origin = fill_origin(start, default, gradient.is_some());
     let to_rail = move |v: f32, rail: Rect| {
-        let t = if reciprocal {
-            egui::remap_clamp(1. / v, 1. / start..=1. / end, 0. ..=1.)
-        } else {
-            egui::remap_clamp(v, start..=end, 0. ..=1.)
-        };
+        let t = rail_scale.position(v, &(start..=end));
         egui::lerp(rail.left()..=rail.right(), t)
     };
     let from_rail = move |x: f32, rail: Rect| {
         let t = egui::remap_clamp(x, rail.left()..=rail.right(), 0. ..=1.);
-        if reciprocal {
-            1. / egui::lerp(1. / start..=1. / end, t)
-        } else {
-            egui::lerp(start..=end, t)
-        }
+        rail_scale.value_at(t, &(start..=end))
     };
     let before = *value;
     ui.push_id(label, |ui| {

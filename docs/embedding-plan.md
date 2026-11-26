@@ -1038,6 +1038,19 @@ so the design is proved on one path before it is spread.
    with the decoders' wording, and the library's error gives it
    `ErrorKind::Unsupported`.
 
+   What a front end needs of the model: every setting has a name
+   (`ParameterId::name`, as `midi.json` and the control socket already
+   spelled their fourteen, which now take theirs from it, and `named`),
+   `ParameterId::ALL` is public, a value is read through `&Recipe`
+   (`value`, made with `value_mut` from one table so the two can't
+   disagree), and `ParameterId::control` describes a slider: its range,
+   what a recipe may hold, its step (`Descriptor::step`, a drag step or
+   one unit of the last decimal shown), its scale and its value and text.
+   Temp's reciprocal mapping is the model's `params::Scale`, which the
+   app's sliders use. `ToneCurve::insert` says whether it added a point,
+   found one there or found the curve full (`Inserted`), and `move_point`
+   whether there was a point to move; the app's curve behaves as before.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in
