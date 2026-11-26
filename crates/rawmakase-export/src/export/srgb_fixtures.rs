@@ -203,6 +203,7 @@ pub(super) fn photo(image: CameraImage, source: &Path, cache: &Path, recipe: Rec
         recipe,
         values: Default::default(),
         watermark: None,
+        watermarks: Default::default(),
         demosaic: Demosaic::default(),
         cache: DecodeCache::new(cache.to_path_buf(), u64::MAX, "test"),
         lenses: crate::photo::LensProfiles::none(),

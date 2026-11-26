@@ -31,6 +31,8 @@ pub struct Photo {
     /// The watermark chosen in the Export dialog, a preset or the Simple
     /// Copyright Watermark.
     pub watermark: Option<crate::watermark::Watermark>,
+    /// The saved watermarks a graphic one's image is read from.
+    pub watermarks: crate::watermark::Watermarks,
     /// The demosaic for a full-size decode, if `image` is a draft.
     pub demosaic: Demosaic,
     /// Where a full-size decode is looked up first.
@@ -218,13 +220,15 @@ pub fn prepare_with_backend(
     let watermark = match &photo.watermark {
         _ if preset.is_some() => preset.cloned(),
         Some(_) if simple_copyright => match copyright(&photo.values, file.as_ref()) {
-            Some(text) => Some(crate::watermark::Watermark::simple_copyright(&text).ready()?),
+            Some(text) => Some(
+                crate::watermark::Watermark::simple_copyright(&text).ready(&photo.watermarks)?,
+            ),
             None => {
                 notice = Some("no copyright in the file for the Simple Copyright Watermark".into());
                 None
             }
         },
-        Some(w) => Some(w.ready()?),
+        Some(w) => Some(w.ready(&photo.watermarks)?),
         None => None,
     };
     let image = full_size(
@@ -474,6 +478,7 @@ mod tests {
             recipe: Recipe::default(),
             values: Default::default(),
             watermark: None,
+            watermarks: Default::default(),
             demosaic: Demosaic::default(),
             cache: DecodeCache::new(cache.to_path_buf(), u64::MAX, "test"),
             lenses: crate::photo::LensProfiles::none(),

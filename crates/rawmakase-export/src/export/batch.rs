@@ -387,6 +387,8 @@ pub struct Batch {
     pub defaults: Arc<DevelopDefaults>,
     /// The watermark chosen in the Export dialog.
     pub watermark: Option<crate::watermark::Watermark>,
+    /// The saved watermarks a graphic one's image is read from.
+    pub watermarks: crate::watermark::Watermarks,
     /// The demosaic each photo is decoded with.
     pub demosaic: crate::camera_data::Demosaic,
     /// Where each full-size decode is looked up first.
@@ -479,7 +481,7 @@ pub fn run_each_with_backend(
     // photo's own copyright, so it is made photo by photo.
     let preset = match &batch.watermark {
         Some(w) if w.name != crate::watermark::SIMPLE_COPYRIGHT => {
-            Some(w.ready().map_err(|e| format!("{e:#}")))
+            Some(w.ready(&batch.watermarks).map_err(|e| format!("{e:#}")))
         }
         _ => None,
     };
@@ -857,6 +859,7 @@ fn render<'a>(
             recipe,
             values: photo.values.clone(),
             watermark: batch.watermark.clone().filter(|_| preset.is_none()),
+            watermarks: batch.watermarks.clone(),
             demosaic: batch.demosaic,
             cache: batch.cache.clone(),
             lenses: batch.lenses.clone(),

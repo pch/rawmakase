@@ -225,6 +225,7 @@ impl Fixture {
             settings,
             defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
             watermark: None,
+            watermarks: Default::default(),
             demosaic: Default::default(),
             cache: Default::default(),
             lenses: crate::photo::LensProfiles::none(),
@@ -659,6 +660,7 @@ fn a_preset_watermark_is_read_once_for_the_whole_batch() -> Result<()> {
     };
     let batch = Batch {
         watermark: Some(gone),
+        watermarks: Default::default(),
         ..f.batch(photos.clone(), settings(&f.out().join("gone")))
     };
     let outcomes = run_all(&batch);
@@ -677,6 +679,7 @@ fn a_preset_watermark_is_read_once_for_the_whole_batch() -> Result<()> {
     };
     let marked = run_all(&Batch {
         watermark: Some(text),
+        watermarks: Default::default(),
         ..f.batch(photos.clone(), settings(&f.out().join("marked")))
     });
     let plain = run_all(&f.batch(photos, settings(&f.out().join("plain"))));
@@ -811,6 +814,7 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
             settings,
             defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
             watermark: None,
+            watermarks: Default::default(),
             demosaic: Default::default(),
             cache: Default::default(),
             lenses: crate::photo::LensProfiles::none(),
@@ -871,6 +875,7 @@ fn exporting_never_replaces_another_photos_original() -> Result<()> {
         settings,
         defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
         watermark: None,
+        watermarks: Default::default(),
         demosaic: Default::default(),
         cache: Default::default(),
         lenses: crate::photo::LensProfiles::none(),
@@ -1106,6 +1111,7 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     };
     let marked = run_all(&Batch {
         watermark: Some(text),
+        watermarks: Default::default(),
         ..f.batch(photos.clone(), tiff(&f.out().join("hdr-marked")))
     });
     let plain = run_all(&f.batch(photos.clone(), tiff(&f.out().join("hdr-plain"))));

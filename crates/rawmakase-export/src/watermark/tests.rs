@@ -147,6 +147,40 @@ fn deleting_a_preset_removes_its_own_image() -> Result<()> {
 }
 
 #[test]
+fn the_folder_given_is_where_presets_and_images_are() -> Result<()> {
+    let (dir, w) = graphic(4, 4, false)?;
+    let marks = Watermarks::in_dir(dir.path().join("watermarks"));
+    assert_eq!(marks.presets(), vec![w.clone()]);
+    assert!(!w.image_missing(&marks));
+    assert!(w.ready(&marks).is_ok());
+    marks.delete(&w)?;
+    assert!(marks.presets().is_empty());
+    assert!(w.image_missing(&marks));
+    Ok(())
+}
+
+#[test]
+fn without_a_folder_nothing_is_saved_and_no_image_is_found() -> Result<()> {
+    let (_dir, w) = graphic(4, 4, false)?;
+    let none = Watermarks::none();
+    assert!(none.presets().is_empty());
+    // Not looked for in the working folder.
+    assert!(w.image_missing(&none));
+    let error = w.ready(&none).err().unwrap();
+    assert_eq!(
+        error.to_string(),
+        format!("Watermark image not found: {}", w.image.clone().unwrap())
+    );
+    let error = none.save(&w, None, None).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "There is no data folder to keep watermarks in"
+    );
+    assert!(none.delete(&w).is_err());
+    Ok(())
+}
+
+#[test]
 fn text_is_drawn_with_smooth_edges_and_a_shadow() -> Result<()> {
     let mut w = Watermark {
         text: "Ag © 2026".into(),
@@ -154,7 +188,7 @@ fn text_is_drawn_with_smooth_edges_and_a_shadow() -> Result<()> {
         color: [1., 1., 1.],
         ..crate::watermark::fonts::test_watermark()
     };
-    let plain = w.ready()?.place(400, 200).unwrap();
+    let plain = w.ready(&Watermarks::none())?.place(400, 200).unwrap();
     assert!((plain.width as f32 - 200.).abs() < 12.);
     let alphas: Vec<f32> = plain.rgba.iter().map(|p| p[3]).collect();
     assert!(alphas.iter().any(|a| *a > 0.99), "solid strokes");
@@ -166,7 +200,7 @@ fn text_is_drawn_with_smooth_edges_and_a_shadow() -> Result<()> {
     // The shadow darkens around the text, not over it.
     w.shadow.enabled = true;
     w.shadow.opacity = 1.;
-    let shadowed = w.ready()?.place(400, 200).unwrap();
+    let shadowed = w.ready(&Watermarks::none())?.place(400, 200).unwrap();
     let covered = |p: &Placed| p.rgba.iter().filter(|c| c[3] > 0.01).count();
     assert!(covered(&shadowed) > covered(&plain));
     assert!(
@@ -185,7 +219,7 @@ fn the_weight_follows_the_style() -> Result<()> {
             size: Size::Proportional(0.5),
             ..crate::watermark::fonts::test_watermark()
         };
-        let placed = w.ready()?.place(400, 200).unwrap();
+        let placed = w.ready(&Watermarks::none())?.place(400, 200).unwrap();
         Ok(placed.rgba.iter().map(|p| p[3]).sum::<f32>() / (placed.width * placed.height) as f32)
     };
     assert!(ink("Bold")? > ink("Regular")? * 1.2);
@@ -307,7 +341,7 @@ fn a_wide_shadow_on_large_text_stays_cheap() -> Result<()> {
         angle: -45.,
     };
     let started = std::time::Instant::now();
-    let placed = w.ready()?.place(3000, 1000).unwrap();
+    let placed = w.ready(&Watermarks::none())?.place(3000, 1000).unwrap();
     assert!(started.elapsed().as_secs() < 20);
     assert!(placed.rgba.iter().any(|p| p[3] > 0.5));
     Ok(())
@@ -341,7 +375,7 @@ fn a_shadow_never_makes_the_mark_larger_than_the_photo() -> Result<()> {
         radius: 0.4,
         angle: -45.,
     };
-    let placed = w.ready()?.place(600, 300).unwrap();
+    let placed = w.ready(&Watermarks::none())?.place(600, 300).unwrap();
     assert!(
         // The ink fits the photo; the shadow reaches no further than the
         // text's line box, whatever its offset and radius.
@@ -360,7 +394,7 @@ fn a_missing_font_style_fails_rather_than_drawing_another() {
         face: "Regular".into(),
         ..crate::watermark::fonts::test_watermark()
     };
-    assert!(w.ready().is_ok());
+    assert!(w.ready(&Watermarks::none()).is_ok());
     assert!(fonts::load("No Such Family", "Bold").is_err());
     assert!(fonts::load(fonts::SYSTEM, "No Such Style").is_err());
 }

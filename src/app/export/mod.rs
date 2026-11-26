@@ -222,7 +222,7 @@ impl Editor {
         self.exports.read.cancel();
         self.exports.scope = scope;
         self.exports.draft = ExportSettings::load().unwrap_or_default();
-        self.exports.watermarks = crate::watermark::presets();
+        self.exports.watermarks = self.watermarks().presets();
         self.exports.saved = crate::app::export::naming::presets::Library::load();
         self.exports.dialog = true;
     }
@@ -231,6 +231,7 @@ impl Editor {
     pub(in crate::app) fn open_watermark_editor(&mut self, ctx: &egui::Context) {
         self.exports.watermark_editor = Some(watermark_editor::WatermarkEditor::new(
             Default::default(),
+            self.watermarks(),
             ctx,
         ));
     }
@@ -481,7 +482,7 @@ impl Editor {
                     "Photo info could not be read for the file names: {why}"
                 ));
                 self.exports.draft = settings;
-                self.exports.watermarks = crate::watermark::presets();
+                self.exports.watermarks = self.watermarks().presets();
                 self.exports.dialog = true;
             }
         }
@@ -647,6 +648,7 @@ impl Editor {
             recipe: self.document.edit.recipe().clone(),
             values,
             watermark: None,
+            watermarks: self.watermarks(),
             demosaic: self.session.demosaic,
             cache: self.decode_cache().clone(),
             lenses: self.lens_profiles().clone(),
@@ -668,7 +670,7 @@ impl Editor {
         // Its names are made from what the scope has now.
         self.exports.read.cancel();
         let watermark = if settings.watermark {
-            match watermark_for(&settings.watermark_name) {
+            match watermark_for(&settings.watermark_name, &self.watermarks()) {
                 Some(w) => Some(w),
                 None => {
                     self.messages
@@ -822,6 +824,7 @@ impl Editor {
             lenses: self.lens_profiles().clone(),
             profiles: self.camera_profiles().clone(),
             fits: self.libraries().fits,
+            watermarks: self.watermarks(),
             ai: self.ai_service(),
         };
         let ticket = self.export_queue().submit(batch);
@@ -1142,15 +1145,18 @@ fn to_show(exported: &[PathBuf]) -> Vec<PathBuf> {
 
 /// The watermark named in the Export dialog: a saved preset, or the Simple
 /// Copyright Watermark, whose text comes from each photo at export.
-fn watermark_for(name: &str) -> Option<crate::watermark::Watermark> {
-    use crate::watermark::{SIMPLE_COPYRIGHT, Watermark, presets};
+fn watermark_for(
+    name: &str,
+    marks: &crate::watermark::Watermarks,
+) -> Option<crate::watermark::Watermark> {
+    use crate::watermark::{SIMPLE_COPYRIGHT, Watermark};
     if name == SIMPLE_COPYRIGHT {
         return Some(Watermark {
             name: SIMPLE_COPYRIGHT.into(),
             ..Default::default()
         });
     }
-    presets().into_iter().find(|w| w.name == name)
+    marks.presets().into_iter().find(|w| w.name == name)
 }
 
 #[cfg(test)]

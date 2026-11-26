@@ -207,6 +207,10 @@ impl Editor {
     pub(in crate::app) fn libraries(&self) -> crate::environment::Libraries {
         crate::environment::libraries(&self.core)
     }
+    /// The saved watermarks: the context's data folder's.
+    pub(in crate::app) fn watermarks(&self) -> crate::watermark::Watermarks {
+        crate::environment::watermarks(&self.core)
+    }
     /// The installed XMP presets and their layout: the context's.
     pub(in crate::app) fn preset_library(&self) -> &crate::presets::PresetLibrary {
         crate::environment::presets(&self.core)

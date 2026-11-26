@@ -31,6 +31,8 @@ pub(super) struct WatermarkEditor {
     /// settings change, and what it was loaded for.
     loaded: Option<(String, watermark::Ready)>,
     notice: Notice,
+    /// The saved watermarks: where a kept image is read from.
+    marks: watermark::Watermarks,
 }
 /// What the editor says beside the name field.
 #[derive(Default)]
@@ -51,7 +53,11 @@ impl Notice {
     }
 }
 impl WatermarkEditor {
-    pub(super) fn new(watermark: Watermark, ctx: &egui::Context) -> Self {
+    pub(super) fn new(
+        watermark: Watermark,
+        marks: watermark::Watermarks,
+        ctx: &egui::Context,
+    ) -> Self {
         // Installed fonts are listed off the interface thread, which is woken to
         // draw them once they are.
         let ctx = ctx.clone();
@@ -68,6 +74,7 @@ impl WatermarkEditor {
             preview: None,
             loaded: None,
             notice: Notice::None,
+            marks,
         }
     }
 }
@@ -180,7 +187,7 @@ impl Editor {
                     self.exports.watermark_editor = Some(state);
                     return;
                 }
-                let saved = watermark::save(
+                let saved = self.watermarks().save(
                     &state.watermark,
                     state.original.as_deref(),
                     source.as_deref(),
@@ -197,7 +204,7 @@ impl Editor {
                         }
                         self.exports.draft.watermark = true;
                         self.exports.draft.watermark_name = saved.name;
-                        self.exports.watermarks = watermark::presets();
+                        self.exports.watermarks = self.watermarks().presets();
                     }
                     Err(e) => {
                         state.notice = Notice::Error(format!("{e:#}"));
@@ -214,7 +221,7 @@ impl Editor {
                     .find(|w| w.name == original)
                     .cloned();
                 if let Some(w) = saved
-                    && let Err(e) = watermark::delete(&w)
+                    && let Err(e) = self.watermarks().delete(&w)
                 {
                     // Nothing else changes; the editor stays open to say so.
                     state.notice = Notice::Error(format!("Not deleted: {e:#}"));
@@ -231,7 +238,7 @@ impl Editor {
                     previous.watermark = false;
                     previous.watermark_name = watermark::SIMPLE_COPYRIGHT.into();
                 });
-                self.exports.watermarks = watermark::presets();
+                self.exports.watermarks = self.watermarks().presets();
             }
             Some(false) => {}
             None => self.exports.watermark_editor = Some(state),
@@ -337,7 +344,7 @@ fn mark_texture(
                     w.image = source.file_name().map(|n| n.to_string_lossy().into_owned());
                     w.ready_in(&dir)
                 }
-                _ => w.ready(),
+                _ => w.ready(&state.marks),
             };
             match loaded {
                 Ok(r) => {

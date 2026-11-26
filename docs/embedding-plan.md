@@ -949,6 +949,15 @@ so the design is proved on one path before it is spread.
    build, the Library's previews, Sync, export, Merge to HDR and the
    command line fit through the context's. Develop's Fit Camera Look keys
    its "the file changed meanwhile" check by it too.
+
+   The watermark folder: `watermark::Watermarks`, the folder presets and
+   their images are saved in, or none, where nothing is saved and a
+   graphic watermark's image is not found (never looked for in the working
+   folder). The presets' listing, saving and deleting, a watermark's
+   readying and its missing image take it; an export's batch and photo
+   capture it. The library has no export operations yet, so the app's
+   `environment` module makes it from the context's first data folder
+   until step 15 gives the context its own.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

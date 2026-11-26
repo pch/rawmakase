@@ -184,6 +184,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
                 profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
                 fits: Default::default(),
                 watermark: None,
+                watermarks: Default::default(),
                 demosaic: Default::default(),
                 cache: editor.decode_cache().clone(),
                 ai: rawmakase_decode::ai::denoise::AiService::refusing("no AI Denoise in tests"),

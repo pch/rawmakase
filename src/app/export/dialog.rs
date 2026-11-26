@@ -534,6 +534,7 @@ impl Editor {
 
         section(ui, "Watermarking");
         let presets = self.exports.watermarks.clone();
+        let marks = crate::environment::watermarks(&self.core);
         let simple = crate::watermark::SIMPLE_COPYRIGHT;
         let mut edit = None;
         form_row(ui, "", |ui| {
@@ -577,7 +578,7 @@ impl Editor {
                 && presets
                     .iter()
                     .find(|w| w.name == s.watermark_name)
-                    .is_some_and(crate::watermark::Watermark::image_missing);
+                    .is_some_and(|w| w.image_missing(&marks));
             if missing {
                 ui.label(
                     egui::RichText::new("Watermark image not found")
@@ -587,8 +588,11 @@ impl Editor {
             }
         });
         if let Some(w) = edit {
-            self.exports.watermark_editor =
-                Some(super::watermark_editor::WatermarkEditor::new(w, ui.ctx()));
+            self.exports.watermark_editor = Some(super::watermark_editor::WatermarkEditor::new(
+                w,
+                self.watermarks(),
+                ui.ctx(),
+            ));
             return;
         }
         let s = &mut self.exports.draft;

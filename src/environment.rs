@@ -92,6 +92,17 @@ pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
     }
 }
 
+/// The saved watermarks of a context: its first data folder's `watermarks`,
+/// or none without a data folder. The app's until the library's export
+/// operations hold them (step 15 of docs/embedding-plan.md).
+pub fn watermarks(ctx: &rawmakase_core::Context) -> crate::watermark::Watermarks {
+    ctx.data_dirs()
+        .first()
+        .map_or_else(crate::watermark::Watermarks::none, |data| {
+            crate::watermark::Watermarks::in_dir(data.join("watermarks"))
+        })
+}
+
 /// Lensfun's database of a context [`context`] made, in the data folder.
 pub fn lensfun(ctx: &rawmakase_core::Context) -> &crate::lens::lensfun::installed::Handle {
     rawmakase_core::workspace::lensfun(ctx)

@@ -323,6 +323,7 @@ fn return_exports_from_the_dialog() -> anyhow::Result<()> {
     open(&mut e);
     e.exports.watermark_editor = Some(super::watermark_editor::WatermarkEditor::new(
         Default::default(),
+        e.watermarks(),
         &ctx,
     ));
     return_key(&mut e);
@@ -1317,6 +1318,7 @@ fn shots_of_export() {
             e.exports.dialog = true;
             e.exports.watermark_editor = Some(super::watermark_editor::WatermarkEditor::new(
                 Default::default(),
+                e.watermarks(),
                 ctx,
             ));
         },
