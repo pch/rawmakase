@@ -4,6 +4,7 @@ use crate::{Error, ErrorKind, Result};
 use rawmakase_decode::ai::cache::{self as ai_cache, AiCache};
 use rawmakase_decode::decode_cache::{self, DecodeCache};
 use rawmakase_decode::photo::LensProfiles;
+use rawmakase_interop::presets::PresetLibrary;
 use rawmakase_model::camera_profiles::ProfileLibrary;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -52,6 +53,8 @@ struct Inner {
     lenses: LensProfiles,
     #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     profiles: ProfileLibrary,
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
+    presets: PresetLibrary,
     cache: Option<Cache>,
 }
 
@@ -78,8 +81,10 @@ pub struct ContextBuilder {
 impl ContextBuilder {
     /// The data folders, in order. The first is where RAWmakase would write
     /// what an app imports; all are searched for what has been imported: the
-    /// camera profiles in each folder's `camera-profiles` and the lens profiles
-    /// in its `lens-profiles`. Without any, no installed profile is found.
+    /// camera profiles in each folder's `camera-profiles`, the lens profiles in
+    /// its `lens-profiles` and the XMP presets in its `xmp-presets`; the
+    /// presets' order is kept in the first. Without any, no installed profile
+    /// or preset is found.
     pub fn data_dirs<P: Into<PathBuf>>(mut self, dirs: impl IntoIterator<Item = P>) -> Self {
         self.data_dirs = dirs.into_iter().map(Into::into).collect();
         self
@@ -123,6 +128,7 @@ impl ContextBuilder {
             inner: Arc::new(Inner {
                 lenses: LensProfiles::in_data_dirs(&self.data_dirs),
                 profiles: ProfileLibrary::in_data_dirs(&self.data_dirs),
+                presets: PresetLibrary::in_data_dirs(&self.data_dirs),
                 data_dirs: self.data_dirs,
                 cache,
             }),
@@ -188,6 +194,12 @@ pub mod workspace {
     /// shares what was read.
     pub fn camera_profiles(ctx: &Context) -> &ProfileLibrary {
         &ctx.inner.profiles
+    }
+
+    /// The XMP presets installed in the context's data folders, and their
+    /// layout file in the first.
+    pub fn presets(ctx: &Context) -> &rawmakase_interop::presets::PresetLibrary {
+        &ctx.inner.presets
     }
 }
 

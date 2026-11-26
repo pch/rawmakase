@@ -2,7 +2,7 @@ use rawmakase::{camera_data::Metadata, camera_profiles, model::recipe::Recipe, p
 #[test]
 #[ignore = "Private XMP library installed in user data directory"]
 fn supplied_library_audit() -> anyhow::Result<()> {
-    let library = presets::load_library();
+    let library = presets::PresetLibrary::in_data_dirs(&rawmakase::storage::asset_dirs()).load();
     println!(
         "{} presets; {} parse failures",
         library.presets.len(),

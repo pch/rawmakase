@@ -203,6 +203,10 @@ impl Editor {
     pub(in crate::app) fn lens_profiles(&self) -> &crate::photo::LensProfiles {
         crate::environment::lens_profiles(&self.core)
     }
+    /// The installed XMP presets and their layout: the context's.
+    pub(in crate::app) fn preset_library(&self) -> &crate::presets::PresetLibrary {
+        crate::environment::presets(&self.core)
+    }
     /// The installed camera profiles: the context's.
     pub(in crate::app) fn camera_profiles(&self) -> &crate::camera_profiles::ProfileLibrary {
         crate::environment::camera_profiles(&self.core)
@@ -421,7 +425,7 @@ impl Editor {
             activity: Default::default(),
             presets: PresetBrowser {
                 favorites: crate::presets::load_favorites(),
-                layout: crate::presets::load_layout(),
+                layout: crate::environment::presets(&core).load_layout(),
                 view: if session.preset_list {
                     crate::app::presets::PresetView::List
                 } else {

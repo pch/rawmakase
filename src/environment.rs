@@ -44,6 +44,12 @@ pub fn camera_profiles(ctx: &rawmakase_core::Context) -> &crate::camera_profiles
     rawmakase_core::workspace::camera_profiles(ctx)
 }
 
+/// The XMP presets of a context [`context`] made: those in the data folder
+/// and the older Linux one, and their layout in the data folder.
+pub fn presets(ctx: &rawmakase_core::Context) -> &crate::presets::PresetLibrary {
+    rawmakase_core::workspace::presets(ctx)
+}
+
 /// The profile manager's folder: where a context [`context`] made imports
 /// camera profiles to, the data folder's `camera-profiles`.
 pub fn profile_manager(ctx: &rawmakase_core::Context) -> crate::camera_profiles::manage::Library {

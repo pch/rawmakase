@@ -17,11 +17,12 @@ impl Editor {
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         let scan = self.presets.next_scan();
+        let presets = self.preset_library().clone();
         crate::app::task::spawn(
             tx,
             ctx,
             move |tx| {
-                let library = Arc::new(crate::presets::load_library());
+                let library = Arc::new(presets.load());
                 let _ = tx.send(Event::XmpLibrary { scan, library });
             },
             move |tx, error| {

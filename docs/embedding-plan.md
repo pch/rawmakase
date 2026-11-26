@@ -920,6 +920,14 @@ so the design is proved on one path before it is spread.
    of the libraries photos are opened and resolved with
    (`environment::Libraries`) travels where one did, through the Library's
    previews, Reference View, Merge to HDR and the command line.
+
+   The preset library and its layout file: `presets::PresetLibrary`, made by
+   the context from its data folders, lists the built-in presets and those
+   installed in each folder's `xmp-presets`, and loads and saves the user's
+   arrangement in the first folder's `preset-layout.json`. The Presets
+   panel's scan, Manage Presets and the preset import's duplicate check take
+   it from the context. Favorites stay where they are until step 16, which
+   gives them their folder.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

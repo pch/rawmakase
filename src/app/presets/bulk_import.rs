@@ -653,8 +653,14 @@ impl Summary {
     }
 }
 
-/// Imports what `picks` (files and folders) hold for `kind`.
-fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summary {
+/// Imports what `picks` (files and folders) hold for `kind`; a preset already
+/// in `presets`' folders is not imported again.
+fn run(
+    kind: ImportKind,
+    picks: &[PathBuf],
+    presets: &crate::presets::PresetLibrary,
+    progress: &ImportProgress,
+) -> Summary {
     progress.set(format!("Looking for {}…", kind.noun(2)));
     let found = gather(kind, picks);
     match kind {
@@ -670,7 +676,7 @@ fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summar
             &found,
             progress,
             &crate::storage::data_dir().join("xmp-presets"),
-            &crate::presets::library_dirs(),
+            presets.dirs(),
             &profile_library(),
         ),
     }
@@ -722,11 +728,12 @@ impl Editor {
         self.importing = Some(progress.clone());
         let (tx, ctx) = (self.tx.clone(), ctx.clone());
         let first = picks[0].clone();
+        let presets = self.preset_library().clone();
         crate::app::task::spawn(
             tx,
             ctx,
             move |tx| {
-                let summary = run(kind, &picks, &progress);
+                let summary = run(kind, &picks, &presets, &progress);
                 let _ = tx.send(Event::Imported(Box::new(summary)));
             },
             move |tx, error| {

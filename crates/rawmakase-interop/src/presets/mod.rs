@@ -7,8 +7,7 @@ mod native;
 mod photo;
 pub mod user;
 pub use library::{
-    Library, PresetLayout, display_name, find_preset, library_dirs, load_favorites, load_layout,
-    load_library, save_favorites, save_layout,
+    Library, PresetLayout, PresetLibrary, display_name, find_preset, load_favorites, save_favorites,
 };
 pub use native::{LoadedPreset, applied_to, load_preset, save_preset};
 pub use photo::{Applied, apply_to_photo};

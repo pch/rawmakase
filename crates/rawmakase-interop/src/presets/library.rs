@@ -1,5 +1,5 @@
 use crate::xmp::{Preset, parse};
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -9,13 +9,53 @@ pub struct Library {
     pub presets: Vec<Preset>,
     pub errors: Vec<String>,
 }
-pub fn library_dirs() -> Vec<PathBuf> {
-    crate::storage::asset_dirs()
-        .into_iter()
-        .map(|p| p.join("xmp-presets"))
-        .collect()
+/// The XMP presets installed in a set of folders, beside the built-in ones,
+/// and how the user arranged them (their layout file, in the first data
+/// folder): what the Presets panel lists. Cheap to clone.
+#[derive(Clone, Debug, Default)]
+pub struct PresetLibrary {
+    dirs: Vec<PathBuf>,
+    layout: Option<PathBuf>,
 }
-pub fn load_library() -> Library {
+impl PresetLibrary {
+    /// The presets in the `xmp-presets` folder of each data folder, where
+    /// RAWmakase imports them, and the layout file in the first.
+    pub fn in_data_dirs(data_dirs: &[PathBuf]) -> Self {
+        Self {
+            dirs: data_dirs.iter().map(|d| d.join("xmp-presets")).collect(),
+            layout: data_dirs.first().map(|d| d.join("preset-layout.json")),
+        }
+    }
+    /// The built-in presets alone, arranged as they come.
+    pub fn none() -> Self {
+        Self::default()
+    }
+    /// The folders searched, in order.
+    pub fn dirs(&self) -> &[PathBuf] {
+        &self.dirs
+    }
+    /// Every preset: the built-in ones first, as in Lightroom, then the
+    /// installed ones by group and name, with the files that failed to read.
+    pub fn load(&self) -> Library {
+        load_from(&self.dirs)
+    }
+    /// How the user arranged the presets; as they come when nothing was saved.
+    pub fn load_layout(&self) -> PresetLayout {
+        self.layout
+            .as_deref()
+            .map(crate::storage::read_json_or_default)
+            .unwrap_or_default()
+    }
+    /// Saves how the user arranged the presets.
+    pub fn save_layout(&self, layout: &PresetLayout) -> Result<()> {
+        let path = self
+            .layout
+            .as_deref()
+            .context("The presets have no data folder to keep their order in")?;
+        crate::storage::atomic_json(path, layout)
+    }
+}
+fn load_from(dirs: &[PathBuf]) -> Library {
     let mut library = Library::default();
     let mut paths = Vec::new();
     fn scan(dir: &Path, paths: &mut Vec<PathBuf>, depth: usize) {
@@ -43,8 +83,8 @@ pub fn load_library() -> Library {
             }
         }
     }
-    for dir in library_dirs() {
-        scan(&dir, &mut paths, 0);
+    for dir in dirs {
+        scan(dir, &mut paths, 0);
     }
     paths.sort();
     paths.dedup();
@@ -114,19 +154,42 @@ impl PresetLayout {
             .unwrap_or(usize::MAX)
     }
 }
-fn layout_path() -> PathBuf {
-    crate::storage::data_dir().join("preset-layout.json")
-}
-pub fn load_layout() -> PresetLayout {
-    crate::storage::read_json_or_default(&layout_path())
-}
-pub fn save_layout(layout: &PresetLayout) -> Result<()> {
-    crate::storage::atomic_json(&layout_path(), layout)
-}
 pub fn display_name(name: &str) -> String {
     name.replace('⁺', "+")
         .replace('⁻', "-")
         .replace('¹', "1")
         .replace('²', "2")
         .replace('³', "3")
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::*;
+
+    const PRESET: &str = include_str!("../../../../assets/presets/BandW/Neutral.xmp");
+
+    /// Two libraries on two data folders each list their own installed presets
+    /// after the built-in ones, and keep their own layout, in their first folder.
+    #[test]
+    fn each_library_lists_its_own_presets_and_keeps_its_own_order() -> Result<()> {
+        let (a, b) = (tempfile::tempdir()?, tempfile::tempdir()?);
+        std::fs::create_dir(a.path().join("xmp-presets"))?;
+        std::fs::write(a.path().join("xmp-presets/Mine.xmp"), PRESET)?;
+        let first = PresetLibrary::in_data_dirs(&[a.path().to_path_buf()]);
+        let second = PresetLibrary::in_data_dirs(&[b.path().to_path_buf()]);
+        let builtin = PresetLibrary::none().load().presets.len();
+        assert!(builtin > 0);
+        assert_eq!(first.load().presets.len(), builtin + 1);
+        assert_eq!(second.load().presets.len(), builtin);
+        let layout = PresetLayout {
+            order: vec![PresetLayout::group_key(true, "Mine")],
+            ..Default::default()
+        };
+        first.save_layout(&layout)?;
+        assert!(a.path().join("preset-layout.json").is_file());
+        assert_eq!(first.load_layout(), layout);
+        assert_eq!(second.load_layout(), PresetLayout::default());
+        assert!(PresetLibrary::none().save_layout(&layout).is_err());
+        Ok(())
+    }
 }

@@ -106,7 +106,7 @@ fn main() -> Result<()> {
         rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&image.metadata);
     let base = Recipe::with_profiles(&image.metadata, &profiles);
     let library = if installed {
-        rawmakase::presets::load_library()
+        rawmakase::presets::PresetLibrary::in_data_dirs(&rawmakase::storage::asset_dirs()).load()
     } else {
         let (presets, errors) = rawmakase::presets::builtin::presets();
         rawmakase::presets::Library { presets, errors }
