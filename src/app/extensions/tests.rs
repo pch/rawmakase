@@ -118,10 +118,10 @@ fn example() -> Launch {
     }
 }
 
-/// A small PNG of `level` brightness.
+/// A small PNG of `level` brightness, whatever `path` is named.
 fn picture(path: &Path, level: u8) {
     image::RgbImage::from_fn(32, 24, |x, _| image::Rgb([level, level / 2, (x * 4) as u8]))
-        .save(path)
+        .save_with_format(path, image::ImageFormat::Png)
         .unwrap();
 }
 
@@ -852,6 +852,37 @@ fn reading_the_open_photo_reads_nothing_of_its_file() {
     assert!(read_clean(&token));
     let proposed = propose_now(e, proposal(&token, a.0, 0.8), "Brighten");
     assert_eq!(proposed.applied, vec![a.0.0], "{proposed:?}");
+}
+
+/// The open photo whose load failed has no settings to give: Develop never
+/// installed its edit. A read gives the load's error, from Develop's state
+/// alone, without reading the file on the UI thread: a file under a RAW's name
+/// would be read for its content, whole if it starts as a JPEG does.
+#[test]
+fn reading_an_open_photo_that_failed_to_load_gives_its_error_and_reads_no_file() {
+    let mut f = fixture(&["a.CR2"]);
+    let e = &mut f.editor;
+    let a = f.photos[0].clone();
+    std::fs::write(&a.1, b"not a photo at all, only some text").unwrap();
+    let ctx = e.context.clone();
+    e.module = Module::Develop;
+    e.open_raw(a.1.clone(), Some(a.0));
+    let until = Instant::now() + Duration::from_secs(30);
+    while e.document.loading() {
+        assert!(Instant::now() < until, "the load never ended");
+        e.events(&ctx);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(e.document.metadata.is_none(), "the load failed");
+    // The file is a photo now: a read that opened it would see one.
+    picture(&a.1, 120);
+    let read = e.read_open_photo().unwrap();
+    let photo = &read.photos[0];
+    assert!(photo.settings.is_empty(), "{:?}", photo.settings);
+    let error = photo.error.as_deref().expect("the load's error");
+    assert!(error.contains("not RAW"), "{error}");
+    let proposed = propose_now(e, proposal(&read.token, a.0, 1.0), "Brighten");
+    assert!(proposed.applied.is_empty(), "{proposed:?}");
 }
 
 /// A proposal of `settings` for `photo`.
