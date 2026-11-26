@@ -1039,6 +1039,149 @@ pub(in crate::app) enum SliderEvent {
     Reset,
     /// Its label clicked: the slider the Basic panel's keys step.
     LabelClicked,
+    /// Its label held: the value is its default for this frame, for
+    /// [`PeekScope`]'s owner to show and put back.
+    Peeked,
+}
+/// A press on a slider's label released within this many seconds is a click, and
+/// held longer is none. Only a press held longer peeks.
+pub(in crate::app) const LABEL_CLICK: f64 = 0.2;
+fn peek_scope_id() -> egui::Id {
+    egui::Id::new("rawmakase-peek-scope")
+}
+/// While alive, the sliders drawn may peek at their defaults
+/// ([`SliderEvent::Peeked`]), or not: a slider peeks only where whoever draws it
+/// puts the edit back, so never unless asked to, and not one that sets a tool's
+/// next stroke rather than the photo.
+pub(in crate::app) struct PeekScope {
+    ctx: egui::Context,
+    before: bool,
+}
+impl PeekScope {
+    pub(in crate::app) fn allow(ui: &egui::Ui) -> Self {
+        Self::enter(ui, true)
+    }
+    pub(in crate::app) fn forbid(ui: &egui::Ui) -> Self {
+        Self::enter(ui, false)
+    }
+    fn enter(ui: &egui::Ui, allowed: bool) -> Self {
+        let before = peek_allowed(ui);
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(peek_scope_id(), allowed));
+        Self {
+            ctx: ui.ctx().clone(),
+            before,
+        }
+    }
+}
+impl Drop for PeekScope {
+    fn drop(&mut self) {
+        self.ctx
+            .data_mut(|d| d.insert_temp(peek_scope_id(), self.before));
+    }
+}
+/// Whether a slider drawn since the last [`take_peeked`] peeked: what it changed
+/// beside the photo's settings is not put back, so its owner leaves that be.
+pub(in crate::app) fn peeked(ui: &egui::Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp(peeked_id())).unwrap_or(false)
+}
+/// [`peeked`], starting over.
+pub(in crate::app) fn take_peeked(ui: &egui::Ui) -> bool {
+    ui.ctx()
+        .data_mut(|d| d.remove_temp(peeked_id()))
+        .unwrap_or(false)
+}
+fn peeked_id() -> egui::Id {
+    egui::Id::new("rawmakase-slider-peeked")
+}
+fn peek_allowed(ui: &egui::Ui) -> bool {
+    ui.ctx()
+        .data(|d| d.get_temp(peek_scope_id()))
+        .unwrap_or(false)
+}
+/// A slider label's last press.
+#[derive(Clone, Copy, Debug)]
+struct LabelHold {
+    /// When the press began, until its release is seen.
+    pressed: Option<f64>,
+    /// When a press too long for a click last ended.
+    ended: Option<f64>,
+}
+/// What a slider's label asks this frame. Held past [`LABEL_CLICK`], it peeks; the release of a press
+/// longer than [`LABEL_CLICK`] is no click, and a press soon after no double-click,
+/// so holding it again and again to compare never resets the slider.
+fn label_event(ui: &egui::Ui, label: &egui::Response) -> SliderEvent {
+    let id = label.id.with("hold");
+    let last = ui.data(|d| d.get_temp::<LabelHold>(id));
+    let (now, pressed_at, primary, focused, other_input) = ui.input(|i| {
+        (
+            i.time,
+            i.pointer.press_start_time(),
+            i.pointer.primary_down(),
+            i.focused,
+            // A key or a screen reader may edit the photo in this frame, which must
+            // not be put back with the peek: such a frame is drawn without one.
+            i.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::Key { .. }
+                        | egui::Event::Text(_)
+                        | egui::Event::AccessKitActionRequest(_)
+                )
+            }),
+        )
+    });
+    let again = ui
+        .ctx()
+        .options(|o| o.input_options.max_double_click_delay + o.input_options.max_click_duration);
+    let holding = primary && focused && label.is_pointer_button_down_on() && peek_allowed(ui);
+    if holding && let Some(pressed_at) = pressed_at {
+        let mut hold = last.unwrap_or(LabelHold {
+            pressed: None,
+            ended: None,
+        });
+        // A new press, whatever became of the last one's release.
+        hold.pressed = Some(pressed_at);
+        ui.data_mut(|d| d.insert_temp(id, hold));
+        // A press no longer than a click shows nothing yet, so a click never
+        // flashes the default. The repaint starts the peek even if nothing else
+        // draws a frame while the button is held still.
+        let held_for = now - pressed_at;
+        if held_for <= LABEL_CLICK {
+            ui.ctx()
+                .request_repaint_after_secs((LABEL_CLICK - held_for) as f32 + 0.001);
+            return SliderEvent::None;
+        }
+        if other_input {
+            ui.ctx().request_repaint();
+            return SliderEvent::None;
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(peeked_id(), true));
+        return SliderEvent::Peeked;
+    }
+    let mut ended = last.and_then(|hold| hold.ended);
+    if let Some(mut hold) = last
+        && let Some(pressed) = hold.pressed
+        && !primary
+    {
+        hold.pressed = None;
+        let long = now - pressed > LABEL_CLICK;
+        if long {
+            hold.ended = Some(now);
+        }
+        ended = hold.ended;
+        ui.data_mut(|d| d.insert_temp(id, hold));
+        if long {
+            return SliderEvent::None;
+        }
+    }
+    if label.double_clicked() && ended.is_none_or(|ended| now - ended > again) {
+        SliderEvent::Reset
+    } else if label.clicked() {
+        SliderEvent::LabelClicked
+    } else {
+        SliderEvent::None
+    }
 }
 /// Whether a slider shows a tick at its fill's origin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1293,7 +1436,10 @@ pub(in crate::app) fn slider_styled(
                 row.top() + SLIDER_LABEL,
             ),
         );
-        let label_response = ui.interact(label_rect, ui.id().with("label"), Sense::click());
+        // Drags too: egui forgets a press that can no longer be a click, held long or
+        // moved, on a widget that senses clicks alone.
+        let label_response =
+            ui.interact(label_rect, ui.id().with("label"), Sense::click_and_drag());
         let label_pos = label_rect.left_center();
         let font = egui::FontId::proportional(text::SMALL);
         if selected {
@@ -1318,12 +1464,9 @@ pub(in crate::app) fn slider_styled(
                 palette.tone(Tone::SOFT),
             );
         }
-        if label_response.clicked() {
-            event = SliderEvent::LabelClicked;
-        }
-        if label_response.double_clicked() {
+        event = label_event(ui, &label_response);
+        if matches!(event, SliderEvent::Reset | SliderEvent::Peeked) {
             *value = default.clamp(start, end);
-            event = SliderEvent::Reset;
         }
         let value_rect = Rect::from_min_max(
             Pos2::new(row.right() - SLIDER_VALUE_WIDTH, row.top()),
@@ -1551,9 +1694,12 @@ pub(in crate::app) fn slider_styled(
             SLIDER_KNOB,
             Stroke::new(1., palette.tone(Tone::BAR)),
         );
-        response.on_hover_text(
-            "Drag to adjust · double-click to reset. Drag or type the number for precise edits.",
-        );
+        response.on_hover_text(if peek_allowed(ui) {
+            "Drag to adjust · double-click to reset · hold the name to see it at its default. \
+             Drag or type the number for precise edits."
+        } else {
+            "Drag to adjust · double-click to reset. Drag or type the number for precise edits."
+        });
     });
     if *value != before {
         let context = edit_context(ui);

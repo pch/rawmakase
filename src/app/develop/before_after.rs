@@ -260,12 +260,7 @@ impl Editor {
     /// settings (its raw defaults), framed as the edit on screen is (a hovered
     /// preset's crop included).
     pub(in crate::app) fn before_settings(&self) -> Recipe {
-        let shown = self
-            .presets
-            .preview
-            .as_ref()
-            .unwrap_or(self.document.edit.recipe());
-        self.before_framed_by(shown)
+        self.before_framed_by(self.settings_on_screen())
     }
     /// Before's settings framed as `edit` is.
     fn before_framed_by(&self, edit: &Recipe) -> Recipe {

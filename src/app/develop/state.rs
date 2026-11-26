@@ -330,6 +330,8 @@ pub(in crate::app) struct PreviewState {
     /// The orientation of the edit the photo opened with, which the Library
     /// thumbnail the minimap shows without a navigator was made from.
     pub(in crate::app) opened_orientation: Option<Orientation>,
+    /// What a held slider label shows in place of the edit.
+    pub(in crate::app) peek: crate::app::develop::peek::Peek,
     /// Before's render, while it shows beside the edit.
     pub(in crate::app) before: crate::app::develop::before_after::BeforePreview,
     /// The magnifier's render, while it is shown.
@@ -364,6 +366,7 @@ impl Default for PreviewState {
             region_frame: [1, 1],
             crop: None,
             opened_orientation: None,
+            peek: Default::default(),
             before: Default::default(),
             magnifier: Default::default(),
             stand_in: None,
@@ -770,6 +773,7 @@ impl PreviewState {
         self.mode = TextureMode::Whole;
         self.crop = None;
         self.opened_orientation = None;
+        self.peek = Default::default();
         self.before.clear();
         self.magnifier.clear();
         // The pixels the readout and loupes read belong to the photo left.

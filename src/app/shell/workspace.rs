@@ -454,6 +454,8 @@ impl Editor {
             self.develop_photo(ui);
             self.finish_edit_frame(frame, &ctx);
         }
+        // The sliders went (the Library, the panel hidden) with a label held.
+        self.end_peek_not_drawn();
         if self.chrome.hidden(self.module) {
             title_bar_pad(ui);
         }
@@ -2147,11 +2149,13 @@ impl Editor {
                     egui::ScrollArea::vertical()
                         .id_salt("tool-drawer")
                         .show(ui, |ui| {
-                            ui.add_enabled_ui(enabled, |ui| self.tool_drawer(ui));
+                            ui.add_enabled_ui(enabled, |ui| {
+                                self.with_peek(ui, |e, ui| e.tool_drawer(ui))
+                            });
                         });
                 } else {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.add_enabled_ui(enabled, |ui| self.controls(ui));
+                        ui.add_enabled_ui(enabled, |ui| self.with_peek(ui, |e, ui| e.controls(ui)));
                     });
                 }
             });
