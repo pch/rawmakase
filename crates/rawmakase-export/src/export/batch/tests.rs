@@ -16,6 +16,7 @@ fn photo(source: &Path) -> BatchPhoto {
         values: Default::default(),
         naming: Default::default(),
         place: None,
+        catalog: Some(Default::default()),
     }
 }
 /// Export settings into `folder`, as small TIFFs.
@@ -213,7 +214,7 @@ impl Fixture {
             .zip(&self.photos)
             .map(|((record, naming), (_, path))| {
                 let name = path.file_name().unwrap().to_string_lossy().into();
-                BatchPhoto::from_record(record, path.clone(), name, naming)
+                BatchPhoto::from_record(record, None, path.clone(), name, naming)
             })
             .collect())
     }
@@ -317,6 +318,12 @@ fn every_photo_is_exported_with_its_own_edit_or_said_why_not() -> Result<()> {
         outcomes[4]
     );
     assert_eq!(listing(&f.out()), ["a.tif", "b.tif", "c.tif"]);
+    // Each written file's size, its long edge as the settings resize it.
+    let Outcome::Exported { path, size, .. } = &outcomes[0] else {
+        panic!("exported");
+    };
+    assert_eq!(size.0.max(size.1), 96);
+    assert_eq!(*size, image::image_dimensions(path)?);
     Ok(())
 }
 
@@ -539,6 +546,38 @@ fn the_queue_runs_one_batch_at_a_time_and_a_waiting_one_can_be_removed() -> Resu
             .iter()
             .all(|(_, o)| matches!(o[0], Outcome::Exported { .. }))
     );
+    Ok(())
+}
+
+#[test]
+fn the_queue_tells_each_photo_as_its_file_is_in_place_before_the_batch_ends() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng"])?;
+    let photos = f.batch_photos()?;
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let each = heard.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ended = heard.clone();
+    let queue = crate::export::queue::Queue::with_each(
+        lanes(2),
+        move |ticket, index, outcome| {
+            // The file is there when the photo is told.
+            let Outcome::Exported { path, .. } = outcome else {
+                panic!("{outcome:?}");
+            };
+            assert!(path.is_file());
+            each.lock().unwrap().push((ticket, index));
+        },
+        move |ticket, outcomes| {
+            let _ = tx.send((ticket, outcomes, ended.lock().unwrap().len()));
+        },
+        || {},
+    );
+    let ticket = queue.submit(f.batch(photos, settings(&f.out())));
+    let (finished, outcomes, told) = rx.recv_timeout(std::time::Duration::from_secs(120))?;
+    assert_eq!((finished, outcomes.len(), told), (ticket, 2, 2));
+    let mut heard = heard.lock().unwrap().clone();
+    heard.sort_unstable();
+    assert_eq!(heard, [(ticket, 0), (ticket, 1)]);
     Ok(())
 }
 
@@ -1418,7 +1457,7 @@ fn a_size_limit_fits_each_jpeg_or_notes_why_not() -> Result<()> {
         s.limit_size = true;
         s.size_limit = size_limit;
         let outcomes = run_all(&f.batch(photos.clone(), s));
-        let Outcome::Exported { path, notes } = &outcomes[0] else {
+        let Outcome::Exported { path, notes, .. } = &outcomes[0] else {
             panic!("{name}: not exported: {outcomes:?}");
         };
         let size = std::fs::metadata(path)?.len();

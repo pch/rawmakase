@@ -258,6 +258,9 @@ struct Pending {
     /// Past its deadline: cancelled, no longer admitted, failing at
     /// `deadline` (now the end of the grace period) or at the program's reply.
     expired: bool,
+    /// Its deadline moves this far past each progress it reports, as for a
+    /// request that may run long while it says how far it is.
+    stall: Option<std::time::Duration>,
     /// The buffers it carries, and their lease.
     buffers: Option<Buffers>,
 }
@@ -384,6 +387,8 @@ pub struct Session {
     stopping: bool,
     /// Messages the reader dropped because the owner's queue was full.
     dropped: Arc<AtomicU64>,
+    /// Progress reports in the owner's queue (see [`Reading::progress`]).
+    progress: Arc<AtomicUsize>,
     /// The manifest's `api` the program serves.
     api: u32,
     child: crate::shm::Child,
@@ -419,6 +424,7 @@ impl Session {
         let (to_owner, incoming) = sync_channel(queue);
         let reader_done = Arc::new(AtomicBool::new(false));
         let dropped = Arc::new(AtomicU64::new(0));
+        let progress = Arc::new(AtomicUsize::new(0));
         let leased: Leased = Arc::default();
         let started = (|| -> std::io::Result<()> {
             std::thread::Builder::new()
@@ -434,6 +440,8 @@ impl Session {
                 wake: options.wake.clone(),
                 done: reader_done.clone(),
                 dropped: dropped.clone(),
+                progress: progress.clone(),
+                progress_room: (queue / 2).max(1),
                 leased: leased.clone(),
             };
             let reader = Watch {
@@ -463,6 +471,7 @@ impl Session {
             closed: false,
             stopping: false,
             dropped,
+            progress,
             api: api_of(launch),
             child: spawned.child,
             ledger: options.ledger,
@@ -524,6 +533,7 @@ impl Session {
                 method: method.to_string(),
                 deadline,
                 expired: false,
+                stall: None,
                 buffers: None,
             },
         );
@@ -599,6 +609,7 @@ impl Session {
                 method: method.to_string(),
                 deadline,
                 expired: false,
+                stall: None,
                 buffers: Some(buffers),
             },
         );
@@ -625,6 +636,21 @@ impl Session {
     /// Sends an event.
     pub fn event(&self, name: &str, params: Value) -> Result<(), RemoteError> {
         self.send(&Message::event(name, params))
+    }
+
+    /// Sends an event that must not be lost behind the app's own backlog
+    /// (a delivery stopped): it takes the room kept for the reader's
+    /// answers when the app's share is full. An error means the program has
+    /// stopped reading altogether.
+    pub fn urgent_event(&self, name: &str, params: Value) -> Result<(), RemoteError> {
+        let mut line = Message::event(name, params).encode().map_err(|_| {
+            RemoteError::new(
+                ErrorCode::TooLarge,
+                "the message is longer than a protocol line",
+            )
+        })?;
+        line.push(b'\n');
+        self.outgoing.send(line, false, None)
     }
 
     /// Answers one of the program's requests.
@@ -668,6 +694,20 @@ impl Session {
             .map(|p| p.deadline)
     }
 
+    /// Gives an admitted request a deadline `every` from now, moved `every`
+    /// past each progress it reports from then on, before its deadline is
+    /// checked. False when it isn't admitted.
+    pub fn stall(&mut self, id: u64, every: std::time::Duration) -> bool {
+        match self.pending.get_mut(&id).filter(|p| !p.expired) {
+            Some(pending) => {
+                pending.stall = Some(every);
+                pending.deadline = Instant::now() + every;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The app requests in flight.
     pub fn in_flight(&self) -> usize {
         self.pending.len()
@@ -706,6 +746,9 @@ impl Session {
             loop {
                 match self.incoming.try_recv() {
                     Ok(Incoming::Message(message)) => {
+                        if matches!(message, Message::Progress { .. }) {
+                            self.progress.fetch_sub(1, Ordering::AcqRel);
+                        }
                         self.take(message, &mut updates, &mut hang);
                     }
                     Ok(Incoming::Malformed(reason)) => updates.push(Update::Malformed { reason }),
@@ -929,7 +972,10 @@ impl Session {
             Message::Ok { id, v } => settle(id, Ok(v)),
             Message::Err { id, code, message } => settle(id, Err(RemoteError { code, message })),
             Message::Progress { id, done, text } => {
-                if self.is_admitted(id) {
+                if let Some(pending) = self.pending.get_mut(&id).filter(|p| !p.expired) {
+                    if let Some(every) = pending.stall {
+                        pending.deadline = Instant::now() + every;
+                    }
                     updates.push(Update::Progress { id, done, text });
                 }
             }
@@ -1175,6 +1221,12 @@ struct Reading {
     wake: Option<Wake>,
     done: Arc<AtomicBool>,
     dropped: Arc<AtomicU64>,
+    /// Progress reports in the owner's queue. At most `progress_room` wait
+    /// there: one past that is dropped, so a program that reports progress
+    /// faster than the app reads it leaves room for the reply that follows.
+    /// A later report says the same and more.
+    progress: Arc<AtomicUsize>,
+    progress_room: usize,
     leased: Leased,
 }
 impl Reading {
@@ -1217,9 +1269,18 @@ impl Reading {
                         self.request(id, m, p);
                     }
                 }
+                Ok((Message::Progress { .. }, _))
+                    if self.progress.load(Ordering::Acquire) >= self.progress_room => {}
                 Ok((message, _)) => {
                     let id = self.record(&message);
+                    let progress = matches!(message, Message::Progress { .. });
+                    if progress {
+                        self.progress.fetch_add(1, Ordering::AcqRel);
+                    }
                     if self.to_owner.try_send(Incoming::Message(message)).is_err() {
+                        if progress {
+                            self.progress.fetch_sub(1, Ordering::AcqRel);
+                        }
                         // Marked before it is counted: whoever sees the count
                         // (Acquire in `Session::dropped`) and then reconciles
                         // sees the mark.
@@ -1368,6 +1429,7 @@ mod tests {
                 method: "mask.generate".into(),
                 deadline: Instant::now() + Duration::from_secs(60),
                 expired: false,
+                stall: None,
                 buffers: Some(buffers),
             },
         );
@@ -1477,6 +1539,8 @@ mod tests {
             wake: None,
             done: Arc::default(),
             dropped: Arc::default(),
+            progress: Arc::default(),
+            progress_room: 1,
             leased: leased.clone(),
         };
         reading.read(Box::new(&b"{\"t\":\"ok\",\"id\":3,\"v\":1}\n"[..]));
@@ -1484,5 +1548,40 @@ mod tests {
         let recorded = leased.lock().unwrap()[&3].clone().unwrap();
         assert!(recorded.dropped);
         assert_eq!(recorded.outcome, Outcome::Ok);
+    }
+
+    /// A program that reports progress faster than the app reads it, then
+    /// answers: the reports fill only their share of the queue, and the
+    /// reply still gets in.
+    #[test]
+    fn a_burst_of_progress_leaves_room_for_the_reply() {
+        let (to_owner, incoming) = sync_channel(4);
+        let (send, _to_writer) = sync_channel(1);
+        let reading = Reading {
+            to_owner,
+            outgoing: Arc::new(Outgoing {
+                sender: Mutex::new(Some(send)),
+                owner_queued: AtomicUsize::new(0),
+                limit: 1,
+            }),
+            lifecycle: None,
+            wake: None,
+            done: Arc::default(),
+            dropped: Arc::default(),
+            progress: Arc::default(),
+            progress_room: 2,
+            leased: Arc::default(),
+        };
+        let mut lines = "{\"t\":\"progress\",\"id\":7,\"done\":0.5}\n".repeat(10);
+        lines.push_str("{\"t\":\"ok\",\"id\":7,\"v\":null}\n");
+        reading.read(Box::new(std::io::Cursor::new(lines.into_bytes())));
+        let got: Vec<_> = incoming.try_iter().collect();
+        assert_eq!(got.len(), 3);
+        assert!(matches!(
+            got.last(),
+            Some(Incoming::Message(Message::Ok { id: 7, .. }))
+        ));
+        assert_eq!(reading.progress.load(Ordering::Acquire), 2);
+        assert_eq!(reading.dropped.load(Ordering::Acquire), 0);
     }
 }

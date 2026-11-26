@@ -660,6 +660,17 @@ pub struct ExportSettings {
     pub watermark_name: String,
     /// Lightroom's After Export.
     pub after_export: AfterExport,
+    /// Send To: the export destination an extension contributes that the
+    /// files are sent to once written, as `<extension>/<destination>`; none
+    /// sends them nowhere. Omitted when none, as releases before it saved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_to: Option<String>,
+    /// The options chosen for each export destination, by
+    /// `<extension>/<destination>`, then by option id: only those changed
+    /// from their default. Kept for destinations not chosen now, so choosing
+    /// one again finds its options.
+    #[serde(skip_serializing_if = "SendToOptions::is_empty")]
+    pub send_to_options: SendToOptions,
     /// Settings a later release added; see [`LaterFields`].
     #[serde(flatten)]
     pub later_fields: LaterFields,
@@ -701,6 +712,8 @@ impl Default for ExportSettings {
             watermark: false,
             watermark_name: SIMPLE_COPYRIGHT.into(),
             after_export: AfterExport::Nothing,
+            send_to: None,
+            send_to_options: SendToOptions::new(),
             later_fields: LaterFields::default(),
         }
     }
@@ -748,6 +761,11 @@ impl CustomNaming {
         self.0.get("over")
     }
 }
+
+/// [`ExportSettings::send_to_options`]: option values by option id, by
+/// export destination.
+pub type SendToOptions =
+    std::collections::BTreeMap<String, std::collections::BTreeMap<String, serde_json::Value>>;
 
 /// The saved settings only a later release knows, as they were read. They
 /// mean nothing here and are saved back untouched, so that release still finds
@@ -985,13 +1003,30 @@ impl ExportSettings {
     /// Where `source` exports to at its place in the export, and what its name
     /// has to say.
     pub fn target_for(&self, source: &Path, at: &NameContext) -> Option<(PathBuf, Vec<String>)> {
+        let folder = self.folder_for(source)?;
+        let (file, note) = self.file_name_for(source, at);
+        Some((folder.join(file), note))
+    }
+    /// The one folder the files of `sources` export to, its subfolder
+    /// included; `None` when they go to several (beside originals in
+    /// several folders), with no source, and until a specific folder is
+    /// picked.
+    pub fn export_folder<'a>(
+        &self,
+        sources: impl IntoIterator<Item = &'a Path>,
+    ) -> Option<PathBuf> {
+        let mut folders = sources.into_iter().map(|s| self.folder_for(s));
+        let first = folders.next()??;
+        folders.all(|f| f.as_ref() == Some(&first)).then_some(first)
+    }
+    /// Where `source` exports to, its subfolder included.
+    fn folder_for(&self, source: &Path) -> Option<PathBuf> {
         let mut folder = self.base_folder(source)?;
         let name = self.subfolder_name.trim();
         if self.subfolder && !name.is_empty() {
             folder.push(name);
         }
-        let (file, note) = self.file_name_for(source, at);
-        Some((folder.join(file), note))
+        Some(folder)
     }
     /// The HDR encoding these settings export, if any. It is refused in a format that
     /// can't hold it ([`Format::check_hdr`]).
@@ -1173,8 +1208,23 @@ mod tests {
             s.target(source),
             Some(PathBuf::from("/photos/2026/Exported/DSC0001-web.TIF"))
         );
+        // Beside originals in one folder, that folder's subfolder; in two,
+        // no one folder.
+        let other = Path::new("/photos/2025/DSC0002.ARW");
+        assert_eq!(
+            s.export_folder([source, source]),
+            Some(PathBuf::from("/photos/2026/Exported"))
+        );
+        assert_eq!(s.export_folder([source, other]), None);
+        assert_eq!(s.export_folder([]), None);
         s.destination = Destination::Folder;
         assert_eq!(s.target(source), None);
+        assert_eq!(s.export_folder([source]), None);
+        s.folder = Some("/exports".into());
+        assert_eq!(
+            s.export_folder([source, other]),
+            Some(PathBuf::from("/exports/Exported"))
+        );
     }
     #[test]
     fn a_format_from_a_later_release_keeps_the_other_settings() {
@@ -1478,6 +1528,33 @@ mod tests {
             (saved["quality"].clone(), saved["folder"].clone()),
             (80.into(), "/x".into())
         );
+        Ok(())
+    }
+    #[test]
+    fn send_to_is_saved_only_when_chosen_and_read_back() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("export.json");
+        let mut settings = ExportSettings::default();
+        settings.save_to(&file)?;
+        let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+        assert!(saved.get("send_to").is_none());
+        assert!(saved.get("send_to_options").is_none());
+        settings.send_to = Some("dev.jane.gallery/web".into());
+        settings
+            .send_to_options
+            .entry("dev.jane.gallery/web".into())
+            .or_default()
+            .insert("title".into(), "Wedding".into());
+        settings.save_to(&file)?;
+        let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+        assert_eq!(
+            saved["send_to_options"]["dev.jane.gallery/web"]["title"],
+            "Wedding"
+        );
+        let read = ExportSettings::load_from(&file).unwrap();
+        assert_eq!(read.send_to.as_deref(), Some("dev.jane.gallery/web"));
+        assert_eq!(read.send_to_options, settings.send_to_options);
+        assert!(read.later_fields.0.is_empty());
         Ok(())
     }
     #[test]

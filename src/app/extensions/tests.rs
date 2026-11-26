@@ -567,10 +567,10 @@ fn a_command_whose_target_is_being_read_can_be_stopped() {
             .unwrap();
         barrier.wait();
         // Running while its target is read, and said so.
-        assert!(e.extensions.command_running(ID), "{stop:?}");
+        assert!(e.extensions.working(ID), "{stop:?}");
         assert_eq!(e.extensions.status(), vec!["Example: Brighten…"]);
         let stopped = match stop {
-            Stop::Stopped => e.extensions.cancel_commands(ID),
+            Stop::Stopped => e.extensions.stop_work(ID),
             Stop::Disabled => e.extensions.set_enabled(ID, false).unwrap(),
             Stop::Quitting => {
                 e.extensions.cancel_requests();
@@ -583,7 +583,7 @@ fn a_command_whose_target_is_being_read_can_be_stopped() {
                 "{stop:?}: {stopped:?}"
             );
         }
-        assert!(!e.extensions.command_running(ID), "{stop:?}");
+        assert!(!e.extensions.working(ID), "{stop:?}");
         assert!(e.extensions.status().is_empty(), "{stop:?}");
         barrier.wait();
         // The read's report comes, and the command is never sent.
@@ -1058,7 +1058,7 @@ fn a_proposal_for_photos_not_open_runs_on_a_worker_and_is_answered_when_it_is_do
     assert!(e.activity.is_syncing());
     let (outcomes, _) = e.extensions_poll(Instant::now());
     assert!(result(&outcomes, "Brighten").is_none());
-    assert!(e.extensions.command_running(ID));
+    assert!(e.extensions.working(ID));
     assert_eq!(exposure(e, &f.photos[0]), None);
     let revision = |e: &Editor| e.library.as_ref().unwrap().session.query_revision();
     let before = revision(e);
@@ -1102,7 +1102,7 @@ fn a_proposal_stopped_while_its_worker_runs_changes_no_photo() {
         } else {
             let barrier = brighten_held(e, &ids);
             match stop {
-                Stop::Cancelled => drop(e.extensions.cancel_commands(ID)),
+                Stop::Cancelled => drop(e.extensions.stop_work(ID)),
                 Stop::Disabled => e.set_extension_enabled(ID, false),
                 Stop::Quitting => e.extensions.cancel_requests(),
                 Stop::BatchCancel => assert!(e.activity.batch().unwrap().cancel()),
@@ -1154,7 +1154,7 @@ fn a_proposal_whose_command_stops_while_its_worker_runs_is_answered_at_once() {
         let ids: Vec<PhotoId> = f.photos.iter().map(|p| p.0).collect();
         let barrier = brighten_held(e, &ids);
         if stopped == "by the user" {
-            drop(e.extensions.cancel_commands(ID));
+            drop(e.extensions.stop_work(ID));
         }
         // The worker still holds: the program is answered without waiting
         // for it, and goes on.
@@ -1193,7 +1193,7 @@ fn a_proposal_the_program_cancels_while_its_worker_runs_changes_no_photo() {
     });
     assert!(brighten_refused(&outcomes).unwrap().ends_with("deadline"));
     pump(e, "the cancel", |e, _| !e.extensions.proposing());
-    assert!(e.extensions.command_running(ID));
+    assert!(e.extensions.working(ID));
     assert!(
         e.activity.batch().unwrap().stage() == crate::app::library::sync::BatchStage::Cancelling
     );
@@ -1201,7 +1201,7 @@ fn a_proposal_the_program_cancels_while_its_worker_runs_changes_no_photo() {
     settle(e);
     assert_eq!(exposure(e, &f.photos[0]), None);
     assert_eq!(exposure(e, &f.photos[1]), None);
-    drop(e.extensions.cancel_commands(ID));
+    drop(e.extensions.stop_work(ID));
 }
 
 #[test]
@@ -1280,7 +1280,7 @@ fn proposals_after_a_command_was_stopped_or_timed_out_change_nothing() {
     e.run_extension_command(&format!("{ID}/propose-late"), RunBy::Button)
         .unwrap();
     pump(e, "the command to run", waiting);
-    let stopped = e.extensions.cancel_commands(ID);
+    let stopped = e.extensions.stop_work(ID);
     assert!(
         matches!(&stopped[..], [Outcome::Command { result: Err(err), .. }] if err.code == ErrorCode::Cancelled)
     );

@@ -25,7 +25,8 @@ against the SDK, and the repo-internal checklist.
 
 **Released versions.** Extensions run in v0.5.0 and later. v0.5.0 supports
 `api = 2`; v0.6.0 added `api = 3` (photo sources, retouch generators and secret
-settings), so an extension that needs those needs v0.6.0 or newer.
+settings), so an extension that needs those needs v0.6.0 or newer. `api = 4`
+(export destinations) is on `main`, not yet in a release.
 
 ## 1. Start
 
@@ -65,12 +66,21 @@ people hit:
   `[[mask-generator]]` and the shared-memory buffers that mask requests
   carry; `3` is API 2 plus `[[source]]`, `[[retouch-generator]]` and
   `control = "secret"` settings (an API key kept in the system's credential
-  store, sent to the program as a string; never log it). The app starts the
+  store, sent to the program as a string; never log it); `4` is API 3 plus
+  `[[export-destination]]`. The app starts the
   program with `RAWMAKASE_EXTENSION_API`, and the SDK serves that mode. API 2
   and up also make the program's reader strict (step 6).
 - **Retouch generators** need an `icon`: an SVG in the package, a 24-unit
   outline in white or `currentColor`, which is the tool's rail button.
   `cargo rawmakase package` refuses one RAWmakase can't draw.
+- **Export destinations** (a web gallery, an upload) need `api = 4` and a
+  program; they get `export.begin`, an `export.file` for each file as it is
+  written (answer on receipt), and `export.end` (answer with a result per
+  file), and implement `ExportDestination`, or wrap a closure in
+  `collected` to get the whole delivery at its end. Keep a photo by its
+  `photo_uuid`, never by an integer photo id. Per-export choices (a
+  gallery's title) are `[[export-destination.option]]`s, in a
+  `[[setting]]`'s shape, read with `ExportBegin::option_str` and friends.
 - **Sources** (watched folders, tethering) need `api = 3` and
   `[program] start = "with-app"`. A source is off until the user turns it on
   for a catalog on the extension's page, so a freshly installed one reports
@@ -125,9 +135,9 @@ app over the real transport (`crates/rawmakase-extension/src/mock.rs`):
 
 - `MockHost::start(ext)` answers the program's requests with `null`.
   `start_with(ext, |method, params| …)` answers them your way.
-- An `api = 2` or `3` manifest needs
+- An `api = 2`, `3` or `4` manifest needs
   `start_with_options(ext, ServeOptions { api: 2 }, responder)` (or
-  `api: 3`). A mock
+  `api: 3`, `api: 4`). A mock
   serving API 1 refuses `generate_mask` at once, as the app does.
 - `hello()` or `hello_with(Hello { settings, .. })`, then `run_command`,
   `open_panel` / `change` / `click`, `generate_retouch(request, &image, &coverage)`, `generate_mask(request, &image)` (it

@@ -17,10 +17,11 @@
 use crate::host::{Host, Shared};
 use crate::shm::{Handle, Incoming, Mapping, Plain, Receive};
 use crate::{
-    Command, ControlAdapter, MaskAsk, MaskGenerator, Panel, RetouchAsk, RetouchGenerator, Source,
+    Command, ControlAdapter, ExportDestination, MaskAsk, MaskGenerator, Panel, RetouchAsk,
+    RetouchGenerator, Source,
 };
 use rawmakase_extension_protocol::framing::{FrameError, LineReader};
-use rawmakase_extension_protocol::manifest::{API, RETOUCH_GENERATOR_API};
+use rawmakase_extension_protocol::manifest::{API, EXPORT_DESTINATION_API, RETOUCH_GENERATOR_API};
 use rawmakase_extension_protocol::message::Handles;
 use rawmakase_extension_protocol::method::{
     AppEvent, AppRequest, CommandRun, Controls, HelloReply, MaskGenerate,
@@ -46,7 +47,18 @@ pub struct Extension {
     /// The scope each source runs in now, by source id.
     scopes: BTreeMap<String, u64>,
     retouch_generators: BTreeMap<String, Box<dyn RetouchGenerator>>,
+    export_destinations: BTreeMap<String, Box<dyn ExportDestination>>,
+    /// Deliveries begun and not ended or stopped, by id.
+    deliveries: BTreeMap<String, Open>,
     on_event: Option<EventHandler>,
+}
+
+/// A delivery a destination took: what its later requests must fit.
+struct Open {
+    destination: String,
+    count: u32,
+    /// The places of the files received.
+    files: std::collections::BTreeSet<u32>,
 }
 
 /// How [`Extension::serve_with_options`] serves.
@@ -58,7 +70,7 @@ pub struct ServeOptions {
     ///
     /// API 1 takes no handles: a message declaring some is answered
     /// `invalid_request`, a malformed request too, an oversized line is
-    /// skipped, and reading goes on. API 2 and 3 take the handles the app
+    /// skipped, and reading goes on. API 2 and later take the handles the app
     /// passes with its requests, and a framing fault ends serving: the program exits
     /// under [`Extension::run`], and [`Extension::serve_with_options`] returns
     /// an error.
@@ -236,6 +248,16 @@ impl Extension {
             .insert(id.into(), Box::new(generator));
         self
     }
+    /// Implements the `[[export-destination]]` with this id.
+    pub fn export_destination(
+        mut self,
+        id: &str,
+        destination: impl ExportDestination + 'static,
+    ) -> Self {
+        self.export_destinations
+            .insert(id.into(), Box::new(destination));
+        self
+    }
     /// Called with every event from the app, after the extension's own state
     /// (its settings) has taken it in.
     pub fn on_event(mut self, handler: impl FnMut(&AppEvent, &Host) + Send + 'static) -> Self {
@@ -349,6 +371,12 @@ impl Extension {
                         settings.insert(change.id.clone(), change.value.clone());
                     }
                     self.source_event(&event, host);
+                    if let AppEvent::ExportStopped(stopped) = &event
+                        && self.deliveries.remove(&stopped.delivery).is_some()
+                        && let Some(d) = self.export_destinations.get_mut(&stopped.destination)
+                    {
+                        d.stopped(&stopped.delivery);
+                    }
                     if let Some(handler) = &mut self.on_event {
                         handler(&event, host);
                     }
@@ -458,6 +486,10 @@ impl Extension {
             .retouch_generators
             .keys()
             .map(|id| format!("retouch-generator/{id}"));
+        let destinations = self
+            .export_destinations
+            .keys()
+            .map(|id| format!("export-destination/{id}"));
         let reply = HelloReply {
             protocol: PROTOCOL,
             implements: commands
@@ -466,6 +498,7 @@ impl Extension {
                 .chain(generators)
                 .chain(sources)
                 .chain(retouch)
+                .chain(destinations)
                 .collect(),
         };
         serde_json::to_value(reply).expect("a reply is JSON")
@@ -515,6 +548,16 @@ impl Extension {
                 );
             }
         }
+    }
+
+    /// The export destination `id`, or why there is none.
+    fn destination(&mut self, id: &str) -> Result<&mut Box<dyn ExportDestination>, RemoteError> {
+        self.export_destinations.get_mut(id).ok_or_else(|| {
+            RemoteError::new(
+                ErrorCode::InvalidRequest,
+                format!("this program implements no export destination {id}"),
+            )
+        })
     }
 
     fn dispatch(
@@ -610,8 +653,111 @@ impl Extension {
                 drop((image, coverage, result, handles));
                 answer.map(|done| serde_json::to_value(done).expect("a result is JSON"))
             }
+            AppRequest::ExportBegin(begin) => {
+                export_api(api)?;
+                begin.validate()?;
+                if self.deliveries.contains_key(&begin.delivery) {
+                    return Err(out_of_order(format!(
+                        "delivery {} began twice",
+                        begin.delivery
+                    )));
+                }
+                let open = Open {
+                    destination: begin.destination.clone(),
+                    count: begin.count,
+                    files: Default::default(),
+                };
+                let id = begin.delivery.clone();
+                self.destination(&begin.destination)?.begin(cx, begin)?;
+                self.deliveries.insert(id, open);
+                Ok(Value::Null)
+            }
+            AppRequest::ExportFile(file) => {
+                export_api(api)?;
+                file.validate()?;
+                let open = self
+                    .deliveries
+                    .get(&file.delivery)
+                    .filter(|o| o.destination == file.destination)
+                    .ok_or_else(|| {
+                        out_of_order(format!("no delivery {} is open", file.delivery))
+                    })?;
+                if file.index >= open.count || open.files.contains(&file.index) {
+                    return Err(out_of_order(format!(
+                        "file {} of delivery {} is out of its count or came twice",
+                        file.index, file.delivery
+                    )));
+                }
+                let (id, index) = (file.delivery.clone(), file.index);
+                self.destination(&file.destination)?.file(cx, file)?;
+                if let Some(open) = self.deliveries.get_mut(&id) {
+                    open.files.insert(index);
+                }
+                Ok(Value::Null)
+            }
+            AppRequest::ExportEnd(end) => {
+                export_api(api)?;
+                let open = self
+                    .deliveries
+                    .get(&end.delivery)
+                    .filter(|o| o.destination == end.destination)
+                    .ok_or_else(|| out_of_order(format!("no delivery {} is open", end.delivery)))?;
+                if usize::try_from(end.files).ok() != Some(open.files.len()) {
+                    return Err(out_of_order(format!(
+                        "delivery {} ended with {} files, and {} came",
+                        end.delivery,
+                        end.files,
+                        open.files.len()
+                    )));
+                }
+                // Kept until it ends well: a failed or cancelled end is
+                // followed by `export-stopped`, which reaches `stopped`.
+                let id = end.delivery.clone();
+                let received = open.files.clone();
+                let ended = self.destination(&end.destination)?.end(cx, end)?;
+                ended.validate()?;
+                // An answer the app would refuse fails here, with the delivery
+                // still known for the `export-stopped` that follows.
+                if let Some(other) = ended.files.iter().find(|r| !received.contains(&r.index)) {
+                    return Err(out_of_order(format!(
+                        "the answer names file {}, which the delivery wasn't sent",
+                        other.index
+                    )));
+                }
+                let answer = serde_json::to_value(ended).expect("a result is JSON");
+                // The reply's envelope, `{"t":"ok","id":…,"v":…}` and its line
+                // end, takes at most this much beside the answer.
+                const ENVELOPE: usize = 48;
+                if answer.to_string().len() > rawmakase_extension_protocol::MAX_LINE - ENVELOPE {
+                    return Err(RemoteError::new(
+                        ErrorCode::TooLarge,
+                        "the answer is longer than a protocol line",
+                    ));
+                }
+                self.deliveries.remove(&id);
+                Ok(answer)
+            }
         }
     }
+}
+
+/// A delivery's request that doesn't follow its `begin`.
+fn out_of_order(why: String) -> RemoteError {
+    RemoteError::new(ErrorCode::InvalidRequest, why)
+}
+
+/// Refuses a delivery's request when serving an `api` without export
+/// destinations.
+fn export_api(api: u32) -> Result<(), RemoteError> {
+    if api < EXPORT_DESTINATION_API {
+        return Err(RemoteError::new(
+            ErrorCode::InvalidRequest,
+            format!(
+                "export destinations need api {EXPORT_DESTINATION_API}, and this program serves {api}"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Maps a request's buffer as its access says: an input to read, an output

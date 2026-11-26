@@ -57,6 +57,18 @@ impl Queue {
         finished: impl Fn(u64, Vec<Outcome>) + Send + 'static,
         changed: impl Fn() + Send + Sync + 'static,
     ) -> Self {
+        Self::with_each(lanes, |_, _, _| {}, finished, changed)
+    }
+
+    /// [`Queue::new`], also telling `each` every photo's outcome as soon as
+    /// it has one (see [`batch::run_each`]), by ticket and index, before its
+    /// batch's `finished`.
+    pub fn with_each(
+        lanes: Lanes,
+        each: impl Fn(u64, usize, &Outcome) + Send + Sync + 'static,
+        finished: impl Fn(u64, Vec<Outcome>) + Send + 'static,
+        changed: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
         let shared = Arc::new(Shared {
             state: Mutex::new(State::default()),
             wake: Condvar::new(),
@@ -70,14 +82,20 @@ impl Queue {
                 // whole batch, so the queue still clears it and runs the next one.
                 let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     (worker.changed)();
-                    batch::run(&batch, lanes, Cancel::new(&cancel), |progress| {
-                        if let Ok(mut state) = worker.state.lock()
-                            && let Some(running) = &mut state.running
-                        {
-                            running.progress = progress;
-                        }
-                        (worker.changed)();
-                    })
+                    batch::run_each(
+                        &batch,
+                        lanes,
+                        Cancel::new(&cancel),
+                        |progress| {
+                            if let Ok(mut state) = worker.state.lock()
+                                && let Some(running) = &mut state.running
+                            {
+                                running.progress = progress;
+                            }
+                            (worker.changed)();
+                        },
+                        |index, outcome| each(ticket, index, outcome),
+                    )
                 }))
                 .unwrap_or_else(|_| {
                     let failed = Outcome::Failed("the export failed unexpectedly".into());

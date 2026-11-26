@@ -329,6 +329,16 @@ fn a_program_answers_cancels_reports_devices_and_times_out() {
     assert_eq!(error.code, ErrorCode::Deadline);
     assert!(start.elapsed() >= Duration::from_millis(400));
 
+    // A stalling request's deadline is set from now: it stays admitted past
+    // where it was first due.
+    let moved = run(&mut session, "hang", Value::Null, later(200));
+    assert!(session.stall(moved, Duration::from_secs(5)));
+    std::thread::sleep(Duration::from_millis(400));
+    let _ = session.poll(Instant::now());
+    assert!(session.is_admitted(moved));
+    assert!(session.cancel(moved));
+    assert!(!session.stall(moved, Duration::from_secs(5)));
+
     // Stopping a program stuck in a handler ends it by the deadline.
     let start = Instant::now();
     let stopping = session.stop(later(1_000)).unwrap();
@@ -463,6 +473,12 @@ fn a_program_that_stops_reading_fills_its_queue_without_blocking() {
     let (n, error) = full.expect("the queue never filled");
     assert_eq!(error.code, ErrorCode::ChannelFull);
     assert!(n >= 4, "filled after {n}");
+    // An urgent event still goes, in the room kept for answers.
+    assert!(
+        session
+            .urgent_event("export-stopped", json!({"delivery": "1"}))
+            .is_ok()
+    );
     // Already past the deadline: the stop ends the program at once.
     let start = Instant::now();
     let stopping = session

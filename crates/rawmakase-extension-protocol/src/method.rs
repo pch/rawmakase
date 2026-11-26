@@ -3,7 +3,8 @@
 //! `mask.generate` and `mask.setup` serve `[[mask-generator]]`, which manifests
 //! declare from `api = 2`; `source-started`, `source-stopped` and
 //! `source.report` serve `[[source]]`, and `retouch.generate` serves
-//! `[[retouch-generator]]`, from `api = 3`.
+//! `[[retouch-generator]]`, from `api = 3`; `export.begin`, `export.file` and
+//! `export.end` serve `[[export-destination]]`, from `api = 4`.
 //!
 //! [`AppRequest`] and [`AppEvent`] go from the app to the program,
 //! [`ProgramRequest`] and [`ProgramEvent`] the other way. Each reads from a
@@ -56,6 +57,21 @@ pub enum AppRequest {
     /// program serving `api = 3` or later.
     #[serde(rename = "retouch.generate")]
     RetouchGenerate(RetouchGenerate),
+    /// A delivery to an export destination starts: an export with it under
+    /// Send To was queued. Answered with nothing once the destination takes
+    /// it. Sent only to a program serving `api = 4` or later, as are
+    /// `export.file` and `export.end`.
+    #[serde(rename = "export.begin")]
+    ExportBegin(ExportBegin),
+    /// One file of a delivery, as soon as the export has written it.
+    /// Answered with nothing once received; how it went is in
+    /// [`ExportEnded`].
+    #[serde(rename = "export.file")]
+    ExportFile(ExportFile),
+    /// A delivery's last request, after its export ended (also when it was
+    /// cancelled). Answered with [`ExportEnded`] once the files are sent.
+    #[serde(rename = "export.end")]
+    ExportEnd(ExportEnd),
 }
 
 /// Requests a program sends the app.
@@ -128,6 +144,11 @@ pub enum AppEvent {
     /// source off for it. Reports in it are refused from now on.
     #[serde(rename = "source-stopped")]
     SourceStopped(SourceStopped),
+    /// A delivery stopped before its `export.end` was answered (Stop, or a
+    /// request of it that failed): nothing more of it comes, and what it
+    /// still sends in the background should stop.
+    #[serde(rename = "export-stopped")]
+    ExportStopped(ExportStopped),
     /// The app is quitting: the channel closes next, and the program is ended
     /// if it hasn't exited by the quit deadline.
     #[serde(rename = "quitting")]
@@ -174,6 +195,9 @@ impl AppRequest {
         "mask.generate",
         "mask.setup",
         "retouch.generate",
+        "export.begin",
+        "export.file",
+        "export.end",
     ];
 }
 impl ProgramRequest {
@@ -207,6 +231,7 @@ impl AppEvent {
         "catalog-closed",
         "source-started",
         "source-stopped",
+        "export-stopped",
         "quitting",
     ];
 }
@@ -986,6 +1011,289 @@ pub enum FileRefusal {
     Ambiguous,
 }
 
+/// The longest text a delivery's requests and answers carry in one field
+/// (a delivery id, a UUID, a message, a location, a remote id, a URL), in
+/// bytes.
+pub const MAX_DELIVERY_TEXT: usize = 1024;
+
+/// The longest text one [`FileResult`] carries in one field (its message,
+/// remote id or URL), in bytes: thousands of results then fit the one
+/// protocol line `export.end`'s answer is.
+pub const MAX_FILE_TEXT: usize = 256;
+
+/// `export.begin`'s parameters: a delivery that starts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportBegin {
+    /// The delivery's id, which its `export.file` and `export.end` repeat:
+    /// unique among the app's deliveries while it runs.
+    pub delivery: String,
+    /// The export destination's id within its extension.
+    pub destination: String,
+    /// The one folder the files go to, absolute (its subfolder, when it has
+    /// one): the folder the export settings chose, or the originals' folder
+    /// when they are all in one. `None` when the files go beside originals
+    /// in several folders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<PathBuf>,
+    /// How many photos the export is to write. Fewer files may come: a
+    /// photo can be skipped, fail, or be cancelled.
+    pub count: u32,
+    /// The destination's options as the user chose them for this export, by
+    /// id: every option its manifest declares, a default where nothing was
+    /// chosen, each of its control's type.
+    #[serde(default)]
+    pub options: Map<String, Value>,
+}
+
+impl ExportBegin {
+    /// Option `id`'s text: a `text`, `choice` or `segmented` option.
+    pub fn option_str(&self, id: &str) -> Option<&str> {
+        self.options.get(id)?.as_str()
+    }
+    /// Option `id`'s state: a `toggle` option.
+    pub fn option_bool(&self, id: &str) -> Option<bool> {
+        self.options.get(id)?.as_bool()
+    }
+    /// Option `id`'s number: a `number` option.
+    pub fn option_f64(&self, id: &str) -> Option<f64> {
+        self.options.get(id)?.as_f64()
+    }
+    /// Checks that the delivery id is one line within [`MAX_DELIVERY_TEXT`]
+    /// bytes and not empty, and that the folder is absolute.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        delivery_id(&self.delivery)?;
+        match &self.folder {
+            Some(folder) if !folder.is_absolute() => {
+                invalid(format!("{} is not an absolute path", folder.display()))
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+/// `export.file`'s parameters: one file an export wrote, in place.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportFile {
+    /// The delivery it belongs to, as [`ExportBegin::delivery`] named it.
+    pub delivery: String,
+    /// The export destination's id within its extension.
+    pub destination: String,
+    /// The photo's place in the export, from 0 to [`ExportBegin::count`]
+    /// less one. Photos are written side by side, so files can come out of
+    /// order; [`FileResult::index`] names the file by it.
+    pub index: u32,
+    /// The file, absolute.
+    pub path: PathBuf,
+    /// Its file name, the last part of `path`.
+    pub name: String,
+    /// Its width in pixels, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    /// Its height in pixels, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    /// When the photo was taken, as the camera's clock said, without a time
+    /// zone: `YYYY-MM-DDTHH:MM:SS`. None when the catalog doesn't know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured: Option<String>,
+    /// The photo's UUID in the catalog, the id to keep and to match a
+    /// photo by in a later export: a string to store and compare, never to
+    /// parse. A virtual copy has its own. None for a photo outside the
+    /// catalog, and for one that has none yet (added by an older release
+    /// while this one had the catalog open).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo_uuid: Option<String>,
+    /// What the catalog says of the photo; none for a photo outside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<CatalogFacts>,
+}
+
+/// What the catalog says of an exported photo.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogFacts {
+    /// Its title, when it has one and the export's Metadata includes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Its caption, when it has one and the export's Metadata includes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    /// The keywords the export writes, when its Metadata includes them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+    /// Its color label, one of [`LABELS`]; none without one, or with a
+    /// label of another name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Its star rating, 0 (none) to 5.
+    #[serde(default)]
+    pub rating: u8,
+}
+
+/// The color labels [`CatalogFacts`] names, as the key map's
+/// `toggle_label:<name>` actions name them.
+pub const LABELS: [&str; 5] = ["red", "yellow", "green", "blue", "purple"];
+
+impl ExportFile {
+    /// Checks the shape a destination relies on: the delivery id as
+    /// [`ExportBegin::validate`] does, an absolute path whose file name is
+    /// `name`, a UUID of one line within [`MAX_DELIVERY_TEXT`] bytes, a
+    /// label in [`LABELS`] and a rating of 0 to 5.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        delivery_id(&self.delivery)?;
+        if !self.path.is_absolute() {
+            return invalid(format!("{} is not an absolute path", self.path.display()));
+        }
+        if self.path.file_name() != Some(std::ffi::OsStr::new(&self.name)) {
+            return invalid(format!(
+                "{} is not the file name of {}",
+                self.name,
+                self.path.display()
+            ));
+        }
+        if self
+            .photo_uuid
+            .as_deref()
+            .is_some_and(|u| u.is_empty() || !one_line(u))
+        {
+            return invalid(format!("{}: its photo_uuid isn't one line", self.name));
+        }
+        if let Some(c) = &self.catalog
+            && (c.label.as_deref().is_some_and(|l| !LABELS.contains(&l)) || c.rating > 5)
+        {
+            return invalid(format!(
+                "{}: its label or rating isn't one a delivery names",
+                self.name
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// `export-stopped`'s parameters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportStopped {
+    /// The delivery, as [`ExportBegin::delivery`] named it.
+    pub delivery: String,
+    /// The export destination's id within its extension.
+    pub destination: String,
+}
+
+/// `export.end`'s parameters: the export is over.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportEnd {
+    /// The delivery, as [`ExportBegin::delivery`] named it.
+    pub delivery: String,
+    /// The export destination's id within its extension.
+    pub destination: String,
+    /// How many `export.file` requests the delivery sent.
+    pub files: u32,
+    /// Whether the export was cancelled before every photo was written.
+    #[serde(default)]
+    pub cancelled: bool,
+}
+
+/// What a program answers `export.end` with: how the files went. It is one
+/// protocol line, at most [`MAX_LINE`](crate::MAX_LINE) bytes in all.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportEnded {
+    /// Results for the files that weren't sent, or that have something to
+    /// show (a remote id, a URL, a message), by index. A file left out was
+    /// sent.
+    #[serde(default)]
+    pub files: Vec<FileResult>,
+    /// What it did, in the user's words, for the status line: one line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Where the result is, for the user to open: a path or a URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+}
+
+/// How one file of a delivery went.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileResult {
+    /// The file, by [`ExportFile::index`].
+    pub index: u32,
+    /// Whether it went.
+    pub result: Sent,
+    /// Why it wasn't sent, or what to say of it: one line of at most
+    /// [`MAX_FILE_TEXT`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// The id the destination gave it (an upload's id), which the app shows
+    /// and keeps no record of: at most [`MAX_FILE_TEXT`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_id: Option<String>,
+    /// Where it can be seen, which the app shows: at most
+    /// [`MAX_FILE_TEXT`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// Whether a file of a delivery went.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Sent {
+    /// Sent.
+    Sent,
+    /// Not sent, on purpose (already there, say).
+    Skipped,
+    /// Not sent, though it should have been.
+    Failed,
+}
+
+impl ExportEnded {
+    /// Checks that its message and location are one line within
+    /// [`MAX_DELIVERY_TEXT`] bytes, each file's texts one line within
+    /// [`MAX_FILE_TEXT`], and that no file has two results.
+    pub fn validate(&self) -> Result<(), RemoteError> {
+        let whole = [("message", &self.message), ("location", &self.location)]
+            .into_iter()
+            .map(|(n, v)| (n, v, MAX_DELIVERY_TEXT));
+        let files = self.files.iter().flat_map(|f| {
+            [
+                ("message", &f.message, MAX_FILE_TEXT),
+                ("remote_id", &f.remote_id, MAX_FILE_TEXT),
+                ("url", &f.url, MAX_FILE_TEXT),
+            ]
+        });
+        for (name, value, most) in whole.chain(files) {
+            if value
+                .as_deref()
+                .is_some_and(|v| v.len() > most || !one_line(v))
+            {
+                return invalid(format!(
+                    "the {name} must be one line of at most {most} bytes"
+                ));
+            }
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        if let Some(twice) = self.files.iter().find(|f| !seen.insert(f.index)) {
+            return invalid(format!("file {} has two results", twice.index));
+        }
+        Ok(())
+    }
+}
+
+fn invalid(why: String) -> Result<(), RemoteError> {
+    Err(RemoteError::new(ErrorCode::InvalidRequest, why))
+}
+
+/// Checks a delivery id: one line, not empty.
+fn delivery_id(id: &str) -> Result<(), RemoteError> {
+    if id.is_empty() || !one_line(id) {
+        return invalid(format!(
+            "the delivery id must be one line of 1 to {MAX_DELIVERY_TEXT} bytes"
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `text` is one line of at most [`MAX_DELIVERY_TEXT`] bytes.
+fn one_line(text: &str) -> bool {
+    text.len() <= MAX_DELIVERY_TEXT && !text.chars().any(char::is_control)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1385,5 +1693,113 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(reported.refused[0].reason, FileRefusal::NotAPhoto);
+    }
+
+    #[test]
+    fn a_delivery_reads_and_is_checked() {
+        let root = if cfg!(windows) { "C:\\out" } else { "/out" };
+        let file = std::path::Path::new(root).join("a.jpg");
+        let AppRequest::ExportBegin(begin) = AppRequest::parse(
+            "export.begin",
+            json!({
+                "delivery": "3", "destination": "web", "folder": root, "count": 2,
+                "options": {"title": "Wedding", "captions": true, "columns": 3},
+            }),
+        )
+        .unwrap() else {
+            panic!("a beginning");
+        };
+        assert_eq!(begin.option_str("title"), Some("Wedding"));
+        assert_eq!(begin.option_bool("captions"), Some(true));
+        assert_eq!(begin.option_f64("columns"), Some(3.));
+        assert_eq!(begin.option_str("columns"), None);
+        assert_eq!(begin.option_str("layout"), None);
+        begin.validate().unwrap();
+        // Beside the originals there is no one folder.
+        let beside: ExportBegin =
+            serde_json::from_value(json!({"delivery": "3", "destination": "web", "count": 1}))
+                .unwrap();
+        assert_eq!(beside.folder, None);
+        assert!(
+            ExportBegin {
+                folder: Some("out".into()),
+                ..begin.clone()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            ExportBegin {
+                delivery: String::new(),
+                ..begin
+            }
+            .validate()
+            .is_err()
+        );
+
+        let AppRequest::ExportFile(sent) = AppRequest::parse(
+            "export.file",
+            json!({"delivery": "3", "destination": "web", "index": 1, "path": file,
+                   "name": "a.jpg", "width": 2048, "height": 1365,
+                   "captured": "2026-05-04T10:21:33",
+                   "photo_uuid": "0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f",
+                   "catalog": {"title": "Vows", "keywords": ["wedding"],
+                               "label": "yellow", "rating": 4}}),
+        )
+        .unwrap() else {
+            panic!("a file");
+        };
+        sent.validate().unwrap();
+        let catalog = sent.catalog.clone().unwrap();
+        assert_eq!(
+            (catalog.label.as_deref(), catalog.rating, catalog.caption),
+            (Some("yellow"), 4, None)
+        );
+        let (name, params) = AppRequest::ExportFile(sent.clone()).into_parts();
+        assert_eq!(name, "export.file");
+        assert_eq!(params["photo_uuid"], "0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f");
+        // A photo without a UUID, or outside the catalog, has neither field.
+        let bare = ExportFile {
+            photo_uuid: None,
+            catalog: None,
+            ..sent.clone()
+        };
+        let (_, params) = AppRequest::ExportFile(bare.clone()).into_parts();
+        assert!(params.get("photo_uuid").is_none() && params.get("catalog").is_none());
+        bare.validate().unwrap();
+        let broken = |change: &dyn Fn(&mut ExportFile)| {
+            let mut file = sent.clone();
+            change(&mut file);
+            assert_eq!(file.validate().unwrap_err().code, ErrorCode::InvalidRequest);
+        };
+        broken(&|f| f.path = "a.jpg".into());
+        broken(&|f| f.name = "b.jpg".into());
+        broken(&|f| f.photo_uuid = Some(String::new()));
+        broken(&|f| f.photo_uuid = Some("two\nlines".into()));
+        broken(&|f| f.catalog.as_mut().unwrap().label = Some("Yellow".into()));
+        broken(&|f| f.catalog.as_mut().unwrap().rating = 6);
+
+        let AppRequest::ExportEnd(end) = AppRequest::parse(
+            "export.end",
+            json!({"delivery": "3", "destination": "web", "files": 1}),
+        )
+        .unwrap() else {
+            panic!("an end");
+        };
+        assert!(!end.cancelled);
+        let ended: ExportEnded = serde_json::from_value(json!({
+            "files": [{"index": 1, "result": "sent", "remote_id": "p9",
+                       "url": "https://example.com/p9"}],
+            "location": "https://example.com"
+        }))
+        .unwrap();
+        assert_eq!(ended.files[0].result, Sent::Sent);
+        ended.validate().unwrap();
+        let mut twice = ended.clone();
+        twice.files.push(twice.files[0].clone());
+        assert!(twice.validate().is_err());
+        let mut long = ended;
+        long.files[0].url = Some("x".repeat(MAX_FILE_TEXT + 1));
+        assert!(long.validate().is_err());
     }
 }

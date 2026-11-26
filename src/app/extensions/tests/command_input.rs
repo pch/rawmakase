@@ -51,7 +51,7 @@ fn input_of(answer: &Value) -> ViewerInput {
 
 /// That nothing was sent, nor is being read to be sent.
 fn nothing_sent(e: &Editor) {
-    assert!(!e.extensions.command_running(ID));
+    assert!(!e.extensions.working(ID));
     assert!(!e.extensions.reading());
 }
 
@@ -233,7 +233,7 @@ fn a_prompt_is_sent_at_each_change_one_at_a_time() {
     e.command_input_click([0.5, 0.5], false);
     nothing_sent(&e);
     e.command_input_click([0.25, 0.5], true);
-    assert!(e.extensions.command_running(ID));
+    assert!(e.extensions.working(ID));
     // Ignored while it runs, not queued: neither a click nor a box.
     e.command_input_click([0.75, 0.5], true);
     e.command_input_drag([0.1, 0.1], [0.9, 0.9]);

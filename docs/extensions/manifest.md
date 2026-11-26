@@ -64,7 +64,7 @@ launch = "external"
 | `name` | yes | Shown in Preferences |
 | `version` | yes | The extension's version, [semver](https://semver.org) (`1.2.0`) |
 | `rawmakase` | yes | The RAWmakase versions it supports, a semver range (`>=0.5, <0.6`). Outside it the package is refused, and an installed one is listed as incompatible. Before 1.0 no compatibility is promised, so state the minor versions tested |
-| `api` | yes | The manifest format it was written for. This version reads `1` to `3`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator); `3` adds [`[[source]]`](#source), [`[[retouch-generator]]`](#retouch-generator) and the `secret` setting control, with API 2's framing and handle rules. The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
+| `api` | yes | The manifest format it was written for. This version reads `1` to `4`; a higher one is refused as written for a newer RAWmakase. `2` adds [`[[mask-generator]]`](#mask-generator); `3` adds [`[[source]]`](#source), [`[[retouch-generator]]`](#retouch-generator) and the `secret` setting control, with API 2's framing and handle rules; `4` adds [`[[export-destination]]`](#export-destination). The app tells the program its manifest's `api` when it starts it ([protocol](protocol.md#api-mode)) |
 | `authors` | no | Names |
 | `license` | no | An SPDX expression |
 | `repository` | no | `https://github.com/<owner>/<repo>` |
@@ -85,7 +85,7 @@ update asks for more. Not enforced: an extension runs with your permissions.
 ## `[program]`
 
 Needed by every extension with commands, panels, control adapters, mask
-generators or sources.
+or retouch generators, sources or export destinations.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -319,3 +319,69 @@ Send, Clear and what a request is doing; everything else, including what the
 tool says of itself (that it is experimental, what a request costs), is its
 panel's. A panel's `help` control without a label is a note as wide as the
 drawer, as a generator's `description` is.
+
+## `[[export-destination]]`
+
+From `api = 4`; a manifest with an earlier `api` that declares one is
+refused, and the app never sends a delivery to a program serving an earlier
+one. An export destination sends an export's files on as they are written: an
+upload, a web gallery, a printer. The Export dialog offers it under
+Post-Processing's Send To; the app sends the program each file as the export
+writes it, between a beginning and an end
+([`export.begin`, `export.file` and `export.end`](protocol.md#exportbegin-exportfile-and-exportend-requests)). Rendering,
+encoding and writing the files stay the app's; sending them is the program's.
+
+```toml
+[program]
+path = "bin/gallery"
+start = "on-demand"
+
+[[export-destination]]
+id = "web"
+name = "Web Gallery"
+
+[[export-destination.option]]
+id = "title"
+name = "Title"
+help = "Empty: the folder's name"
+control = "text"
+default = ""
+
+[[export-destination.option]]
+id = "layout"
+name = "Layout"
+control = { segmented = ["Grid", "Rows"] }
+default = "Grid"
+
+[[export-destination.option]]
+id = "columns"
+name = "Columns"
+control = { number = [1, 6] }
+default = 3
+visible-when = { setting = "layout", equals = "Grid" }
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | — | Lowercase letters, digits and hyphens, unique among the export destinations. Export settings name it `<extension>/<id>` |
+| `name` | — | Its name in Send To and in what the top bar says: one line |
+| `option` | none | What the user chooses for each export, below |
+
+**Options** (`[[export-destination.option]]`, each under the destination
+before it) are drawn under Send To in the Export dialog once the destination
+is chosen, in the manifest's order, and sent with the files
+([`export.begin`](protocol.md#exportbegin-exportfile-and-exportend-requests)'s `options`). They take
+a [`[[setting]]`](#setting)'s keys and rules (`id`, `name`, `help`,
+`control`, `default`, `unit`, `visible-when`, which names another option of
+the same destination), with the controls `"text"`, `"toggle"`,
+`{ number = [min, max] }`, `{ choice = [...] }` and `{ segmented = [...] }`
+only; any other control is refused. Ids are unique within the destination.
+The export settings keep what the user chose for each destination; a value
+the options no longer take (the extension changed them) is the option's
+default again. Settings that are the same for every export (an account, a
+server) belong in `[[setting]]`.
+
+Its program may start on demand or with the app. A destination that writes
+outside the exported files (a gallery's pages beside them) should say so with
+`files = "any"` in [`[access]`](#access), and one that uploads with
+`network = true`.

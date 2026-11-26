@@ -42,6 +42,18 @@ pub struct BatchPhoto {
     /// sequence numbers: a photo left out keeps its number. `None` numbers it by
     /// its place in the batch.
     pub place: Option<(usize, usize)>,
+    /// What the catalog knows of it beyond `values`; `None` for a photo
+    /// outside the catalog, whose `values` are empty.
+    pub catalog: Option<CatalogFacts>,
+}
+
+/// What the catalog knows of a batch photo beyond its [`Values`] (its
+/// title, caption, keywords, rating and label).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CatalogFacts {
+    /// Its UUID: `None` until the catalog's next open for a photo an older
+    /// release added while this one had it open.
+    pub uuid: Option<rawmakase_model::ids::PhotoUuid>,
 }
 
 /// The edit a photo is exported with.
@@ -61,9 +73,11 @@ pub enum Edit {
 }
 
 impl BatchPhoto {
-    /// A photo of the batch from its catalog record, named from `naming`.
+    /// A photo of the batch from its catalog record and UUID, named from
+    /// `naming`.
     pub fn from_record(
         record: PhotoRecord,
+        uuid: Option<rawmakase_model::ids::PhotoUuid>,
         source: PathBuf,
         name: String,
         naming: NameFields,
@@ -73,6 +87,7 @@ impl BatchPhoto {
             name,
             naming,
             place: None,
+            catalog: Some(CatalogFacts { uuid }),
             edit: Edit::Catalog(record.edit),
             values: Values {
                 descriptive: record.descriptive,
@@ -347,10 +362,12 @@ pub fn plan(
 /// What happened to one photo.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {
-    /// Written to `path`, with what the export has to say besides.
+    /// Written to `path`, with what the export has to say besides, and the
+    /// file's width and height in pixels.
     Exported {
         path: PathBuf,
         notes: Vec<String>,
+        size: (u32, u32),
     },
     Skipped(String),
     Failed(String),
@@ -404,6 +421,20 @@ pub fn run(
     cancel: Cancel<'_>,
     progress: impl Fn(Progress) + Sync,
 ) -> Vec<Outcome> {
+    run_each(batch, lanes, cancel, progress, |_, _| {})
+}
+
+/// [`run`], also telling `each` every photo's outcome as soon as it has one,
+/// with the photo's index: an exported file is in place by then. Photos run
+/// side by side, so they come in the order they finish, from the lanes'
+/// threads, and every one comes before `run_each` returns.
+pub fn run_each(
+    batch: &Batch,
+    lanes: Lanes,
+    cancel: Cancel<'_>,
+    progress: impl Fn(Progress) + Sync,
+    each: impl Fn(usize, &Outcome) + Sync,
+) -> Vec<Outcome> {
     let total = batch.photos.len();
     // A preset's image or font, read once: every photo gets the same watermark,
     // however long the batch runs. The Simple Copyright Watermark takes each
@@ -445,6 +476,7 @@ pub fn run(
                     None => photo(),
                 }
             };
+            each(index, &outcome);
             outcomes.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(outcome);
         }
     };
@@ -564,6 +596,9 @@ impl From<anyhow::Error> for Stop {
     }
 }
 
+/// A photo's file once written: where, its notes and its width and height.
+type Written = (PathBuf, Vec<String>, (u32, u32));
+
 fn export(
     shared: &Shared<'_>,
     photo: &BatchPhoto,
@@ -572,9 +607,10 @@ fn export(
     progress: &impl Fn(f32),
 ) -> Outcome {
     let (batch, cancel) = (shared.batch, shared.cancel);
-    let result = (|| -> Result<(PathBuf, Vec<String>), Stop> {
+    let result = (|| -> Result<Written, Stop> {
         // The photo's memory stays counted until its file is in place.
         let (prepared, mut notes, _admitted) = render(shared, photo, preset, progress)?;
+        let size = (prepared.rendered.width(), prepared.rendered.height());
         notes.extend(planned.notes.iter().cloned());
         if let Some(parent) = planned.target.parent() {
             std::fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
@@ -598,10 +634,10 @@ fn export(
         )?;
         notes.extend(note);
         progress(1.);
-        Ok((path, notes))
+        Ok((path, notes, size))
     })();
     match result {
-        Ok((path, notes)) => Outcome::Exported { path, notes },
+        Ok((path, notes, size)) => Outcome::Exported { path, notes, size },
         Err(Stop::Skipped(reason)) => Outcome::Skipped(reason),
         // Whatever stopped it, a cancel seen is a cancel, not a failure.
         Err(_) if cancel.is_cancelled() => Outcome::Cancelled,

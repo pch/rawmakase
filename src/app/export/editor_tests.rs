@@ -163,7 +163,8 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
             |_| {},
         )?;
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        let mut photo = BatchPhoto::from_record(record, path.clone(), name, Default::default());
+        let mut photo =
+            BatchPhoto::from_record(record, None, path.clone(), name, Default::default());
         if last {
             photo.edit = Edit::Shown {
                 recipe: Box::new(editor.document.edit.recipe().clone()),

@@ -44,7 +44,7 @@ program exits.
   `invalid_request` (the app never sends one: it fails such a request itself),
   a malformed request is answered `invalid_request`, an oversized line is
   skipped, and the session goes on.
-- **API 2** and **API 3** take the [handles](#handles) the app passes with its requests,
+- **API 2** and later take the [handles](#handles) the app passes with its requests,
   and the program's reader gives up the recovery above: a framing fault ends
   the program, which logs why. The app is the only sender of handles and
   serialises every line itself, so a fault means corruption, not input to
@@ -69,6 +69,11 @@ program exits.
 - **API 3** is API 2, and adds [photo sources](#sourcereport-request): the
   events `source-started` and `source-stopped`, and `source.report`. A
   manifest declaring a `[[source]]` declares `api = 3`.
+- **API 4** is API 3 with a delivery's requests
+  ([`export.begin`, `export.file` and `export.end`](#exportbegin-exportfile-and-exportend-requests)),
+  which the app sends only to a program serving it; the SDK refuses one serving an
+  earlier `api` with `invalid_request`. A manifest declaring an
+  `[[export-destination]]` declares `api = 4`.
 
 The app's side keeps the recovery rules in every mode: a program's malformed
 line never ends a session.
@@ -456,6 +461,154 @@ for the request, and keeps it as the spot's patch only if what the region was ma
 from still holds; it never sends the same request again by itself, since each may
 be a paid call.
 
+### `export.begin`, `export.file` and `export.end` (requests)
+
+Send an export's files to an [export destination](manifest.md#export-destination)
+as the export writes them (`api = 4`). A delivery is one `export.begin`, one
+`export.file` for each file written, and one `export.end`, all naming the same
+`delivery` id and the destination. The app sends them in that order, one
+delivery's files only once its `export.begin` is answered, at most 8 of them
+unanswered at a time, and its `export.end` only once every file it sent is
+answered. Deliveries to one extension go one after another: the next one's
+`export.begin` waits for the previous one to end. The SDK hands the requests
+to the destination one at a time, and refuses one that doesn't follow its
+delivery (a file past `count` or sent twice, an `export.end` whose `files`
+isn't the number received, a request of a delivery that never began or has
+stopped) with `invalid_request`.
+
+```json
+{"delivery":"3","destination":"web","folder":"/Users/jane/Pictures/Wedding","count":12,
+ "options":{"title":"Ola & Tomek","layout":"Grid","columns":3}}
+```
+
+`export.begin` comes when the export is queued. `folder` is the one folder
+the files go to, with its subfolder: the folder the export settings chose, or
+the originals' folder when the photos go beside originals that are all in one.
+It is left out when they go beside originals in several folders. `count` is how many
+photos the export is to write; fewer files can come, as a photo can be
+skipped, fail or be cancelled. `options` holds every
+[option](manifest.md#export-destination) the destination declares, by id:
+what the user chose for this export in the Export dialog, or the option's
+default, each of its control's type (a string for `text`, `choice` and
+`segmented`, a boolean for `toggle`, a number for `number`). They are read once,
+when the export is queued, with the destination's options as declared then.
+The SDK reads them with `option_str`, `option_bool` and `option_f64`. The reply
+is `null` once the destination takes the delivery. Refusing it (`needs_setup`
+for an account to set up, `unavailable` for a service that can't be reached,
+`invalid_request` for an export it can't take, such as one with no `folder`)
+sends no files; the export goes on, and the top bar says "Not sent to Web
+Gallery: offline".
+
+```json
+{"delivery":"3","destination":"web","index":4,
+ "path":"/Users/jane/Pictures/Wedding/IMG_0005.jpg","name":"IMG_0005.jpg",
+ "width":2048,"height":1365,"captured":"2026-05-04T10:21:33",
+ "photo_uuid":"0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f",
+ "catalog":{"title":"Vows","caption":"…","keywords":["Anna"],"label":"yellow","rating":4}}
+```
+
+`export.file` comes as soon as the export has the file in place. Photos are
+written side by side, so files can come out of order; `index` is the photo's
+place in the export, 0 to `count` less one. `path` is absolute and `name` is
+its file name; `width` and `height` are its pixels; `captured` is when the
+photo was taken by the camera's clock, without a time zone, left out when the
+catalog doesn't know it. The file is written whole when the request is sent;
+the app doesn't touch it afterwards, and nor should the program, which writes
+what it makes (a gallery's pages) beside it or elsewhere. Until the delivery is
+over, a later export doesn't write over it either: an export into a folder a
+delivery under way writes to names its own copies apart wherever it would
+replace a file, as Use Unique Names does, and the top bar says so. That covers
+the names a delivery's export takes while it runs (a `-2`) too. The reply is `null`
+once the file is received: how it went is said in `export.end`'s answer, so a
+destination answers at once and uploads meanwhile.
+
+- `photo_uuid` is the photo's UUID in the catalog, and **the id to keep**: a
+  destination stores it to recognise the photo in a later export (a web
+  gallery's picks, an uploader replacing what it sent before), as a string it
+  compares and never parses. A virtual copy has its own. The integer photo
+  ids of other requests (`read.photos`, proposals) are only for the current
+  session. Copies of a catalog file share the UUIDs of the photos they had
+  when they were copied; [Photo UUIDs](../catalogs.md#photo-uuids) says when
+  a photo gets one. It is left out for a photo outside the catalog and for one
+  that has none yet (added by an older release while this one had the catalog
+  open); that never fails the export or the delivery.
+- `catalog` is what the catalog says of the photo (a virtual copy's own), left
+  out for a photo outside it. `title`, `caption` and `keywords` (the names
+  the export writes) come only when the export's Metadata includes them: not
+  with Copyright Only or Copyright & Contact Info Only. `label` is `red`,
+  `yellow`, `green`, `blue` or `purple`, as the key map's `toggle_label:`
+  actions name them (`LABELS`), left out without one or with a label of another
+  name; `rating` is 0 (no stars) to 5.
+- **Privacy.** `photo_uuid` lets a service link the same photo across
+  exports. A destination gets it, and the catalog's facts, only once the user
+  picks it under Send To.
+
+```json
+{"delivery":"3","destination":"web","files":11,"cancelled":false}
+```
+
+`export.end` comes once the export is over, even when it was cancelled
+(`cancelled`), with how many `export.file` requests the delivery sent. Its
+reply says how each file went:
+
+```json
+{"files":[{"index":4,"result":"sent","remote_id":"p9","url":"https://jane.example/wedding/p9"},
+          {"index":7,"result":"failed","message":"too large"}],
+ "message":"Published Wedding","location":"https://jane.example/wedding"}
+```
+
+`files` holds a result for each file that wasn't sent or has something to
+show, by its `index`: `sent`, `skipped` (not sent on purpose) or `failed`, with
+an optional one-line `message`. A file left out was sent, so a delivery of
+thousands of files answers with the few that need a word. A result for a file
+the delivery didn't send makes the whole answer invalid. `remote_id` and `url`,
+optional, are what the destination gave the file; the app shows them and keeps no record of them
+(keeping one is a [publish service](../extensions-plan.md)'s part, not an
+export destination's). `message`, optional, says what it did, and `location`,
+optional, is where the user sees the result: a path or a URL. Each is one line
+of at most 1024 bytes, a file's `message`, `remote_id` and `url` at most 256
+(`MAX_FILE_TEXT`), no file has two results, and the whole answer is one
+protocol line of at most 1 MiB; the SDK checks its
+handler's answer, and the app refuses one that doesn't fit. The top bar says
+what the export did, then what was sent ("Exported 12 of 12 · Sent 11 of 12
+files to Web Gallery"), with the message, the location, why each file wasn't
+sent and each file's URL or remote id when the line is opened. The exported
+files stay either way.
+
+**Deadlines.** `export.file` has the usual request deadline. `export.begin`
+has 2 minutes, as it may wait behind a stopped delivery's handler still
+finishing in the program. `export.end` has 2 minutes without news: each `progress` the program
+sends for it (`Context::progress` in the SDK) moves its deadline 2 minutes
+ahead as the app reads it, so a long upload that reports how far it is never runs out. The top
+bar shows the latest progress under "Sending to Web Gallery" while the export
+is over and the delivery isn't, with a button that stops it. Closing the app
+waits while a delivery is open, as it does for an export, or stops it with
+**Stop sending and close**.
+
+**Stop, cancel and exit.** Stop in the top bar, or on the extension's page in
+Preferences > Extensions, ends the delivery: a request in flight is cancelled
+(the program answers `cancelled` soon after), nothing more is sent, and the
+program gets the event `export-stopped` with the delivery and destination, so
+it stops what it still sends in the background (`ExportDestination::stopped`
+in the SDK; `collected` forgets the delivery). A request of a delivery the
+program took that fails (its deadline, say; an `export.begin` past its
+deadline too, which the program may still have taken) stops it the same way,
+and an `export.end` that fails or is cancelled leaves the delivery open in the
+SDK until that `export-stopped` comes, as does an answer the app refuses (one
+naming a file it wasn't sent) or one too long for a protocol line.
+`export-stopped` takes the room kept for answers when the app's own messages
+fill the program's queue; a program that doesn't read even that is stopped, as
+it would never stop what it sends. Disabling the extension, a crash, a reload
+and quitting send no `export-stopped`: the program gets `quitting`, or is
+stopped, and every delivery open on it ends in the app, between its requests
+too. Cancelling the export doesn't stop the
+delivery: its `export.end` comes with `cancelled`, after the files written
+before the cancel. A program that exits or crashes mid-delivery ends it; its
+later requests aren't sent to the program started again, and the top bar says
+why. While a delivery is open, between its requests too, an `on-demand`
+program isn't stopped for being idle. The app never sends a delivery again by
+itself.
+
 ### Events
 
 | Event | Parameters |
@@ -466,6 +619,7 @@ be a paid call.
 | `catalog-closed` | none; tokens from it are refused from now on |
 | `source-started` | `{"source":id,"scope":n,"catalog":"Photos"}`: a source may report in scope `n`, adding to the catalog named ([below](#sourcereport-request)) |
 | `source-stopped` | `{"source":id,"scope":n}`: reports in scope `n` are refused from now on |
+| `export-stopped` | `{"delivery":id,"destination":id}`: a delivery stopped before its `export.end` was answered; nothing more of it comes ([above](#exportbegin-exportfile-and-exportend-requests)) |
 | `quitting` | none; the channel closes next |
 
 ## Program to app

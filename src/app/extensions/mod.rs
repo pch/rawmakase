@@ -69,6 +69,12 @@
 //! quitting cancels the read and fails the command; its read's report then
 //! finds nothing and is dropped.
 //!
+//! An `[[export-destination]]` gets an export's files as the export writes
+//! them, in a delivery of `export.begin`, `export.file` and `export.end`
+//! requests (see `destinations.rs`), kept open between them; Stop on the
+//! extension's page ends it, as it does a command, and tells the program
+//! (`export-stopped`).
+//!
 //! Every persisted change (enable, disable, a setting, an uninstall) goes
 //! through [`rawmakase_extensions::state::State::update`] first; when that
 //! fails the session's state stays as it was and the failure is reported.
@@ -79,6 +85,7 @@
 //! ([`Host::stop`]), and the exit hook ends every unit left
 //! ([`Host::kill_remaining`]).
 pub(in crate::app) mod command_input;
+pub(in crate::app) mod destinations;
 mod devices;
 mod editor;
 pub(in crate::app) mod mask_generator;
@@ -96,6 +103,7 @@ mod targets;
 mod tests;
 pub(in crate::app) mod viewer_input;
 
+pub(in crate::app) use destinations::{Destination, option_values};
 pub(in crate::app) use devices::Devices;
 pub(in crate::app) use editor::Told;
 pub(crate) use editor::{Done, PathTarget};
@@ -103,6 +111,7 @@ pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::AVAILABLE;
 pub(in crate::app) use page::Page;
 pub(in crate::app) use page::Section;
+pub(in crate::app) use page::{FormOf, SettingForm, same_value, setting_help, setting_shown};
 pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};
@@ -110,8 +119,9 @@ use rawmakase_extensions::protocol::manifest::{
     Input, Launch as AdapterLaunch, SettingControl, Start,
 };
 use rawmakase_extensions::protocol::method::{
-    AppEvent, AppRequest, CommandRun, Hello, Level, PanelChanged, PanelClicked, PanelOpen,
-    ProgramEvent, ProgramRequest, SettingChanged, Snapshot, SourceStarted, SourceStopped,
+    AppEvent, AppRequest, CommandRun, ExportEnded, Hello, Level, PanelChanged, PanelClicked,
+    PanelOpen, ProgramEvent, ProgramRequest, SettingChanged, Snapshot, SourceStarted,
+    SourceStopped,
 };
 use rawmakase_extensions::protocol::viewer::ViewerInput;
 use rawmakase_extensions::protocol::{ErrorCode, PROTOCOL, RemoteError, controls::Control};
@@ -212,6 +222,13 @@ enum Pending {
     /// `retouch.generate`, named by the host's ticket, as `Mask` is.
     Retouch {
         ticket: u64,
+    },
+    /// One of delivery `delivery`'s requests to the export destination
+    /// named `name`.
+    Delivery {
+        name: String,
+        delivery: String,
+        step: destinations::Step,
     },
 }
 
@@ -409,6 +426,11 @@ pub(in crate::app) struct Extension {
     mask_progress: Option<(u64, String)>,
     /// Commands whose target is being read, before they are sent.
     reading: Vec<TargetRead>,
+    /// Its deliveries begun and not over, by delivery id.
+    delivering: BTreeMap<String, destinations::Open>,
+    /// Deliveries its program's end cut off with no request of theirs in
+    /// flight, with why, for the editor to end ([`Host::take_lost_deliveries`]).
+    lost: Vec<(String, ErrorCode)>,
     /// When it was last busy (a request sent, or still being worked on at a
     /// poll): an `on-demand` program is stopped [`IDLE_STOP`] after this.
     last_active: Instant,
@@ -504,10 +526,13 @@ impl Extension {
     /// or a command's target is being read for it.
     fn busy(&self) -> bool {
         !self.reading.is_empty()
-            || self
-                .run
-                .as_ref()
-                .is_some_and(|r| !r.ready() || !r.requests.is_empty() || !r.deferred.is_empty())
+            || self.run.as_ref().is_some_and(|r| {
+                !r.ready()
+                    || !r.requests.is_empty()
+                    || !r.deferred.is_empty()
+                    // An open delivery waits for its export between requests.
+                    || self.delivering.values().any(|d| d.run == r.number)
+            })
     }
     fn ready_session(&mut self) -> Option<&mut Running> {
         self.run.as_mut().filter(|r| r.ready())
@@ -546,6 +571,14 @@ pub(in crate::app) enum Outcome {
         ticket: u64,
         result: Result<Value, RemoteError>,
         buffers: Option<Returned>,
+    },
+    /// A delivery's request answered: `export.end`'s answer, checked, or
+    /// nothing for the others; or why it failed (`exited`, `disabled`,
+    /// `cancelled`, `deadline`).
+    Delivery {
+        delivery: String,
+        step: destinations::Step,
+        result: Result<Option<ExportEnded>, RemoteError>,
     },
 }
 
@@ -586,6 +619,9 @@ type Found = (Manifest, Origin, PathBuf, Option<PathBuf>, Option<String>);
 pub(in crate::app) struct Host {
     /// None in a test editor's inert host: nothing is read or started.
     store: Option<Store>,
+    /// Deliveries ended by an extension that is gone (replaced, removed,
+    /// uninstalled), for [`Host::take_lost_deliveries`].
+    lost: Vec<(String, ErrorCode)>,
     app: semver::Version,
     wake: Option<session::Wake>,
     extensions: Vec<Extension>,
@@ -668,6 +704,7 @@ impl Host {
             wake: None,
             extensions: Vec::new(),
             next_number: 1,
+            lost: Vec::new(),
             next_ticket: 1,
             polls: 0,
             closed: false,
@@ -1081,6 +1118,7 @@ impl Host {
                     let lifecycle = self.lifecycles.entry(id).or_default().clone();
                     if let Some(mut old) = existing {
                         Self::end(&mut old, ErrorCode::Cancelled);
+                        self.lost.append(&mut old.lost);
                     }
                     changed = true;
                     let mtimes = mtimes(&dir, program.as_deref());
@@ -1106,6 +1144,8 @@ impl Host {
                         secret_premarked: Default::default(),
                         mask_progress: None,
                         reading: Vec::new(),
+                        delivering: BTreeMap::new(),
+                        lost: Vec::new(),
                         last_active: Instant::now(),
                         mtimes,
                     }
@@ -1116,6 +1156,7 @@ impl Host {
         // What is left was removed meanwhile.
         for mut gone in std::mem::take(&mut self.extensions) {
             Self::end(&mut gone, ErrorCode::Cancelled);
+            self.lost.append(&mut gone.lost);
             changed = true;
         }
         kept.sort_by_key(|e| e.name().to_lowercase());
@@ -1512,6 +1553,12 @@ impl Host {
     fn end(e: &mut Extension, code: ErrorCode) -> Vec<Outcome> {
         e.lifecycle.fetch_add(1, Ordering::SeqCst);
         let mut outcomes = Self::stop_reading(e, &code);
+        // Every delivery open on it ends, whether or not a request of it is
+        // in flight: a caller may drop the outcomes below, and the editor
+        // ignores a second end of one.
+        for delivery in std::mem::take(&mut e.delivering).into_keys() {
+            e.lost.push((delivery, code.clone()));
+        }
         if let Some(mut run) = e.run.take() {
             let mut ids: Vec<u64> = run.requests.keys().copied().collect();
             ids.sort_unstable();
@@ -1531,6 +1578,23 @@ impl Host {
         e.status = None;
         e.panels.clear();
         outcomes
+    }
+
+    /// Deliveries a program's end cut off between their requests (a crash,
+    /// disabling, a reload), each as its failed end: whatever path ended the
+    /// program, the editor ends them here.
+    pub(in crate::app) fn take_lost_deliveries(&mut self) -> Vec<Outcome> {
+        let gone = std::mem::take(&mut self.lost);
+        self.extensions
+            .iter_mut()
+            .flat_map(|e| std::mem::take(&mut e.lost))
+            .chain(gone)
+            .map(|(delivery, code)| Outcome::Delivery {
+                delivery,
+                step: destinations::Step::End,
+                result: Err(RemoteError::new(code, "its program ended")),
+            })
+            .collect()
     }
 
     /// What the editor is told of `e`'s request `pending` stopped with `code`
@@ -1563,6 +1627,14 @@ impl Host {
                     extension,
                     generator,
                     result: Err(error("setup")),
+                })
+            }
+            Pending::Delivery { delivery, step, .. } => {
+                e.delivering.remove(&delivery);
+                Some(Outcome::Delivery {
+                    delivery,
+                    step,
+                    result: Err(error("delivery")),
                 })
             }
             Pending::Hello | Pending::Panel { .. } => None,
@@ -1791,6 +1863,13 @@ impl Host {
                 Pending::Mask { .. } => mask_generator::GENERATE_DEADLINE,
                 Pending::Retouch { .. } => retouch_generator::GENERATE_DEADLINE,
                 Pending::MaskSetup { .. } => mask_generator::SETUP_DEADLINE,
+                // A stopped delivery's handler may still be finishing in the
+                // program, which serves requests in turn: the next one's
+                // beginning waits behind it.
+                Pending::Delivery {
+                    step: destinations::Step::End | destinations::Step::Begin,
+                    ..
+                } => destinations::END_STALL,
                 _ => self.request_deadline,
             };
         let request = match buffers {
@@ -1798,6 +1877,13 @@ impl Host {
             None => run.session.request(&method, params, deadline),
         }
         .map_err(|err| err.to_string())?;
+        if let Pending::Delivery {
+            step: destinations::Step::End,
+            ..
+        } = pending
+        {
+            run.session.stall(request, destinations::END_STALL);
+        }
         run.requests.insert(request, pending);
         Ok(())
     }
@@ -1952,58 +2038,75 @@ impl Host {
         Ok(outcomes)
     }
 
-    /// Stops extension `id`'s commands in flight: each is cancelled at the
-    /// program and settled as cancelled now, so a proposal it sends later is
-    /// refused.
-    pub(in crate::app) fn cancel_commands(&mut self, id: &str) -> Vec<Outcome> {
+    /// Stops extension `id`'s commands and deliveries: each request in
+    /// flight is cancelled at the program and settled as cancelled now, so a
+    /// proposal it sends later is refused, and a delivery waiting for its
+    /// export ends too.
+    pub(in crate::app) fn stop_work(&mut self, id: &str) -> Vec<Outcome> {
         let Some(index) = self.index(id) else {
             return Vec::new();
         };
         let e = &mut self.extensions[index];
-        let mut outcomes = Self::stop_reading(e, &ErrorCode::Cancelled);
+        let mut outcomes = Vec::new();
+        for (delivery, open) in std::mem::take(&mut e.delivering) {
+            outcomes.extend(destinations::tell_stopped(e, &delivery, &open));
+        }
+        outcomes.extend(Self::stop_reading(e, &ErrorCode::Cancelled));
+        Self::cancel_where(e, &mut outcomes, |p| {
+            matches!(p, Pending::Command { .. } | Pending::Delivery { .. })
+        });
+        outcomes
+    }
+
+    /// Cancels `e`'s requests in flight or waiting for the handshake that
+    /// `which` picks, each settled as cancelled into `outcomes`.
+    fn cancel_where(
+        e: &mut Extension,
+        outcomes: &mut Vec<Outcome>,
+        which: impl Fn(&Pending) -> bool,
+    ) {
+        let stopped = |e: &Extension, pending: Pending| {
+            let stop = || RemoteError::new(ErrorCode::Cancelled, "stopped");
+            match pending {
+                Pending::Command { command, by } => Some(Outcome::Command {
+                    extension: e.manifest.extension.id.clone(),
+                    title: command_title(&e.manifest, &command),
+                    by,
+                    result: Err(stop()),
+                }),
+                Pending::Delivery { delivery, step, .. } => Some(Outcome::Delivery {
+                    delivery,
+                    step,
+                    result: Err(stop()),
+                }),
+                _ => None,
+            }
+        };
         let Some(run) = &mut e.run else {
-            return outcomes;
+            return;
         };
         let mut ids: Vec<u64> = run
             .requests
             .iter()
-            .filter(|(_, p)| matches!(p, Pending::Command { .. }))
+            .filter(|(_, p)| which(p))
             .map(|(id, _)| *id)
             .collect();
         ids.sort_unstable();
+        let mut cancelled = Vec::new();
         for op in ids {
             run.session.cancel(op);
-            if let Some(Pending::Command { command, by }) = run.requests.remove(&op) {
-                outcomes.push(Outcome::Command {
-                    extension: e.manifest.extension.id.clone(),
-                    title: command_title(&e.manifest, &command),
-                    by,
-                    result: Err(RemoteError::new(ErrorCode::Cancelled, "stopped")),
-                });
-            }
+            cancelled.extend(run.requests.remove(&op));
         }
-        Self::sweep(e);
-        let Some(run) = &mut e.run else {
-            return outcomes;
-        };
-        let (commands, rest): (Vec<Queued>, Vec<Queued>) = run
+        let (picked, rest): (Vec<Queued>, Vec<Queued>) = run
             .take_queued()
             .into_iter()
-            .partition(|q| matches!(q.pending, Pending::Command { .. }));
+            .partition(|q| which(&q.pending));
         if let Handshake::Waiting(queued) = &mut run.handshake {
             *queued = rest;
         }
-        for queued in commands {
-            if let Pending::Command { command, by } = queued.pending {
-                outcomes.push(Outcome::Command {
-                    extension: e.manifest.extension.id.clone(),
-                    title: command_title(&e.manifest, &command),
-                    by,
-                    result: Err(RemoteError::new(ErrorCode::Cancelled, "stopped")),
-                });
-            }
-        }
-        outcomes
+        cancelled.extend(picked.into_iter().map(|q| q.pending));
+        outcomes.extend(cancelled.into_iter().filter_map(|p| stopped(e, p)));
+        Self::sweep(e);
     }
     /// Where extension `id` is in its lifecycle: work for it captures this,
     /// and is void once it differs (the extension was disabled, uninstalled,
@@ -2021,13 +2124,27 @@ impl Host {
             .ok_or_else(|| format!("No extension {id}"))?
             .can_run()
     }
-    /// Whether extension `id` has a command in flight.
+    /// Whether extension `id` has a command being read or in flight: a
+    /// `prompt` command's input waits for it.
     pub(in crate::app) fn command_running(&self, id: &str) -> bool {
         let Some(e) = self.get(id) else { return false };
         !e.reading.is_empty()
             || e.run
                 .as_ref()
                 .is_some_and(|r| r.pending().any(|p| matches!(p, Pending::Command { .. })))
+    }
+
+    /// Whether extension `id` has a command or a delivery under way.
+    pub(in crate::app) fn working(&self, id: &str) -> bool {
+        let Some(e) = self.get(id) else { return false };
+        !e.reading.is_empty()
+            || e.run
+                .as_ref()
+                .is_some_and(|r| e.delivering.values().any(|d| d.run == r.number))
+            || e.run.as_ref().is_some_and(|r| {
+                r.pending()
+                    .any(|p| matches!(p, Pending::Command { .. } | Pending::Delivery { .. }))
+            })
     }
 
     /// The commands of extension `id` sent and not answered, or waiting for
@@ -2179,6 +2296,7 @@ impl Host {
         }
         let mut e = self.extensions.remove(index);
         let outcomes = Self::end(&mut e, ErrorCode::Cancelled);
+        self.lost.append(&mut e.lost);
         self.revision += 1;
         // Another source of the same id (the bundled one under an installed
         // version) shows again.
@@ -2485,7 +2603,9 @@ impl Host {
                 continue;
             }
             let due = run.session.next_deadline();
-            let idle = on_demand.then_some(e.last_active + IDLE_STOP);
+            // Only while it could be stopped: a busy one's passed idle
+            // deadline would otherwise wake every frame.
+            let idle = (on_demand && !e.busy()).then_some(e.last_active + IDLE_STOP);
             for at in [due, idle].into_iter().flatten() {
                 next = Some(next.map_or(at, |n: Instant| n.min(at)));
             }
@@ -2576,16 +2696,29 @@ impl Host {
                     }
                 }
                 Update::Progress { id, done, text } => {
-                    match e.run.as_ref().and_then(|r| r.requests.get(&id)) {
+                    let pending = e.run.as_ref().and_then(|r| r.requests.get(&id)).cloned();
+                    match pending {
                         Some(Pending::MaskSetup { generator }) => {
                             if let Some(mask_generator::Setup::Running { done: d, text: t }) =
-                                e.setups.get_mut(generator)
+                                e.setups.get_mut(&generator)
                             {
                                 (*d, *t) = (done, text);
                             }
                         }
                         Some(Pending::Mask { ticket }) => {
-                            e.mask_progress = text.map(|text| (*ticket, text));
+                            e.mask_progress = text.map(|text| (ticket, text));
+                        }
+                        // A delivery's end that says how far it is keeps
+                        // its deadline ahead.
+                        Some(Pending::Delivery {
+                            delivery,
+                            step: destinations::Step::End,
+                            ..
+                        }) => {
+                            // The session moved its deadline as it read it.
+                            if let Some(open) = e.delivering.get_mut(&delivery) {
+                                open.progress = Some((done, text));
+                            }
                         }
                         _ => {}
                     }
@@ -2671,6 +2804,45 @@ impl Host {
                     ticket,
                     result,
                     buffers,
+                });
+            }
+            Pending::Delivery {
+                name,
+                delivery,
+                step,
+            } => {
+                let result = result.and_then(|answer| match step {
+                    destinations::Step::End => {
+                        let ended: ExportEnded = serde_json::from_value(answer).map_err(|err| {
+                            RemoteError::new(ErrorCode::InvalidRequest, err.to_string())
+                        })?;
+                        ended.validate()?;
+                        Ok(Some(ended))
+                    }
+                    _ => Ok(None),
+                });
+                match &result {
+                    Ok(_) => e.crashes = 0,
+                    Err(err) if err.code != ErrorCode::Cancelled => {
+                        e.error(format!("{name}: {err}"));
+                    }
+                    Err(_) => {}
+                }
+                if result.is_err() || step == destinations::Step::End {
+                    let open = e.delivering.remove(&delivery);
+                    // A delivery it took and can't finish now: what it still
+                    // sends should stop.
+                    // A beginning past its deadline may still have been taken.
+                    let taken = step != destinations::Step::Begin
+                        || matches!(&result, Err(e) if e.code == ErrorCode::Deadline);
+                    if let Some(open) = open.filter(|_| result.is_err() && taken) {
+                        outcomes.extend(destinations::tell_stopped(e, &delivery, &open));
+                    }
+                }
+                outcomes.push(Outcome::Delivery {
+                    delivery,
+                    step,
+                    result,
                 });
             }
             Pending::MaskSetup { generator } => {
@@ -2764,7 +2936,10 @@ impl Host {
                 by,
                 result: Err(RemoteError::new(ErrorCode::Exited, why)),
             }),
-            Pending::Mask { .. } | Pending::MaskSetup { .. } | Pending::Retouch { .. } => {
+            Pending::Mask { .. }
+            | Pending::MaskSetup { .. }
+            | Pending::Retouch { .. }
+            | Pending::Delivery { .. } => {
                 outcomes.extend(Self::stopped(e, pending, &ErrorCode::Exited));
             }
             Pending::Panel { panel } => {
@@ -3095,18 +3270,18 @@ impl Host {
         for e in &self.extensions {
             let running = e.run.as_ref().and_then(|run| {
                 run.pending().find_map(|p| match p {
-                    Pending::Command { command, .. } => Some(command),
+                    Pending::Command { command, .. } => Some(command_title(&e.manifest, command)),
                     _ => None,
                 })
             });
             if let Some(text) = e.status.as_ref().filter(|_| e.run.is_some()) {
                 out.push(format!("{}: {text}", e.name()));
-            } else if let Some(command) = running.or(e.reading.first().map(|r| &r.command)) {
-                out.push(format!(
-                    "{}: {}…",
-                    e.name(),
-                    command_title(&e.manifest, command)
-                ));
+            } else if let Some(doing) = running.or(e
+                .reading
+                .first()
+                .map(|r| command_title(&e.manifest, &r.command)))
+            {
+                out.push(format!("{}: {doing}…", e.name()));
             }
         }
         out
@@ -3199,6 +3374,7 @@ fn placeholder(id: &str, name: &str) -> Manifest {
         mask_generators: Vec::new(),
         sources: Vec::new(),
         retouch_generators: Vec::new(),
+        export_destinations: Vec::new(),
     }
 }
 

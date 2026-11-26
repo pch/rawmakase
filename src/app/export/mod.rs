@@ -2,7 +2,10 @@
 //! rendering, file writing) in `crate::export`. Every export, of one photo or the
 //! whole selection, goes through the app's one export queue and runs while you keep
 //! editing; the top bar shows its progress, and what could not be exported stays
-//! there until it is dismissed.
+//! there until it is dismissed. Send To sends each file to an extension's
+//! export destination as the batch writes it (`delivery`), and the top bar
+//! says how that went after what was exported.
+mod delivery;
 mod dialog;
 mod watermark_editor;
 
@@ -83,6 +86,8 @@ struct Queued {
     after: crate::export_settings::AfterExport,
     /// Edit In's batch: its files go on to the catalog and the editor.
     editing: Option<crate::app::edit_in::Sending>,
+    /// Its delivery to Send To's destination, by id.
+    delivery: Option<String>,
 }
 
 /// What finished exports could not do, kept until it is dismissed.
@@ -144,6 +149,12 @@ pub(in crate::app) struct Exports {
     pending: Option<Pending>,
     queue: Option<Queue>,
     queued: HashMap<u64, Queued>,
+    /// Send To's deliveries under way, by id.
+    deliveries: std::collections::BTreeMap<String, delivery::Delivery>,
+    /// How many deliveries have begun, for the next one's id.
+    deliveries_begun: u64,
+    /// Send To's options being typed or dragged.
+    option_form: crate::app::extensions::SettingForm,
     /// The Watermark Editor, over the dialog.
     watermark_editor: Option<watermark_editor::WatermarkEditor>,
     /// Saved watermarks, read when the dialog opens and after the editor
@@ -162,6 +173,10 @@ pub(in crate::app) struct Exports {
 }
 
 impl Exports {
+    /// Send To's options being typed or dragged.
+    pub(in crate::app) fn option_form(&mut self) -> &mut crate::app::extensions::SettingForm {
+        &mut self.option_form
+    }
     /// Stops the export queue at exit, cancelling the running batch; its thread,
     /// to wait for.
     pub(in crate::app) fn close(&mut self) -> Option<std::thread::JoinHandle<()>> {
@@ -691,9 +706,15 @@ impl Editor {
     /// The scope's photos as the catalog has them now, read in one transaction.
     fn batch_photos(&self, scope: &Scope, unsaved: bool) -> anyhow::Result<Vec<BatchPhoto>> {
         let ids: Vec<PhotoId> = scope.photos.iter().filter_map(|p| p.id).collect();
-        let mut records = match &self.library {
-            Some(l) if !ids.is_empty() => l.session.catalog().photo_records(&ids)?.into_iter(),
-            _ => Vec::new().into_iter(),
+        let (mut records, mut uuids) = match &self.library {
+            Some(l) if !ids.is_empty() => {
+                let catalog = l.session.catalog();
+                (
+                    catalog.photo_records(&ids)?.into_iter(),
+                    catalog.photo_uuids(&ids)?.into_iter(),
+                )
+            }
+            _ => (Vec::new().into_iter(), Vec::new().into_iter()),
         };
         Ok(scope
             .photos
@@ -702,6 +723,7 @@ impl Editor {
                 let mut photo = match chosen.id {
                     Some(_) => BatchPhoto::from_record(
                         records.next().expect("a record for each photo"),
+                        uuids.next().flatten(),
                         chosen.source.clone(),
                         chosen.name.clone(),
                         chosen.fields.clone(),
@@ -713,6 +735,7 @@ impl Editor {
                         values: Values::default(),
                         naming: chosen.fields.clone(),
                         place: None,
+                        catalog: None,
                     },
                 };
                 photo.place = Some((chosen.place, scope.chosen));
@@ -732,7 +755,32 @@ impl Editor {
     /// that exist first.
     fn plan_export(&mut self, mut pending: Pending, answer: Option<Existing>) {
         match batch::plan(&pending.batch, &pending.settings, answer) {
-            Ok(plan) => self.queue_batch(pending, plan, None),
+            Ok(plan) => {
+                // Files a delivery still sends keep their bytes: an export
+                // into a folder it writes to names its own copies apart. Only
+                // Overwrite replaces a file; Skip and Use Unique Names never
+                // do, so they keep their choice.
+                let held = (plan.late == Existing::Overwrite)
+                    .then(|| {
+                        plan.entries
+                            .iter()
+                            .filter(|e| e.write != batch::Write::Skip)
+                            .find_map(|e| self.delivery_holds(&e.target))
+                    })
+                    .flatten()
+                    .map(str::to_string);
+                match held {
+                    Some(name) => {
+                        self.messages.note(format!(
+                            "Files still being sent to {name} are kept: this export gives its files names of their own"
+                        ));
+                        // This batch only: the settings saved keep their choice.
+                        pending.settings.existing = Existing::Unique;
+                        self.plan_export(pending, None);
+                    }
+                    _ => self.queue_batch(pending, plan, None),
+                }
+            }
             Err(Unplanned::NoFolder) => self.messages.warn("Choose a folder to export to"),
             Err(Unplanned::Settings(reason)) => {
                 self.messages.fail(format!("Export stopped: {reason}"))
@@ -754,6 +802,13 @@ impl Editor {
     ) {
         let names = pending.batch.iter().map(|p| p.name.clone()).collect();
         let after = pending.settings.after_export;
+        let delivery = match editing {
+            None => {
+                let targets: Vec<_> = plan.entries.iter().map(|e| e.target.clone()).collect();
+                self.begin_delivery(&pending.batch, &targets, &pending.settings)
+            }
+            Some(_) => None,
+        };
         let batch = batch::Batch {
             photos: pending.batch,
             plan,
@@ -772,6 +827,7 @@ impl Editor {
                 left_out: pending.left_out,
                 after,
                 editing,
+                delivery,
             },
         );
     }
@@ -830,8 +886,18 @@ impl Editor {
         let repaint = self.context.clone();
         self.exports.queue.get_or_insert_with(|| {
             let logical = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-            Queue::new(
+            let (each_tx, each_ctx) = (tx.clone(), ctx.clone());
+            Queue::with_each(
                 batch::Lanes::for_machine(logical, crate::platform::memory::total()),
+                move |ticket, index, outcome| {
+                    let outcome = outcome.clone();
+                    let _ = each_tx.send(Event::PhotoExported {
+                        ticket,
+                        index,
+                        outcome,
+                    });
+                    each_ctx.request_repaint();
+                },
                 move |ticket, outcomes| {
                     let _ = tx.send(Event::BatchExported { ticket, outcomes });
                     ctx.request_repaint();
@@ -883,23 +949,51 @@ impl Editor {
         let single = (summary.total == 1 && summary.noted == 0)
             .then(|| exported.first().cloned())
             .flatten();
-        match single {
+        let said = match single {
             Some(path) => {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
+                let line = format!("Exported {name}");
                 self.messages
-                    .done_with_detail(format!("Exported {name}"), path.display().to_string());
+                    .done_with_detail(line.clone(), path.display().to_string());
+                line
             }
-            None if !summary.problems.is_empty() => self
-                .messages
-                .fail_with_detail(summary.line(), summary.details()),
-            None if !summary.notes.is_empty() => self
-                .messages
-                .warn_with_detail(summary.line(), summary.details()),
-            None => self.messages.done(summary.line()),
+            None if !summary.problems.is_empty() => {
+                self.messages
+                    .fail_with_detail(summary.line(), summary.details());
+                summary.line()
+            }
+            None if !summary.notes.is_empty() => {
+                self.messages
+                    .warn_with_detail(summary.line(), summary.details());
+                summary.line()
+            }
+            None => {
+                self.messages.done(summary.line());
+                summary.line()
+            }
         };
         // After the summary, so a file manager that can't be opened is said.
         if queued.after == crate::export_settings::AfterExport::Show {
             self.show_exported(&exported);
+        }
+        if let Some(id) = &queued.delivery {
+            let cancelled = outcomes
+                .iter()
+                .any(|o| matches!(o, Outcome::Cancelled | Outcome::NotStarted));
+            self.delivery_exported(id, said, cancelled);
+        }
+    }
+
+    /// A photo of a queued batch has its outcome, its file in place if it
+    /// was exported.
+    pub(in crate::app) fn photo_exported(&mut self, ticket: u64, index: usize, outcome: &Outcome) {
+        if let Some(id) = self
+            .exports
+            .queued
+            .get(&ticket)
+            .and_then(|q| q.delivery.clone())
+        {
+            self.delivery_photo(&id, index, outcome);
         }
     }
 
@@ -948,7 +1042,10 @@ impl Editor {
                         && let Some(queue) = &self.exports.queue
                         && queue.remove(*queued)
                     {
-                        self.exports.queued.remove(queued);
+                        let removed = self.exports.queued.remove(queued);
+                        if let Some(id) = removed.and_then(|q| q.delivery) {
+                            self.delivery_removed(&id);
+                        }
                         ui.close();
                     }
                 }
@@ -988,7 +1085,7 @@ fn summarize(queued: &Queued, outcomes: &[Outcome]) -> (Summary, Vec<PathBuf>) {
     let mut exported = Vec::new();
     for (name, outcome) in queued.names.iter().zip(outcomes) {
         let problem = match outcome {
-            Outcome::Exported { path, notes } => {
+            Outcome::Exported { path, notes, .. } => {
                 exported.push(path.clone());
                 summary.noted += usize::from(!notes.is_empty());
                 for note in notes {

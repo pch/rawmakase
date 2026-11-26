@@ -41,7 +41,8 @@ pub use shm::mapped_buffers;
 
 use rawmakase_extension_protocol::controls::Control;
 use rawmakase_extension_protocol::method::{
-    CommandRun, MaskGenerate, MaskGenerated, RetouchGenerate, RetouchGenerated, SourceStarted,
+    CommandRun, ExportBegin, ExportEnd, ExportEnded, ExportFile, MaskGenerate, MaskGenerated,
+    RetouchGenerate, RetouchGenerated, SourceStarted,
 };
 use serde_json::Value;
 
@@ -199,4 +200,107 @@ pub trait Source: Send {
     /// Scope `scope` ended: reports in it are refused. Stops watching,
     /// without waiting on a device.
     fn stop(&mut self, scope: u64);
+}
+
+/// An `[[export-destination]]`'s implementation: it sends an export's files
+/// on (an upload, a web gallery, a printer) as the export writes them.
+/// Export destinations need `api = 4`.
+///
+/// A delivery is `begin`, then one `file` for each file written, then
+/// `end`, all naming the same delivery id; requests come one at a time, in
+/// that order. The SDK checks each request (`validate`), and that it follows
+/// its delivery (a file within `begin`'s count and only once, an `end` that
+/// counts the files received), before calling the destination, and refuses
+/// one that doesn't with
+/// [`ErrorCode::InvalidRequest`], as it does a request when serving an `api`
+/// below 4. The answer to `end` is checked too ([`ExportEnded::validate`]):
+/// one that doesn't validate goes to the app as
+/// [`ErrorCode::InvalidRequest`]. A destination that needs the whole set
+/// first, as a web gallery does, can use [`collected`].
+pub trait ExportDestination: Send {
+    /// A delivery starts. One that needs the user to set something up first
+    /// (an account) answers [`ErrorCode::NeedsSetup`], one whose service
+    /// can't be reached [`ErrorCode::Unavailable`], one that can't take this
+    /// export (its files beside originals in several folders, say)
+    /// [`ErrorCode::InvalidRequest`]: then no files come.
+    fn begin(&mut self, cx: &Context, begin: ExportBegin) -> Result<(), RemoteError>;
+    /// A file of a delivery, in place: answer as soon as it is taken in (an
+    /// upload can start on another thread), since how it went is said in
+    /// [`ExportDestination::end`].
+    fn file(&mut self, cx: &Context, file: ExportFile) -> Result<(), RemoteError>;
+    /// The delivery's export is over: finish sending and say how each file
+    /// went. A long one reports how far it is through [`Context::progress`],
+    /// which keeps it within its deadline. One that sees
+    /// [`Context::is_cancelled`] returns [`ErrorCode::Cancelled`].
+    fn end(&mut self, cx: &Context, end: ExportEnd) -> Result<ExportEnded, RemoteError>;
+    /// Delivery `delivery` stopped before its end (Stop, or a request of it
+    /// that failed): no more of it comes. Stop what it still sends in the
+    /// background and forget it. Nothing by default.
+    fn stopped(&mut self, delivery: &str) {
+        let _ = delivery;
+    }
+}
+
+/// A whole delivery, as [`collected`] hands it over.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Delivery {
+    /// Its `export.begin`.
+    pub begin: ExportBegin,
+    /// Its files, in the order they came.
+    pub files: Vec<ExportFile>,
+    /// Its `export.end`.
+    pub end: ExportEnd,
+}
+
+/// An export destination that keeps each delivery's files until its `end`,
+/// then hands `send` the whole delivery.
+pub fn collected<F>(send: F) -> impl ExportDestination
+where
+    F: FnMut(&Context, Delivery) -> Result<ExportEnded, RemoteError> + Send,
+{
+    Collected {
+        send,
+        open: std::collections::BTreeMap::new(),
+    }
+}
+
+struct Collected<F> {
+    send: F,
+    open: std::collections::BTreeMap<String, (ExportBegin, Vec<ExportFile>)>,
+}
+impl<F> ExportDestination for Collected<F>
+where
+    F: FnMut(&Context, Delivery) -> Result<ExportEnded, RemoteError> + Send,
+{
+    fn begin(&mut self, _: &Context, begin: ExportBegin) -> Result<(), RemoteError> {
+        self.open
+            .insert(begin.delivery.clone(), (begin, Vec::new()));
+        Ok(())
+    }
+    fn file(&mut self, _: &Context, file: ExportFile) -> Result<(), RemoteError> {
+        match self.open.get_mut(&file.delivery) {
+            Some((_, files)) => {
+                files.push(file);
+                Ok(())
+            }
+            None => Err(unknown_delivery(&file.delivery)),
+        }
+    }
+    fn end(&mut self, cx: &Context, end: ExportEnd) -> Result<ExportEnded, RemoteError> {
+        let (begin, files) = self
+            .open
+            .remove(&end.delivery)
+            .ok_or_else(|| unknown_delivery(&end.delivery))?;
+        (self.send)(cx, Delivery { begin, files, end })
+    }
+    fn stopped(&mut self, delivery: &str) {
+        self.open.remove(delivery);
+    }
+}
+
+fn unknown_delivery(id: &str) -> RemoteError {
+    RemoteError::new(
+        ErrorCode::InvalidRequest,
+        format!("no delivery {id} has begun"),
+    )
 }

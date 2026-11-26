@@ -1332,4 +1332,780 @@ fn shots_of_export() {
         },
         |e, ctx| e.export_windows(ctx),
     );
+    // Send To: a destination chosen, one that can't take files now, and one
+    // whose extension is gone.
+    let offered = [
+        crate::app::extensions::Destination {
+            key: "dev.jane.gallery/web".into(),
+            name: "Web Gallery".into(),
+            unavailable: None,
+            options: Vec::new(),
+        },
+        crate::app::extensions::Destination {
+            key: "dev.jane.lab/print".into(),
+            name: "Print Lab".into(),
+            unavailable: Some("Print Lab stopped working".into()),
+            options: Vec::new(),
+        },
+    ];
+    for (name, chosen) in [
+        ("export-send-to", Some("dev.jane.gallery/web")),
+        ("export-send-to-unavailable", Some("dev.jane.lab/print")),
+        ("export-send-to-missing", Some("dev.jane.gone/web")),
+        ("export-send-to-nowhere", None),
+    ] {
+        let mut send_to = chosen.map(str::to_string);
+        crate::app::ui::shots::shot(
+            name,
+            egui::vec2(700., 120.),
+            |_, _| {},
+            |_, ctx| {
+                crate::app::ui::shots::panel(ctx, 668., |ui| {
+                    ui.horizontal(|ui| {
+                        crate::app::ui::widgets::form_row(ui, "After Export", |ui| {
+                            ui.label("Do Nothing");
+                        });
+                    });
+                    super::dialog::send_to_row(ui, &mut send_to, &offered);
+                });
+            },
+        );
+    }
+}
+
+/// The Send To row with a web gallery's options under it, as the Export
+/// dialog draws them, for `RAWMAKASE_UI_SHOTS`.
+#[test]
+fn shots_of_send_to_options() {
+    let manifest = rawmakase_extensions::Manifest::parse(
+        r#"
+[extension]
+id = "dev.jane.gallery"
+name = "Gallery"
+version = "1.0.0"
+rawmakase = ">=0.1"
+api = 4
+[program]
+path = "bin/gallery"
+[[export-destination]]
+id = "web"
+name = "Web Gallery"
+[[export-destination.option]]
+id = "title"
+name = "Title"
+help = "Empty: the folder's name"
+control = "text"
+default = ""
+[[export-destination.option]]
+id = "author"
+name = "Author"
+control = "text"
+default = ""
+[[export-destination.option]]
+id = "layout"
+name = "Layout"
+control = { segmented = ["Grid", "Rows", "Masonry"] }
+default = "Grid"
+[[export-destination.option]]
+id = "columns"
+name = "Columns"
+control = { number = [1, 6] }
+default = 3
+visible-when = { setting = "layout", equals = "Grid" }
+[[export-destination.option]]
+id = "theme"
+name = "Theme"
+control = { choice = ["Light", "Dark"] }
+default = "Light"
+[[export-destination.option]]
+id = "captions"
+name = "Captions"
+control = "toggle"
+default = true
+"#,
+    )
+    .unwrap();
+    let declared = &manifest.export_destinations[0];
+    let destination = crate::app::extensions::Destination {
+        key: "dev.jane.gallery/web".into(),
+        name: declared.name.clone(),
+        unavailable: None,
+        options: declared.options.clone(),
+    };
+    let offered = [destination.clone()];
+    crate::app::ui::shots::shot(
+        "export-send-to-options",
+        egui::vec2(700., 330.),
+        |e, _| {
+            e.exports.draft.send_to = Some(destination.key.clone());
+            e.exports.draft.send_to_options.insert(
+                destination.key.clone(),
+                [("title".to_string(), serde_json::json!("Ola & Tomek"))].into(),
+            );
+        },
+        |e, ctx| {
+            crate::app::ui::shots::panel(ctx, 668., |ui| {
+                super::dialog::send_to_row(ui, &mut e.exports.draft.send_to, &offered);
+                e.send_to_options(ui, &destination);
+            });
+        },
+    );
+}
+
+/// The test-only export destinations' program, when this binary is started
+/// as it; a test that does nothing otherwise.
+const DESTINATIONS: &str = "RAWMAKASE_EXAMPLE_DESTINATIONS";
+
+#[test]
+fn destinations_program() {
+    if std::env::var_os(DESTINATIONS).is_none() {
+        return;
+    }
+    let code = i32::from(rawmakase_example::destinations::extension().run().is_err());
+    std::process::exit(code);
+}
+
+/// Loads the test-only `dev.rawmakase.destinations` extension from a
+/// developer folder in `dir`, its program this test binary started again.
+fn load_destinations(e: &mut Editor, dir: &std::path::Path) {
+    use rawmakase_extensions::session::Launch;
+    let folder = dir.join("destinations");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(
+        folder.join(rawmakase_extensions::protocol::manifest::FILE),
+        include_str!("../../../extensions/example/destinations/rawmakase-extension.toml"),
+    )
+    .unwrap();
+    let data = dir.join("data");
+    rawmakase_extensions::store::Store::new(&data)
+        .add_developer(&folder)
+        .unwrap();
+    let program = Launch {
+        program: std::env::current_exe().expect("the test binary"),
+        args: [
+            "app::export::tests::destinations_program",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ]
+        .map(Into::into)
+        .to_vec(),
+        dir: std::path::PathBuf::new(),
+        env: vec![(DESTINATIONS.into(), "1".into())],
+        log: std::path::PathBuf::new(),
+    };
+    e.extensions = crate::app::extensions::Host::start_for_tests(
+        &data,
+        program,
+        std::time::Duration::from_secs(30),
+    );
+}
+
+/// Polls the extensions, and takes the editor's events, until the top bar
+/// says something that starts with `start`; that line.
+fn said(e: &mut Editor, ctx: &egui::Context, start: &str) -> String {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        e.events(ctx);
+        let (outcomes, _) = e.extensions_poll(std::time::Instant::now());
+        e.extension_outcomes(outcomes);
+        if e.messages.line().starts_with(start) {
+            return e.messages.line().to_string();
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "waiting for {start:?}; the line says {:?}",
+            e.messages.line()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn send_to_sends_each_file_as_it_is_written_and_says_how_each_went() -> anyhow::Result<()> {
+    let (dir, mut e, ids, ctx) = editor()?;
+    load_destinations(&mut e, dir.path());
+    let offered: Vec<_> = e
+        .extensions
+        .export_destinations()
+        .into_iter()
+        .map(|d| (d.key, d.name, d.unavailable, d.options.len()))
+        .collect();
+    assert_eq!(
+        offered,
+        [
+            (
+                "dev.rawmakase.destinations/index".into(),
+                "Index File".into(),
+                None,
+                1
+            ),
+            (
+                "dev.rawmakase.destinations/closed".into(),
+                "Closed Lab".into(),
+                None,
+                0
+            ),
+        ]
+    );
+    // A virtual copy of the first photo, with a UUID of its own.
+    let library = e.library.as_mut().unwrap();
+    let copy = library.create_virtual_copy(ids[0])?.value;
+    let uuids = library
+        .session
+        .catalog()
+        .photo_uuids(&[ids[0], copy])?
+        .into_iter()
+        .map(|u| u.expect("a UUID").to_string())
+        .collect::<Vec<_>>();
+    assert_ne!(uuids[0], uuids[1]);
+    let out = dir.path().join("out");
+    let scope = e.export_scope_of(vec![ids[0], copy]).expect("photos");
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    // The heading typed under Send To goes with the files.
+    chosen.send_to_options.insert(
+        "dev.rawmakase.destinations/index".into(),
+        [("heading".to_string(), serde_json::json!("Our Wedding"))].into(),
+    );
+    export(&mut e, scope, chosen.clone())?;
+    wait(&mut e, &ctx);
+    let line = said(&mut e, &ctx, "Exported 2 of 2 · Sent");
+    assert_eq!(line, "Exported 2 of 2 · Sent 2 files to Index File");
+    // The destination's message, where its result is, and what it gave
+    // each file, when opened.
+    let index = out.join(rawmakase_example::destinations::INDEX);
+    let detail = e.messages.entry_detail(&line).expect("the result");
+    let lines: Vec<&str> = detail.lines().collect();
+    assert_eq!(
+        lines[..2],
+        ["Indexed Our Wedding", &index.display().to_string()]
+    );
+    assert_eq!(lines.len(), 4, "{detail}");
+    // In export order, each with its size as written and its own UUID.
+    let text = std::fs::read_to_string(&index)?;
+    let rows: Vec<&str> = text.lines().collect();
+    assert_eq!(rows[0], "Our Wedding");
+    assert!(
+        rows[1].ends_with(&format!(" unlabelled {}", uuids[0])),
+        "{text}"
+    );
+    assert!(
+        rows[2].ends_with(&format!(" unlabelled {}", uuids[1])),
+        "{text}"
+    );
+    let (w, h) = image::image_dimensions(out.join(rows[1].split(' ').next().unwrap()))?;
+    assert!(rows[1].contains(&format!(" {w} x {h} ")), "{text}");
+
+    // A file the destination fails is named with why; the others went.
+    e.library
+        .as_mut()
+        .unwrap()
+        .session
+        .catalog_mut_for_tests()
+        .set_metadata(copy, 0, 0, "Red")?;
+    chosen.existing = Existing::Unique;
+    let scope = e.export_scope_of(vec![ids[0], copy]).expect("photos");
+    export(&mut e, scope.clone(), chosen.clone())?;
+    wait(&mut e, &ctx);
+    let line = said(&mut e, &ctx, "Exported 2 of 2 · Sent 1 of");
+    assert_eq!(line, "Exported 2 of 2 · Sent 1 of 2 files to Index File");
+    let detail = e.messages.entry_detail(&line).expect("why");
+    assert!(detail.contains(": red photos aren't indexed"), "{detail}");
+
+    // A destination that refuses leaves the export as it was, and says so.
+    chosen.send_to = Some("dev.rawmakase.destinations/closed".into());
+    export(&mut e, scope, chosen)?;
+    wait(&mut e, &ctx);
+    said(&mut e, &ctx, "Exported 2 of 2");
+    let refused = "Not sent to Closed Lab: the lab is closed today";
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !e.messages.has_entry_with(refused) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{}",
+            e.messages.line()
+        );
+        let (outcomes, _) = e.extensions_poll(std::time::Instant::now());
+        e.extension_outcomes(outcomes);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(listing(&out).len(), 7);
+    Ok(())
+}
+
+#[test]
+fn send_to_a_destination_that_is_not_installed_still_exports() -> anyhow::Result<()> {
+    let (dir, mut e, ids, ctx) = editor()?;
+    let out = dir.path().join("out");
+    let scope = e.export_scope_of(vec![ids[2]]).expect("a photo");
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.jane.gallery/web".into());
+    export(&mut e, scope, chosen)?;
+    wait(&mut e, &ctx);
+    assert_eq!(listing(&out), ["c.tif"]);
+    assert!(
+        e.messages
+            .has_entry("Not sent: dev.jane.gallery isn't installed")
+    );
+    assert_eq!(e.messages.line(), "Exported c.tif");
+    Ok(())
+}
+
+/// A batch photo with `values`, in the catalog with `uuid` unless
+/// `outside`.
+fn batch_photo(values: Values, uuid: Option<&str>, outside: bool) -> BatchPhoto {
+    BatchPhoto {
+        source: "a.dng".into(),
+        name: "a.dng".into(),
+        edit: Edit::Catalog(Default::default()),
+        values,
+        naming: NameFields {
+            captured: Some("2026:05:04 10:21:33".into()),
+            ..Default::default()
+        },
+        place: None,
+        catalog: (!outside).then(|| crate::export::batch::CatalogFacts {
+            uuid: uuid.map(|u| crate::catalog::PhotoUuid::parse(u).unwrap()),
+        }),
+    }
+}
+
+#[test]
+fn a_file_carries_its_photos_uuid_and_catalog_facts_or_neither() {
+    use crate::app::extensions::destinations::FileFacts;
+    use crate::metadata::{LangAlt, Value};
+    let path = std::path::Path::new(if cfg!(windows) {
+        "C:\\out\\a.jpg"
+    } else {
+        "/out/a.jpg"
+    });
+    let values = Values {
+        descriptive: crate::metadata::Descriptive {
+            title: Some(Value::Set(LangAlt::new("Vows"))),
+            caption: Some(Value::Cleared),
+            ..Default::default()
+        },
+        keywords: vec![crate::xmp::write::KeywordPath {
+            path: vec!["People".into(), "Anna".into()],
+            exported: vec![false, true],
+        }],
+        rating: 4,
+        label: "Yellow".into(),
+    };
+    let uuid = "0b7c3f9e-5d1a-4c2b-9f00-1a2b3c4d5e6f";
+    let file = FileFacts::of(&batch_photo(values.clone(), Some(uuid), false), true).file(
+        "3",
+        1,
+        path,
+        (300, 200),
+    );
+    file.validate().unwrap();
+    assert_eq!(
+        (file.delivery.as_str(), file.index, file.name.as_str()),
+        ("3", 1, "a.jpg")
+    );
+    assert_eq!(file.photo_uuid.as_deref(), Some(uuid));
+    assert_eq!(file.captured.as_deref(), Some("2026-05-04T10:21:33"));
+    let catalog = file.catalog.unwrap();
+    assert_eq!(catalog.title.as_deref(), Some("Vows"));
+    assert_eq!(catalog.caption, None);
+    assert_eq!(catalog.keywords, ["Anna"]);
+    assert_eq!(
+        (catalog.label.as_deref(), catalog.rating),
+        (Some("yellow"), 4)
+    );
+    // Metadata without the descriptive fields, as Copyright Only: the label
+    // and rating stay.
+    let bare = FileFacts::of(&batch_photo(values.clone(), Some(uuid), false), false)
+        .file("3", 1, path, (300, 200))
+        .catalog
+        .unwrap();
+    assert_eq!(
+        (bare.title, bare.keywords.len(), bare.label.as_deref()),
+        (None, 0, Some("yellow"))
+    );
+    // No UUID yet: the field is left out, and the rest goes.
+    let file = FileFacts::of(&batch_photo(values.clone(), None, false), true).file(
+        "3",
+        1,
+        path,
+        (300, 200),
+    );
+    let json = serde_json::to_value(&file).unwrap();
+    assert!(json.get("photo_uuid").is_none() && json.get("catalog").is_some());
+    // Outside the catalog: neither.
+    let file = FileFacts::of(&batch_photo(values, None, true), true).file("3", 1, path, (300, 200));
+    assert_eq!((file.photo_uuid, file.catalog), (None, None));
+    assert_eq!(file.captured.as_deref(), Some("2026-05-04T10:21:33"));
+}
+
+#[test]
+fn a_capture_time_is_sent_in_one_form_or_not_at_all() {
+    use crate::app::extensions::destinations::capture_time;
+    for (kept, sent) in [
+        ("2026-05-04 10:21:33.000", Some("2026-05-04T10:21:33")),
+        ("2026:05:04 10:21:33", Some("2026-05-04T10:21:33")),
+        ("2026-04-24T18:43:24.000", Some("2026-04-24T18:43:24")),
+        ("2026-05-04", None),
+        ("May 4, 2026 10:21:33", None),
+        ("", None),
+    ] {
+        assert_eq!(capture_time(kept).as_deref(), sent, "{kept}");
+    }
+}
+
+/// Polls the extensions until delivery `delivery`'s `step` is answered;
+/// whether it went.
+fn answered(
+    e: &mut Editor,
+    delivery: &str,
+    step: crate::app::extensions::destinations::Step,
+) -> Result<(), rawmakase_extensions::protocol::RemoteError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let (outcomes, _) = e.extensions_poll(std::time::Instant::now());
+        let found = outcomes.iter().find_map(|outcome| match outcome {
+            crate::app::extensions::Outcome::Delivery {
+                delivery: d,
+                step: s,
+                result,
+            } if d == delivery && *s == step => Some(result.clone().map(drop)),
+            _ => None,
+        });
+        // The editor takes them as it would, driving the delivery on.
+        e.extension_outcomes(outcomes);
+        if let Some(result) = found {
+            return result;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no answer to {step:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_file_goes_to_the_destination_before_the_export_ends_and_is_held_until_then() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, ids, ctx) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [
+        batch_photo(Values::default(), None, true),
+        batch_photo(Values::default(), None, true),
+    ];
+    let targets = [out.join("a.tif"), out.join("b.tif")];
+    let id = e.begin_delivery(&photos, &targets, &chosen).expect("begun");
+    answered(&mut e, &id, Step::Begin).unwrap();
+    // The first photo written: its file goes now, the batch still running.
+    std::fs::write(&targets[0], b"a").unwrap();
+    let written = Outcome::Exported {
+        path: targets[0].clone(),
+        notes: Vec::new(),
+        size: (4, 3),
+    };
+    e.delivery_photo(&id, 0, &written);
+    answered(&mut e, &id, Step::File(0)).unwrap();
+    // Its files and the one still planned are held from a later export.
+    assert_eq!(e.delivery_holds(&targets[1]), Some("Index File"));
+    // A real export set to overwrite the held file names its copy apart,
+    // though its settings say Overwrite, and the held bytes stay.
+    let mut over = settings(&out);
+    over.existing = Existing::Overwrite;
+    let scope = e.export_scope_of(vec![ids[0]]).expect("a photo");
+    export(&mut e, scope, over).unwrap();
+    assert!(
+        e.messages.line().contains("are kept"),
+        "{}",
+        e.messages.line()
+    );
+    wait(&mut e, &ctx);
+    assert_eq!(std::fs::read(&targets[0]).unwrap(), b"a");
+    assert!(out.join("a-2.tif").is_file(), "{:?}", listing(&out));
+    // Skip never replaces a file, so it keeps its choice: beside a new file
+    // the delivery holds the folder of, the file there is skipped, not
+    // copied under a new name.
+    let mut skip = settings(&out);
+    skip.existing = Existing::Skip;
+    let scope = e.export_scope_of(vec![ids[0], ids[1]]).expect("photos");
+    export(&mut e, scope, skip).unwrap();
+    wait(&mut e, &ctx);
+    assert!(!out.join("a-3.tif").exists(), "{:?}", listing(&out));
+    assert_eq!(std::fs::read(&targets[0]).unwrap(), b"a");
+    e.delivery_exported(&id, "Exported 1 of 2".into(), false);
+    answered(&mut e, &id, Step::End).unwrap();
+}
+
+#[test]
+fn a_delivery_between_its_requests_ends_when_its_extension_is_disabled() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, ctx) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    let target = out.join("a.tif");
+    let id = e
+        .begin_delivery(&photos, std::slice::from_ref(&target), &chosen)
+        .expect("begun");
+    answered(&mut e, &id, Step::Begin).unwrap();
+    // Waiting for its export, nothing in flight: disabling ends it all the
+    // same, and its file is no longer held.
+    drop(
+        e.extensions
+            .set_enabled("dev.rawmakase.destinations", false),
+    );
+    e.extensions_frame(&ctx);
+    assert!(e.delivery_holds(&target).is_none());
+    assert!(
+        e.messages.line().contains("Index File"),
+        "{}",
+        e.messages.line()
+    );
+}
+
+/// An export removed from the queue while its delivery waits its turn
+/// behind another to the same extension: the delivery is forgotten, and
+/// nothing of it goes to the program.
+#[test]
+fn a_delivery_waiting_its_turn_is_forgotten_when_its_export_is_removed() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    let first = e
+        .begin_delivery(&photos, &[out.join("a.tif")], &chosen)
+        .expect("begun");
+    let second = e
+        .begin_delivery(&photos, &[out.join("b.tif")], &chosen)
+        .expect("waiting its turn");
+    answered(&mut e, &first, Step::Begin).unwrap();
+    e.delivery_removed(&second);
+    assert!(!e.exports.deliveries.contains_key(&second));
+    e.delivery_exported(&first, "Exported 0 of 1".into(), false);
+    answered(&mut e, &first, Step::End).unwrap();
+    assert!(e.exports.deliveries.is_empty());
+}
+
+/// The close guard while a delivery is sending: it names the files being
+/// sent and offers to stop them and close.
+#[test]
+fn shots_of_closing_while_sending() {
+    crate::app::ui::shots::shot(
+        "closing-while-sending",
+        egui::vec2(520., 260.),
+        |e, _| {
+            e.onboarding.visible = false;
+            e.open_delivery_for_tests("Web Gallery");
+            e.close_confirm = true;
+        },
+        |e, ctx| e.pending_work(ctx),
+    );
+}
+/// Closing waits while a delivery is sending, after its export is over, and
+/// Stop sending and close ends every delivery, the one waiting its turn too.
+#[test]
+fn closing_waits_for_the_files_being_sent() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    assert_eq!(e.closing_waits_for(), None);
+    let first = e
+        .begin_delivery(&photos, &[out.join("a.tif")], &chosen)
+        .expect("begun");
+    let second = e
+        .begin_delivery(&photos, &[out.join("b.tif")], &chosen)
+        .expect("waiting its turn");
+    answered(&mut e, &first, Step::Begin).unwrap();
+    e.delivery_exported(&first, "Exported 0 of 1".into(), false);
+    assert!(!e.exporting());
+    assert_eq!(
+        e.closing_waits_for().as_deref(),
+        Some(crate::app::work::SENDING)
+    );
+    e.stop_all_deliveries();
+    assert_eq!(e.closing_waits_for(), None);
+    assert!(!e.exports.deliveries.contains_key(&second));
+    assert!(!e.extensions.working("dev.rawmakase.destinations"));
+}
+
+/// A request answered, then another failed, in one poll: the host has
+/// already closed the delivery when the answer drives it on, and the failure
+/// right behind it says why it ended. It isn't called stopped.
+#[test]
+fn a_delivery_the_host_ended_says_why_not_that_it_stopped() {
+    use crate::app::extensions::Outcome as Told;
+    use crate::app::extensions::destinations::Step;
+    use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    let target = out.join("a.tif");
+    let id = e
+        .begin_delivery(&photos, std::slice::from_ref(&target), &chosen)
+        .expect("begun");
+    answered(&mut e, &id, Step::Begin).unwrap();
+    std::fs::write(&target, b"a").unwrap();
+    let written = Outcome::Exported {
+        path: target.clone(),
+        notes: Vec::new(),
+        size: (4, 3),
+    };
+    e.delivery_photo(&id, 0, &written);
+    e.delivery_exported(&id, "Exported 1 of 1".into(), false);
+    // The host closes it, as it does when a request of it fails.
+    drop(e.extensions.stop_work("dev.rawmakase.destinations"));
+    e.extension_outcomes(vec![
+        Told::Delivery {
+            delivery: id.clone(),
+            step: Step::File(0),
+            result: Ok(None),
+        },
+        Told::Delivery {
+            delivery: id.clone(),
+            step: Step::End,
+            result: Err(RemoteError::new(
+                ErrorCode::Unavailable,
+                "the service is down",
+            )),
+        },
+    ]);
+    assert!(
+        e.messages.line().contains("the service is down"),
+        "{}",
+        e.messages.line()
+    );
+    assert!(e.delivery_holds(&target).is_none());
+}
+
+#[test]
+fn stop_on_the_extensions_page_ends_a_delivery_between_its_requests() {
+    use crate::app::extensions::destinations::{FileFacts, Step};
+    use rawmakase_extensions::protocol::ErrorCode;
+    use rawmakase_extensions::protocol::method::ExportBegin;
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let begin = ExportBegin {
+        delivery: "1".into(),
+        destination: String::new(),
+        folder: Some(dir.path().to_path_buf()),
+        count: 1,
+        options: serde_json::Map::new(),
+    };
+    let (to, begin) = e
+        .extensions
+        .prepare_delivery("dev.rawmakase.destinations/index", begin, None)
+        .unwrap();
+    assert_eq!(to.name, "Index File");
+    e.extensions.begin_delivery(&to, begin.clone()).unwrap();
+    answered(&mut e, "1", Step::Begin).unwrap();
+    // Begun and waiting for its export: nothing in flight, still under way.
+    let id = "dev.rawmakase.destinations";
+    assert!(e.extensions.working(id));
+    assert!(e.extensions.status().is_empty(), "the top bar shows it");
+    assert!(e.extensions.stop_work(id).is_empty());
+    assert!(!e.extensions.working(id));
+    // Nothing more goes once it is stopped.
+    let file = dir.path().join("a.jpg");
+    std::fs::write(&file, b"").unwrap();
+    let sent = FileFacts::default().file("1", 0, &file, (1, 1));
+    assert_eq!(
+        e.extensions.send_file(&to, sent).unwrap_err().code,
+        ErrorCode::Cancelled
+    );
+    // The program was told and forgot it: the same delivery begins again,
+    // which it refuses for one it still holds.
+    e.extensions.begin_delivery(&to, begin).unwrap();
+    answered(&mut e, "1", Step::Begin).unwrap();
+}
+
+#[test]
+fn a_destinations_options_are_their_defaults_until_chosen_and_while_they_fit() {
+    use rawmakase_extensions::protocol::manifest::{Setting, SettingControl};
+    let option = |id: &str, control: SettingControl, default: serde_json::Value| Setting {
+        id: id.into(),
+        name: None,
+        help: None,
+        control,
+        default,
+        step: None,
+        unit: None,
+        visible_when: None,
+    };
+    let options = [
+        option("title", SettingControl::Text, "".into()),
+        option(
+            "layout",
+            SettingControl::Choice(vec!["Grid".into(), "Rows".into()]),
+            "Grid".into(),
+        ),
+        option("captions", SettingControl::Toggle, false.into()),
+    ];
+    let values = crate::app::extensions::option_values(&options, None);
+    assert_eq!(
+        serde_json::Value::Object(values),
+        serde_json::json!({"title": "", "layout": "Grid", "captions": false})
+    );
+    // A value the extension's options no longer take is its default again,
+    // and one for an option it no longer has is left out.
+    let chosen = [
+        ("title".to_string(), serde_json::json!("Wedding")),
+        ("layout".to_string(), serde_json::json!("Masonry")),
+        ("gone".to_string(), serde_json::json!(1)),
+    ]
+    .into();
+    let values = crate::app::extensions::option_values(&options, Some(&chosen));
+    assert_eq!(
+        serde_json::Value::Object(values),
+        serde_json::json!({"title": "Wedding", "layout": "Grid", "captions": false})
+    );
+    // The settings keep only what differs from the default.
+    let mut settings = ExportSettings::default();
+    let key = "dev.jane.gallery/web";
+    super::dialog::choose_option(&mut settings, key, &options[2], true.into());
+    assert_eq!(settings.send_to_options[key]["captions"], true);
+    super::dialog::choose_option(&mut settings, key, &options[2], false.into());
+    assert!(settings.send_to_options.is_empty());
+    // A number control gives `3.0` for a manifest's `3`: still the default.
+    let mut columns = option(
+        "columns",
+        SettingControl::Number([1., 6.]),
+        serde_json::json!(3),
+    );
+    super::dialog::choose_option(&mut settings, key, &columns, serde_json::json!(4.0));
+    assert_eq!(settings.send_to_options[key]["columns"], 4.0);
+    super::dialog::choose_option(&mut settings, key, &columns, serde_json::json!(3.0));
+    assert!(settings.send_to_options.is_empty());
+    // And an option shown when it is `4` shows for the control's `4.0`.
+    columns.id = "rows".into();
+    columns.visible_when = Some(rawmakase_extensions::protocol::manifest::SettingCondition {
+        setting: "columns".into(),
+        equals: serde_json::json!(4),
+    });
+    let values = [("columns".to_string(), serde_json::json!(4.0))]
+        .into_iter()
+        .collect();
+    assert!(crate::app::extensions::setting_shown(
+        &options, &values, &columns
+    ));
 }
