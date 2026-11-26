@@ -214,6 +214,15 @@ impl EditSession {
         }
         changed
     }
+    /// Puts the settings back to `before` after a control changed them in place only
+    /// to show how the photo would look, within the open frame. Returns the settings
+    /// as it left them, for the preview, or `None` if it changed nothing: the frame
+    /// then records no edit.
+    pub(crate) fn take_peek(&mut self, before: Recipe) -> Option<Recipe> {
+        debug_assert!(self.frame_open, "a peek is part of an editor frame");
+        let peeked = std::mem::replace(&mut self.recipe, before);
+        (peeked != self.recipe).then_some(peeked)
+    }
     /// Starts a frame of the editor, which may edit the settings.
     pub(crate) fn begin(&mut self) -> Frame {
         self.frame_open = true;

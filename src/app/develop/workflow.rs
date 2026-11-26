@@ -434,11 +434,7 @@ impl Editor {
         let mut r = if self.view.compare.renders_before_alone() {
             self.before_settings()
         } else {
-            self.presets
-                .preview
-                .as_ref()
-                .unwrap_or(self.document.edit.recipe())
-                .clone()
+            self.settings_on_screen().clone()
         };
         if self.view.is(crate::app::develop::state::Tool::Crop) {
             // The whole photo, white areas included, around the crop being drawn.
@@ -471,6 +467,8 @@ impl Editor {
             Tool::Remove | Tool::AiRetouch if self.view.retouch.visualize => {
                 Overlay::Spots(self.view.retouch.threshold)
             }
+            // It would cover what a held slider label shows.
+            Tool::Mask if self.preview.peek.is_peeking() => Overlay::None,
             Tool::Mask => match self.view.masking.hovered().or(self
                 .view
                 .masking

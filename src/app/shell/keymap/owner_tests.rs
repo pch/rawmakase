@@ -45,11 +45,12 @@ const FIXED: &[(&str, &str, usize)] = &[
     // takes one, before the field moves its cursor or the focus on.
     ("library/metadata_fields.rs", "consume_key(", 3),
     // Widgets: the curve point's Delete, a focused number's arrows, the
-    // hovered slider's Up and Down, and the destructive choice swallowing keys
-    // held from before it opened.
+    // hovered slider's Up and Down, the destructive choice swallowing keys held
+    // from before it opened, and a held slider label not peeking in a frame with a
+    // key, which may edit the photo: it takes none.
     ("ui/widgets.rs", "key_pressed(", 3),
     ("ui/widgets.rs", "count_and_consume_key(", 2),
-    ("ui/widgets.rs", "Event::Key {", 1),
+    ("ui/widgets.rs", "Event::Key {", 2),
     // Any key stops the grid's glide or cancels a pending wheel or rail click.
     ("library/kinetic.rs", "Event::Key {", 1),
     ("develop/tools/brush_scroll.rs", "Event::Key {", 1),

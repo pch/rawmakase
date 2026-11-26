@@ -772,6 +772,10 @@ impl Editor {
                 (t.size, t.feather, t.opacity)
             }
         };
+        // Without a spot, these are the next one's: nothing to peek at.
+        let no_peek = selected
+            .is_none()
+            .then(|| crate::app::ui::widgets::PeekScope::forbid(ui));
         // A Generate spot keeps the size its patch was made for.
         ui.add_enabled_ui(!selected_generated, |ui| {
             slider_with(
@@ -805,11 +809,15 @@ impl Editor {
             Some((100., 0)),
             None,
         );
-        let t = &mut self.view.retouch;
-        (t.feather, t.opacity) = (feather, opacity);
-        // A Generate spot keeps the size its patch was made for.
-        if !selected_generated {
-            t.size = size;
+        drop(no_peek);
+        // The next spot takes the settings, but not those only peeked at.
+        if !crate::app::ui::widgets::peeked(ui) {
+            let t = &mut self.view.retouch;
+            (t.feather, t.opacity) = (feather, opacity);
+            // A Generate spot keeps the size its patch was made for.
+            if !selected_generated {
+                t.size = size;
+            }
         }
         if let Some(i) = selected {
             let op = &mut self.document.edit.recipe_mut().retouch[i];
@@ -829,6 +837,8 @@ impl Editor {
                 .on_hover_text("A: show fine detail in black and white, so dust stands out");
         });
         if self.view.retouch.visualize {
+            // The view's, not the photo's: nothing to peek at.
+            let _no_peek = crate::app::ui::widgets::PeekScope::forbid(ui);
             slider_with(
                 ui,
                 &mut self.step_name,

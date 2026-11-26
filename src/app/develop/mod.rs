@@ -16,6 +16,7 @@ pub(in crate::app) mod model_installer;
 #[cfg(test)]
 pub(in crate::app) mod one_shot_worker_tests;
 pub(in crate::app) mod panels;
+pub(in crate::app) mod peek;
 pub(in crate::app) mod profile_download;
 pub(in crate::app) mod readout;
 pub(in crate::app) mod reference;

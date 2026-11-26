@@ -1193,7 +1193,11 @@ pub(in crate::app) fn defringe_sliders(
                 .inner;
             // One range, as in Lightroom: resetting either end resets both, so the
             // other end never keeps the default out of reach.
-            if [low, high].contains(&SliderEvent::Reset) {
+            let events = [low, high];
+            if events.contains(&SliderEvent::Peeked) {
+                [*lo, *hi] = defaults;
+            }
+            if events.contains(&SliderEvent::Reset) {
                 [*lo, *hi] = defaults;
                 // Named after the whole range, not the end the slider clamped.
                 step.name(

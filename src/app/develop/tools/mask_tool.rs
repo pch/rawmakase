@@ -1207,6 +1207,8 @@ impl Editor {
                 segmented(ui, &mut t.brush, &[(0, "A"), (1, "B"), (2, "Erase")], w);
             });
             let b = &mut t.brushes[t.brush];
+            // The next stroke's, not the photo's: nothing to peek at.
+            let _no_peek = crate::app::ui::widgets::PeekScope::forbid(ui);
             let percent = Some((100., 0));
             slider_with(
                 ui,
@@ -1417,7 +1419,10 @@ impl Editor {
         // otherwise cover what the sliders do. O or Show Overlay brings it back, as
         // does selecting or making another mask; hovering the mask's row or pin
         // still shows it. An overlay already turned off stays the user's choice.
-        if (mask.amount, mask.adjust) != before && self.view.masking.overlay {
+        if (mask.amount, mask.adjust) != before
+            && !crate::app::ui::widgets::peeked(ui)
+            && self.view.masking.overlay
+        {
             self.view.masking.overlay = false;
             self.view.masking.hidden_by_adjusting = true;
         }

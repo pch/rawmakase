@@ -771,6 +771,7 @@ impl Editor {
             && !self.view.compare.shows_before()
             && !self.view.is(crate::app::develop::state::Tool::Crop)
             && self.presets.preview.is_none()
+            && !self.preview.peek.is_peeking()
     }
     /// After a finished whole-photo render of the current edit, shows it as
     /// the photo's Library and filmstrip thumbnail. A render made with a partial
