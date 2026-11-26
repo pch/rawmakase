@@ -1105,6 +1105,19 @@ so the design is proved on one path before it is spread.
    (152); measure 4 passes on three chart DNGs, and its Rust side is checked
    in CI's "Reference apps" job.
 
+   What the port found missing, for the plan to settle before the Swift app
+   (stage 2) repeats it: the render thread's loop (take an edit, render the
+   draft if one is due, wait for quiet, render the frame, drop a cancelled
+   render, rebuild the renderer after a panic, filter with `Shown`) is the
+   same for every front end and still 171 lines of the example's, so by the
+   reference apps' rule it is the library's to give; the quiet time after a
+   draft is the app's guess (50 ms), as the desktop waits none; and no
+   chart DNG is large enough for a whole photo's draft, so the real rule is
+   tested on a fake renderer only. Measure 5 was taken on a loaded machine
+   (the chart at 970 × 742 on the CPU: about 35 ms in Rust, 63 ms inside
+   Electron's main process, 78 ms from a slider to pixels in the page) and
+   is to be taken again on a quiet one before the 15–20% gap is explained.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in

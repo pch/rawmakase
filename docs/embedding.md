@@ -125,7 +125,10 @@ is `Send` and belongs to one thread. An editor that renders while its
 controls move keeps one render thread and gives it only the newest edit,
 through a `Mailbox`: the edit waiting is replaced, the running one finishes.
 `Shown` keeps the rules for what is on screen: a frame older than the one
-shown is dropped, and a draft never replaces its own edit's frame.
+shown is dropped, and a draft never replaces its own edit's frame. It
+counts by the mailbox's numbers, not an interface's own: rendering the same
+edit again for a new view puts it in the mailbox again, which numbers it
+anew, so its frame shows.
 
 ## What is shared in a process
 
