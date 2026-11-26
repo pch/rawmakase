@@ -483,6 +483,12 @@ fn same_file(path: &Path) -> PathBuf {
     let mut at = path;
     while let (Some(parent), Some(name)) = (at.parent(), at.file_name()) {
         rest.push(name);
+        // A relative path's last folder is the working one.
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
         if let Ok(resolved) = parent.canonicalize() {
             return rest.iter().rev().fold(resolved, |p, n| p.join(n));
         }
@@ -618,13 +624,31 @@ mod tests {
         });
         waiting.begun = false;
         waiting.ending = false;
-        let deliveries: BTreeMap<String, Delivery> = [
+        let mut deliveries: BTreeMap<String, Delivery> = [
             ("9".to_string(), delivery(&[(0, "a.jpg")])),
             ("10".to_string(), waiting),
             ("11".to_string(), delivery(&[(0, "b.jpg")])),
         ]
         .into();
         assert_eq!(sending(&deliveries).map(String::as_str), Some("9"));
+        // One waiting its turn isn't shown, even when it began first.
+        let mut waiting = deliveries.remove("10").expect("put in above");
+        waiting.begin.as_mut().expect("waiting").delivery = "8".into();
+        let only: BTreeMap<String, Delivery> = [("8".to_string(), waiting)].into();
+        assert_eq!(sending(&only), None);
+        deliveries.extend(only);
+        assert_eq!(sending(&deliveries).map(String::as_str), Some("9"));
+    }
+
+    /// A folder the export makes later is the same folder before and after:
+    /// on Windows, a resolved path gains a `\\?\` prefix.
+    #[test]
+    fn a_folder_not_made_yet_is_the_same_folder_once_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let planned = dir.path().join("Web").join("Day 1").join("a.jpg");
+        let before = same_file(&planned);
+        std::fs::create_dir_all(planned.parent().unwrap()).unwrap();
+        assert_eq!(before, same_file(&planned));
     }
 
     /// A folder the export makes later is the same folder before and after,

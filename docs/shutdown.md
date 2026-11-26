@@ -149,8 +149,9 @@ macOS run their panel on the main thread, so they are never joined from it.
 
 ## The exit sequence
 
-1. Close guard, on a window close: refuse while an export, a batch edit, a
-   folder change, a merge to HDR or a command output job runs, and save the edit after the
+1. Close guard, on a window close: refuse while an export, a Send To
+   delivery, a batch edit, a folder change, a merge to HDR or a command output
+   job runs (a delivery offers Stop sending and close), and save the edit after the
    autosave in flight, on the autosave thread. A save the catalog does not answer
    within the deadline keeps the window open, saying so, with Close without saving.
    A close refused only to let work finish is asked for again once it has.
@@ -203,8 +204,8 @@ macOS run their panel on the main thread, so they are never joined from it.
 
 ## Quit on macOS
 
-The close guard refuses to close while an export, a batch edit, a folder change,
-a merge to HDR or a command output job runs, and asks before closing when the edit cannot be
+The close guard refuses to close while an export, a Send To delivery, a batch
+edit, a folder change, a merge to HDR or a command output job runs, and asks before closing when the edit cannot be
 saved. winit's app menu binds Quit to
 `terminate:`, which skips it, so at launch the app points that item at the key
 window's `performClose:` instead (`platform/quit.rs`): Cmd-Q and the menu's Quit
