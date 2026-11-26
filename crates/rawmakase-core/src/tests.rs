@@ -523,8 +523,47 @@ mod export {
             !dir.path().join("sub").exists(),
             "refused before anything is made"
         );
-        let e = export(&recipe, photo.path(), Cancel::NEVER).unwrap_err();
+        // A rendered photo's own file.
+        let jpeg = dir.path().join("photo.jpg");
+        ctx.export(
+            &photo,
+            &recipe,
+            &settings,
+            &jpeg,
+            false,
+            Cancel::NEVER,
+            |_| {},
+        )
+        .unwrap();
+        let rendered = ctx.open(&jpeg, Cancel::NEVER).unwrap();
+        let start = rendered.starting_recipe().unwrap();
+        let e = ctx
+            .export(
+                &rendered,
+                &start,
+                &settings,
+                &jpeg,
+                true,
+                Cancel::NEVER,
+                |_| {},
+            )
+            .unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Invalid, "the photo's own file: {e:#}");
+        // Settings the file can't take, refused before a decode.
+        let mut prophoto = settings.clone();
+        prophoto.color_space = OutputSpace::ProPhoto;
+        let e = ctx
+            .export(
+                &photo,
+                &recipe,
+                &prophoto,
+                dir.path().join("wide2.jpg"),
+                false,
+                Cancel::NEVER,
+                |_| {},
+            )
+            .unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::Invalid, "ProPhoto in a JPEG: {e:#}");
         let mut denoised = recipe.clone();
         denoised.ai_denoise.enabled = true;
         denoised.ai_denoise.amount = 1.;

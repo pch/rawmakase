@@ -89,7 +89,18 @@ impl Context {
         recipe
             .validate()
             .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
-        let image = photo.decode(crate::Decode::Full, cancel)?;
+        // The settings as the file's format takes them, before a decode.
+        settings
+            .check_output()
+            .and_then(|()| settings.options().validate())
+            .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
+        if settings.hdr_output().map_err(Error::of)?.is_some() && !recipe.hdr.is_active() {
+            return Err(invalid(
+                "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR"
+                    .into(),
+            ));
+        }
+        let image = photo.decode_in(self, crate::Decode::Full, false, cancel)?;
         let ctx = self;
         let job = job::Photo {
             image: image.camera().clone(),

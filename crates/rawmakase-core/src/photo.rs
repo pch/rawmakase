@@ -157,38 +157,64 @@ impl Photo {
     /// is no longer the one opened, [`ErrorKind::Missing`](crate::ErrorKind::Missing)
     /// when it is gone, and [`ErrorKind::Cancelled`](crate::ErrorKind::Cancelled).
     pub fn decode(&self, decode: Decode, cancel: Cancel<'_>) -> Result<Image> {
+        self.decode_in(&self.ctx, decode, true, cancel)
+    }
+
+    /// [`Photo::decode`] with `ctx`'s lens profiles and cache, keeping a
+    /// full decode there only when `keep`: an export reads the cache and
+    /// leaves it as it was, as the desktop's does.
+    pub(crate) fn decode_in(
+        &self,
+        ctx: &Context,
+        decode: Decode,
+        keep: bool,
+        cancel: Cancel<'_>,
+    ) -> Result<Image> {
         cancelled(cancel, "Decoding cancelled")?;
         self.still_the_file_opened()?;
         let image = match &self.rendered {
             Some(image) => image.clone(),
-            None => {
-                let image = Arc::new(self.decode_raw(decode, cancel).map_err(Error::of)?);
-                // The file read is still the one opened: one replaced while it
-                // was read is not shown as this photo.
-                self.still_the_file_opened()?;
-                image
-            }
+            None => Arc::new(self.decode_raw(ctx, decode, keep, cancel)?),
         };
         Ok(Image::new(image, &self.path))
     }
 
-    fn decode_raw(&self, decode: Decode, cancel: Cancel<'_>) -> anyhow::Result<CameraImage> {
-        let lenses = self.ctx.lenses();
-        let open = || rawmakase_decode::photo::open(&self.path, lenses);
+    fn decode_raw(
+        &self,
+        ctx: &Context,
+        decode: Decode,
+        keep: bool,
+        cancel: Cancel<'_>,
+    ) -> Result<CameraImage> {
+        let raw = rawmakase_decode::photo::open(&self.path, ctx.lenses()).map_err(Error::of)?;
+        // The file read is still the one opened: one replaced before it was
+        // read is neither decoded as this photo nor kept under its key.
+        self.still_the_file_opened()?;
         let demosaic = Demosaic::default();
-        match (decode, self.ctx.decoded()) {
-            (Decode::Half, _) => open()?.develop(camera_data::Decode::Half, cancel),
+        let image = match (decode, ctx.decoded()) {
+            (Decode::Half, _) => raw.develop(camera_data::Decode::Half, cancel),
             (Decode::Full, Some(cache)) => {
                 // Keyed by the file as opened, not as it is now.
-                FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone())
-                    .get(open, DecodePolicy::Show, cancel)?
-                    .ok_or_else(|| anyhow::anyhow!("The decode cache gave no image"))
+                let full = FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone());
+                match full.cached(&raw.metadata) {
+                    Some(image) => Ok(image),
+                    None => full
+                        .decode(raw, DecodePolicy::Show, cancel)
+                        .inspect(|image| {
+                            if keep {
+                                full.store(image, cancel);
+                            }
+                        }),
+                }
             }
-            (Decode::Full, None) => quality::with_recovered(
-                open()?.develop(camera_data::Decode::Full(demosaic), cancel)?,
-                cancel,
-            ),
+            (Decode::Full, None) => raw
+                .develop(camera_data::Decode::Full(demosaic), cancel)
+                .and_then(|image| quality::with_recovered(image, cancel)),
         }
+        .map_err(Error::of)?;
+        // A cache's copy is read without a check of its own.
+        cancelled(cancel, "Decoding cancelled")?;
+        Ok(image)
     }
 
     /// Refuses a file that is no longer the one opened: one replaced or
