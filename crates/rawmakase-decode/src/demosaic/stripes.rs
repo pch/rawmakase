@@ -156,8 +156,15 @@ fn band_changes(
     let mean: Vec<Option<[f32; 2]>> = (0..grid.w * grid.h)
         .map(|g| {
             let ([red, blue, light], support) = &means[usize::from(!along_rows[g])];
-            (support[g] > MIN_TOTAL && light[g] > 1e-8)
-                .then(|| [red[g] / light[g], blue[g] / light[g]])
+            // For non-negative pixels `|R − G| / L ≤ 4` and `|B − G| / L ≤ 4`
+            // holds automatically; clamp so near-zero signed cancellation cannot
+            // produce unbounded chromaticity.
+            (support[g] > MIN_TOTAL && light[g] > 1e-8).then(|| {
+                [
+                    (red[g] / light[g]).clamp(-4., 4.),
+                    (blue[g] / light[g]).clamp(-4., 4.),
+                ]
+            })
         })
         .collect();
     // Confidence describes the detected area, not fractional coverage of each
@@ -616,5 +623,25 @@ mod tests {
             .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
             .fold(0f32, f32::max);
         assert!(error < 1e-5, "band boundary error: {error}");
+    }
+
+    #[test]
+    fn signed_near_zero_stripes_stay_bounded() {
+        let (w, h) = (180, 120);
+        // Zero-mean signed oscillation whose pooled luminance cancels near 1e-8.
+        let mut image: Vec<[f32; 3]> = (0..w * h)
+            .map(|i| {
+                let x = (i % w) as f32;
+                let l = 1e-7 + 0.08 * (std::f32::consts::TAU * x / 3.03).sin();
+                [l + 0.05, l, l - 0.05]
+            })
+            .collect();
+        suppress(&mut image, w, h);
+        for p in image {
+            assert!(
+                p.iter().all(|v| v.is_finite() && v.abs() < 1.),
+                "unbounded stripe pixel: {p:?}"
+            );
+        }
     }
 }

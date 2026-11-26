@@ -393,9 +393,14 @@ impl Mask {
             data: im
                 .pixels
                 .par_iter()
-                .map(|p| MaskPixel {
-                    unclipped: (0..3).all(|c| p[c] / wb[c] < MEASURABLE_PEAK),
-                    black: if p.iter().any(|v| *v <= 0.) { 1. } else { 0. },
+                .map(|p| {
+                    // Match the clipped pixels `planes()` filters so Bayer Color
+                    // NR measures identical noise blocks and thresholds (#802).
+                    let q = clip_at_black(*p);
+                    MaskPixel {
+                        unclipped: (0..3).all(|c| p[c] / wb[c] < MEASURABLE_PEAK),
+                        black: if q.iter().any(|v| *v <= 0.) { 1. } else { 0. },
+                    }
                 })
                 .collect(),
         }
@@ -961,5 +966,22 @@ mod tests {
             r_pulled < r_clip - 0.3 && b_pulled < b_clip - 0.25,
             "pulled=({r_pulled:.3}, {b_pulled:.3}) vs per_channel=({r_clip:.3}, {b_clip:.3})"
         );
+    }
+
+    #[test]
+    fn chroma_denoise_matches_pre_clipped_input_bit_for_bit() {
+        let raw = noisy(128, 128, 0.02, |x, y| {
+            if y < 64 {
+                [-0.01, 0.002, 0.005]
+            } else {
+                [0.05 + 0.01 * (x as f32 / 11.).sin(), 0.04, 0.03]
+            }
+        });
+        let mut pre_clipped = raw.clone();
+        pre_clipped.pixels = raw.pixels.iter().map(|p| clip_at_black(*p)).collect();
+        let d = ChromaDenoise::new(0.25, 0.5, 0.5).unwrap();
+        let a = d.apply(&raw, Cancel::NEVER).unwrap();
+        let b = d.apply(&pre_clipped, Cancel::NEVER).unwrap();
+        assert_eq!(a.pixels, b.pixels);
     }
 }

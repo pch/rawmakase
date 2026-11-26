@@ -54,9 +54,12 @@ impl LuminanceDenoise {
                     let i = chunk * 1024 + j;
                     let delta = filtered.data[i] - plane.data[i];
                     // Preserve square-root chroma, as the color denoiser preserves this
-                    // luminance. Avoid RGB ratios near black and never divide by zero.
+                    // luminance. Clip signed below-black noise with `clip_at_black`
+                    // rather than per-channel clamping so Luminance NR at Color NR 0
+                    // does not reintroduce the #802 magenta shadow cast.
                     if delta != 0. {
-                        *p = p.map(|v| (v.max(0.).sqrt() + delta).max(0.).powi(2));
+                        *p = crate::develop::color_noise::clip_at_black(*p)
+                            .map(|v| (v.max(0.).sqrt() + delta).max(0.).powi(2));
                     }
                 }
             });
@@ -153,7 +156,7 @@ pub(crate) fn white_threshold(wb: [f32; 3]) -> f32 {
 }
 
 fn luma(p: [f32; 3]) -> f32 {
-    let [r, g, b] = p.map(|v| v.max(0.).sqrt());
+    let [r, g, b] = crate::develop::color_noise::clip_at_black(p).map(|v| v.max(0.).sqrt());
     (r + 2. * g + b) * 0.25
 }
 fn check(cancel: Cancel<'_>) -> Result<()> {
@@ -360,5 +363,55 @@ mod tests {
         assert!(d.apply(&im, Cancel::new(&cancel)).is_err());
         cancel.store(false, Ordering::Relaxed);
         assert!(d.apply(&im, Cancel::new(&cancel)).is_ok());
+    }
+
+    #[test]
+    fn signed_high_iso_shadows_do_not_turn_magenta() {
+        // High-ISO grey patch with white-balanced noise (R ×2, B ×1.5) reaching
+        // below black, processed with Luminance NR alone (Color NR = 0).
+        let im = image(128, 128, |x, y| {
+            let g = |salt: u32| {
+                let mut sum = 0f32;
+                for k in 0..6u32 {
+                    sum += hash(x + 131 * k + salt, y + 73 * k + 17 * salt);
+                }
+                sum * 0.5
+            };
+            [
+                0.0025 + 0.02 * 2.0 * g(1),
+                0.0025 + 0.02 * g(2),
+                0.0025 + 0.02 * 1.5 * g(3),
+            ]
+        });
+        let out = LuminanceDenoise::new(0.5, 0.5, 0.)
+            .unwrap()
+            .apply(&im, Cancel::NEVER)
+            .unwrap();
+        let (mut pulled, mut per_channel) = ([0f64; 3], [0f64; 3]);
+        for (o, raw) in out.pixels.iter().zip(&im.pixels) {
+            for c in 0..3 {
+                pulled[c] += f64::from(o[c].max(0.).sqrt());
+                per_channel[c] += f64::from(raw[c].max(0.).sqrt());
+            }
+        }
+        let ratio = |s: [f64; 3]| [(s[0] / s[1]).powi(2), (s[2] / s[1]).powi(2)];
+        let [r_out, b_out] = ratio(pulled);
+        let [r_clip, b_clip] = ratio(per_channel);
+        assert!(
+            r_out < r_clip - 0.1 && b_out < b_clip - 0.1,
+            "luminance NR cast=({r_out:.3}, {b_out:.3}) vs per-channel=({r_clip:.3}, {b_clip:.3})"
+        );
+
+        let mut pre_clipped = im.clone();
+        pre_clipped.pixels = im
+            .pixels
+            .iter()
+            .map(|p| crate::develop::color_noise::clip_at_black(*p))
+            .collect();
+        let expected = LuminanceDenoise::new(0.5, 0.5, 0.)
+            .unwrap()
+            .apply(&pre_clipped, Cancel::NEVER)
+            .unwrap();
+        assert_eq!(out.pixels, expected.pixels);
     }
 }

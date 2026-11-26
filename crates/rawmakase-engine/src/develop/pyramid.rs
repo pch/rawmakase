@@ -64,7 +64,14 @@ fn halve_into(above: &CameraImage, level: &mut CameraImage, rect: [i32; 4]) {
         for x in rect[0].max(0)..rect[2].min(w) {
             let x0 = 2 * x as u32;
             let x1 = (x0 + 1).min(above.width - 1);
-            let at = |x: u32, y: u32| above.pixels[(y * above.width + x) as usize];
+            // Clip signed below-black noise before averaging so zoomed-out pyramid
+            // views keep the same shadow brightness as 100% and export without
+            // introducing a magenta cast.
+            let at = |x: u32, y: u32| {
+                crate::develop::color_noise::clip_at_black(
+                    above.pixels[(y * above.width + x) as usize],
+                )
+            };
             let (a, b, c, d) = (at(x0, y0), at(x1, y0), at(x0, y1), at(x1, y1));
             level.pixels[(y * w + x) as usize] =
                 std::array::from_fn(|i| (a[i] + b[i] + c[i] + d[i]) * 0.25);
@@ -84,7 +91,11 @@ fn halve(im: &CameraImage) -> CameraImage {
             for (x, out) in row.iter_mut().enumerate() {
                 let x0 = 2 * x as u32;
                 let x1 = (x0 + 1).min(im.width - 1);
-                let at = |x: u32, y: u32| im.pixels[(y * im.width + x) as usize];
+                let at = |x: u32, y: u32| {
+                    crate::develop::color_noise::clip_at_black(
+                        im.pixels[(y * im.width + x) as usize],
+                    )
+                };
                 let (a, b, c, d) = (at(x0, y0), at(x1, y0), at(x0, y1), at(x1, y1));
                 *out = std::array::from_fn(|i| (a[i] + b[i] + c[i] + d[i]) * 0.25);
             }
@@ -146,5 +157,39 @@ mod tests {
         for k in 0..4 {
             assert_eq!(p.levels[k].pixels, fresh.levels[k].pixels, "level {k}");
         }
+    }
+
+    #[test]
+    fn halve_keeps_clipped_shadow_brightness_without_negative_cancellation() {
+        let mut im = image(128, 128);
+        im.pixels = (0..128 * 128)
+            .map(|i| {
+                if i % 2 == 0 {
+                    [0.02, 0.01, 0.015]
+                } else {
+                    [-0.018, -0.008, -0.013]
+                }
+            })
+            .collect();
+        let mut p = Pyramid::new(Arc::new(im.clone()));
+        let reduced = p.level_for(64.);
+        // Signed averaging would collapse near 0.001; clipping before averaging
+        // preserves the channel-clipped brightness of the full-resolution pixels.
+        let luma = |q: [f32; 3]| (q[0] + 2. * q[1] + q[2]) * 0.25;
+        let expected_luma = 0.5
+            * (luma(crate::develop::color_noise::clip_at_black([
+                0.02, 0.01, 0.015,
+            ])) + luma(crate::develop::color_noise::clip_at_black([
+                -0.018, -0.008, -0.013,
+            ])));
+        assert!(reduced.pixels.iter().flatten().all(|v| *v >= 0.));
+        assert!((luma(reduced.pixels[0]) - expected_luma).abs() < 1e-6);
+
+        // Incremental `update` (`halve_into`) matches a fresh pyramid on signed pixels.
+        im.pixels[0] = [-0.04, 0.01, 0.02];
+        p.update(Arc::new(im.clone()), &[[0, 0, 2, 2]]);
+        let mut fresh = Pyramid::new(Arc::new(im));
+        fresh.level_for(64.);
+        assert_eq!(p.levels[1].pixels, fresh.levels[1].pixels);
     }
 }

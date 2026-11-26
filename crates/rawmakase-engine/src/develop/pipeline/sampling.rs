@@ -255,7 +255,11 @@ pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
     if (w, h) == (im.width, im.height) {
         return im.image.clone();
     }
-    let pixels = box_reduce(im.width, im.height, w, h, |i| im.px(i));
+    // Clip signed below-black noise before box reduction so previews and Auto
+    // copies keep full-resolution shadow brightness without magenta bias.
+    let pixels = box_reduce(im.width, im.height, w, h, |i| {
+        crate::develop::color_noise::clip_at_black(im.px(i))
+    });
     CameraImage {
         recovered: Default::default(),
         width: w,
