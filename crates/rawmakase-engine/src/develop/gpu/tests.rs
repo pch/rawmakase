@@ -2965,3 +2965,121 @@ fn presented_hdr_files_match_the_cpu_master() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn gpu_local_laplacian_jbu_upsampling_matches_cpu_across_sharp_edges() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        camera_profiles::CameraProfile,
+        develop::pipeline::{Samples, Source, develop_samples, pixel_params::pixel_params},
+    };
+    use std::sync::Arc;
+    // Larger than MAP_EDGE (512) so the 512x64 map upsamples 2x, with an edge at an odd
+    // full-res pixel so straddling map cells exercise both pure 2×2 JBU (`w_sum >=
+    // JBU_SELF_FLOOR`) and self-prior padding (`w_sum < JBU_SELF_FLOOR`) on GPU and CPU.
+    let (w, h) = (1024, 128);
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        wb: [1.; 3],
+        daylight_wb: [1.; 3],
+        cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        ..Default::default()
+    };
+    let image = CameraImage {
+        width: w,
+        height: h,
+        pixels: (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                // Include isolated 1-pixel multi-stop outliers (`(512, 64)` dark speck in
+                // the bright square and `(60, 64)` bright specular in the -6 EV frame) so
+                // the GPU parity check also covers full self-prior padding (`w_sum ≈ 0`).
+                let lum = if x == 512 && y == 64 {
+                    (-9f32).exp2()
+                } else if x == 60 && y == 64 {
+                    1.0
+                } else if (381..643).contains(&x) && (25..103).contains(&y) {
+                    0.9
+                } else if x < 120 || x >= w - 120 {
+                    (-6f32).exp2()
+                } else {
+                    (-3.5f32).exp2()
+                };
+                [lum; 3]
+            })
+            .collect(),
+        metadata: metadata.clone(),
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    let samples = Arc::new(Samples {
+        width: w,
+        height: h,
+        pixels: image.pixels.to_vec(),
+        positions: (0..w * h)
+            .map(|i| [(i % w) as f32, (i / w) as f32])
+            .collect(),
+    });
+    let base = Recipe {
+        profile: Some(Arc::new(
+            CameraProfile::camera_matrix_default(&metadata).unwrap(),
+        )),
+        ..Default::default()
+    };
+    let mut gpu = Processor::new()?;
+    let cancel = AtomicBool::new(false);
+    let source = Source::new(&image);
+    for (name, edit) in [
+        (
+            "highlights-100",
+            Recipe {
+                highlights: -1.,
+                ..base.clone()
+            },
+        ),
+        (
+            "highlights+100",
+            Recipe {
+                highlights: 1.,
+                ..base.clone()
+            },
+        ),
+        (
+            "shadows+100",
+            Recipe {
+                shadows: 1.,
+                ..base.clone()
+            },
+        ),
+        (
+            "shadows-100",
+            Recipe {
+                shadows: -1.,
+                ..base.clone()
+            },
+        ),
+        ("clarity+100", {
+            let mut r = base;
+            r.effects.clarity = 1.;
+            r
+        }),
+    ] {
+        let params = pixel_params(source, &edit).expect("supported recipe");
+        let expected = develop_samples(source, &edit, &samples, Cancel::new(&cancel), None)?;
+        let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
+        let max = actual
+            .pixels
+            .iter()
+            .flatten()
+            .zip(expected.pixels.iter().flatten())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0., f32::max);
+        assert!(max < 1e-4, "{name}: CPU/GPU difference {max}");
+    }
+    Ok(())
+}

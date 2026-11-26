@@ -24,6 +24,19 @@ pub(crate) const FLOOR: f32 = 6.103_515_6e-5;
 /// Measured renders show that split at every scale (docs/records/parity-gaps.md,
 /// 2026-11-20).
 pub(crate) const LAPLACIAN_SIGMA: f32 = 1.5;
+/// Range width (stops) of the 2×2 joint bilateral upsampling that reads the local
+/// Laplacian map at render resolution ([`LocalToneMap::base`]). Rejects multi-stop
+/// silhouette edges while keeping smooth gradients and moderate texture anchored to the
+/// map.
+pub(crate) const JBU_RANGE_SIGMA: f32 = 0.75;
+/// Minimum total weight of the 2×2 joint bilateral sample; when the four bilinear
+/// corners' range weights sum to less than this (e.g., a dark pixel inside a
+/// bright-dominated edge-straddling map cell, or an isolated multi-stop outlier), the
+/// shortfall `JBU_SELF_FLOOR - w_sum` is filled with the pixel's own level `l`. Keeps
+/// map cell centres exact (`w_sum = 1 ≥ 0.25`), leaves pixels within ±1.25 stops of
+/// their neighbourhood on pure 2×2 JBU (`pad = 0`), avoids any multi-cell fallback
+/// window shift, and prevents denominator underflow.
+pub(crate) const JBU_SELF_FLOOR: f32 = 0.25;
 /// Spacing, in stops, of the reference levels the filter is sampled at.
 const LAPLACIAN_STEP: f32 = 0.5;
 
@@ -699,16 +712,20 @@ impl LocalToneMap {
     /// copy that supplied the map's base and Clarity's blur.
     pub(crate) fn gain(&self, x: f32, y: f32, lum: f32) -> f32 {
         let own = level(lum);
-        let base = self.base(x, y, lum);
-        let mut ev = self.shadows.as_ref().map_or(0., |c| c.eval(base))
-            + self.highlights.as_ref().map_or(0., |c| c.eval(base));
+        let mut ev = if self.shadows.is_some() || self.highlights.is_some() {
+            let base = self.base(x, y, lum);
+            self.shadows.as_ref().map_or(0., |c| c.eval(base))
+                + self.highlights.as_ref().map_or(0., |c| c.eval(base))
+        } else {
+            0.
+        };
         if let Some(p) = &self.pix {
             ev += p.eval(own);
         }
         let cbase = if self.clarity_pos.is_some() {
             self.clarity_base(x, y, own)
         } else {
-            base
+            own
         };
         (ev + self.clarity_at(x, y, cbase, own)).exp2()
     }
@@ -716,7 +733,6 @@ impl LocalToneMap {
     /// values (a mask's added to the recipe's).
     pub(crate) fn gain_with(&self, x: f32, y: f32, lum: f32, sliders: [f32; 3]) -> f32 {
         let own = level(lum);
-        let base = self.base(x, y, lum);
         let clarity = if self.clarity_detail.is_some() || self.clarity_pos_unit.is_some() {
             if sliders[2] > 0. {
                 self.clarity_pos_unit.as_ref().map_or(0., |[cb, cp]| {
@@ -734,10 +750,14 @@ impl LocalToneMap {
             let cbase = if self.clarity_pos.is_some() {
                 self.clarity_base(x, y, own)
             } else {
-                base
+                own
             };
             self.clarity_at(x, y, cbase, own)
         };
+        if sliders[0] == 0. && sliders[1] == 0. {
+            return clarity.exp2();
+        }
+        let base = self.base(x, y, lum);
         // The rule's curve of each sign, blended toward its extreme where both sliders
         // are set (`local_tone_rule::Pair`) and scaled by the slider.
         let pair_at = self
@@ -782,13 +802,45 @@ impl LocalToneMap {
             clarity_base: self.clarity_pos.is_some(),
         }
     }
-    /// The base level of a pixel: the map's local Laplacian level there, as far as the
-    /// pixel sits at the map's own level, and the pixel's own level as it departs from
-    /// it. That is the filter's remapping once more, for the detail finer than the map.
+    /// The base level of a pixel: the map's local Laplacian level upsampled by 2×2 joint
+    /// bilateral filtering guided by the map's log2 luminance, padding any weight
+    /// shortfall below [`JBU_SELF_FLOOR`] with the pixel's own level `l` (so dark pixels
+    /// inside bright-contaminated edge-straddling cells do not inherit the bright cell,
+    /// without introducing a wider fallback stencil or denominator underflow), followed
+    /// by the filter's [`LAPLACIAN_SIGMA`] remapping for detail finer than the map.
     fn base(&self, x: f32, y: f32, lum: f32) -> f32 {
         let l = level(lum);
-        let d = (l - self.bilinear(x, y, &self.base.logs)) / LAPLACIAN_SIGMA;
-        l + (-0.5 * d * d).exp() * (self.bilinear(x, y, &self.base.laplacian) - l)
+        let (w, h) = (self.width, self.height);
+        let fx = ((x + 0.5) * self.scale[0] - 0.5).clamp(0., (w - 1) as f32);
+        let fy = ((y + 0.5) * self.scale[1] - 0.5).clamp(0., (h - 1) as f32);
+        let (ix, iy) = (fx as usize, fy as usize);
+        let (jx, jy) = ((ix + 1).min(w - 1), (iy + 1).min(h - 1));
+        let (tx, ty) = (fx - ix as f32, fy - iy as f32);
+        let logs = &self.base.logs;
+        let lap = &self.base.laplacian;
+        let corners = [
+            (iy * w + ix, (1. - tx) * (1. - ty)),
+            (iy * w + jx, tx * (1. - ty)),
+            (jy * w + ix, (1. - tx) * ty),
+            (jy * w + jx, tx * ty),
+        ];
+        let mut w_sum = 0f32;
+        let mut g_sum = 0f32;
+        let mut v_sum = 0f32;
+        for (idx, sw) in corners {
+            let g = logs[idx];
+            let d = (l - g) / JBU_RANGE_SIGMA;
+            let weight = sw * (-0.5 * d * d).exp();
+            w_sum += weight;
+            g_sum += weight * g;
+            v_sum += weight * lap[idx];
+        }
+        let pad = (JBU_SELF_FLOOR - w_sum).max(0.);
+        let w_tot = w_sum + pad;
+        let j_logs = (g_sum + pad * l) / w_tot;
+        let j_lap = (v_sum + pad * l) / w_tot;
+        let d = (l - j_logs) / LAPLACIAN_SIGMA;
+        l + (-0.5 * d * d).exp() * (j_lap - l)
     }
     /// Positive Clarity's base level for a pixel at log2 luminance `own`, using the
     /// full-depth (`1×1`) local Laplacian base with the same fine-detail remapping.
@@ -1445,6 +1497,217 @@ mod tests {
                 .clarity_laplacian()
                 .iter()
                 .all(|&v| (v - level(0.25)).abs() < 1e-6)
+        );
+    }
+
+    #[test]
+    fn highlights_do_not_halo_dark_background_outside_bright_edge_when_upsampling() {
+        // A 512x341 map upsampled ~12x onto a 24 MP photo: a sharp bright object (0 EV)
+        // on a smooth dark background (-3.6 EV over a -6 EV outer frame, so the map's
+        // background sits on the steep shoulder of Highlights -100). Dark full-res pixels
+        // 1..12 px outside the bright edge — including ones inside a straddling map cell
+        // whose 4 bilinear corners are bright-contaminated — must not get pulled dark by
+        // bilinear bleed from the bright object.
+        let (mw, mh) = (64usize, 64usize);
+        let scale = 12usize;
+        let (sw, sh) = (mw * scale, mh * scale);
+        // Box-reduced map luminance of a 768x768 full-res scene:
+        // - outer border (dist > 220 px from center): -6.0 EV
+        // - mid-dark background (outside bright square [280..480, 280..480]): -3.6 EV
+        // - bright square [280..480, 280..480]: 0.0 EV
+        // Note 280 is 23.333 map cells, so cell 23 straddles the edge (2/3 bright, 1/3 dark).
+        let full_lum = |x: usize, y: usize| -> f32 {
+            if (280..480).contains(&x) && (280..480).contains(&y) {
+                1.
+            } else {
+                let d = (x as f32 - 380.).hypot(y as f32 - 380.);
+                if d > 220. {
+                    (-6f32).exp2()
+                } else {
+                    (-3.6f32).exp2()
+                }
+            }
+        };
+        let mut map_lum = vec![0f32; mw * mh];
+        for my in 0..mh {
+            for mx in 0..mw {
+                let mut sum = 0f32;
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        sum += full_lum(mx * scale + dx, my * scale + dy);
+                    }
+                }
+                map_lum[my * mw + mx] = sum / (scale * scale) as f32;
+            }
+        }
+        let m = LocalToneMap::from_luminance(
+            map_lum,
+            [mw as u32, mh as u32],
+            [sw as u32, sh as u32],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        let bg = (-3.6f32).exp2();
+        // Compare against the last pure-background map cell (mx = 22) just outside the
+        // straddling boundary cell (mx = 23): upsampling must not introduce a dark halo
+        // beyond the map's own base level.
+        let near_map_center = m.gain(22. * scale as f32 + 5.5, 380., bg).log2();
+        let mut worst_drop = 0f32;
+        for x in 256..280 {
+            let ev = m.gain(x as f32, 380., bg).log2();
+            worst_drop = worst_drop.min(ev - near_map_center);
+        }
+        assert!(
+            worst_drop > -0.1,
+            "dark halo outside bright edge: worst_drop={worst_drop:+.3} EV (near_map_center={near_map_center:+.3} EV)"
+        );
+    }
+
+    #[test]
+    fn jbu_upsampling_preserves_map_centers_and_stays_continuous_across_floor() {
+        let (w, h) = (32usize, 32usize);
+        let lum: Vec<f32> = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                if (10..22).contains(&x) && (10..22).contains(&y) {
+                    1.
+                } else {
+                    (-4. - 0.05 * x as f32).exp2()
+                }
+            })
+            .collect();
+        let m = LocalToneMap::from_luminance(
+            lum.clone(),
+            [w as u32, h as u32],
+            [w as u32, h as u32],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        // At 1:1 map grid centers with matching luminance, JBU returns `laplacian`
+        // without blending in neighbours.
+        for y in 0..h {
+            for x in 0..w {
+                let idx = y * w + x;
+                let got = m.base(x as f32, y as f32, lum[idx]);
+                let want = m.base.laplacian[idx];
+                assert!(
+                    (got - want).abs() < 1e-6,
+                    "({x},{y}): got {got} against {want}"
+                );
+            }
+        }
+        // Varying `l` in 0.001-stop steps across the edge (crossing `JBU_SELF_FLOOR`)
+        // must stay continuous with no jump at the switch.
+        let mut prev = m.base(9.5, 16., (-6f32).exp2());
+        for step in 1..=6000 {
+            let l = -6. + step as f32 * 0.001;
+            let cur = m.base(9.5, 16., l.exp2());
+            assert!(
+                (cur - prev).abs() < 0.02,
+                "discontinuity at l={l:.3}: {prev} -> {cur}"
+            );
+            prev = cur;
+        }
+    }
+
+    #[test]
+    fn jbu_upsampling_is_spatially_smooth_across_full_cells_and_edges() {
+        // Dense 1/12-cell sweep (~1 full-res pixel at 24 MP) across every high-contrast
+        // edge configuration (including the left border and isolated dark/bright stripes)
+        // on the real local Laplacian map. A 2×2 JBU with self-prior floor must never
+        // exhibit a narrow window-shift step or overshoot anywhere across a map cell.
+        let (w, h) = (12usize, 5usize);
+        let cases: &[(&str, [f32; 12], f32)] = &[
+            (
+                "straddling-stripe",
+                [0., 0., 0., 0., -3.6, -0.8, -0.8, 0., 0., 0., 0., 0.],
+                -3.6,
+            ),
+            (
+                "border-stripe",
+                [-3.6, -0.8, -0.8, 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+                -3.6,
+            ),
+            (
+                "two-stop-step",
+                [0., 0., 0., -2., -2., 0., 0., 0., 0., 0., 0., 0.],
+                -2.0,
+            ),
+            (
+                "six-stop-step",
+                [0., 0., 0., -6., -6., 0., 0., 0., 0., 0., 0., 0.],
+                -6.0,
+            ),
+        ];
+        for &(name, row, l_ev) in cases {
+            let lum: Vec<f32> = (0..h)
+                .flat_map(|_| row.iter().map(|&ev| ev.exp2()))
+                .collect();
+            let m = LocalToneMap::from_luminance(
+                lum,
+                [w as u32, h as u32],
+                [w as u32, h as u32],
+                Sliders {
+                    highlights: -1.,
+                    ..Default::default()
+                },
+                false,
+            );
+            let lum_px = l_ev.exp2();
+            let mut prev = m.base(0.0, 2.0, lum_px);
+            for step in 1..=(w - 1) * 12 {
+                let fx = step as f32 / 12.0;
+                let cur = m.base(fx, 2.0, lum_px);
+                assert!(
+                    (cur - prev).abs() < 0.15,
+                    "{name}: sharp per-pixel step at fx={fx:.3} (l={l_ev}): {prev:.4} -> {cur:.4}"
+                );
+                prev = cur;
+            }
+        }
+    }
+
+    #[test]
+    fn jbu_upsampling_stays_continuous_through_range_underflow() {
+        // On a uniform 0 EV map, sweeping `l` from 0 down to -14 crosses `JBU_SELF_FLOOR`
+        // and the raw range-weight underflow zone. Padding `w_sum` up to `JBU_SELF_FLOOR`
+        // with `l` must keep `base(l)` strictly monotone, finite, and free of any jump.
+        let (w, h) = (8usize, 8usize);
+        let m = LocalToneMap::from_luminance(
+            vec![1.0f32; w * h],
+            [w as u32, h as u32],
+            [w as u32, h as u32],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        let mut prev = m.base(3.3, 3.4, 1.0);
+        assert!(prev.abs() < 1e-5, "at l=0: got {prev}");
+        for step in 1..=14000 {
+            let l = -(step as f32) * 0.001;
+            let cur = m.base(3.3, 3.4, l.exp2());
+            assert!(cur.is_finite(), "non-finite base at l={l:.3}");
+            assert!(
+                cur <= prev + 1e-6 && cur >= l - 1e-5 && cur <= 1e-5,
+                "out of monotone bounds at l={l:.3}: {prev} -> {cur}"
+            );
+            assert!(
+                (cur - prev).abs() < 0.005,
+                "discontinuity at l={l:.3}: {prev} -> {cur}"
+            );
+            prev = cur;
+        }
+        assert!(
+            (prev - (-14.0)).abs() < 1e-4,
+            "at l=-14: expected -14, got {prev}"
         );
     }
 }
