@@ -1117,6 +1117,12 @@ pub(super) fn contrast_pivot(
         ..r.clone()
     };
     default.hdr.enabled = false;
+    // The SDR rendering keeps the SDR camera-stage clip even when the HDR master does not.
+    let camera = if r.hdr.is_active() {
+        camera_stage(&small.metadata, &default)
+    } else {
+        camera
+    };
     let mut lut = CurveSet::new(&default);
     let haze = haze.map(|haze| {
         crate::develop::scene_tone::Dehazing::new(haze, [small.width, small.height], 0.)

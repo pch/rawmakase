@@ -97,6 +97,11 @@ alone (identity when W* = 1), with the toe of its black point below about 0.02:
   it repeats in two-stop steps. Predicted from the table and this rule, 60 probes with
   different sensor whites, image maxima, sizes of bright areas and Exposure settings
   are within 0.00026 mean (0.0015 worst) encoded.
+- Before applying the white curve or masked Whites in RGBTone, `scene_tone::rgb_tone`
+  (and the GPU `scene_global`/`scene_mask` paths) clamps negative linear ProPhoto
+  channels to `0` for both RAW and rendered files, matching Camera Raw 18.7 so a
+  negative channel cannot lift the middle channel when `curve(0) == 0` (fixing both
+  deep cool-magenta rendered patches and wide-gamut / Camera Calibration RAW patches).
 
 Engine 4 clipped at 1 instead: a probe whose sensor white is at scene 4 rendered
 scene 1.0 at 1.0, where Camera Raw renders 0.69.

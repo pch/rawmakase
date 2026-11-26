@@ -2441,6 +2441,34 @@ fn hdr_contrast_pivots_where_its_sdr_rendition_does() {
     assert!(hdr.hdr.as_ref().is_some_and(|h| h.has_contrast()));
 }
 
+/// An HDR rendered file's Contrast pivot still matches its SDR rendition under strong
+/// white balance, even though the HDR master leaves the camera stage's pre-matrix clip
+/// unclipped (`camera_stage`).
+#[test]
+fn hdr_rendered_contrast_pivots_where_its_sdr_rendition_does() {
+    let srgb: Vec<[u8; 3]> = (0..96u8)
+        .map(|i| if i % 5 == 0 { [240; 3] } else { [50 + i; 3] })
+        .collect();
+    let im = rendered_fixture(&srgb);
+    let mut sdr_recipe = Recipe {
+        incremental_temperature: -50.,
+        incremental_tint: 100.,
+        contrast: 0.6,
+        ..Recipe::for_rendered(&im.metadata)
+    };
+    sdr_recipe.update_wb(&im.metadata);
+    let sdr_camera = camera_stage(&im.metadata, &sdr_recipe);
+    let sdr = CurveSet::for_image((&im).into(), &sdr_recipe, sdr_camera, false);
+
+    let mut hdr_recipe = sdr_recipe.clone();
+    hdr_recipe.hdr.enabled = true;
+    hdr_recipe.hdr.limit = 4.;
+    let hdr_camera = camera_stage(&im.metadata, &hdr_recipe);
+    assert_ne!(hdr_camera.clip, sdr_camera.clip);
+    let hdr = CurveSet::for_image((&im).into(), &hdr_recipe, hdr_camera, false);
+    assert_eq!(hdr.photo, sdr.photo);
+}
+
 /// A rendered file's Contrast pivots higher than a raw photo's of the same scene, as
 /// Lightroom's does on JPEGs (`basic_tone::RENDERED_PIVOT_OFFSET`).
 #[test]
