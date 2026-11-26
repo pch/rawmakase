@@ -3256,11 +3256,15 @@ fn preview_renderer_uses_shared_gpu_pyramids_for_nr_and_texture_with_cpu_and_exp
     else {
         panic!("expected GPU-presented frame");
     };
-    assert!(
-        gpu_preview.backend().resident_fallback.is_none(),
-        "GPU pyramid/resident path fell back: {:?}",
-        gpu_preview.backend().resident_fallback
-    );
+    {
+        let b = gpu_preview.backend();
+        assert!(
+            b.resident_fallback.is_none() && b.pyramid_fallback.is_none(),
+            "GPU pyramid/resident path fell back: resident={:?}, pyramid={:?}",
+            b.resident_fallback,
+            b.pyramid_fallback
+        );
+    }
     let (_, _, preview_rgb8) = frame.samples.expect("samples requested");
     let cpu_full = cpu_preview.render(&image, &r, 0, None, Cancel::NEVER)?;
     let cpu_rgb8 = cpu_full.rgb8();
@@ -3365,16 +3369,34 @@ fn preview_renderer_uses_shared_gpu_pyramids_for_nr_and_texture_with_cpu_and_exp
         / (after_cancel.pixels.len() * 3) as f64)
         .sqrt();
     assert!(cancel_rms <= 1e-4, "Post-cancel RMS {cancel_rms} > 1e-4");
-    assert!(gpu_preview.backend().resident_fallback.is_none());
+    assert!(
+        gpu_preview.backend().resident_fallback.is_none()
+            && gpu_preview.backend().pyramid_fallback.is_none()
+    );
 
-    // 4. Oversized dimension check fails cleanly without disabling GPU.
+    // 4. Empty and oversized workgroup dimensions fail `fits_pyramid` cleanly without disabling GPU.
     let empty_im = CameraImage {
         width: 0,
         height: 0,
         pixels: Default::default(),
         ..image.clone()
     };
-    assert!(!gpu_preview.gpu().unwrap().fits_pyramid(&empty_im));
-    assert!(gpu_preview.backend().resident_fallback.is_none());
+    let gpu_proc = gpu_preview.gpu().unwrap();
+    assert!(!gpu_proc.fits_pyramid(&empty_im));
+    let max_wg = gpu_proc
+        .device
+        .limits()
+        .max_compute_workgroups_per_dimension;
+    let oversized_im = CameraImage {
+        width: max_wg.saturating_mul(16).saturating_add(1),
+        height: 1,
+        pixels: vec![[0.2; 3]; 1].into(),
+        ..image.clone()
+    };
+    assert!(!gpu_proc.fits_pyramid(&oversized_im));
+    assert!(
+        gpu_preview.backend().resident_fallback.is_none()
+            && gpu_preview.backend().pyramid_fallback.is_none()
+    );
     Ok(())
 }

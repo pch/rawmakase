@@ -570,14 +570,43 @@ impl Processor {
         let internal_error = pollster::block_on(internal.pop());
         let validation_error = pollster::block_on(validation.pop());
         if let Some(error) = memory_error.or(internal_error).or(validation_error) {
-            if let Some(d) = &mut self.developer {
-                d.samples.clear();
-            }
-            self.kept.clear();
-            self.release_resident();
+            self.clear_device_caches();
             anyhow::bail!("{error}");
         }
         result
+    }
+    /// As [`Self::scoped`], wrapping `OutOfMemory` in [`super::PyramidOutOfMemory`] so
+    /// pyramid callers can treat VRAM exhaustion as a per-photo fallback while still
+    /// releasing cached device buffers.
+    pub(crate) fn scoped_pyramid<T>(
+        &mut self,
+        work: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
+        let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
+        let allocation = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let result = work(self);
+        let memory_error = pollster::block_on(allocation.pop());
+        let internal_error = pollster::block_on(internal.pop());
+        let validation_error = pollster::block_on(validation.pop());
+        if let Some(error) = memory_error {
+            self.clear_device_caches();
+            return Err(anyhow::Error::new(super::PyramidOutOfMemory(
+                error.to_string(),
+            )));
+        }
+        if let Some(error) = internal_error.or(validation_error) {
+            self.clear_device_caches();
+            anyhow::bail!("{error}");
+        }
+        result
+    }
+    fn clear_device_caches(&mut self) {
+        if let Some(d) = &mut self.developer {
+            d.samples.clear();
+        }
+        self.kept.clear();
+        self.release_resident();
     }
     fn develop_inner(
         &mut self,

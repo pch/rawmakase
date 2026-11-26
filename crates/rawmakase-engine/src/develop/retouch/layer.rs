@@ -330,7 +330,7 @@ impl RetouchCache {
             if !b.gpu.as_ref().is_some_and(|gpu| gpu.fits_pyramid(base)) {
                 return None;
             }
-            b.run_resident(cancel, |gpu| gpu.denoise(base, chroma, luminance, cancel))
+            b.run_pyramid(cancel, |gpu| gpu.denoise(base, chroma, luminance, cancel))
         })?;
         self.denoised = Some((source.clone(), d, out.clone()));
         Ok(out)

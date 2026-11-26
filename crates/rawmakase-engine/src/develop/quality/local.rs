@@ -13,7 +13,7 @@ fn compute_texture_detail(
 ) -> Result<develop::texture::TextureDetail> {
     if let Some(b) = backend
         && b.gpu.as_ref().is_some_and(|gpu| gpu.fits_pyramid(im))
-        && let Some(detail) = b.run_resident(cancel, |gpu| gpu.texture_detail(im, scale, cancel))
+        && let Some(detail) = b.run_pyramid(cancel, |gpu| gpu.texture_detail(im, scale, cancel))
     {
         return Ok(detail);
     }

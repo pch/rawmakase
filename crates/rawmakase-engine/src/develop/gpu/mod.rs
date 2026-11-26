@@ -466,7 +466,7 @@ impl Processor {
     ) -> Result<crate::camera_data::CameraImage> {
         ensure!(!cancel.is_cancelled(), "Render superseded");
         ensure!(self.fits_pyramid(base), "Photo exceeds GPU pyramid limits");
-        self.scoped(|gpu| {
+        self.scoped_pyramid(|gpu| {
             let device = &gpu.device;
             let runner = gpu
                 .pyramid
@@ -532,7 +532,7 @@ impl Processor {
     ) -> Result<super::texture::TextureDetail> {
         ensure!(!cancel.is_cancelled(), "Render superseded");
         ensure!(self.fits_pyramid(image), "Photo exceeds GPU pyramid limits");
-        self.scoped(|gpu| {
+        self.scoped_pyramid(|gpu| {
             let existing = gpu.resident.as_ref().and_then(|r| r.photo_buffer(image));
             let device = &gpu.device;
             let photo = existing.unwrap_or_else(|| {
@@ -776,6 +776,20 @@ impl Processor {
         })
     }
 }
+
+/// Typed error returned when a GPU Laplacian pyramid stage hits device memory limits,
+/// allowing callers to fall back to CPU for that photo without disabling GPU pyramids
+/// or resident GPU sampling for subsequent smaller photos.
+#[derive(Debug)]
+pub(crate) struct PyramidOutOfMemory(pub(crate) String);
+
+impl std::fmt::Display for PyramidOutOfMemory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for PyramidOutOfMemory {}
 
 #[cfg(test)]
 mod tests;

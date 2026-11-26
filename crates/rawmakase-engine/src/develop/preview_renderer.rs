@@ -103,6 +103,10 @@ pub(crate) struct Backend {
     /// Why the photo is not kept on the device, after that path failed (for example
     /// for lack of memory); the rest of the GPU path keeps working.
     pub(crate) resident_fallback: Option<String>,
+    /// Why the shared GPU Laplacian pyramid stages (NR and Texture) were turned off
+    /// after a non-memory, non-cancelled device error; resident GPU sampling and
+    /// develop keep working.
+    pub(crate) pyramid_fallback: Option<String>,
 }
 /// What preview stages keep between renders: the stage cache and the GPU backend, and
 /// the display a render may be presented to.
@@ -646,6 +650,33 @@ impl Backend {
             Err(error) => {
                 if !cancel.is_cancelled() {
                     self.resident_fallback = Some(error.to_string());
+                }
+                None
+            }
+        }
+    }
+    /// Runs a shared GPU Laplacian pyramid stage (NR or Texture). Cancellation and
+    /// per-photo out-of-memory errors fall back to CPU for this photo only without
+    /// disabling future pyramid stages or resident GPU sampling; any other device error
+    /// turns off only `pyramid_fallback`, leaving `resident_fallback` untouched.
+    pub(crate) fn run_pyramid<T>(
+        &mut self,
+        cancel: Cancel<'_>,
+        stage: impl FnOnce(&mut gpu::Processor) -> Result<T>,
+    ) -> Option<T> {
+        if self.pyramid_fallback.is_some() {
+            return None;
+        }
+        let gpu = self.gpu.as_mut()?;
+        let result = stage(gpu);
+        self.finish_pyramid_attempt(cancel, result)
+    }
+    fn finish_pyramid_attempt<T>(&mut self, cancel: Cancel<'_>, result: Result<T>) -> Option<T> {
+        match result {
+            Ok(out) => Some(out),
+            Err(error) => {
+                if !cancel.is_cancelled() && !error.is::<gpu::PyramidOutOfMemory>() {
+                    self.pyramid_fallback = Some(error.to_string());
                 }
                 None
             }
@@ -2242,5 +2273,45 @@ mod tests {
             scenes.scenes.is_empty(),
             "another photo's light lets them go"
         );
+    }
+
+    #[test]
+    fn pyramid_fallback_is_isolated_from_resident_path_and_oom_is_per_photo() {
+        let mut backend = Backend::default();
+        let cancel_flag = AtomicBool::new(true);
+
+        // Cancelled pyramid error records neither flag.
+        let out: Option<()> = backend.finish_pyramid_attempt(
+            Cancel::new(&cancel_flag),
+            Err(anyhow::anyhow!("Render superseded")),
+        );
+        assert!(out.is_none());
+        assert!(backend.pyramid_fallback.is_none());
+        assert!(backend.resident_fallback.is_none());
+
+        // Out-of-memory is per-photo: neither flag is set, so smaller photos keep GPU pyramids.
+        cancel_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        let out: Option<()> = backend.finish_pyramid_attempt(
+            Cancel::new(&cancel_flag),
+            Err(anyhow::Error::new(gpu::PyramidOutOfMemory(
+                "out of VRAM".into(),
+            ))),
+        );
+        assert!(out.is_none());
+        assert!(backend.pyramid_fallback.is_none());
+        assert!(backend.resident_fallback.is_none());
+
+        // Non-OOM, non-cancelled error disables only GPU pyramids, leaving resident GPU sampling intact.
+        let out: Option<()> = backend.finish_pyramid_attempt(
+            Cancel::new(&cancel_flag),
+            Err(anyhow::anyhow!("pyramid readback timed out")),
+        );
+        assert!(out.is_none());
+        assert_eq!(
+            backend.pyramid_fallback.as_deref(),
+            Some("pyramid readback timed out")
+        );
+        assert!(backend.resident_fallback.is_none());
+        assert!(backend.fallback.is_none());
     }
 }

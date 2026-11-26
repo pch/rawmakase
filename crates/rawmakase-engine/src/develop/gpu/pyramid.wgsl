@@ -523,9 +523,9 @@ fn luma_writeback(@builtin(global_invocation_id) gid: vec3<u32>) {
 // Texture (per-channel log2 Laplacian pyramid)
 // ============================================================================
 
-// Accurate `log2(x)` for positive finite `x` (within ~0.5 ULP across GPU vendors,
-// avoiding 2-3 ULP hardware `v_log_f32` approximations that jitter Texture's 1/8192 EV
-// quantization boundary).
+// Portable `log2(x)` for positive finite `x` (~3 ULP worst-case, ~4e-8 absolute error
+// on `[0.5, 2)` vs WGSL's allowed `2^-21` ≈ `4.8e-7`), reducing vendor-dependent
+// rounding jitter at Texture's 1/8192 EV quantization boundary.
 fn exact_log2(x: f32) -> f32 {
     let bits = bitcast<u32>(x);
     var e = i32((bits >> 23u) & 0xffu) - 127;

@@ -110,7 +110,7 @@ pub(crate) fn retouched_with_backend(
                     if !b.gpu.as_ref().is_some_and(|gpu| gpu.fits_pyramid(base)) {
                         return None;
                     }
-                    b.run_resident(cancel, |gpu| gpu.denoise(base, chroma, luminance, cancel))
+                    b.run_pyramid(cancel, |gpu| gpu.denoise(base, chroma, luminance, cancel))
                 })?,
                 None => recovered,
             };
