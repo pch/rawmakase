@@ -37,7 +37,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "plain.tif",
-        "9267a9dfb2fdb55e8f969ae592f11951c79535c84aa8aafd8680c16a768c34df",
+        "8946a7722f6502b24bd404ee15a16c4f79a770b3012070ca09fa68e1dd5aab8d",
     ),
     (
         "plain.png",
@@ -49,7 +49,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "resized.tif",
-        "a1d2b4a9639e2765ad2100f162aa7ba57111b3c61db6d1721b17497d51053153",
+        "59adb0baa0145ad27141dc216c7b4616a8c92fc951afb06aa7e57c753ca9a642",
     ),
     (
         "resized.png",
@@ -61,7 +61,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "sharpened.tif",
-        "27630a43fffcfc60663f8c907e324d0844b8f2e24fa0221d2d894ede037e031a",
+        "73a1a4ef743fa2d48df1e715c2d299448adb7c5cbbe61f8f7e4031b9aebe6746",
     ),
     (
         "sharpened.png",
@@ -73,7 +73,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "local-detail.tif",
-        "4b710f36e8bb48392030fa6f8af92d6c00a0e3b8f925a254057523e7927aa04b",
+        "2db20ac09edf673926d4957a7ea212ee4e91f47a7880f38a81e9c79882818aa5",
     ),
     (
         "local-detail.png",
@@ -85,7 +85,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "grain.tif",
-        "c543fbae1571dcf04ccd7bfc24ca0f22cf9655f77d772e6595337346adae7f03",
+        "843da5ea1342ddd43f2ae1e4f3c7cdd5ca94bc8a129678b7e10a28e2c9ffef8e",
     ),
     (
         "grain.png",
@@ -97,7 +97,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "vignette-highlight.tif",
-        "d9783925c3fb504a72ede5da84387ca034c806d9049823e2f21606edfc7f454b",
+        "4d6bf5028e0d1c979a21c78312cbecc60b97391cefd411506fd78b12528e873f",
     ),
     (
         "vignette-highlight.png",
@@ -109,7 +109,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "vignette-color.tif",
-        "31be16ccd5c32f4f8754039f88607bd05268dcadd892180a97ea8a937dc8b6c1",
+        "dc7a3f312b84fb4c35f54139f4a1a461a4881477d629e8e695333811c3d5829c",
     ),
     (
         "vignette-color.png",
@@ -121,7 +121,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "vignette-paint.tif",
-        "097a1d155c91ca336da2f02e088a6da5b44654efdcced485f572b7f0c53b9bf2",
+        "57ee1f2a96c273a01a369a6d394cd8571b97060d9222e63f99ef73b1377bb2fe",
     ),
     (
         "vignette-paint.png",
@@ -133,7 +133,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "watermark.tif",
-        "2a9fd8cdd60b18b204de8d75d8802e4a74e28c946a3fc863b309b512fd4aff3d",
+        "d4f14f7efe2c56b8651d2b31be8c5271159226db35628584455fc08e36b65ee6",
     ),
     (
         "watermark.png",
@@ -145,7 +145,7 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "chart.tif",
-        "972cc5807c23ce1fd78ba7c66136121e7e919dd993813548341e77a26bb7ff7a",
+        "88d4603b7251251275bd0f0dd3cc437f669b613b92c4d7168a9785fc8bccf852",
     ),
     (
         "chart.png",
@@ -475,7 +475,7 @@ const RECORDED_GRAPHIC: &[(&str, &str)] = &[
     ),
     (
         "graphic.tif",
-        "f1a5c950ce8b71df3023dcf41831a6cbd799cb4999a810f4e0db610490027d58",
+        "ff54cf94d03d0103ea75f7697af1740fbcc7fdb0822224ad1fab53ea11dca8bc",
     ),
     (
         "graphic.png",

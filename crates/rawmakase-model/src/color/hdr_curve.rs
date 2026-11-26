@@ -146,15 +146,28 @@ pub fn channel(curve: &HdrPointCurve, e: f32) -> f32 {
     decode(curve.evaluate(e)).min(PARAMETRIC_TOP)
 }
 
+/// Camera Raw 18.7's master point curve with Refine Saturation (`amount` in 0–1; values
+/// above 1 render as 1) in an HDR master, on [`encode`]d values: SDR's C1-smooth
+/// hue-preserving curve and per-channel-luma Refine Saturation
+/// ([`crate::color::curve::apply_master`]) without the upper bound at white.
+pub fn apply_master(input: [f32; 3], curve: impl Fn(f32) -> f32, amount: f32) -> [f32; 3] {
+    crate::color::curve::apply_master_unbounded_above(input, curve, amount)
+}
+
 /// Refine Saturation on the master point curve in HDR, on [`encode`]d values: `input`
-/// before the curve, `curved` after it. SDR's rule ([`crate::color::curve::refine_saturation`])
-/// without its bound at white, which would take the color out of light above white:
-/// the color keeps its channel differences from before the curve, scaled down only as
-/// far as it must to stay above 0. Camera Raw 18.7 renders it so within the acceptance
-/// rule at 50% on gray and color patches and at 0% on six photos; at 0% on the patches
-/// it adds more color error than SDR does (docs/records/hdr-stage1-results.md#tone-curves).
-pub fn refine_saturation(input: [f32; 3], curved: [f32; 3], amount: f32) -> [f32; 3] {
-    crate::color::curve::refine_saturation_unbounded_above(input, curved, amount)
+/// before the curve, `curved` after the master curve, and `per_channel` after applying
+/// the curve to each channel independently. SDR's rule
+/// ([`crate::color::curve::refine_saturation`]) without its bound at white, which would
+/// take the color out of light above white: the color keeps its channel differences from
+/// before the curve, scaled down only as far as it must to stay above 0.
+#[cfg(test)]
+pub(crate) fn refine_saturation(
+    input: [f32; 3],
+    curved: [f32; 3],
+    per_channel: [f32; 3],
+    amount: f32,
+) -> [f32; 3] {
+    crate::color::curve::refine_saturation_unbounded_above(input, curved, per_channel, amount)
 }
 
 /// Levels (RAWmakase's black point, white point and midtone, which Camera Raw doesn't
@@ -214,18 +227,64 @@ mod tests {
     fn hdr_refine_saturation_is_not_bounded_at_white() {
         let input = [1.3, 1.0, 0.8];
         let curved = [1.45, 1.15, 0.95];
-        let kept = refine_saturation(input, curved, 0.);
-        let luma = |p: [f32; 3]| 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
-        assert!((luma(kept) - luma(curved)).abs() < 1e-5);
+        let per_channel = [1.42, 1.18, 0.90];
+        let kept = refine_saturation(input, curved, per_channel, 0.);
+        let luma = |p: [f32; 3]| 0.30 * p[0] + 0.59 * p[1] + 0.11 * p[2];
+        assert!((luma(kept) - luma(per_channel)).abs() < 1e-5);
         for c in 0..3 {
             assert!(((kept[c] - kept[1]) - (input[c] - input[1])).abs() < 1e-5);
         }
-        let sdr = crate::color::curve::refine_saturation(input, curved, 0.);
+        let sdr = crate::color::curve::refine_saturation(input, curved, per_channel, 0.);
         assert!(sdr[0] - sdr[2] < kept[0] - kept[2]);
-        assert_eq!(refine_saturation(input, curved, 1.), curved);
+        assert_eq!(refine_saturation(input, curved, per_channel, 1.), curved);
         // A dark color is still scaled down to stay above 0.
-        let dark = refine_saturation([0.3, 0.05, 0.01], [0.1, 0.02, 0.0], 0.);
+        let dark = refine_saturation([0.3, 0.05, 0.01], [0.1, 0.02, 0.0], [0.1, 0.02, 0.0], 0.);
         assert!(dark.iter().all(|v| *v >= -1e-6), "{dark:?}");
+    }
+
+    /// Above white on an S-curve, the HDR master curve matches Camera Raw 18.7's C1-smooth
+    /// hue-preserving secant and per-channel-luma Refine Saturation.
+    #[test]
+    fn hdr_apply_master_matches_camera_raw_above_white() {
+        let curve = HdrPointCurve::new(&natural(&[
+            [0., 0.],
+            [64., 50.],
+            [128., 132.],
+            [192., 210.],
+            [255., 255.],
+        ]));
+        // Measured Camera Raw 18.7 encoded ProPhoto pixels on the HDR color-patch chart
+        // (HDR limit 8) at Refine Saturation 100, 50, and 0 (frozen HDR family captures
+        // 1304, 1298, and 1296 against default 1294).
+        let p = [0.9311, 1.0001, 0.8546];
+        let got_100 = apply_master(p, |e| curve.evaluate(e), 1.);
+        let got_50 = apply_master(p, |e| curve.evaluate(e), 0.5);
+        let got_0 = apply_master(p, |e| curve.evaluate(e), 0.);
+        let want_100 = [0.9568, 1.0004, 0.9083];
+        let want_50 = [0.9510, 1.0066, 0.8885];
+        let want_0 = [0.9451, 1.0129, 0.8686];
+        for c in 0..3 {
+            assert!(
+                (got_100[c] - want_100[c]).abs() < 2e-4,
+                "100%: got {got_100:?}, want {want_100:?}"
+            );
+            // Above white, `hdr_look::encode` is a fitted approximation to Camera Raw's
+            // HDR encoding, so 50% and 0% (which push G above 1.01) match within 2e-3.
+            assert!(
+                (got_50[c] - want_50[c]).abs() < 2e-3,
+                "50%: got {got_50:?}, want {want_50:?}"
+            );
+            assert!(
+                (got_0[c] - want_0[c]).abs() < 2e-3,
+                "0%: got {got_0:?}, want {want_0:?}"
+            );
+        }
+        let luma = |q: [f32; 3]| 0.30 * q[0] + 0.59 * q[1] + 0.11 * q[2];
+        let per = p.map(|e| curve.evaluate(e).max(0.));
+        assert!((luma(got_0) - luma(per)).abs() < 1e-5);
+        for c in 0..3 {
+            assert!((got_50[c] - 0.5 * (got_0[c] + got_100[c])).abs() < 1e-5);
+        }
     }
 
     /// A curve whose last point is left of white continues from that point along its

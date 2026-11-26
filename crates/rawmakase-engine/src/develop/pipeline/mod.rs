@@ -6,7 +6,7 @@ use super::{Geometry, mul, srgb_encode};
 use crate::rendered::Rendered;
 use crate::{
     camera_data::{CameraImage, Metadata},
-    develop::curve::{CurveLut, refine_saturation},
+    develop::curve::{CurveLut, apply_master},
 };
 use crate::{
     color::srgb_decode,

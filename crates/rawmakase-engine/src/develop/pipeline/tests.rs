@@ -1594,9 +1594,102 @@ fn fringe_selector_reaches_the_hue_defringe_tests() {
     }
 }
 
+/// Camera Raw 18.7's master point curve on saturated colors uses a C1-smooth
+/// hue-preserving secant (not plain RGBTone) and Refine Saturation 0 takes its
+/// Photoshop luma (`0.30 R + 0.59 G + 0.11 B`) from the per-channel curved color
+/// rather than the master-curved color.
+#[test]
+fn strong_s_master_curve_and_refine_saturation_match_camera_raw_18_7() {
+    use crate::camera_profiles::{PRO_TO_RGB, RGB_TO_PRO};
+    let recipe = Recipe {
+        curve: ToneCurve {
+            points: vec![
+                [0., 0.],
+                [64. / 255., 28. / 255.],
+                [128. / 255., 128. / 255.],
+                [192. / 255., 228. / 255.],
+                [1., 1.],
+            ],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let render_pro = |enc_pro: [f32; 3], amount: f32| {
+        let mut r = recipe.clone();
+        r.curve_saturation = amount;
+        let lin_rgb = mul(PRO_TO_RGB, enc_pro.map(srgb_decode));
+        let out_rgb = apply_reference_curves(lin_rgb, &r, &CurveSet::new(&r), None);
+        mul(RGB_TO_PRO, out_rgb).map(|v| srgb_encode(v.clamp(0., 1.)))
+    };
+
+    // Measured Camera Raw 18.7 encoded ProPhoto outputs on synthetic-d65 strong S-curve
+    // at Refine Saturation = 100: #270 (ColorChecker 7), #92 (saturated purple),
+    // #75 (dark orange), and #242 (wide-gamut red with clipped endpoints).
+    let cases_100: [([f32; 3], [f32; 3]); 4] = [
+        ([0.8330, 0.6445, 0.2894], [0.9909, 0.6985, 0.1475]),
+        ([0.4987, 0.2109, 0.8231], [0.4860, 0.0488, 0.9788]),
+        ([0.5186, 0.3253, 0.0246], [0.5044, 0.3070, 0.0000]),
+        ([0.9126, 0.2808, 0.0000], [1.0000, 0.3077, 0.0000]),
+    ];
+    for (input, want) in cases_100 {
+        let got = render_pro(input, 1.);
+        for c in 0..3 {
+            assert!(
+                (got[c] - want[c]).abs() < 0.002,
+                "100% {input:?}: got {got:?}, want {want:?}"
+            );
+        }
+    }
+
+    // Measured Camera Raw 18.7 encoded ProPhoto outputs at Refine Saturation = 0 and 50
+    // for #270 and #75: 0% takes target luma [0.30, 0.59, 0.11] from per-channel f(RGB),
+    // and 50% blends linearly between 0% and 100%.
+    let cases_refine: [([f32; 3], [f32; 3], [f32; 3]); 2] = [
+        (
+            [0.8330, 0.6445, 0.2894],
+            [0.9178, 0.7294, 0.3742],
+            [0.9543, 0.7139, 0.2608],
+        ),
+        (
+            [0.5186, 0.3253, 0.0246],
+            [0.4228, 0.2573, 0.0000],
+            [0.4636, 0.2821, 0.0000],
+        ),
+    ];
+    let luma = |p: [f32; 3]| 0.30 * p[0] + 0.59 * p[1] + 0.11 * p[2];
+    let lut = CurveLut::new(&recipe.curve);
+    for (input, want_0, want_50) in cases_refine {
+        let none = render_pro(input, 0.);
+        let half = render_pro(input, 0.5);
+        let full = render_pro(input, 1.);
+        let per_ch = input.map(|v| lut.evaluate(v));
+        assert!(
+            (luma(none) - luma(per_ch)).abs() < 1e-3,
+            "0% luma {input:?}: got {} vs per-channel {}",
+            luma(none),
+            luma(per_ch)
+        );
+        for c in 0..3 {
+            assert!(
+                (none[c] - want_0[c]).abs() < 0.002,
+                "0% {input:?}: got {none:?}, want {want_0:?}"
+            );
+            assert!(
+                (half[c] - want_50[c]).abs() < 0.002,
+                "50% {input:?}: got {half:?}, want {want_50:?}"
+            );
+            assert!(
+                (half[c] - 0.5 * (none[c] + full[c])).abs() < 1e-3,
+                "50% blend {input:?}: got {half:?}, none={none:?}, full={full:?}"
+            );
+        }
+    }
+}
+
 /// Refine Saturation 0 keeps each color's channel spread (encoded ProPhoto, before the
-/// point curve) and takes its luma from the curved color; other amounts blend, and
-/// amounts above 1 render as 1 (Camera Raw 18.7 on the synthetic chart).
+/// point curve) and takes its Photoshop luma (`0.30 R + 0.59 G + 0.11 B`) from the
+/// per-channel curved color; other amounts blend linearly, and amounts above 1 render as
+/// 1 (Camera Raw 18.7 on the synthetic chart).
 #[test]
 fn refine_saturation_zero_keeps_the_colours_saturation_through_the_point_curve() {
     let mut recipe = Recipe {
@@ -1610,8 +1703,10 @@ fn refine_saturation_zero_keeps_the_colours_saturation_through_the_point_curve()
     let spread = |p: [f32; 3]| {
         p.iter().copied().fold(f32::MIN, f32::max) - p.iter().copied().fold(f32::MAX, f32::min)
     };
-    let luma = |p: [f32; 3]| 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+    let luma = |p: [f32; 3]| 0.30 * p[0] + 0.59 * p[1] + 0.11 * p[2];
     let input = [0.25, 0.08, 0.04];
+    let lut = CurveLut::new(&recipe.curve);
+    let per_channel = pro(input).map(|v| lut.evaluate(v));
     let render = |amount: f32| {
         let mut r = recipe.clone();
         r.curve_saturation = amount;
@@ -1620,7 +1715,7 @@ fn refine_saturation_zero_keeps_the_colours_saturation_through_the_point_curve()
     let (full, none, half) = (render(1.), render(0.), render(0.5));
     assert!((spread(none) - spread(pro(input))).abs() < 1e-3, "{none:?}");
     assert!(spread(full) > spread(none) + 0.05, "{full:?} {none:?}");
-    assert!((luma(none) - luma(full)).abs() < 1e-3);
+    assert!((luma(none) - luma(per_channel)).abs() < 1e-3);
     for c in 0..3 {
         assert!(
             (half[c] - (full[c] + none[c]) / 2.).abs() < 1e-3,

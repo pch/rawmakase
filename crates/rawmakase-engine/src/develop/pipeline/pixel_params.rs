@@ -374,14 +374,17 @@ pub(crate) fn pixel_params_hdr(im: Source, r: &Recipe) -> Option<PixelParams> {
     };
     p.set(slot::HDR_CONTRAST, &contrast);
     let curves = match curves {
-        Some((levels, [start, value, slope], holds)) => [
-            1.,
-            levels as u8 as f32,
-            start,
-            value,
-            slope,
-            holds as u8 as f32,
-        ],
+        Some(c) => match c.master {
+            Some(([start, value, slope], holds)) => [
+                1.,
+                c.levels as u8 as f32,
+                start,
+                value,
+                slope,
+                holds as u8 as f32,
+            ],
+            None => [1., c.levels as u8 as f32, -1., 0., 0., 0.],
+        },
         None => [0.; 6],
     };
     p.set(slot::HDR_CURVES, &curves);
@@ -622,7 +625,10 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         None => -1.,
     };
     p.set(slot::PARAMETRIC_LUT, &[parametric]);
-    let master = p.push(lut.master.values().iter().copied());
+    let master = match &lut.master {
+        Some(c) => p.push(c.values().iter().copied()),
+        None => -1.,
+    };
     p.set(slot::MASTER, &[master]);
     p.set(slot::REFINE_SATURATION, &[r.curve_saturation.clamp(0., 1.)]);
     let channels = lut

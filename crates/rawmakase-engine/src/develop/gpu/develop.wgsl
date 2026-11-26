@@ -353,7 +353,7 @@ fn look_apply(rgb: vec3<f32>) -> vec3<f32> {
     return vec3(look_decode(out.x), look_decode(out.y), look_decode(out.z));
 }
 // RGBTone on look-encoded values (`hdr_look::encode`), the darkest and brightest
-// channels through `curve` (0 Contrast, 1 the parametric curve, 2 the master curve).
+// channels through `curve` (0 Contrast, 1 the parametric curve).
 fn encoded_tone(q: vec3<f32>, curve: u32) -> vec3<f32> {
     let lo = min(min(q.x, q.y), q.z);
     let hi = max(max(max(q.x, q.y), q.z), 0.0);
@@ -363,6 +363,25 @@ fn encoded_tone(q: vec3<f32>, curve: u32) -> vec3<f32> {
         return a + (b - a) * (q - lo) / (hi - lo);
     }
     return vec3(b);
+}
+// curve::apply_master_unbounded_above's C1-smooth hue-preserving master point curve
+// on look-encoded values (no upper bound at white).
+fn smooth_master_hdr(q: vec3<f32>) -> vec3<f32> {
+    let lo = min(min(q.x, q.y), q.z);
+    let hi = max(max(q.x, q.y), q.z);
+    let diff = hi - lo;
+    if diff <= 1e-8 {
+        return vec3(max(encoded_curve(2u, lo), 0.0));
+    }
+    let mid = clamp(q.x + q.y + q.z - lo - hi, lo, hi);
+    let h = (mid - lo) / diff;
+    let u = 0.5 * h * (1.0 - h);
+    let fa = encoded_curve(2u, lo + u * (hi - mid));
+    let fb = encoded_curve(2u, hi - u * (mid - lo));
+    let span = (fb - fa) / (1.0 - u);
+    let a = max(fa - span * u * (1.0 - h), 0.0);
+    let b = max(fb + span * u * h, 0.0);
+    return a + (b - a) * ((q - lo) / diff);
 }
 fn encoded_curve(curve: u32, e: f32) -> f32 {
     if curve == 0u {
@@ -455,8 +474,19 @@ fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
         if offset(P_PARAMETRIC_LUT) >= 0 {
             q = encoded_tone(q, 1u);
         }
-        let input = q;
-        q = refine_saturation_hdr(input, encoded_tone(q, 2u));
+        if offset(P_MASTER) >= 0 && p(P_HDR_CURVES + 2u) >= 0.0 {
+            let input = q;
+            var m = smooth_master_hdr(input);
+            if p(P_REFINE_SATURATION) < 1.0 {
+                let per = vec3(
+                    max(encoded_curve(2u, input.x), 0.0),
+                    max(encoded_curve(2u, input.y), 0.0),
+                    max(encoded_curve(2u, input.z), 0.0),
+                );
+                m = refine_saturation_hdr(input, m, per);
+            }
+            q = m;
+        }
         out = vec3(hdr_channel(0u, q.x), hdr_channel(1u, q.y), hdr_channel(2u, q.z));
     }
     return look_channels(out);
@@ -1236,15 +1266,16 @@ fn level(v: f32) -> f32 {
     let low = x;
     return low / max(low + (1.0 - x), 1e-8);
 }
-// curve::refine_saturation: Refine Saturation below 100 keeps the color's channel
-// differences from before the point curve, with the curved color's luma.
-fn refine_saturation(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
-    let amount = p(P_REFINE_SATURATION);
+// curve::apply_master's Refine Saturation below 100 keeps the color's channel
+// differences from before the point curve, with Photoshop luma (`0.30 R + 0.59 G + 0.11 B`)
+// from the per-channel curved color.
+fn refine_saturation(input: vec3<f32>, curved: vec3<f32>, per_channel: vec3<f32>) -> vec3<f32> {
+    let amount = clamp(p(P_REFINE_SATURATION), 0.0, 1.0);
     if amount >= 1.0 {
         return curved;
     }
-    let luma = vec3(0.299, 0.587, 0.114);
-    let goal = dot(curved, luma);
+    let luma = vec3(0.30, 0.59, 0.11);
+    let goal = dot(per_channel, luma);
     let offset = input - vec3(dot(input, luma));
     let high = max(max(max(offset.x, offset.y), offset.z), 0.0);
     let low = min(min(min(offset.x, offset.y), offset.z), 0.0);
@@ -1258,14 +1289,14 @@ fn refine_saturation(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
     let kept = goal + offset * max(scale, 0.0);
     return kept + (curved - kept) * amount;
 }
-// hdr_curve::refine_saturation: refine_saturation without its bound at white.
-fn refine_saturation_hdr(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
-    let amount = p(P_REFINE_SATURATION);
+// hdr_curve::apply_master's Refine Saturation without its bound at white.
+fn refine_saturation_hdr(input: vec3<f32>, curved: vec3<f32>, per_channel: vec3<f32>) -> vec3<f32> {
+    let amount = clamp(p(P_REFINE_SATURATION), 0.0, 1.0);
     if amount >= 1.0 {
         return curved;
     }
-    let luma = vec3(0.299, 0.587, 0.114);
-    let goal = dot(curved, luma);
+    let luma = vec3(0.30, 0.59, 0.11);
+    let goal = dot(per_channel, luma);
     let offset = input - vec3(dot(input, luma));
     let low = min(min(min(offset.x, offset.y), offset.z), 0.0);
     var scale = 1.0;
@@ -1274,6 +1305,25 @@ fn refine_saturation_hdr(input: vec3<f32>, curved: vec3<f32>) -> vec3<f32> {
     }
     let kept = goal + offset * max(scale, 0.0);
     return kept + (curved - kept) * amount;
+}
+// curve::apply_master's C1-smooth hue-preserving master point curve in SDR.
+fn smooth_master_sdr(q: vec3<f32>) -> vec3<f32> {
+    let lo = min(min(q.x, q.y), q.z);
+    let hi = max(max(q.x, q.y), q.z);
+    let diff = hi - lo;
+    let master = offset(P_MASTER);
+    if diff <= 1e-8 {
+        return vec3(clamp(lut(master, 4096u, lo), 0.0, 1.0));
+    }
+    let mid = clamp(q.x + q.y + q.z - lo - hi, lo, hi);
+    let h = (mid - lo) / diff;
+    let u = 0.5 * h * (1.0 - h);
+    let fa = lut(master, 4096u, lo + u * (hi - mid));
+    let fb = lut(master, 4096u, hi - u * (mid - lo));
+    let span = (fb - fa) / (1.0 - u);
+    let a = clamp(fa - span * u * (1.0 - h), 0.0, 1.0);
+    let b = clamp(fb + span * u * h, 0.0, 1.0);
+    return a + (b - a) * ((q - lo) / diff);
 }
 fn reference_curves(rgb: vec3<f32>) -> vec3<f32> {
     let pro = RGB_TO_PRO * rgb;
@@ -1302,16 +1352,19 @@ fn reference_curves(rgb: vec3<f32>) -> vec3<f32> {
         let hi = max(max(max(q.x, q.y), q.z), 0.0);
         q = rgb_tone_values(q, lut(parametric, 1024u, lo), lut(parametric, 1024u, hi), lo, hi);
     }
-    let lo = min(min(q.x, q.y), q.z);
-    let hi = max(max(max(q.x, q.y), q.z), 0.0);
-    let master = offset(P_MASTER);
-    let a = lut(master, 4096u, lo);
-    let b = lut(master, 4096u, hi);
-    var m = vec3(a);
-    if hi - lo > 1e-8 {
-        m = a + (b - a) * (q - lo) / (hi - lo);
+    var m = q;
+    if offset(P_MASTER) >= 0 {
+        m = smooth_master_sdr(q);
+        if p(P_REFINE_SATURATION) < 1.0 {
+            let master = offset(P_MASTER);
+            let per = vec3(
+                clamp(lut(master, 4096u, q.x), 0.0, 1.0),
+                clamp(lut(master, 4096u, q.y), 0.0, 1.0),
+                clamp(lut(master, 4096u, q.z), 0.0, 1.0),
+            );
+            m = refine_saturation(q, m, per);
+        }
     }
-    m = refine_saturation(q, m);
     let channels = vec3(
         srgb_decode(lut(offset(P_CHANNELS), 4096u, m.x)),
         srgb_decode(lut(offset(P_CHANNELS + 1u), 4096u, m.y)),

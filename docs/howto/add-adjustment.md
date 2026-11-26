@@ -88,7 +88,7 @@ The CPU renderer is the reference (`crates/rawmakase-engine/src/develop/`). Find
 stage the setting belongs to as Camera Raw orders it ([scene tone
 stage](../scene-tone-stage.md), [rendering quality](../rendering-quality.md)) and
 apply it there: Refine Saturation applies with the point curve in
-`pipeline/tone.rs`, through `color::curve::refine_saturation` in the model crate so
+`pipeline/tone.rs`, through `color::curve::apply_master` in the model crate so
 the CPU and the GPU port share one description.
 
 Place the field in `stage_cache::stage_recipes`: a stage that reads a field it does
