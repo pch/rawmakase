@@ -717,7 +717,7 @@ impl Editor {
         let defaults = self.raw_defaults.clone();
         let decoding = Decoding {
             demosaic: self.session.demosaic,
-            cache: Some(self.decode_cache.clone()),
+            cache: Some(self.decode_cache().clone()),
         };
         let finished = |outcome| Finished {
             ticket,

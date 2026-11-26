@@ -153,10 +153,15 @@ struct Header {
 }
 impl Default for DecodeCache {
     fn default() -> Self {
-        Self::new(cache_dir().join("decoded"), DEFAULT_LIMIT)
+        Self::under(&cache_dir(), DEFAULT_LIMIT)
     }
 }
 impl DecodeCache {
+    /// Decoded images in their subfolder of the cache folder `cache`, up to
+    /// `limit` bytes.
+    pub fn under(cache: &Path, limit: u64) -> Self {
+        Self::new(cache.join(DECODED.default), limit)
+    }
     pub fn new(dir: PathBuf, limit: u64) -> Self {
         Self {
             dir: Arc::new(RwLock::new(Dir {

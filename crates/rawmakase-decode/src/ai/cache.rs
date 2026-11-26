@@ -80,10 +80,15 @@ pub struct AiCache {
 }
 impl Default for AiCache {
     fn default() -> Self {
-        Self::new(cache_dir().join(AI.default), DEFAULT_LIMIT)
+        Self::under(&cache_dir(), DEFAULT_LIMIT)
     }
 }
 impl AiCache {
+    /// AI Denoise's results in their subfolder of the cache folder `cache`, up
+    /// to `limit` bytes.
+    pub fn under(cache: &Path, limit: u64) -> Self {
+        Self::new(cache.join(AI.default), limit)
+    }
     pub fn new(dir: PathBuf, limit: u64) -> Self {
         Self {
             dir: Arc::new(RwLock::new(Dir {

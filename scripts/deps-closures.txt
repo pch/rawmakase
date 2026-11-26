@@ -15,3 +15,7 @@ render_command never app platform catalog_session edit_session
 catalog_command never app platform catalog_session edit_session
 merge_command never app platform catalog_session edit_session
 merge_hdr never app platform catalog_session edit_session
+# The environment module builds the library's context from what the platform
+# and the environment say, for the app and the command line alike: it has no
+# window in it.
+environment never app platform catalog_session edit_session

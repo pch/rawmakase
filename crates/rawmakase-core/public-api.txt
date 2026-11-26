@@ -1,0 +1,58 @@
+# The public items of rawmakase-core, the re-exported ones among them, written by
+# scripts/public-api.py and compared in CI. A change here is a change to the
+# library's surface: note it in docs/embedding.md.
+impl core::clone::Clone for rawmakase_core::CacheLimits
+impl core::clone::Clone for rawmakase_core::Context
+impl core::clone::Clone for rawmakase_core::ErrorKind
+impl core::cmp::Eq for rawmakase_core::CacheLimits
+impl core::cmp::Eq for rawmakase_core::ErrorKind
+impl core::cmp::PartialEq for rawmakase_core::CacheLimits
+impl core::cmp::PartialEq for rawmakase_core::ErrorKind
+impl core::convert::From<anyhow::Error> for rawmakase_core::Error
+impl core::default::Default for rawmakase_core::CacheLimits
+impl core::default::Default for rawmakase_core::ContextBuilder
+impl core::error::Error for rawmakase_core::Error
+impl core::fmt::Debug for rawmakase_core::CacheLimits
+impl core::fmt::Debug for rawmakase_core::Context
+impl core::fmt::Debug for rawmakase_core::ContextBuilder
+impl core::fmt::Debug for rawmakase_core::Error
+impl core::fmt::Debug for rawmakase_core::ErrorKind
+impl core::fmt::Display for rawmakase_core::Error
+impl core::hash::Hash for rawmakase_core::ErrorKind
+impl core::marker::Copy for rawmakase_core::CacheLimits
+impl core::marker::Copy for rawmakase_core::ErrorKind
+impl core::marker::Send for rawmakase_core::CacheLimits
+impl core::marker::Send for rawmakase_core::Context
+impl core::marker::Send for rawmakase_core::ContextBuilder
+impl core::marker::Send for rawmakase_core::Error
+impl core::marker::Send for rawmakase_core::ErrorKind
+impl core::marker::Sync for rawmakase_core::CacheLimits
+impl core::marker::Sync for rawmakase_core::Context
+impl core::marker::Sync for rawmakase_core::ContextBuilder
+impl core::marker::Sync for rawmakase_core::Error
+impl core::marker::Sync for rawmakase_core::ErrorKind
+pub enum rawmakase_core::ErrorKind #[non_exhaustive]
+pub fn rawmakase_core::Context::build_id(&self) -> core::option::Option<&str>
+pub fn rawmakase_core::Context::builder() -> rawmakase_core::ContextBuilder
+pub fn rawmakase_core::Context::cache_dir(&self) -> core::option::Option<&std::path::Path>
+pub fn rawmakase_core::ContextBuilder::build(self) -> rawmakase_core::Result<rawmakase_core::Context>
+pub fn rawmakase_core::ContextBuilder::cache(self, dir: impl core::convert::Into<std::path::PathBuf>, limits: rawmakase_core::CacheLimits, build_id: impl core::convert::Into<alloc::string::String>) -> Self
+pub fn rawmakase_core::Error::is_cancelled(&self) -> bool
+pub fn rawmakase_core::Error::kind(&self) -> rawmakase_core::ErrorKind
+pub fn rawmakase_core::workspace::ai_denoise_cache(ctx: &rawmakase_core::Context) -> core::option::Option<&rawmakase_decode::ai::cache::AiCache>
+pub fn rawmakase_core::workspace::decode_cache(ctx: &rawmakase_core::Context) -> core::option::Option<&rawmakase_decode::decode_cache::DecodeCache>
+pub mod rawmakase_core::workspace
+pub rawmakase_core::CacheLimits::ai_denoise: u64
+pub rawmakase_core::CacheLimits::decoded: u64
+pub rawmakase_core::ErrorKind::Cancelled
+pub rawmakase_core::ErrorKind::Changed
+pub rawmakase_core::ErrorKind::Exists
+pub rawmakase_core::ErrorKind::Invalid
+pub rawmakase_core::ErrorKind::Missing
+pub rawmakase_core::ErrorKind::Other
+pub rawmakase_core::ErrorKind::Unsupported
+pub struct rawmakase_core::CacheLimits
+pub struct rawmakase_core::Context
+pub struct rawmakase_core::ContextBuilder
+pub struct rawmakase_core::Error
+pub type rawmakase_core::Result<T, E> = core::result::Result<T, E>

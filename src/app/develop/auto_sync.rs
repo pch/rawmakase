@@ -298,7 +298,7 @@ impl Editor {
         let defaults = self.raw_defaults.clone();
         let decoding = Decoding {
             demosaic: self.session.demosaic,
-            cache: Some(self.decode_cache.clone()),
+            cache: Some(self.decode_cache().clone()),
         };
         let change = BatchChange::AutoSync(Box::new(waiting.change));
         let source = SyncSource::Open(Box::new(waiting.source));

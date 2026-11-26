@@ -872,7 +872,7 @@ impl Editor {
                 path,
                 defaults: self.raw_defaults.clone(),
                 demosaic: self.session.demosaic,
-                decode_cache: self.decode_cache.clone(),
+                decode_cache: self.decode_cache().clone(),
                 kind,
                 edge,
             });

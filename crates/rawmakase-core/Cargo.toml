@@ -1,0 +1,17 @@
+[package]
+name = "rawmakase-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "RAWmakase as a library: open, decode, edit, render and export photos as RAWmakase does, without the desktop app, configured by values"
+license.workspace = true
+publish = false
+
+[dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
+rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0" }
+rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
+anyhow.workspace = true
+
+[lints]
+workspace = true

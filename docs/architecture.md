@@ -81,6 +81,7 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-raw` | RAWmakase's own RAW decoders ([RAW decoding](raw-decoding.md)) | Everything but `rawmakase-tiff` and `rawmakase-cancel` |
 | `rawmakase-tiff` | The bounded TIFF reader DNGs and RAW containers use; no RAW knowledge | Everything |
 | `rawmakase-fs` | What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system, with the unsafe system calls the model used to hold. The catalog's file operations and the app's Trash use it | Every other workspace crate; the value, file-format, rendering, decoding and export crates never reach it |
+| `rawmakase-core` | The library other apps link ([guide](embedding.md), [plan](embedding-plan.md)): a `Context` built from values, which makes the decode and AI Denoise caches, and one `Error` whose `ErrorKind` comes from the crates' typed causes. Its public items are listed in `public-api.txt`, compared in CI | Every crate under it (none depends on it), the app crate, the GUI, the extension host, the selection models |
 | `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags. Work that stops returns its `Cancelled`, so a caller tells a cancelled job from a failed one by type | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; color management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, opening editable previews and their record's format, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, image encoders, the catalog, export, the GUI |
 | `rawmakase-hdr-merge` | Merge to HDR ([Merge to HDR](hdr-merge.md)): checking a bracket, decoding its frames through `rawmakase-decode` (`Raw::develop_frame`), aligning them to the reference frame (Auto Align), deghosting, measuring their exposure ratios and noise, the noise-weighted merge, and the DNG writer, a linear raw image of half-precision samples with the camera's color, levels, EXIF, maker note, XMP and preview, in a TIFF writer of its own (`rawmakase-tiff` stays the bounded reader); `write_dng` publishes it beside the sources without replacing a file | The catalog, export, the app, the GUI, inference and the extension crates |
@@ -502,6 +503,11 @@ in `inspector/panels/`: it takes the recipe, the view state and a read-only view
 of what it shows, edits the recipe during the edit frame and returns the actions
 it can't carry out itself (Auto, imports, dialogs), which `Editor::controls`
 carries out after every panel is drawn. The [code map](code-map.md#desktop-application) lists them.
+
+The `Editor` builds the library's `rawmakase_core::Context` at startup from
+`environment`, the one window-free module that reads the environment's
+configuration, which the command line shares. Its workers take the caches
+they are given from that context, not from a folder looked up for them.
 
 `Editor` deliberately remains the coordinator for state shared across panels.
 A panel should call the domain API responsible for an operation, rather than

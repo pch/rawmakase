@@ -845,6 +845,21 @@ so the design is proved on one path before it is spread.
    The app's `environment` module; the app building the context at startup
    and its workers holding it. The guide (`docs/embedding.md`) and the
    listing of public items start here.
+
+   Built. The context holds the cache folder, its limits and its build id,
+   and makes the decode and AI Denoise caches from them; the other values
+   join with the change that first reads them, so the context never offers
+   a setting the crates under it still look up for themselves (the
+   prototype's context recorded folders it couldn't honor). The build id is
+   required and stored, and keys the caches from step 4's first change. The
+   crates' cache handles, which the app's workers need, are in a
+   `workspace` module the guide marks as RAWmakase's own rather than on
+   `Context`, since they name types the library doesn't show. The app's
+   `Editor` holds the context and reads its decode cache from it; the
+   command line's AI Denoise cache comes from the same `environment`
+   module. The listing is read from rustdoc's JSON with a pinned nightly
+   (`scripts/public-api.py`), in a CI job of its own, and follows
+   re-exports into the workspace's crates.
 4. Explicit inputs for the path one photo takes, one change each, each call
    site passing from the context. First the caches' build id and the
    default folder they return to: the key comes from `current_exe`

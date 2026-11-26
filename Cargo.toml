@@ -10,7 +10,7 @@ repository = "https://github.com/pch/rawmakase"
 # The control protocol and its command-line client build on their own, without
 # the app's GUI, GPU or native libraries.
 [workspace]
-members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-denoise", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-hdr-merge", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/ai-masks", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
+members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-core", "crates/rawmakase-decode", "crates/rawmakase-denoise", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-hdr-merge", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/ai-masks", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
 
 # What every crate of the workspace shares. CI and `make check` read the minimum
 # Rust version from the `rust-version` line here.
@@ -61,6 +61,7 @@ wgpu = { version = "30", default-features = false, features = ["wgsl"] }
 
 [dependencies]
 rawmakase-cancel = { path = "crates/rawmakase-cancel", version = "0.1.0" }
+rawmakase-core = { path = "crates/rawmakase-core", version = "0.1.0" }
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
 # AI Denoise's service and model pack, shared by the app and the command line.

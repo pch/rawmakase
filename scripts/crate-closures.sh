@@ -80,6 +80,11 @@ if [ -n "$asm" ]; then
     status=1
 fi
 check rawmakase-export "rawmakase|$gui|$c_imaging|$inference"
+# The library is what an app outside the workspace links: never the app, its
+# GUI (egui's parts emath and ecolor named too), its file chooser or the
+# extension host, and no C imaging library. Inference comes only with the
+# AI Denoise feature, which it doesn't have yet.
+check rawmakase-core "rawmakase|rawmakase-extensions|rfd|emath|ecolor|$gui|$c_imaging|$inference"
 # Merge to HDR reads RAWs through decoding and writes DNGs: no app, catalog,
 # export, window, GUI, C imaging library or inference.
 check rawmakase-hdr-merge "rawmakase|rawmakase-catalog|rawmakase-export|rawmakase-denoise|$gui|$c_imaging|$inference"

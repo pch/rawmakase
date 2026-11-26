@@ -93,11 +93,11 @@ jobs:
       # again (clippy --all-targets checks them); the doctests run after them.
       - name: Check the model, file formats, catalog, renderer, control protocol, remote worker, client and extension crates
         run: |
-          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
+          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
           cargo test --locked --lib --bins --tests -p rawmakase-model --all-features
           cargo test --locked --doc -p rawmakase-model --all-features
-          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
           cargo test --locked --lib --bins --tests -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
           cargo test --locked --doc -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -384,11 +384,33 @@ jobs:
           cargo test --locked --lib --bins --tests -p rawmakase-model --all-features
           cargo test --locked --doc -p rawmakase-model --all-features
       - run: |
-          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
-          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
+          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
+          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
       - run: |
           cargo test --locked --lib --bins --tests -p rawmakase-decode
           cargo test --locked --doc -p rawmakase-decode
+
+  library-surface:
+    name: Library surface
+    # crates/rawmakase-core/public-api.txt lists the library's public items, the
+    # re-exported ones among them; a change to them that the listing doesn't
+    # record fails this job (docs/embedding-plan.md). The listing is read from
+    # rustdoc's JSON, which only a nightly toolchain writes: the one
+    # scripts/public-api.py names, so the format doesn't move under it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+      - name: Rust
+        run: |
+          toolchain=$(sed -n 's/^TOOLCHAIN = "\(.*\)"$/\1/p' scripts/public-api.py)
+          rustup toolchain install "$toolchain" --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
+      - run: python3 scripts/public-api.py check
 
   postgres:
     name: Portable catalog SQL

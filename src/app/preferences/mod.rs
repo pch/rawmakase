@@ -195,7 +195,7 @@ impl Editor {
         self.preferences.usage = Usage {
             camera_profiles: files(&camera_profiles_dir(), &["dcp", "xmp"]).0,
             lens_profiles: files(&lens_profiles_dir(), &["lcp"]).0,
-            decode_cache: files(&self.decode_cache.dir(), &["decoded"]),
+            decode_cache: files(&self.decode_cache().dir(), &["decoded"]),
             ai_cache: files(&self.ai_denoise_cache().dir(), &["aidenoise"]),
             previews: std::fs::metadata(PreviewCache::path()).map_or(0, |m| m.len()),
             preview_kinds: PreviewCache::open(&PreviewCache::path())
@@ -728,7 +728,7 @@ impl Editor {
         }
         gap(ui);
         group(ui, "Decoded images");
-        let mut cache_size = (self.decode_cache.limit() >> 30) as u32;
+        let mut cache_size = (self.decode_cache().limit() >> 30) as u32;
         let mut field = None;
         form_row(ui, "Cache size limit", |ui| {
             // A typed size applies once entered, so a cache write while typing
@@ -743,8 +743,8 @@ impl Editor {
                 "Cache size limit",
             ));
         });
-        if u64::from(cache_size) << 30 != self.decode_cache.limit() {
-            self.decode_cache.set_limit(u64::from(cache_size) << 30);
+        if u64::from(cache_size) << 30 != self.decode_cache().limit() {
+            self.decode_cache().set_limit(u64::from(cache_size) << 30);
         }
         // A drag changes the size every frame; the session is written once it ends.
         if field.is_some_and(|r| r.drag_stopped() || (r.changed() && !r.dragged())) {
@@ -1052,8 +1052,8 @@ impl Editor {
     fn performance_page(&mut self, ui: &mut egui::Ui) {
         group(ui, "Decoded photo cache");
         let (entries, size) = self.preferences.usage.decode_cache;
-        let dir = self.decode_cache.dir();
-        let folder = self.decode_cache.folder();
+        let dir = self.decode_cache().dir();
+        let folder = self.decode_cache().folder();
         form_row(ui, "Location", |ui| path_value(ui, &dir));
         form_row(ui, "Size", |ui| {
             value(
@@ -1061,7 +1061,7 @@ impl Editor {
                 &format!(
                     "{} of {} GiB · {}",
                     bytes(size),
-                    self.decode_cache.limit() >> 30,
+                    self.decode_cache().limit() >> 30,
                     plural(entries, "photo", "photos")
                 ),
             );
@@ -1109,7 +1109,7 @@ impl Editor {
             );
         });
         if purge {
-            let removed = self.decode_cache.purge();
+            let removed = self.decode_cache().purge();
             let denoised = self.ai_denoise_cache().purge();
             self.messages.done(format!(
                 "Purged {} and {} from the cache",
@@ -1199,7 +1199,7 @@ impl Editor {
     /// and removes those in the old location: moving is usually meant to free
     /// that drive. A folder that cannot be written keeps the cache where it is.
     pub(in crate::app) fn move_decode_cache(&mut self, folder: Option<PathBuf>) {
-        let removed = match self.decode_cache.relocate(folder.as_deref()) {
+        let removed = match self.decode_cache().relocate(folder.as_deref()) {
             Ok(removed) => removed,
             Err(e) => {
                 self.messages
@@ -1218,12 +1218,12 @@ impl Editor {
         let moved = match &saved {
             Ok(()) if removed > 0 => format!(
                 "Photos are now cached in {}; {} removed from the old location",
-                self.decode_cache.dir().display(),
+                self.decode_cache().dir().display(),
                 plural(removed, "decoded photo", "decoded photos")
             ),
             Ok(()) => format!(
                 "Photos are now cached in {}",
-                self.decode_cache.dir().display()
+                self.decode_cache().dir().display()
             ),
             Err(e) => format!("Cache folder not saved: {e:#}"),
         };
@@ -1512,8 +1512,8 @@ mod tests {
         };
         let mut e = Editor::with_context(&egui::Context::default(), None, session, None);
         e.session.set_file(Some(path.clone()));
-        assert_eq!(e.decode_cache.limit(), 32 << 30);
-        e.decode_cache.set_limit(1 << 50);
+        assert_eq!(e.decode_cache().limit(), 32 << 30);
+        e.decode_cache().set_limit(1 << 50);
         e.save_session().unwrap();
         let saved: crate::app::preferences::session::Session =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
@@ -1537,12 +1537,12 @@ mod tests {
         e.session.set_file(Some(path.clone()));
         // Set, not relocated: relocating would purge the user's real cache.
         let old = dir.path().join("old");
-        e.decode_cache.set_folder(Some(&old));
+        e.decode_cache().set_folder(Some(&old));
         std::fs::create_dir(&old).unwrap();
-        std::fs::create_dir(e.decode_cache.dir()).unwrap();
-        let entry = e.decode_cache.dir().join("0123456789abcdef.decoded");
+        std::fs::create_dir(e.decode_cache().dir()).unwrap();
+        let entry = e.decode_cache().dir().join("0123456789abcdef.decoded");
         std::fs::write(&entry, "pixels").unwrap();
-        let worker = e.decode_cache.clone();
+        let worker = e.decode_cache().clone();
         let chosen = dir.path().join("other drive");
         std::fs::create_dir(&chosen).unwrap();
         e.move_decode_cache(Some(chosen.clone()));
@@ -1558,7 +1558,7 @@ mod tests {
             Some(chosen.as_path())
         );
         let restarted = Editor::with_context(&ctx, None, saved, None);
-        assert_eq!(restarted.decode_cache.dir(), worker.dir());
+        assert_eq!(restarted.decode_cache().dir(), worker.dir());
 
         // Moving back purges only the chosen folder, never the default one.
         e.move_decode_cache(None);
@@ -1581,9 +1581,9 @@ mod tests {
         );
         let current = dir.path().join("current");
         std::fs::create_dir(&current).unwrap();
-        e.decode_cache.set_folder(Some(&current));
+        e.decode_cache().set_folder(Some(&current));
         e.move_decode_cache(Some(dir.path().join("missing")));
-        assert_eq!(e.decode_cache.folder(), Some(current));
+        assert_eq!(e.decode_cache().folder(), Some(current));
         assert!(
             e.messages.line().contains("can't be moved"),
             "{}",
@@ -1650,7 +1650,7 @@ mod tests {
         // Part way through typing 128, neither 1 GiB nor 12 GiB evicts or is saved.
         for text in ["1", "2"] {
             frame(&mut e, vec![egui::Event::Text(text.into())]);
-            assert_eq!(e.decode_cache.limit(), 4 << 30);
+            assert_eq!(e.decode_cache().limit(), 4 << 30);
             assert!(saved().is_none_or(|size| size == 4));
         }
         frame(&mut e, vec![egui::Event::Text("8".into())]);
@@ -1665,7 +1665,7 @@ mod tests {
             }],
         );
         frame(&mut e, vec![]);
-        assert_eq!(e.decode_cache.limit(), 128 << 30);
+        assert_eq!(e.decode_cache().limit(), 128 << 30);
         assert_eq!(saved(), Some(128));
         // A drag applies as it goes and is saved when released.
         frame(&mut e, vec![egui::Event::PointerMoved(pos), button(true)]);
@@ -1673,7 +1673,7 @@ mod tests {
             let to = pos + Vec2::new(x as f32 * 5., 0.);
             frame(&mut e, vec![egui::Event::PointerMoved(to)]);
         }
-        let dragged = e.decode_cache.limit() >> 30;
+        let dragged = e.decode_cache().limit() >> 30;
         assert!(dragged > 128);
         assert_eq!(saved(), Some(128));
         frame(

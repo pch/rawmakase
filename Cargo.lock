@@ -3972,6 +3972,7 @@ dependencies = [
  "rawmakase-ai-masks",
  "rawmakase-cancel",
  "rawmakase-catalog",
+ "rawmakase-core",
  "rawmakase-ctl",
  "rawmakase-decode",
  "rawmakase-denoise",
@@ -4052,6 +4053,16 @@ dependencies = [
  "sha2",
  "tempfile",
  "unicode-normalization",
+]
+
+[[package]]
+name = "rawmakase-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rawmakase-cancel",
+ "rawmakase-decode",
+ "rawmakase-model",
 ]
 
 [[package]]

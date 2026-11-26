@@ -366,7 +366,7 @@ fn an_unclean_exit_opens_in_grid_without_selection_and_recovers_after_clean_exit
         assert_eq!(library.layout().sort, "file_name");
         assert!(library.layout().reverse);
         assert!(second.session.auto_advance);
-        assert_eq!(second.decode_cache.limit(), 16 << 30);
+        assert_eq!(second.decode_cache().limit(), 16 << 30);
         assert!(
             second.messages.has_entry_with("did not close cleanly"),
             "expected recovery warning for develop={develop}, view={view}"

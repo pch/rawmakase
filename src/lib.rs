@@ -56,6 +56,7 @@ pub(crate) mod catalog_session;
 pub mod comparison;
 pub mod diagnostics;
 pub(crate) mod edit_session;
+pub mod environment;
 pub mod lensfun_install;
 pub mod merge_command;
 pub mod merge_hdr;

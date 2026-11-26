@@ -44,8 +44,8 @@ pub(crate) struct Editor {
     tx: Sender<Event>,
     rx: Receiver<Event>,
     loader: worker::Loader,
-    /// Shared size policy for Develop, neighbour prefetch and Reference View.
-    decode_cache: crate::decode_cache::DecodeCache,
+    /// The library's context, which the workers take their caches from.
+    core: rawmakase_core::Context,
     /// AI Denoise's queue, worker and cache, shared with exports.
     ai_denoise: crate::ai_denoise::Service,
     /// AI Denoise's model pack: installed, being installed or removed.
@@ -192,6 +192,13 @@ pub(crate) struct Editor {
     /// before it passes its write gate, as `proposal_hook` does.
     #[cfg(test)]
     report_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+}
+impl Editor {
+    /// The decode cache Develop, neighbour prefetch and Reference View share:
+    /// the context's.
+    pub(in crate::app) fn decode_cache(&self) -> &crate::decode_cache::DecodeCache {
+        crate::environment::decode_cache(&self.core)
+    }
 }
 impl Editor {
     pub(crate) fn new(
@@ -343,13 +350,16 @@ impl Editor {
         let first_catalog = session.last_path.is_none() && session_file.is_some();
         let (tx, rx) = mpsc::channel();
         let copy_groups = session.copy_groups();
-        let decode_cache = crate::decode_cache::DecodeCache::default();
+        // The library's context, as the environment configures it: the caches
+        // are its, with the limits and folder the session chose.
+        let core = crate::environment::context();
+        let decode_cache = crate::environment::decode_cache(&core).clone();
         decode_cache.set_limit(u64::from(session.decoded_cache_size_gib()) << 30);
         crate::catalog::preview_cache::set_thumbnail_budget(
             u64::from(session.thumbnail_cache_size_mib()) << 20,
         );
         decode_cache.set_folder(session.decoded_cache_folder.as_deref());
-        let ai_cache = crate::ai_cache::AiCache::default();
+        let ai_cache = crate::environment::ai_denoise_cache(&core).clone();
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_denoise =
             crate::ai_denoise::Service::new(ai_cache, crate::model_install::runtime_dir());
@@ -365,8 +375,7 @@ impl Editor {
         }));
         let loader = worker::Loader::new(tx.clone(), ctx.clone(), decode_cache.clone());
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
-        let reference_loader =
-            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache.clone());
+        let reference_loader = worker::reference_loader(tx.clone(), ctx.clone(), decode_cache);
         let standard_preview_size = session.standard_preview_size();
         let discard_one_to_one_after = session.discard_one_to_one_after();
         let stand_ins = crate::app::develop::stand_in::StandIns::new(
@@ -436,7 +445,7 @@ impl Editor {
             tx,
             rx,
             loader,
-            decode_cache,
+            core,
             ai_denoise,
             ai_denoise_model: crate::app::develop::model_installer::Installer::new(),
             ai_loupe,
@@ -614,11 +623,11 @@ impl Editor {
                 .into(),
                 raw_defaults: self.raw_defaults.settings().clone(),
                 standard_preview_size: Some(self.preview_builds.standard_size),
-                decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
+                decoded_cache_size_gib: Some((self.decode_cache().limit() >> 30) as u32),
                 thumbnail_cache_size_mib: Some(
                     (crate::catalog::preview_cache::thumbnail_budget() >> 20) as u32,
                 ),
-                decoded_cache_folder: self.decode_cache.folder(),
+                decoded_cache_folder: self.decode_cache().folder(),
                 one_to_one_discard_days: Some(
                     self.preview_builds.discard_one_to_one_after.unwrap_or(0),
                 ),

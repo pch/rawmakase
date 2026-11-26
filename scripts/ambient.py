@@ -74,6 +74,7 @@ LIST = ROOT / "scripts" / "deps-ambient.txt"
 # The crates the library is made of, and the selection crate beside it, which
 # an app depends on as well (docs/embedding-plan.md, "The design").
 CRATES = [
+    "rawmakase-core",
     "rawmakase-cancel",
     "rawmakase-tiff",
     "rawmakase-fs",

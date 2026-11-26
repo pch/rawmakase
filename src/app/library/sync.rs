@@ -1324,7 +1324,7 @@ impl Editor {
         let defaults = self.raw_defaults.clone();
         let decoding = Decoding {
             demosaic: self.session.demosaic,
-            cache: Some(self.decode_cache.clone()),
+            cache: Some(self.decode_cache().clone()),
         };
         let progress = Arc::new(BatchProgress::new(change.name(), targets.len()));
         // Moving to another photo or catalog waits, so neither can see an edit change

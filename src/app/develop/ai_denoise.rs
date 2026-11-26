@@ -321,7 +321,7 @@ impl crate::app::Editor {
 /// The user's AI Denoise cache as the app keeps it: in the folder `session`'s
 /// Preferences chose for decoded images, or the default one.
 fn user_cache(session: &crate::app::preferences::session::Session) -> AiCache {
-    let cache = AiCache::default();
+    let cache = crate::environment::ai_denoise_cache(&crate::environment::context()).clone();
     cache.set_folder(session.decoded_cache_folder.as_deref());
     cache
 }

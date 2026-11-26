@@ -4,6 +4,7 @@
 app -> catalog_session
 app -> diagnostics
 app -> edit_session
+app -> environment
 app -> lensfun_install
 app -> merge_hdr
 app -> platform
