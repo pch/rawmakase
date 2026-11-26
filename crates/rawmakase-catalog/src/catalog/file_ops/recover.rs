@@ -19,12 +19,19 @@
 //! 1. An item whose family changed in the catalog meanwhile, or whose file
 //!    another photo is now, is left unfinished, untouched.
 //! 2. Every member at its source: `no_change` (the user may have put a
-//!    file back from the Trash).
+//!    file back from the Trash). For a permanent deletion, only with no
+//!    member journalled deleted and each still the file planned by its
+//!    size, date and first bytes as well.
 //! 3. A move with every member at its destination and gone from its
 //!    source: its rows follow, `done`.
 //! 4. A trash with every member trashed with a receipt and gone from its
 //!    source: its rows go, `done`. Trashed without a receipt: unfinished
 //!    ("it may be in the Trash").
+//!    A permanent deletion (#1273) with every member deleted and gone from
+//!    its source: its rows go, `done`. Anything else of one is unfinished,
+//!    never put back: what it deleted can't be. The user keeps it as it
+//!    is, or removes its photos from the catalog once the photo's own file
+//!    is gone.
 //! 5. A folder made: proven there (its file object, by the name the disk
 //!    gave it), it is added to the catalog when the user asks; never made,
 //!    or gone, nothing changed. A folder there whose making wasn't
@@ -111,7 +118,9 @@ pub enum Resolution {
     /// made.
     AddFolder,
     /// Take the photos and folders of a folder put in the Trash out of the
-    /// catalog, where its receipt was lost and it is gone from its path.
+    /// catalog, where its receipt was lost and it is gone from its path; or
+    /// the photos of a permanent deletion cut short, once the photo's own
+    /// file is gone.
     RemoveFromCatalog,
 }
 
@@ -194,7 +203,13 @@ pub(super) fn resolve_with(
     }
     let folder = item.kind == Kind::CreateFolder;
     let trash_tree = matches!(item.subject, Subject::TrashTree(_));
+    let deleting = item.kind == Kind::DeletePhotos;
     match resolution {
+        Resolution::PutBack if deleting => {
+            return Err(FileOpError::Unsupported(
+                "Files deleted permanently can't be put back.",
+            ));
+        }
         Resolution::PutBack
             if trash_tree && item.members.first().is_none_or(|m| m.receipt.is_none()) =>
         {
@@ -202,9 +217,9 @@ pub(super) fn resolve_with(
                 "It may be in the Trash; put it back in Finder.",
             ));
         }
-        Resolution::RemoveFromCatalog if !trash_tree => {
+        Resolution::RemoveFromCatalog if !trash_tree && !deleting => {
             return Err(FileOpError::Unsupported(
-                "Only a folder put in the Trash can be removed from the catalog so.",
+                "Only a folder put in the Trash, or photos deleted permanently, can be removed from the catalog so.",
             ));
         }
         Resolution::PutBack if item.kind == Kind::ImportCopy => {
@@ -235,6 +250,14 @@ pub(super) fn resolve_with(
                 catalog
                     .db
                     .write_immediate(|w| folder::complete(w, &computer, disk, &item))?;
+                let now =
+                    journal::item(&catalog.db, operation)?.context("No such file operation")?;
+                return Ok(outcome_of(&now));
+            }
+            Resolution::RemoveFromCatalog if deleting => {
+                if let Err(why) = remove_deleted(catalog, &computer, disk, &item)? {
+                    return Err(FileOpError::Destination(why));
+                }
                 let now =
                     journal::item(&catalog.db, operation)?.context("No such file operation")?;
                 return Ok(outcome_of(&now));
@@ -336,8 +359,20 @@ fn decide(
             }
         }
     }
-    // Rule 2, whatever the states say.
-    if at_sources(disk, &item.members) {
+    // Rule 2, whatever the states say; for a permanent deletion only when
+    // nothing was journalled deleted and each file is still the one planned
+    // by its contents too: a file written at a deleted one's name may be
+    // given its file object's number again (Linux reuses an inode at once).
+    let untouched = match item.kind {
+        Kind::DeletePhotos => item.members.iter().all(|m| {
+            m.state == MemberState::Planned
+                && where_is(disk, m) == Where::Source
+                && m.identity.is_some()
+                && disk.identity(&m.source).ok() == m.identity
+        }),
+        _ => at_sources(disk, &item.members),
+    };
+    if untouched {
         return catalog
             .db
             .write(|w| journal::set_state(w, id, ItemState::NoChange, None));
@@ -382,9 +417,58 @@ fn decide(
                 .write_immediate(|w| complete(w, computer, folders, disk, item))
         }
         Kind::TrashPhotos => unfinished(catalog, "it may be in the Trash"),
+        Kind::DeletePhotos if item.members.iter().all(|m| m.state == MemberState::Deleted) => {
+            catalog
+                .db
+                .write_immediate(|w| complete(w, computer, folders, disk, item))
+        }
+        Kind::DeletePhotos => unfinished(catalog, DELETED_PART),
         // Rule 6.
         _ => unfinished(catalog, "its files are not all where it left them"),
     }
+}
+
+/// Why a permanent deletion is unfinished, when nothing more precise is
+/// journalled.
+const DELETED_PART: &str = "some of its files may have been deleted permanently";
+
+/// Removes from the catalog the photos of permanent deletion `item`, cut
+/// short, once the photo's own file is gone from its path: the user's
+/// choice, as Remove from Catalog. Its other files stay where they are.
+fn remove_deleted(
+    catalog: &mut Catalog,
+    computer: &str,
+    disk: &dyn Disk,
+    item: &Item,
+) -> Result<Result<(), String>> {
+    let Subject::Photos(pre) = &item.subject else {
+        return Ok(Err("It has no photos.".into()));
+    };
+    let away = item
+        .members
+        .first()
+        .is_some_and(|m| super::execute::deleted_gone(disk, m));
+    if !away {
+        return Ok(Err(
+            "Its photo's file is still where it was, or can't be read. Keep it as it is.".into(),
+        ));
+    }
+    catalog.db.write_immediate(|w| {
+        if let Some(why) = pre.check(w, computer)? {
+            return Ok(Err(why.into()));
+        }
+        let others = journal::unresolved_anywhere(w)?
+            .iter()
+            .any(|i| i.id != item.id && i.photos().iter().any(|p| pre.rows.contains(p)));
+        if others {
+            return Ok(Err(
+                "Another unfinished file operation involves its photos.".into(),
+            ));
+        }
+        super::execute::remove_rows(w, &pre.rows, super::execute::Removal::Requested)?;
+        journal::set_done(w, item.id, None)?;
+        Ok(Ok(()))
+    })
 }
 
 /// Why `item` can't be acted on: its family changed in the catalog, a
@@ -493,6 +577,10 @@ fn unfinished(item: &Item) -> Unfinished {
             }
             Subject::Folder(_) => vec![Resolution::Keep],
             Subject::TrashTree(_) => super::tree_trash::choices(item),
+            // What it deleted can't be put back.
+            Subject::Photos(_) if item.kind == Kind::DeletePhotos => {
+                vec![Resolution::RemoveFromCatalog, Resolution::Keep]
+            }
             Subject::Photos(_) | Subject::Tree(_) => vec![Resolution::PutBack, Resolution::Keep],
             // A copy is never removed again: its files stay, for the user.
             Subject::Import(_) => vec![Resolution::Keep],
@@ -511,6 +599,13 @@ pub(super) fn outcome_of(item: &Item) -> ItemOutcome {
             Subject::Photos(pre) => match (item.kind, &pre.to) {
                 (Kind::RemoveFromCatalog, _) => ItemResult::Removed,
                 (Kind::TrashPhotos, _) => ItemResult::Trashed,
+                // Removed from the catalog by the user, with files left.
+                (Kind::DeletePhotos, _)
+                    if item.members.iter().any(|m| m.state != MemberState::Deleted) =>
+                {
+                    ItemResult::Removed
+                }
+                (Kind::DeletePhotos, _) => ItemResult::Deleted,
                 (Kind::MovePhotos, Some((to, _))) => ItemResult::Moved { to: *to },
                 (Kind::RenamePhotos, _) => match item
                     .members

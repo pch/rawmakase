@@ -111,6 +111,18 @@ pub(super) fn plan_with(
     op: FileOp,
     disk: &dyn Disk,
 ) -> Result<Plan, FileOpError> {
+    plan_on(catalog, op, disk, None)
+}
+
+/// [`plan_with`], told which drives have no Trash by `trash` when it is
+/// given: photos on them are left out of the Trash, and are the only ones
+/// deleted permanently.
+fn plan_on(
+    catalog: &Catalog,
+    op: FileOp,
+    disk: &dyn Disk,
+    trash: Option<&dyn super::Trash>,
+) -> Result<Plan, FileOpError> {
     let batch = new_batch()?;
     let mut stems = HashMap::new();
     let (kind, chosen, to, create) = match op {
@@ -119,6 +131,13 @@ pub(super) fn plan_with(
             (Kind::MovePhotos, photos, Some((root, to)), None)
         }
         FileOp::TrashPhotos { photos } => (Kind::TrashPhotos, photos, None, None),
+        // Which drives have no Trash is asked first.
+        FileOp::DeletePhotos { .. } if trash.is_none() => {
+            return Err(FileOpError::Unsupported(
+                "Photos are deleted permanently only by a plan that knows the Trash.",
+            ));
+        }
+        FileOp::DeletePhotos { photos } => (Kind::DeletePhotos, photos, None, None),
         FileOp::CreateFolder {
             root,
             parent,
@@ -200,9 +219,11 @@ pub(super) fn plan_with(
                 links: 0,
             })
             .collect(),
-        Kind::MovePhotos | Kind::TrashPhotos | Kind::CreateFolder => {
+        Kind::MovePhotos | Kind::TrashPhotos | Kind::DeletePhotos | Kind::CreateFolder => {
             let mut files = Files::new(catalog, &folders, disk);
-            files.trashing = kind == Kind::TrashPhotos;
+            // Deleting a name, as the Trash takes one, leaves the file's
+            // other names.
+            files.trashing = matches!(kind, Kind::TrashPhotos | Kind::DeletePhotos);
             let destination = match (to, create) {
                 (Some((root, to)), _) => Some(files.destination(root, &to)?),
                 (None, Some((root, parent, name))) => {
@@ -220,6 +241,9 @@ pub(super) fn plan_with(
                 }
             }
             refuse_twice(&mut items, &mut skipped);
+            if let Some(trash) = trash {
+                by_trash(kind, disk, trash, &mut items, &mut skipped);
+            }
             if let Some(destination) = &destination {
                 arrivals(disk, destination, &mut items, &mut skipped);
                 across = copies(&batch, destination, &mut items)?;
@@ -269,8 +293,56 @@ pub(super) fn plan_trash_with(
         FileOp::TrashFolder { root, folder } => {
             super::tree_trash::plan(catalog, disk, trash, root, &folder, new_batch()?)
         }
-        op => plan_with(catalog, op, disk),
+        op => plan_on(catalog, op, disk, Some(trash)),
     }
+}
+
+/// Leaves out of a Trash the items on a drive with no Trash, and out of a
+/// permanent deletion the items on a drive with one.
+fn by_trash(
+    kind: Kind,
+    disk: &dyn Disk,
+    trash: &dyn super::Trash,
+    items: &mut Vec<Item>,
+    skipped: &mut Vec<Skipped>,
+) {
+    let (refusal, keep_without) = match kind {
+        Kind::TrashPhotos => (Refusal::NoTrash, false),
+        Kind::DeletePhotos => (Refusal::HasTrash, true),
+        _ => return,
+    };
+    let mut known: HashMap<PathBuf, bool> = HashMap::new();
+    items.retain(|item| {
+        let Some(photo) = item.members.first() else {
+            return true;
+        };
+        // Asked of the photo's file: its folder may be the top of its drive,
+        // which the Trash would be asked about as a folder of the drive
+        // above.
+        let dir = super::disk::parent(&photo.source).to_path_buf();
+        let without = *known
+            .entry(dir)
+            .or_insert_with_key(|dir| without_trash(disk, trash, dir, &photo.source));
+        if without == keep_without {
+            return true;
+        }
+        skipped.push(Skipped {
+            photo: item.preconditions.master,
+            reason: Skip::Refused(refusal.clone()),
+        });
+        false
+    });
+}
+
+/// Whether file `file`, in folder `dir`, is on a drive that surely has no
+/// Trash: an SMB share, which has none RAWmakase uses
+/// ([`super::proof::no_trash`]), or one `trash` says can't take it. One
+/// that can't be told has one: its photos stay out of a permanent
+/// deletion, and the Trash still fails closed when it runs.
+fn without_trash(disk: &dyn Disk, trash: &dyn super::Trash, dir: &Path, file: &Path) -> bool {
+    disk.volume_facts(dir)
+        .is_ok_and(|f| super::proof::no_trash(&f))
+        || trash.supports(file) == super::TrashSupport::No
 }
 
 /// The plan of folder change `tree`, of `kind`, run as `batch`. A folder

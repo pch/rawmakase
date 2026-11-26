@@ -6,9 +6,11 @@
 //! decided from the journal and the disk ([`recover`](fn@recover)).
 //!
 //! What it guarantees:
-//! - No byte of an original is lost or overwritten. A file leaves its path
-//!   only by an exclusive rename on its volume or by the system Trash;
-//!   nothing is replaced. A folder is made only where nothing has its name,
+//! - No byte of an original is lost or overwritten, except by
+//!   [`FileOp::DeletePhotos`], which the user confirms as permanent, for
+//!   photos on a drive with no Trash. A file
+//!   leaves its path only by an exclusive rename on its volume, by the
+//!   system Trash, or by that deletion; nothing is replaced. A folder is made only where nothing has its name,
 //!   and never deleted.
 //! - A photo moved to another volume is copied, never renamed across: into
 //!   a hidden partial copy made where nothing had its name, hashed as it is
@@ -108,6 +110,13 @@ pub enum FileOp {
     /// Puts masters' files, with the companions only they read, in the
     /// system Trash; then their rows, copies included, leave the catalog.
     TrashPhotos { photos: Vec<PhotoId> },
+    /// Deletes masters' files, with the companions only they read, outright
+    /// (#1273): they don't go to the Trash, and nothing can bring them
+    /// back. Only for photos whose drive has no Trash (an SMB share, or a
+    /// drive the system Trash says can't take them), as Move to Trash
+    /// can't take those; then their rows, copies included, leave the
+    /// catalog. Planned only by [`plan_with_trash`].
+    DeletePhotos { photos: Vec<PhotoId> },
     /// Makes folder `name` below logical folder `parent` of `root` (which
     /// the catalog may have no folder of its own for), on disk and in the
     /// catalog; then moves `then_move` into it, as [`Self::MovePhotos`].
@@ -234,6 +243,11 @@ pub enum Refusal {
     /// tell apart: any but a local APFS, HFS+, ext, XFS, Btrfs, NTFS, FAT or
     /// exFAT one (a network share, FUSE, ReFS…).
     FileIdsUnproven,
+    /// Its drive has no Trash, so Move to Trash can't take it; Delete
+    /// Permanently can.
+    NoTrash,
+    /// Its drive has a Trash, so it isn't deleted permanently.
+    HasTrash,
 }
 
 impl fmt::Display for Skip {
@@ -292,6 +306,10 @@ impl fmt::Display for Refusal {
             Self::FileIdsUnproven => f.write_str(
                 "Moving photos to or from this kind of drive (network drives other than SMB shares, and others) isn't available yet. Copy them in Finder, then use Synchronize Folder.",
             ),
+            Self::NoTrash => f.write_str("Its drive has no Trash."),
+            Self::HasTrash => {
+                f.write_str("Its drive has a Trash; Move to Trash puts it there instead.")
+            }
         }
     }
 }
@@ -576,7 +594,11 @@ fn size(bytes: u64) -> String {
 
 /// Plans `op` in `catalog` on this computer, as [`plan`](fn@plan) does, with the
 /// `trash` it would run with: the only way to plan [`FileOp::TrashFolder`],
-/// which refuses a drive `trash` says has none.
+/// which refuses a drive `trash` says has none, and
+/// [`FileOp::DeletePhotos`], which takes only photos on such a drive.
+/// [`FileOp::TrashPhotos`] planned so leaves out the photos on such a
+/// drive ([`Refusal::NoTrash`]), which it would otherwise find only when
+/// it runs.
 pub fn plan_with_trash(
     catalog: &super::Catalog,
     op: FileOp,
@@ -594,6 +616,8 @@ pub enum ItemResult {
     Moved { to: FolderId },
     /// Its files are in the Trash and its rows left the catalog.
     Trashed,
+    /// Its files are deleted permanently and its rows left the catalog.
+    Deleted,
     /// Its files are renamed: the photo is named `name` now.
     Renamed { name: String },
     /// The folder is renamed, with the catalog's folders below it; their
@@ -666,6 +690,8 @@ mod arrive_tests;
 mod batch_tests;
 #[cfg(test)]
 mod copy_tests;
+#[cfg(test)]
+mod delete_tests;
 #[cfg(test)]
 mod editable_preview_tests;
 #[cfg(test)]

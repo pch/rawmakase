@@ -72,7 +72,9 @@ pub(super) trait Disk {
     fn hash_prefix(&self, path: &Path, len: u64) -> Result<ContentHash, FsError>;
     /// When `path` was made.
     fn created(&self, path: &Path) -> Result<std::time::SystemTime, FsError>;
-    /// Removes a partial copy, which its caller proves its own.
+    /// Removes a partial copy, which its caller proves its own, or a file
+    /// the user confirmed deleting permanently, which its caller has just
+    /// found still the file planned.
     fn remove_file(&self, path: &Path) -> Result<(), FsError>;
     /// Removes an empty folder a copy made, which its caller proves its own.
     fn remove_dir(&self, path: &Path) -> Result<(), FsError>;

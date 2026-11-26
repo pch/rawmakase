@@ -23,6 +23,10 @@
 //! each durable and journalled before its next, so recovery finds each item
 //! as it would after a crash at that point of a run of it alone.
 //!
+//! Deleting photos permanently (#1273) removes each member in b, each found
+//! still the file planned right before; what it removed can't be put back,
+//! so a step failing after one leaves the item for the user.
+//!
 //! A move to another volume copies instead of renaming in b, and puts the
 //! originals in the Trash after c (see [`super::copy`]); anything failing
 //! before c undoes it.
@@ -88,6 +92,7 @@ pub(super) fn execute_with(
         Kind::RemoveFromCatalog => (None, HashSet::new()),
         Kind::MovePhotos
         | Kind::TrashPhotos
+        | Kind::DeletePhotos
         | Kind::CreateFolder
         | Kind::RenamePhotos
         | Kind::RenameFolder
@@ -167,9 +172,11 @@ pub(super) fn execute_with(
         } else {
             match run.kind {
                 Kind::RemoveFromCatalog => run.remove(catalog, &item),
-                Kind::MovePhotos | Kind::TrashPhotos | Kind::CreateFolder | Kind::RenamePhotos => {
-                    run.files(catalog, &item, cancel)
-                }
+                Kind::MovePhotos
+                | Kind::TrashPhotos
+                | Kind::DeletePhotos
+                | Kind::CreateFolder
+                | Kind::RenamePhotos => run.files(catalog, &item, cancel),
                 // A folder rename, move or Trash has no photo items.
                 // Nor does a plan import: imports run as `import` runs them.
                 Kind::RenameFolder
@@ -471,6 +478,9 @@ impl Run<'_> {
         if item.copy.is_some() {
             return super::copy::run(&self.cx(), catalog, item, id, cancel);
         }
+        if self.kind == Kind::DeletePhotos {
+            return self.delete(catalog, item, id);
+        }
         // b. Each member's step, durable and journalled before the next. A
         // step that happened counts as changed from then on, whether or not
         // what follows it succeeds.
@@ -535,6 +545,76 @@ impl Run<'_> {
             if let Err(e) = journalled {
                 return self.put_back(catalog, id, &changed, &format!("{e:#}"));
             }
+        }
+        // c. The catalog follows, on the evidence.
+        self.finish(catalog, id)
+    }
+
+    /// b. for a permanent deletion: each member removed while it is still
+    /// the file planned, its folder synced and the step journalled before
+    /// the next. Nothing removed can be put back: a step failing before any
+    /// removal leaves the item unchanged, and one failing after leaves it
+    /// for the user, its rows as they were.
+    fn delete(&self, catalog: &mut Catalog, item: &Item, id: OperationId) -> Result<()> {
+        let mut deleted: Option<&Path> = None;
+        for (ordinal, m) in item.members.iter().enumerate() {
+            let names = if ordinal == 0 { item.links } else { 1 };
+            let same = self
+                .disk
+                .entry(&m.source)
+                .is_ok_and(|e| e.id == m.id && e.kind == EntryKind::File && e.links == names)
+                && self.disk.identity(&m.source).ok().as_ref() == Some(&m.identity);
+            let (happened, step) = if !same {
+                let error = format!("{} changed since it was planned", m.source.display());
+                (false, Err(error))
+            } else {
+                match self.disk.remove_file(&m.source) {
+                    // Once removed, it is gone whatever follows: its folder
+                    // synced and the step journalled, as far as they go.
+                    Ok(()) => {
+                        let synced = self.disk.sync_dir(parent(&m.source));
+                        let journalled = catalog.db.write(|w| {
+                            journal::set_member(w, id, ordinal as i64, MemberState::Deleted, None)
+                        });
+                        let step = match (synced, journalled) {
+                            (Ok(()), Ok(())) => Ok(()),
+                            (Err(e), _) => Err(e.to_string()),
+                            (_, Err(e)) => Err(format!("{e:#}")),
+                        };
+                        (true, step)
+                    }
+                    // A removal that failed may have happened all the same
+                    // (a share dropped after the server removed it): only
+                    // one still proven at its source, as it was, didn't.
+                    Err(e) => (
+                        presence(self.disk, &m.source, m.id) != Presence::Here
+                            || self.disk.identity(&m.source).ok().as_ref() != Some(&m.identity),
+                        Err(e.to_string()),
+                    ),
+                }
+            };
+            if let Err(error) = step {
+                let reason = match (deleted, happened) {
+                    (None, false) => {
+                        return catalog.db.write(|w| {
+                            journal::set_state(w, id, ItemState::NoChange, Some(&error))
+                        });
+                    }
+                    (_, true) => format!(
+                        "{} may have been deleted, but that couldn't be recorded: {error}",
+                        m.source.display()
+                    ),
+                    (Some(first), false) => format!(
+                        "{} was deleted, but {} wasn't: {error}",
+                        first.display(),
+                        m.source.display()
+                    ),
+                };
+                return catalog
+                    .db
+                    .write(|w| journal::set_state(w, id, ItemState::NeedsRecovery, Some(&reason)));
+            }
+            deleted.get_or_insert(&m.source);
         }
         // c. The catalog follows, on the evidence.
         self.finish(catalog, id)
@@ -1274,27 +1354,37 @@ pub(super) fn restore(
     Ok(true)
 }
 
-/// Proof that a trashed item's files are gone: each member has a Trash
-/// receipt and its source no longer has it. Made only by [`Self::of`], and
-/// the only thing that lets [`remove_rows`] remove rows for a Trash.
+/// Proof that a trashed or deleted item's files are gone: each member has
+/// a Trash receipt, or was journalled deleted, and its source no longer has
+/// it. Made only by [`Self::of`], and the only thing that lets
+/// [`remove_rows`] remove rows for a Trash or a deletion.
 pub(super) struct DeletionEvidence(());
 
 impl DeletionEvidence {
     pub(super) fn of(disk: &dyn Disk, members: &[Member]) -> Option<Self> {
-        let gone = members.iter().all(|m| {
-            m.state == MemberState::Trashed
-                && m.receipt.is_some()
-                && m.id.is_some_and(|id| gone(disk, &m.source, id))
+        let gone = members.iter().all(|m| match m.state {
+            MemberState::Trashed => {
+                m.receipt.is_some() && m.id.is_some_and(|id| gone(disk, &m.source, id))
+            }
+            MemberState::Deleted => deleted_gone(disk, m),
+            _ => false,
         });
         (gone && !members.is_empty()).then_some(Self(()))
     }
+}
+
+/// Whether deleted member `m` is gone from its source: by its file object,
+/// or, on a drive names prove files on (an SMB share, FAT, exFAT), whose
+/// file objects are numbered anew when it is mounted again, by its name.
+pub(super) fn deleted_gone(disk: &dyn Disk, m: &Member) -> bool {
+    m.id.is_some_and(|id| gone(disk, &m.source, id)) || super::proof::gone(disk, &m.source)
 }
 
 /// Why rows may leave the catalog.
 pub(super) enum Removal {
     /// The user asked for Remove from Catalog.
     Requested,
-    /// Their file went to the Trash.
+    /// Their file went to the Trash, or was deleted permanently.
     Trashed(DeletionEvidence),
 }
 
@@ -1360,6 +1450,13 @@ pub(super) fn complete(
                     None
                 }
                 None => Some("it may be in the Trash".into()),
+            },
+            Kind::DeletePhotos => match DeletionEvidence::of(disk, &item.members) {
+                Some(evidence) => {
+                    remove_rows(w, &pre.rows, Removal::Trashed(evidence))?;
+                    None
+                }
+                None => Some("not all of its files were deleted".into()),
             },
             Kind::MovePhotos | Kind::RenamePhotos => moved(w, computer, folders, disk, pre, item)?,
             Kind::CreateFolder

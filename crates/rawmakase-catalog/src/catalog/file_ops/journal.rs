@@ -77,6 +77,10 @@ stored! {
         /// catalog; or the run's finishing item. An older release can't
         /// read the kind, and fails closed on an unfinished one.
         ImportCopy = "import_copy",
+        /// Its photo's file and companions are deleted outright, on a drive
+        /// with no Trash, then its rows (#1273). An older release can't
+        /// read the kind, and fails closed on an unfinished one.
+        DeletePhotos = "delete_photos",
     }
 }
 
@@ -122,6 +126,8 @@ stored! {
         Discarded = "discarded",
         /// Its original left at its source, the catalog following its copy.
         OriginalKept = "original_kept",
+        /// Deleted outright, as the user confirmed; nothing can put it back.
+        Deleted = "deleted",
     }
 }
 
@@ -927,9 +933,11 @@ fn read(db: &impl Reads, row: ItemRow) -> Result<Item> {
         }
         Kind::TrashFolder => Subject::TrashTree(serde_json::from_str(&row.preconditions)?),
         Kind::ImportCopy => Subject::Import(serde_json::from_str(&row.preconditions)?),
-        Kind::RemoveFromCatalog | Kind::MovePhotos | Kind::TrashPhotos | Kind::RenamePhotos => {
-            Subject::Photos(serde_json::from_str(&row.preconditions)?)
-        }
+        Kind::RemoveFromCatalog
+        | Kind::MovePhotos
+        | Kind::TrashPhotos
+        | Kind::DeletePhotos
+        | Kind::RenamePhotos => Subject::Photos(serde_json::from_str(&row.preconditions)?),
     };
     Ok(Item {
         id: OperationId(row.id),

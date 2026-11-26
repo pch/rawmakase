@@ -148,19 +148,9 @@ pub(crate) enum Event {
     ),
     /// A plan of the rename dialog's names (see `app::file_ops::rename`).
     RenamePlanned(Box<crate::app::file_ops::RenamePlanned>),
-    /// A file operation was planned (see `app::file_ops`): the plan, and
-    /// Delete's Move to Trash beside it.
-    FileOpPlanned(
-        Box<
-            Result<
-                (
-                    crate::catalog::file_ops::Plan,
-                    Option<crate::catalog::file_ops::Plan>,
-                ),
-                String,
-            >,
-        >,
-    ),
+    /// A file operation was planned (see `app::file_ops`): the plan, with
+    /// Delete's Move to Trash and Delete Permanently… beside it.
+    FileOpPlanned(Box<Result<crate::app::file_ops::Planned, String>>),
     /// Import Photos' attached drives, for dialog `.0` (see
     /// `app::file_ops::import`).
     ImportVolumes(u64, Vec<crate::app::file_ops::Drive>),

@@ -691,9 +691,12 @@ Some features span several owners; each module's docs describe its part:
   file proven at its new path (the same file object, by its exact name in the
   folder's listing), and go only with a Trash receipt and the file gone from
   its path; a file's absence alone authorises nothing. A file leaves its path
-  only by an exclusive rename on the same volume (never a link and unlink) or
+  only by an exclusive rename on the same volume (never a link and unlink),
   by the system Trash, which fails closed: a volume without one is refused,
-  never deleted from. To another volume a file is copied (into a hidden
+  never deleted from, or by Delete Permanently (#1273), which only photos on
+  a drive with no Trash are offered, which the user confirms in a question of
+  its own, and which deletes each file only while it is the file planned,
+  journalled, its rows going once every file of the photo is gone. To another volume a file is copied (into a hidden
   partial copy, hashed as read, synced, read back, then renamed exclusively),
   the catalog follows only proven copies, and the original goes to the Trash
   only after that, while it is still the file copied and its extras
