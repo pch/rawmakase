@@ -843,7 +843,11 @@ mod tests {
         p.image = Arc::new(image);
         p.recipe.hdr.enabled = true;
         p.recipe.hdr.limit = 2.3;
-        p.watermark = Some(crate::watermark::Watermark::simple_copyright("Test"));
+        p.watermark = Some(crate::watermark::Watermark {
+            name: "test".into(),
+            text: "Test".into(),
+            ..crate::watermark::fonts::test_watermark()
+        });
 
         let cpu = crate::develop::ExportBackend::cpu_only();
 
