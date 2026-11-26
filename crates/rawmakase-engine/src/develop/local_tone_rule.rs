@@ -379,13 +379,7 @@ impl RuleStats {
         let shadows = kind == RuleCurve::ShadowsUp;
         let mut table: [f32; LEVELS] = std::array::from_fn(|i| self.gains[i][k]);
         monotone(&mut table, step);
-        let curve = Curve {
-            key: 0.,
-            lo,
-            hi,
-            table,
-            tail: 0.,
-        };
+        let curve = Curve { lo, hi, table };
         if let Ok(path) = std::env::var("RAWMAKASE_RULE_DUMP") {
             let pix = self.curve_pix(kind, &curve);
             let (pix_lo, pix_hi, pix_table) = match pix {
@@ -435,13 +429,7 @@ impl RuleStats {
             prev_base = cur_base;
         }
         monotone_pos(&mut table, &pos);
-        Some(Curve {
-            key: 0.,
-            lo,
-            hi,
-            table,
-            tail: 0.,
-        })
+        Some(Curve { lo, hi, table })
     }
     /// How Shadows and Highlights act together on this photo, from its four unit
     /// curves `units` ([`RuleCurve::ALL`]'s order; [`Self::curve`]'s). Kept with the
@@ -690,11 +678,9 @@ fn ensemble<const F: usize, const H: usize, const M: usize>(
 /// `unit` scaled to slider fraction `s` (the rule is linear in the slider).
 pub(super) fn at(unit: &Curve, s: f32) -> Curve {
     Curve {
-        key: unit.key,
         lo: unit.lo,
         hi: unit.hi,
         table: unit.table.map(|v| v * s.abs()),
-        tail: 0.,
     }
 }
 

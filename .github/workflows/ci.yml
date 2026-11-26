@@ -341,8 +341,6 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
       - run: python3 scripts/deps.py check
-      - name: Verify generated Shadows calibration
-        run: python3 scripts/corpus/shadow-context.py --check
       - name: Camera calibration and comparison checks
         run: |
           python3 -m venv /tmp/rawmakase-parity-tests

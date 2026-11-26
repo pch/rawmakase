@@ -1,16 +1,10 @@
 //! Shadows and Highlights in the scene tone stage: an edge-aware local tone operator
-//! fitted to Camera Raw on scene values, before the white point and the profile's tone
-//! curve (docs/scene-tone-stage.md). The base level is a local Laplacian filter of log2
-//! scene luminance ([`LAPLACIAN_SIGMA`]). Clarity's detail reads a guided filter of it,
-//! with a radius of 3.2% of the long edge and ε = 0.5 (log2 units squared).
-//! The measured tables in `local_tone_data.rs` give the log2 gain for each base level
-//! relative to an image key. Positive Shadows also reads a regional level, a much wider
-//! edge-aware blur ([`REGION_SCALE`], [`REGION_RANGE`]): its gain is a table of the base
-//! level less the regional level plus a table of the regional level less the key, so a
-//! small dark area inside brighter surroundings is lifted less than a large one. The
-//! levels and keys come from the photo's measurement copy, so the result does not
+//! on scene values, before the white point and the profile's tone curve
+//! (docs/scene-tone-stage.md). The base level is a local Laplacian filter of log2
+//! scene luminance ([`LAPLACIAN_SIGMA`]). Negative Clarity's detail lazily computes a
+//! guided filter of it, with a radius of 3.2% of the long edge and ε = 0.5 (log2 units
+//! squared). The levels come from the photo's measurement copy, so the result does not
 //! depend on the rendered region or preview size.
-use super::local_tone_data::{Family, HIGHLIGHTS, SHADOWS, SHADOWS_DETAIL, SHADOWS_REGION};
 use super::local_tone_rule::RuleCurve;
 use rayon::prelude::*;
 
@@ -18,16 +12,8 @@ use rayon::prelude::*;
 pub(crate) const MAP_EDGE: u32 = 512;
 const RADIUS: f32 = 0.032;
 const EPSILON: f32 = 0.5;
-/// Radius, in map pixels, of the mean the Highlights tail reads, and how far above it
-/// (in stops) the tail's level may sit.
-const TAIL_RADIUS: usize = 2;
-const TAIL_MARGIN: f32 = 0.5;
 /// The darkest scene luminance the map tells apart (−14 stops).
 pub(crate) const FLOOR: f32 = 6.103_515_6e-5;
-/// The regional level positive Shadows reads: a bilateral blur of log2 luminance with a
-/// spatial σ of this fraction of the long edge and a range σ of `REGION_RANGE` stops.
-const REGION_SCALE: f32 = 0.25;
-const REGION_RANGE: f32 = 4.;
 /// The base level Shadows and Highlights read is a local Laplacian filter of the map's
 /// log2 luminance (Paris, Hasinoff and Kautz 2011, in the sampled form of Aubry et al.
 /// 2014): the filter's response to the gain curve `G(l) = l`, so that for a curve that
@@ -35,80 +21,16 @@ const REGION_RANGE: f32 = 4.;
 /// curve at this level. About a reference level `g` a sample `i` is remapped to
 /// `w·g + (1 − w)·i` with `w` a Gaussian of `i − g`, this many stops wide: detail within
 /// it keeps its contrast, and a difference beyond it follows the curve as an edge does.
-/// Camera Raw's renders show that split at every scale (docs/records/parity-gaps.md,
+/// Measured renders show that split at every scale (docs/records/parity-gaps.md,
 /// 2026-11-20).
 pub(crate) const LAPLACIAN_SIGMA: f32 = 1.5;
 /// Spacing, in stops, of the reference levels the filter is sampled at.
 const LAPLACIAN_STEP: f32 = 0.5;
 
-impl Family {
-    /// Row `row` continues past `hi` with the slope of its last 7 columns, per stop.
-    /// After `monotone` every column step is at least -1 stop, so the output past
-    /// `hi` still never decreases (at worst it is flat).
-    pub(super) const fn with_tail(mut self, row: usize) -> Self {
-        let step = (self.hi - self.lo) / 48.;
-        self.tail[row] = (self.tables[row][47] - self.tables[row][40]) / (7. * step);
-        self
-    }
-    /// How far past the last column's centre `base` is, in stops (0 before it).
-    fn past_hi(&self, key: f32, base: f32) -> f32 {
-        past_hi(self.lo, self.hi, key, base)
-    }
-    /// Project output log luminance (input + gain), not gain, onto nondecreasing
-    /// values. Pool adjacent violators gives the least-squares correction, leaving
-    /// every already ordered run alone unless it joins a violating neighbour.
-    ///
-    /// The unconstrained fits exclude clipped reference pixels and can turn back
-    /// on themselves in poorly sampled tails. Do this once, at compile time, on
-    /// the shared data: global curves, masks and GPU uploads must all use it.
-    /// Linear interpolation of these rows (including the identity) preserves the
-    /// constraint. A flat output is allowed; no unmeasured minimum contrast is added.
-    pub(super) const fn monotone(mut self) -> Self {
-        let step = (self.hi - self.lo) / 48.;
-        let mut row = 0;
-        while row < 6 {
-            let mut sums = [0.; 48];
-            let mut counts = [0_usize; 48];
-            let mut blocks = 0;
-            let mut i = 0;
-            while i < 48 {
-                sums[blocks] = self.tables[row][i] + i as f32 * step;
-                counts[blocks] = 1;
-                blocks += 1;
-                while blocks > 1
-                    && sums[blocks - 2] / counts[blocks - 2] as f32
-                        > sums[blocks - 1] / counts[blocks - 1] as f32
-                {
-                    sums[blocks - 2] += sums[blocks - 1];
-                    counts[blocks - 2] += counts[blocks - 1];
-                    blocks -= 1;
-                }
-                i += 1;
-            }
-            i = 0;
-            let mut block = 0;
-            while block < blocks {
-                let end = i + counts[block];
-                while i < end {
-                    // Preserve untouched bins bit for bit (especially identity rows).
-                    if counts[block] > 1 {
-                        self.tables[row][i] = sums[block] / counts[block] as f32 - i as f32 * step;
-                    }
-                    i += 1;
-                }
-                block += 1;
-            }
-            row += 1;
-        }
-        self
-    }
-}
-
 pub(crate) struct LocalToneMap {
     pub(crate) width: usize,
     pub(crate) height: usize,
-    /// What the map takes from the photo: its log2 luminance, the base level and the
-    /// regional level.
+    /// What the map takes from the photo: its log2 luminance and local Laplacian base.
     base: std::sync::Arc<MapBase>,
     /// Source image size, to convert sample coordinates.
     pub(crate) scale: [f32; 2],
@@ -117,14 +39,6 @@ pub(crate) struct LocalToneMap {
     /// Combined global pixel-level contrast curve (`G_pix(l)`) evaluated at the pixel's
     /// own log2 luminance, additive to the base curves (`shadows` + `highlights`).
     pub(crate) pix: Option<Curve>,
-    /// Whether positive Shadows may read the regional level (the slider or masks).
-    regional: bool,
-    /// Positive Shadows' tables at the slider: of the base level less the regional
-    /// level, and of the regional level less the Shadows key.
-    pub(crate) lift: Option<[Curve; 2]>,
-    /// Image keys of negative Shadows, Highlights and positive Shadows, for masks
-    /// that evaluate them at their own slider values.
-    pub(crate) keys: [f32; 3],
     /// Negative Clarity's measured gains and luminance guidance on this grid (`clarity.rs`).
     pub(crate) clarity: Option<super::clarity::ClarityField>,
     /// Positive Clarity's scaled base and pixel curves (`clarity_rule.rs`).
@@ -150,67 +64,15 @@ pub(crate) struct LocalToneMap {
 }
 #[derive(Clone)]
 pub(crate) struct Curve {
-    pub(crate) key: f32,
     pub(crate) lo: f32,
     pub(crate) hi: f32,
     pub(crate) table: [f32; 48],
-    /// Log2 gain per stop past the last column (`Family::tail`).
-    pub(crate) tail: f32,
-}
-/// How far `base` is past the last column's centre of a table over [lo, hi], in stops.
-fn past_hi(lo: f32, hi: f32, key: f32, base: f32) -> f32 {
-    (base - key - (hi - (hi - lo) / 96.)).max(0.)
 }
 impl Curve {
-    /// A family's curve at slider `s`: what [`family`] evaluates, kept to check it.
-    #[cfg(test)]
-    fn new(family: &Family, s: f32, key: f32) -> Option<Self> {
-        if s == 0. {
-            return None;
-        }
-        let s = s.clamp(-1., 1.);
-        let mut table = [0.; 48];
-        // Interpolate between measured positions; 0 is no change.
-        let mut points: Vec<(f32, Option<&[f32; 48]>)> = family
-            .values
-            .iter()
-            .zip(&family.tables)
-            .map(|(v, t)| (*v, Some(t)))
-            .collect();
-        points.insert(3, (0., None));
-        let j = points
-            .windows(2)
-            .position(|w| s <= w[1].0)
-            .unwrap_or(points.len() - 2);
-        let ((s0, t0), (s1, t1)) = (points[j], points[j + 1]);
-        let w = (s - s0) / (s1 - s0);
-        let tail_at = |v: f32, t: Option<&[f32; 48]>| {
-            t.and_then(|_| family.values.iter().position(|x| *x == v))
-                .map_or(0., |i| family.tail[i])
-        };
-        let tail = tail_at(s0, t0) + (tail_at(s1, t1) - tail_at(s0, t0)) * w;
-        for (i, v) in table.iter_mut().enumerate() {
-            let y0 = t0.map_or(0., |t| t[i]);
-            let y1 = t1.map_or(0., |t| t[i]);
-            *v = y0 + (y1 - y0) * w;
-        }
-        Some(Self {
-            key,
-            lo: family.lo,
-            hi: family.hi,
-            table,
-            tail,
-        })
-    }
     pub(super) fn eval(&self, base: f32) -> f32 {
-        self.eval_t(base, base)
-    }
-    fn eval_t(&self, base: f32, tb: f32) -> f32 {
-        let f = ((base - self.key - self.lo) / (self.hi - self.lo) * 48. - 0.5).clamp(0., 47.);
+        let f = ((base - self.lo) / (self.hi - self.lo) * 48. - 0.5).clamp(0., 47.);
         let i = (f as usize).min(46);
-        self.table[i]
-            + (self.table[i + 1] - self.table[i]) * (f - i as f32)
-            + self.tail * past_hi(self.lo, self.hi, self.key, tb)
+        self.table[i] + (self.table[i + 1] - self.table[i]) * (f - i as f32)
     }
 }
 /// The slider values a map is built for: Shadows, Highlights and Clarity, whether
@@ -239,33 +101,22 @@ impl Sliders {
     }
 }
 /// What a map takes from the photo whatever the slider values: the measurement copy's
-/// scene luminance and its log, the base level, the guided filter's coefficients
-/// (Clarity's detail) and the keys, and
-/// (made the first time a map reads them) positive Shadows' key offset and regional
-/// level and Clarity's detail. It depends only on the copy and its scene luminance, so
-/// renders that change only the sliders keep it (`scene_tone::Measured::map_base`).
+/// scene luminance and its log, the local Laplacian base level, and (built lazily on
+/// first use) negative Clarity's detail, positive Clarity's curves and the global rule's
+/// histogram statistics. It depends only on the copy and its scene luminance, so renders
+/// that change only the sliders keep it (`scene_tone::Measured::map_base`).
 pub(crate) struct MapBase {
     width: usize,
     height: usize,
     lum: Vec<f32>,
     logs: Vec<f32>,
-    a: Vec<f32>,
-    b: Vec<f32>,
     /// The local Laplacian base level of each map pixel ([`laplacian_base`]).
     laplacian: Vec<f32>,
-    /// Largest of the local mean over `TAIL_RADIUS`, so the first pixels inside a large
-    /// bright area read its inside rather than the dark outside.
-    fine: Vec<f32>,
     /// Active default-crop rectangle `[x0, y0, x1, y1]` on this map, when the camera's
     /// default crop is narrower than the decoded sensor (`ImageFrame::inset`). Clamped
     /// out-of-crop border cells stay in the map grids for alignment and halo-free blurs,
     /// while `RuleStats` tallies only the active crop.
     crop: Option<[usize; 4]>,
-    shadow_key: f32,
-    highlight_key: f32,
-    clarity_key: f32,
-    lift_offset: std::sync::OnceLock<f32>,
-    region: std::sync::OnceLock<Vec<f32>>,
     detail: std::sync::OnceLock<super::clarity::ClarityDetail>,
     clarity_rule: std::sync::OnceLock<[Curve; 2]>,
     rule: std::sync::OnceLock<super::local_tone_rule::RuleStats>,
@@ -296,48 +147,14 @@ impl MapBase {
     pub(crate) fn new(lum: Vec<f32>, size: [u32; 2]) -> Self {
         let (w, h) = (size[0] as usize, size[1] as usize);
         let logs: Vec<f32> = lum.iter().map(|y| level(*y)).collect();
-        let percentile = |q: f32| {
-            let mut v = logs.clone();
-            let k = ((v.len() - 1) as f32 * q) as usize;
-            v.select_nth_unstable_by(k, f32::total_cmp);
-            v[k]
-        };
-        let r = ((RADIUS * w.max(h) as f32).round() as usize).max(1);
-        // He et al. guided filter with the image as its own guide.
-        let mean = |x: &[f32]| blur(x, w, h, r);
-        let sq: Vec<f32> = logs.iter().map(|v| v * v).collect();
-        let (m, m2) = rayon::join(|| mean(&logs), || mean(&sq));
-        let a: Vec<f32> = m
-            .iter()
-            .zip(&m2)
-            .map(|(m, m2)| {
-                let var = (m2 - m * m).max(0.);
-                var / (var + EPSILON)
-            })
-            .collect();
-        let b: Vec<f32> = m.iter().zip(&a).map(|(m, a)| m - a * m).collect();
-        let fine = dilate(&blur(&logs, w, h, TAIL_RADIUS), w, h, TAIL_RADIUS);
-        let (a, b) = rayon::join(|| mean(&a), || mean(&b));
         let laplacian = laplacian_base(&logs, w, h);
-        let average = logs.iter().map(|l| l.exp2() as f64).sum::<f64>() / logs.len() as f64;
-        let highlight_key = 0.5 * percentile(0.75) + 0.5 * percentile(0.01);
-        // Clarity's weights were fitted relative to the photo's brightest levels.
-        let clarity_key = 0.25 * percentile(0.999) + 0.75 * percentile(0.99);
         Self {
             width: w,
             height: h,
             lum,
             logs,
-            a,
-            b,
             laplacian,
-            fine,
             crop: None,
-            shadow_key: (average as f32).log2(),
-            highlight_key,
-            clarity_key,
-            lift_offset: Default::default(),
-            region: Default::default(),
             detail: Default::default(),
             clarity_rule: Default::default(),
             rule: Default::default(),
@@ -393,79 +210,66 @@ impl MapBase {
     pub(crate) fn lum(&self) -> &[f32] {
         &self.lum
     }
-    /// Positive Shadows' key less the negative one: the photo's spatial scene context.
-    fn lift_offset(&self) -> f32 {
-        *self.lift_offset.get_or_init(|| {
-            super::shadow_context::offset(&self.logs, self.shadow_key, self.width, self.height)
-        })
-    }
-    /// The regional level positive Shadows reads.
-    fn region(&self) -> &Vec<f32> {
-        self.region.get_or_init(|| {
-            let [k] = super::clarity::bilateral(
-                &self.logs,
-                self.width,
-                self.height,
-                [REGION_SCALE * self.width.max(self.height) as f32],
-                REGION_RANGE,
-            );
-            k
-        })
-    }
-    /// Clarity's detail.
+    /// Negative Clarity's detail, computed lazily on first use with a guided filter of
+    /// log2 luminance.
     fn detail(&self) -> &super::clarity::ClarityDetail {
         self.detail.get_or_init(|| {
+            let (w, h) = (self.width, self.height);
+            let r = ((RADIUS * w.max(h) as f32).round() as usize).max(1);
+            // He et al. guided filter with the image as its own guide.
+            let mean = |x: &[f32]| blur(x, w, h, r);
+            let sq: Vec<f32> = self.logs.iter().map(|v| v * v).collect();
+            let (m, m2) = rayon::join(|| mean(&self.logs), || mean(&sq));
+            let a: Vec<f32> = m
+                .iter()
+                .zip(&m2)
+                .map(|(m, m2)| {
+                    let var = (m2 - m * m).max(0.);
+                    var / (var + EPSILON)
+                })
+                .collect();
+            let b: Vec<f32> = m.iter().zip(&a).map(|(m, a)| m - a * m).collect();
+            let (a, b) = rayon::join(|| mean(&a), || mean(&b));
             let base: Vec<f32> = self
                 .logs
                 .iter()
-                .zip(self.a.iter().zip(&self.b))
+                .zip(a.iter().zip(&b))
                 .map(|(l, (a, b))| a * l + b)
                 .collect();
-            super::clarity::ClarityDetail::of(
-                &self.logs,
-                &base,
-                self.width,
-                self.height,
-                self.clarity_key,
-            )
+            let percentile = |q: f32| {
+                let mut v = self.logs.clone();
+                let k = ((v.len() - 1) as f32 * q) as usize;
+                v.select_nth_unstable_by(k, f32::total_cmp);
+                v[k]
+            };
+            // Clarity's weights were fitted relative to the photo's brightest levels.
+            let clarity_key = 0.25 * percentile(0.999) + 0.75 * percentile(0.99);
+            super::clarity::ClarityDetail::of(&self.logs, &base, w, h, clarity_key)
         })
     }
 }
 /// A map's grids as the GPU reads them (`develop.wgsl`'s `grid`): the map's log2
-/// luminance, then its local Laplacian base level, then the fine mean, then (when positive Shadows reads it) the regional level. They depend
-/// only on the map's base, which renders share while the sliders move, so the device
-/// keeps them per base instead of receiving them with every render.
+/// luminance followed by its local Laplacian base level. They depend only on the map's
+/// base, which renders share while the sliders move, so the device keeps them per base
+/// instead of receiving them with every render.
 #[derive(Clone)]
 pub(crate) struct MapGrid {
     base: std::sync::Arc<MapBase>,
-    region: bool,
 }
 impl MapGrid {
     /// Whether `other` holds the same values.
     pub(crate) fn same(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.base, &other.base) && self.region == other.region
+        std::sync::Arc::ptr_eq(&self.base, &other.base)
     }
     /// Cells per grid.
     pub(crate) fn cells(&self) -> usize {
         self.base.logs.len()
     }
-    /// Offset of the fine mean.
-    pub(crate) fn fine_at(&self) -> usize {
-        2 * self.cells()
-    }
-    /// Offset of the regional level, if present.
-    pub(crate) fn region_at(&self) -> Option<usize> {
-        self.region.then(|| 3 * self.cells())
-    }
-    /// The values, in order: `logs`, `laplacian`, `fine`, and optional `region`.
+    /// The values, in order: `logs`, then `laplacian`.
     pub(crate) fn values(&self) -> Vec<f32> {
-        let mut v = Vec::with_capacity(4 * self.cells());
+        let mut v = Vec::with_capacity(2 * self.cells());
         v.extend(&self.base.logs);
         v.extend(&self.base.laplacian);
-        v.extend(&self.base.fine);
-        if self.region {
-            v.extend(self.base.region());
-        }
         v
     }
 }
@@ -655,16 +459,6 @@ impl LocalToneMap {
         local: bool,
     ) -> Self {
         let (w, h) = (base.width, base.height);
-        // Masks may evaluate either sign. Negative Shadows follows mean luminance;
-        // positive Shadows also measures spatial scene context. Highlights keeps
-        // its range key (docs/scene-tone-stage.md).
-        let lift_key = base.shadow_key
-            + if sliders.shadows > 0. || local {
-                base.lift_offset()
-            } else {
-                0.
-            };
-        let keys = [base.shadow_key, base.highlight_key, lift_key];
         let has_clarity = sliders.clarity != 0. || sliders.mask_clarity;
         // An HDR master's Clarity is stronger beside light above white, a mask's too.
         let hdr_weights = (has_clarity && sliders.hdr).then(|| hdr_clarity_weights(base));
@@ -775,9 +569,6 @@ impl LocalToneMap {
             shadows,
             highlights,
             pix,
-            regional: false,
-            lift: None,
-            keys,
             clarity,
             clarity_pos,
             clarity_pos_unit,
@@ -799,15 +590,10 @@ impl LocalToneMap {
     pub(crate) fn gain(&self, x: f32, y: f32, lum: f32) -> f32 {
         let own = level(lum);
         let base = self.base(x, y, lum);
-        let tb = self.tail_base(x, y, base);
         let mut ev = self.shadows.as_ref().map_or(0., |c| c.eval(base))
-            + self.highlights.as_ref().map_or(0., |c| c.eval_t(base, tb));
+            + self.highlights.as_ref().map_or(0., |c| c.eval(base));
         if let Some(p) = &self.pix {
             ev += p.eval(own);
-        }
-        if let (Some([detail, region]), Some(k)) = (&self.lift, self.region()) {
-            let k = self.bilinear(x, y, k);
-            ev += detail.eval(base - k) + region.eval(k);
         }
         (ev + self.clarity_at(x, y, base, own)).exp2()
     }
@@ -835,14 +621,8 @@ impl LocalToneMap {
         } else {
             self.clarity_at(x, y, base, own)
         };
-        let lift = self.region().map_or(0., |k| {
-            let k = self.bilinear(x, y, k);
-            family(&SHADOWS_DETAIL, sliders[0], 0., base - k)
-                + family(&SHADOWS_REGION, sliders[0], self.keys[2], k)
-        });
         // The rule's curve of each sign, blended toward its extreme where both sliders
-        // are set (`local_tone_rule::Pair`) and scaled by the slider; the fitted
-        // families only where a map carries no rule.
+        // are set (`local_tone_rule::Pair`) and scaled by the slider.
         let pair_at = self
             .pair
             .as_ref()
@@ -876,34 +656,13 @@ impl LocalToneMap {
             (Some((_, shift)), true) => shift,
             _ => 0.,
         };
-        let shadows = shadows.unwrap_or_else(|| family(&SHADOWS, sliders[0], self.keys[0], base));
-        let highlights = highlights.unwrap_or_else(|| {
-            family_t(
-                &HIGHLIGHTS,
-                sliders[1],
-                self.keys[1],
-                base,
-                self.tail_base(x, y, base),
-            )
-        });
-        (shadows + highlights + pair_shift + lift + clarity).exp2()
-    }
-    /// The regional level on this grid, when positive Shadows may read it.
-    pub(crate) fn region(&self) -> Option<&[f32]> {
-        self.regional.then(|| self.base.region().as_slice())
+        (shadows.unwrap_or(0.) + highlights.unwrap_or(0.) + pair_shift + clarity).exp2()
     }
     /// What the GPU reads of this map's grids (`MapGrid`).
     pub(crate) fn grid(&self) -> MapGrid {
         MapGrid {
             base: self.base.clone(),
-            region: self.regional,
         }
-    }
-    /// The level Highlights' tail reads: the base, but no more than `TAIL_MARGIN` above
-    /// the (dilated) mean of the few pixels around, so stripes and specks too fine to
-    /// carry a pull of their own keep their detail (docs/scene-tone-stage.md).
-    fn tail_base(&self, x: f32, y: f32, base: f32) -> f32 {
-        base.min(self.bilinear(x, y, &self.base.fine) + TAIL_MARGIN)
     }
     /// The base level of a pixel: the map's local Laplacian level there, as far as the
     /// pixel sits at the map's own level, and the pixel's own level as it departs from
@@ -968,67 +727,6 @@ pub(crate) fn grid_sample(v: &[f32], size: [usize; 2], scale: [f32; 2], pos: [f3
     let top = v[iy * width + ix] * (1. - tx) + v[iy * width + jx] * tx;
     let bottom = v[jy * width + ix] * (1. - tx) + v[jy * width + jx] * tx;
     top * (1. - ty) + bottom * ty
-}
-/// The measured positions a slider is bracketed in, as `Curve::new` builds them: each
-/// position with its table, and the identity at 0 in slot `IDENTITY`.
-type Points<'a> = [(f32, Option<(&'a [f32; 48], f32)>); 7];
-/// Slot the identity takes, after the negative slider positions.
-const IDENTITY: usize = 3;
-
-/// A family's log2 gain at slider `s` and base level `base`, as `Curve::new(..).eval`
-/// without building the table.
-pub(crate) fn family(f: &Family, s: f32, key: f32, base: f32) -> f32 {
-    family_t(f, s, key, base, base)
-}
-pub(crate) fn family_t(f: &Family, s: f32, key: f32, base: f32, tb: f32) -> f32 {
-    if s == 0. {
-        return 0.;
-    }
-    let s = s.clamp(-1., 1.);
-    let past = f.past_hi(key, tb);
-    let bin = |(t, tail): (&[f32; 48], f32)| {
-        let x = ((base - key - f.lo) / (f.hi - f.lo) * 48. - 0.5).clamp(0., 47.);
-        let i = (x as usize).min(46);
-        t[i] + (t[i + 1] - t[i]) * (x - i as f32) + tail * past
-    };
-    // On the stack: this bracket is built per pixel, for both families.
-    let points: Points = std::array::from_fn(|slot| {
-        if slot == IDENTITY {
-            (0., None)
-        } else {
-            let i = if slot < IDENTITY { slot } else { slot - 1 };
-            (f.values[i], Some((&f.tables[i], f.tail[i])))
-        }
-    });
-    let j = points
-        .windows(2)
-        .position(|w| s <= w[1].0)
-        .unwrap_or(points.len() - 2);
-    let ((s0, t0), (s1, t1)) = (points[j], points[j + 1]);
-    let w = (s - s0) / (s1 - s0);
-    let (y0, y1) = (t0.map_or(0., bin), t1.map_or(0., bin));
-    y0 + (y1 - y0) * w
-}
-/// The measured families for `develop.wgsl`: Shadows (0), Highlights (1), a slot-2
-/// placeholder (`local_tone_data::DEHAZE`, no longer rendered since Dehaze moved to
-/// `scene_tone::haze`, kept here so slots 3 and 4 keep their shader indices), and
-/// positive Shadows' detail (3) and region (4) tables, each its 6 × 48 table values,
-/// `lo` and `hi`, its six slider positions, then its six tails.
-pub(crate) fn gpu_families() -> Vec<f32> {
-    let mut out = Vec::new();
-    for f in [
-        &SHADOWS,
-        &HIGHLIGHTS,
-        &super::local_tone_data::DEHAZE,
-        &SHADOWS_DETAIL,
-        &SHADOWS_REGION,
-    ] {
-        out.extend(f.tables.iter().flatten());
-        out.extend([f.lo, f.hi]);
-        out.extend(f.values);
-        out.extend(f.tail);
-    }
-    out
 }
 /// How much stronger an HDR master's Clarity is near light above white, the base level
 /// (log2 scene luminance) that counts as that light, and how near (a fraction of the
@@ -1118,43 +816,6 @@ pub(super) fn blur(x: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn measured_curves_do_not_reverse_brightness() {
-        let mut failures = Vec::new();
-        let gpu = gpu_families();
-        for (slot, (name, f)) in [
-            ("Shadows", &SHADOWS),
-            ("Highlights", &HIGHLIGHTS),
-            ("Dehaze", &super::super::local_tone_data::DEHAZE),
-            ("Shadows detail", &SHADOWS_DETAIL),
-            ("Shadows region", &SHADOWS_REGION),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            assert_eq!(&gpu[slot * 302..slot * 302 + 288], f.tables.as_flattened());
-            assert_eq!(&gpu[slot * 302 + 296..slot * 302 + 302], &f.tail);
-            for s in -100..=100 {
-                let s = s as f32 / 100.;
-                let curve = Curve::new(f, s, 0.);
-                let output = |x: f32| x + family(f, s, 0., x);
-                for i in -40..520 {
-                    let x = f.lo + (f.hi - f.lo) * i as f32 / 480.;
-                    let next = x + (f.hi - f.lo) / 480.;
-                    assert!(output(x).is_finite());
-                    assert!(
-                        (family(f, s, 0., x) - curve.as_ref().map_or(0., |c| c.eval(x))).abs()
-                            < 1e-5
-                    );
-                    if output(next) < output(x) - 1e-5 {
-                        failures.push(format!("{name} at {s}: reversal near {x}"));
-                        break;
-                    }
-                }
-            }
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
-    }
 
     #[test]
     fn highlights_do_not_solarize_a_bright_spot_in_a_dark_scene() {
@@ -1222,65 +883,6 @@ mod tests {
         x[12] = 25.;
         let b = blur(&x, 5, 5, 1);
         assert!((b[12] - 25. / 9.).abs() < 1e-5);
-    }
-    #[test]
-    fn curves_interpolate_and_vanish_at_zero() {
-        assert!(Curve::new(&SHADOWS, 0., 0.).is_none());
-        // Negative Shadows darkens dark bases and leaves the key level almost unchanged.
-        let c = Curve::new(&SHADOWS, -0.5, -1.).unwrap();
-        assert!(c.eval(-7.) < -0.3, "{}", c.eval(-7.));
-        assert!(c.eval(-1.).abs() < 0.1);
-        let half = Curve::new(&SHADOWS, -0.125, -1.).unwrap();
-        let full = Curve::new(&SHADOWS, -0.25, -1.).unwrap();
-        assert!((half.eval(-6.) - full.eval(-6.) / 2.).abs() < 1e-5);
-        // Positive Shadows is the lift alone: the base family has no positive rows, and
-        // the lift's families none for negative positions.
-        assert!((-8..=4).all(|u| family(&SHADOWS, 0.7, 0., u as f32) == 0.));
-        assert!((-8..=4).all(|u| family(&SHADOWS_DETAIL, -0.7, 0., u as f32) == 0.));
-        assert!((-8..=4).all(|u| family(&SHADOWS_REGION, -0.7, 0., u as f32) == 0.));
-        // Negative Highlights darkens bases above its key.
-        let h = Curve::new(&HIGHLIGHTS, -0.5, -3.).unwrap();
-        assert!(h.eval(0.) < -0.2);
-        // Per-pixel evaluation matches the interpolated table.
-        for base in [-8., -3., -1., 0.2, 4.5, 9.] {
-            for (f, s, key) in [
-                (&SHADOWS, -0.45, -1.),
-                (&SHADOWS_DETAIL, 0.45, 0.),
-                (&SHADOWS_REGION, 0.8, -1.),
-                (&HIGHLIGHTS, -0.8, -3.),
-            ] {
-                let table = Curve::new(f, s, key).unwrap().eval(base);
-                assert!((family(f, s, key, base) - table).abs() < 1e-5);
-            }
-        }
-    }
-
-    #[test]
-    fn negative_highlights_keeps_pulling_past_its_table() {
-        // Camera Raw 18.7 pulls a flat object 8, 9 and 10 stops over a dark background by
-        // 7.9, 9.1 and 10.2 stops at -100, past the table's top at 7 stops; the -100 row
-        // continues with its last slope, the others hold their last column.
-        let at = |s: f32, u: f32| family(&HIGHLIGHTS, s, 0., u);
-        assert!(
-            at(-1., 10.) < at(-1., 7.) - 2.,
-            "{} {}",
-            at(-1., 7.),
-            at(-1., 10.)
-        );
-        assert_eq!(at(-0.5, 10.), at(-0.5, 7.));
-        // Halfway between -100 and -50, half the tail.
-        let tail = |s: f32| at(s, 10.) - at(s, 8.);
-        assert!((tail(-0.75) - tail(-1.) / 2.).abs() < 1e-4);
-        // The output still never decreases past the table.
-        for s in [-1., -0.75] {
-            for u in 70..140 {
-                let u = u as f32 / 10.;
-                assert!(
-                    u + 0.1 + at(s, u + 0.1) >= u + at(s, u) - 1e-5,
-                    "{s} at {u}"
-                );
-            }
-        }
     }
 
     #[test]
@@ -1460,8 +1062,6 @@ mod tests {
         assert!(map(&lum, 0., false).rule.iter().all(Option::is_none));
         for s in [-0.6, 0.6] {
             let m = map(&lum, s, false);
-            // The regional level and the two-scale lift are not read: the rule's curve is.
-            assert!(m.region().is_none() && m.lift.is_none());
             assert!(m.rule.iter().all(Option::is_some) && m.shadows.is_some());
         }
         // Masks may move Shadows or Highlights either way anywhere, so the curves are

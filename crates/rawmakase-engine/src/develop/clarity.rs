@@ -190,7 +190,7 @@ fn coefficients(weights: &[[f32; KNOTS]; 4], base: f32, blurs: [f32; 4]) -> [f32
 /// piecewise linear bilateral filter of Durand and Dorsey, with Gaussian range weights
 /// at levels `range / 2.5` apart. Each level is blurred on a grid reduced to about a
 /// third of its σ and sampled back bilinearly, as a bilateral grid.
-pub(super) fn bilateral<const N: usize>(
+fn bilateral<const N: usize>(
     x: &[f32],
     w: usize,
     h: usize,

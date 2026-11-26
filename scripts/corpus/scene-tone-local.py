@@ -13,8 +13,9 @@
                      existing renders and taps are kept, so delete DIR/maps to
                      refit after an engine change
   tables  SYNTH PHOTOS TONE
-                     fits the tables and writes local_tone_data.rs and clarity_data.rs
-                     (--out, default crates/rawmakase-engine/src/develop). TONE is
+                     fits and writes `clarity_data.rs` (--out, default
+                     crates/rawmakase-engine/src/develop); Shadows/Highlights now use
+                     the global rule (`scripts/corpus/scene-tone-rule.py`). TONE is
                      scene-tone-tables.py's render folder: its white ramps at default
                      settings give Camera Raw's global curve on the synthetic scenes.
 
@@ -630,24 +631,13 @@ def photos(args):
 
 
 def tables(args):
-    S, H, D = photo_tables(args.photos.resolve())
-    detail, region = lift_tables(args.photos.resolve())
     t = synthetic_tables(args.synth.resolve(), args.tone.resolve())
     out = args.out.resolve()
-    none = [np.zeros(48)] * 3
-    (out / 'local_tone_data.rs').write_text(
-        LOCAL_HEADER + family('SHADOWS', S + none, SH, *RANGES['S'])
-        + family('SHADOWS_DETAIL', none + detail, SH, *RANGES['S'])
-        + family('SHADOWS_REGION', none + region, SH, *RANGES['S'])
-        + family('HIGHLIGHTS', t['H'][:3] + [w * photo + (1 - w) * synth for (photo, count), synth in zip(H, t['H'][3:])
-                                             for w in [count / (count + HIGHLIGHT_SUPPORT)]], SH, *RANGES['H'],
-                 tail_rows=(0,))
-        + family('DEHAZE', D, DEHAZE, *RANGES['D']))
     c = t['C']
     (out / 'clarity_data.rs').write_text(
         CLARITY_HEADER + weights('WEIGHTS_M100', c['C-100']) + weights('WEIGHTS_M50', c['C-50'])
         + weights('WEIGHTS_50', c['C+50']) + weights('WEIGHTS_100', c['C+100']))
-    print(f'local_tone_data.rs, clarity_data.rs -> {out}')
+    print(f'clarity_data.rs -> {out}')
 
 
 def main():

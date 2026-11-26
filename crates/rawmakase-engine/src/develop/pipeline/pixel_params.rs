@@ -53,33 +53,27 @@ pub(crate) mod slot {
         LOCAL_SIZE: 2,
         LOCAL_SCALE: 2,
         LOCAL_A: 3,
-        // The fine mean's offset into the grid (`local_tone::MapGrid::fine_at`).
-        LOCAL_FINE: 1,
-        SHADOWS: 4,
-        HIGHLIGHTS: 4,
+        SHADOWS: 3,
+        HIGHLIGHTS: 3,
         // Combined global pixel-level contrast curve (`local_tone::LocalToneMap::pix`).
-        PIX: 4,
+        PIX: 3,
         // Positive Clarity's base and pixel curves (`local_tone::LocalToneMap::clarity_pos`),
         // and optional HDR weight grid offset (`clarity_hdr`, or -1).
-        CLARITY_BASE: 4,
-        CLARITY_PIX: 4,
+        CLARITY_BASE: 3,
+        CLARITY_PIX: 3,
         CLARITY_HDR: 1,
-        // Positive Shadows' detail and region curves (as SHADOWS), and the regional level's
-        // grid or -1 (see `local_tone::LocalToneMap::lift`).
-        LIFT: 8,
         // The photo's global rule at full strength: the curves (as SHADOWS) of Shadows
         // +100, Highlights −100, Shadows −100 and Highlights +100, for masks
         // (`local_tone::LocalToneMap::rule`).
-        RULE: 16,
+        RULE: 12,
         // Full-strength pixel-level contrast curves in `RULE`'s order, for masks
         // (`local_tone::LocalToneMap::rule_pix`).
-        RULE_PIX: 16,
+        RULE_PIX: 12,
         // How Shadows and Highlights act together, for masks (`local_tone_rule::Pair`):
         // the four unit curves' extremes in `RULE`'s order, then Shadows' and Highlights'
         // blend fractions for each sign combination, then the four uniform log2 shifts.
         // All 0 without one: nothing is blended or shifted.
         PAIR: 16,
-        LOCAL_REGION: 1,
         BASIC: 1,
         LEVELS: 3,
         // The measured parametric curve's table, or -1 (see `parametric::curve`).
@@ -115,8 +109,6 @@ pub(crate) mod slot {
         LOCAL_TONE: 1,
         // The masks' Contrast pivot.
         LOCAL_PIVOT: 1,
-        LOCAL_FAMILIES: 1,
-        LOCAL_KEYS: 3,
         GLOBAL_SH: 2,
         // An HDR master's (`pixel_params_hdr`): the Whites gains over log2 scene value
         // (`GlobalTone::hdr_gains`) and the profile's HDR tone curve sampled over log2
@@ -224,7 +216,7 @@ pub(crate) struct PixelParams {
     /// without masks.
     pub(crate) weights: Vec<u32>,
     /// The Shadows/Highlights map's grids, which the shader reads from a buffer of their
-    /// own (`LOCAL_A`, `LOCAL_FINE` and `LOCAL_REGION` offsets into it; Clarity's into `tables`).
+    /// own (`LOCAL_A` offsets into it; Clarity's into `tables`).
     pub(crate) grid: Option<crate::develop::local_tone::MapGrid>,
     /// The recipe as the camera color reads it (`stage_cache::color_recipe`), when the
     /// develop pass may keep that color for its samples and reuse it while the stages
@@ -448,7 +440,6 @@ fn masks_need_map(r: &Recipe) -> bool {
 }
 fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set(slot::LOCAL, &[1.]);
-    p.set(slot::LOCAL_KEYS, &local.keys);
     p.set(slot::LOCAL_SIZE, &[local.width as f32, local.height as f32]);
     p.set(slot::LOCAL_SCALE, &local.scale);
     let grid = local.grid();
@@ -457,35 +448,20 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         None => -1.,
     };
     p.set(slot::LOCAL_A, &[0., grid.cells() as f32, clarity]);
-    p.set(slot::LOCAL_FINE, &[grid.fine_at() as f32]);
-    p.set(
-        slot::LOCAL_REGION,
-        &[grid.region_at().map_or(-1., |at| at as f32)],
-    );
     p.grid = Some(grid);
     let clarity_hdr = match &local.clarity_hdr {
         Some(w) if local.clarity_pos.is_some() => p.push(w.iter().copied()),
         _ => -1.,
     };
     let mut curve = |c: Option<&crate::develop::local_tone::Curve>| match c {
-        // The table, then its tail (`local_curve` reads it after the 48 columns).
-        Some(c) => [
-            p.push(c.table.into_iter().chain([c.tail])),
-            c.key,
-            c.lo,
-            c.hi,
-        ],
-        None => [-1., 0., 0., 0.],
+        Some(c) => [p.push(c.table), c.lo, c.hi],
+        None => [-1., 0., 0.],
     };
     let shadows = curve(local.shadows.as_ref());
     let highlights = curve(local.highlights.as_ref());
     let pix = curve(local.pix.as_ref());
     let [clarity_base, clarity_pix] = match &local.clarity_pos {
         Some([cb, cp]) => [curve(Some(cb)), curve(Some(cp))],
-        None => [curve(None), curve(None)],
-    };
-    let [detail, region] = match &local.lift {
-        Some([d, r]) => [curve(Some(d)), curve(Some(r))],
         None => [curve(None), curve(None)],
     };
     let rule: Vec<f32> = local
@@ -504,7 +480,6 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
     p.set(slot::CLARITY_BASE, &clarity_base);
     p.set(slot::CLARITY_PIX, &clarity_pix);
     p.set(slot::CLARITY_HDR, &[clarity_hdr]);
-    p.set(slot::LIFT, &[detail, region].concat());
     p.set(slot::RULE, &rule);
     p.set(slot::RULE_PIX, &rule_pix);
     if let Some(pair) = &local.pair {
@@ -614,8 +589,6 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         }
         None => p.set(slot::HAZE, &[-1., 0., 0., 0., 0.]),
     }
-    let families = p.push(crate::develop::local_tone::gpu_families());
-    p.set(slot::LOCAL_FAMILIES, &[families]);
     p.table(slot::LOOK, t.look);
     p.table(slot::ENH, t.enhanced);
     let curve = match t.enhanced_curve {
