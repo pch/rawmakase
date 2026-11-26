@@ -101,20 +101,9 @@ pub fn run_with_backend(
     cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
-    // The target's format, not only the settings', must hold the color space or the
-    // HDR encoding; checked before anything renders.
-    let format = crate::export_settings::Format::from_path(target);
-    if let Some(output) = settings.hdr_output()? {
-        let format = format.ok_or_else(|| {
-            rawmakase_model::error::Invalid::new(
-                "An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl",
-            )
-        })?;
-        crate::export_settings::Format::check_hdr(format, output)?;
-    } else if let Some(format) = format {
-        format.supports(settings.output_space()?)?;
-    }
-    let target_format = format.unwrap_or(settings.format);
+    check(&photo.recipe, settings, target)?;
+    let target_format =
+        crate::export_settings::Format::from_path(target).unwrap_or(settings.format);
     let prepared = prepare_with_backend(
         &photo,
         None,
@@ -139,6 +128,49 @@ pub fn run_with_backend(
     progress(1.);
     let notes: Vec<String> = prepared.notice.into_iter().chain(note).collect();
     Ok((!notes.is_empty()).then(|| notes.join("; ")))
+}
+
+/// Refuses an export of `recipe` with `settings` to `target` that could not
+/// succeed, before anything is decoded or rendered: a recipe or settings that
+/// don't validate, a color space or HDR encoding the target's format can't
+/// hold, and an HDR export of an edit with HDR off. [`run`] checks it first.
+pub fn check(recipe: &Recipe, settings: &ExportSettings, target: &Path) -> Result<()> {
+    // The target's format, not only the settings', must hold the color space or the
+    // HDR encoding.
+    use crate::export_settings::Format;
+    let format = Format::from_path(target);
+    if let Some(output) = settings.hdr_output()? {
+        let format = format.ok_or_else(|| {
+            rawmakase_model::error::Invalid::new(if output.gain_map {
+                "A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl"
+            } else {
+                "An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl"
+            })
+        })?;
+        Format::check_hdr(format, output)?;
+    } else {
+        // As the file is staged: a name no format has is refused.
+        let format = format.ok_or_else(|| {
+            rawmakase_model::error::Invalid::new(format!(
+                "Export extension must be {}",
+                Format::extensions_listed()
+            ))
+        })?;
+        format.supports(settings.output_space()?)?;
+    }
+    let invalid = |e: anyhow::Error| rawmakase_model::error::Invalid::from_error(e).into();
+    settings
+        .check_output()
+        .and_then(|()| settings.options().validate())
+        .map_err(invalid)?;
+    // The edit's own intent, never the editor's or display's.
+    if settings.hdr_output()?.is_some() && !recipe.hdr.is_active() {
+        return Err(rawmakase_model::error::Invalid::new(
+            "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR",
+        )
+        .into());
+    }
+    recipe.validate().map_err(invalid)
 }
 
 /// A photo rendered for export, with what goes in the file beside its pixels.

@@ -64,20 +64,13 @@ impl Context {
         })?;
         let mut settings = settings.clone();
         settings.choose_format(format);
-        if rawmakase_model::storage::is_raw(target) {
-            return Err(invalid("An export cannot overwrite a RAW file".into()));
-        }
-        if target.exists() {
-            let same = |p: &Path| std::fs::canonicalize(p).ok();
-            if same(target).is_some() && same(target) == same(photo.path()) {
-                return Err(invalid("Cannot overwrite source".into()));
-            }
-            if !replace {
-                return Err(Error::of(
-                    rawmakase_model::error::Exists::new("Destination already exists").into(),
-                ));
-            }
-        }
+        let replace = if replace {
+            Replace::Overwrite
+        } else {
+            Replace::NoClobber
+        };
+        rawmakase_export::export::check_destination(target, photo.path(), replace)
+            .map_err(Error::of)?;
         if recipe.as_rendered().ai_denoise.renders() {
             return Err(Error::of(
                 rawmakase_decode::ai::denoise::Unsupported(
@@ -86,20 +79,7 @@ impl Context {
                 .into(),
             ));
         }
-        recipe
-            .validate()
-            .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
-        // The settings as the file's format takes them, before a decode.
-        settings
-            .check_output()
-            .and_then(|()| settings.options().validate())
-            .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
-        if settings.hdr_output().map_err(Error::of)?.is_some() && !recipe.hdr.is_active() {
-            return Err(invalid(
-                "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR"
-                    .into(),
-            ));
-        }
+        job::check(recipe, &settings, target).map_err(Error::of)?;
         let image = photo.decode_in(self, crate::Decode::Full, false, cancel)?;
         let ctx = self;
         let job = job::Photo {
@@ -116,11 +96,6 @@ impl Context {
                 "The library doesn't run AI Denoise yet",
             ),
             file: photo.identity().cloned(),
-        };
-        let replace = if replace {
-            Replace::Overwrite
-        } else {
-            Replace::NoClobber
         };
         job::run(job, &settings, target, replace, cancel, progress).map_err(Error::of)
     }

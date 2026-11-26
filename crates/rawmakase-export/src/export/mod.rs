@@ -211,13 +211,20 @@ pub fn export_pixels(
     }
 }
 
-fn check_destination(path: &Path, source: &Path, replace: Replace) -> Result<()> {
-    ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
-    if path.exists() {
-        ensure!(
-            fs::canonicalize(path)? != fs::canonicalize(source)?,
-            "Cannot overwrite source"
+/// Refuses what an export of `source` may not write at `path`: a RAW file, and
+/// `source` itself, as invalid, and a file that is there unless `replace` is
+/// [`Replace::Overwrite`] (`Exists`). Checked as the file is written, and by
+/// a caller that wants it refused before anything is decoded.
+pub fn check_destination(path: &Path, source: &Path, replace: Replace) -> Result<()> {
+    if is_raw(path) {
+        return Err(
+            rawmakase_model::error::Invalid::new("An export cannot overwrite a RAW file").into(),
         );
+    }
+    if path.exists() {
+        if fs::canonicalize(path)? == fs::canonicalize(source)? {
+            return Err(rawmakase_model::error::Invalid::new("Cannot overwrite source").into());
+        }
         if replace != Replace::Overwrite {
             return Err(rawmakase_model::error::Exists::new("Destination already exists").into());
         }
