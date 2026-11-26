@@ -12,10 +12,10 @@ crates/rawmakase-catalog/src/catalog/locations.rs command 1
 crates/rawmakase-catalog/src/catalog/locations.rs env 1
 crates/rawmakase-catalog/src/catalog/locations.rs folder 1
 crates/rawmakase-catalog/src/catalog/preview_cache.rs folder 1
-crates/rawmakase-decode/src/ai/cache.rs folder 1
-crates/rawmakase-decode/src/camera_look/cache.rs folder 1
+crates/rawmakase-decode/src/ai/cache.rs folder 2
+crates/rawmakase-decode/src/camera_look/cache.rs folder 2
 crates/rawmakase-decode/src/decode_cache.rs env 5
-crates/rawmakase-decode/src/decode_cache.rs folder 3
+crates/rawmakase-decode/src/decode_cache.rs folder 2
 crates/rawmakase-denoise/src/bench.rs command 1
 crates/rawmakase-denoise/src/bench.rs env 1
 crates/rawmakase-denoise/src/bench.rs temp 1
@@ -49,4 +49,4 @@ crates/rawmakase-model/src/camera_profiles/library.rs folder 4
 crates/rawmakase-model/src/camera_profiles/manage.rs folder 1
 crates/rawmakase-model/src/lens/lcp.rs folder 3
 crates/rawmakase-model/src/lens/lensfun/installed.rs folder 1
-crates/rawmakase-model/src/storage/files.rs folder 6
+crates/rawmakase-model/src/storage/files.rs folder 5

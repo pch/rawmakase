@@ -23,6 +23,7 @@ impl FitKey {
         Ok(Self(crate::decode_cache::source_key(
             &id,
             format_args!("v{FIT_VERSION}"),
+            &crate::decode_cache::build_identity(),
         )))
     }
     fn file(&self, dir: &Path) -> PathBuf {

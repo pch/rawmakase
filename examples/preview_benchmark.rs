@@ -77,7 +77,8 @@ fn main() -> Result<()> {
     println!("Highlight recovery: {:.1} ms", ms(t));
     {
         let dir = tempfile::tempdir()?;
-        let cache = rawmakase::decode_cache::DecodeCache::new(dir.path().to_owned(), u64::MAX);
+        let cache =
+            rawmakase::decode_cache::DecodeCache::new(dir.path().to_owned(), u64::MAX, "bench");
         let cached = image.clone();
         let _ = cached
             .recovered

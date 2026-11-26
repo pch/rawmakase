@@ -110,7 +110,7 @@ pub fn command(c: Command) -> Result<()> {
     let scratch = tempfile::tempdir()?;
     let cache = match c.cache {
         Some(cache) => cache,
-        None => AiCache::new(scratch.path().to_path_buf(), 1 << 40),
+        None => AiCache::new(scratch.path().to_path_buf(), 1 << 40, "bench"),
     };
     let service = Service::with(
         cache,
@@ -205,7 +205,9 @@ pub fn command(c: Command) -> Result<()> {
         recipe.ai_denoise.amount = c.amount;
         save(path, Some(&source), &recipe)?;
     }
-    let ran = ran(c.provider, |p| service.cache().contains(&key_of(&file, p)));
+    let ran = ran(c.provider, |p| {
+        service.cache().contains(&key_of(service.cache(), &file, p))
+    });
     println!(
         "{}",
         serde_json::json!({

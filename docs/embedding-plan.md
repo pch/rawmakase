@@ -883,6 +883,15 @@ so the design is proved on one path before it is spread.
    downloaded profile staged beside its destination; an export setting's
    default destination and the keyword sets' Lightroom folder, the last
    uses of `directories`.
+
+   Built so far: the caches' build id. A decode and an AI Denoise cache are
+   made with the build they key entries by and the folder they return to
+   when a chosen folder is given up (`set_folder(None)`), both from the
+   context; the keys keep their form, and the desktop passes the
+   executable's identity as before, so its entries are still read. Camera
+   Look's fit cache still keys by the executable until its own change
+   below. The ambient check counts `build_identity()` calls now, and no
+   longer counts a function's definition as a call to it.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

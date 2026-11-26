@@ -153,8 +153,8 @@ mod tests {
         let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
-        let key = |demosaic| DecodeCache::key(&chart, demosaic);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
+        let key = |demosaic| cache.key(&chart, demosaic);
         let job = |demosaic| ReferenceJob {
             ticket: 1,
             path: chart.clone(),
@@ -190,7 +190,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("photo.dng");
         std::fs::copy(chart, &path)?;
-        let cache = DecodeCache::new(dir.path().join("cache"), u64::MAX);
+        let cache = DecodeCache::new(dir.path().join("cache"), u64::MAX, "test");
         let job = ReferenceJob {
             ticket: 1,
             path: path.clone(),
@@ -222,7 +222,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("photo.jpg");
         image::RgbImage::from_pixel(12, 8, image::Rgb([90, 120, 150])).save(&path)?;
-        let cache = DecodeCache::new(dir.path().join("cache"), u64::MAX);
+        let cache = DecodeCache::new(dir.path().join("cache"), u64::MAX, "test");
         let job = ReferenceJob {
             ticket: 1,
             path,

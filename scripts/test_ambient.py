@@ -29,6 +29,7 @@ class Kinds(unittest.TestCase):
         self.assertEqual(kinds("use std::env::{var, var_os};"), ["env"])
         self.assertEqual(kinds("fn f() { Command::new(\"ps\"); }"), ["command"])
         self.assertEqual(kinds("fn f() { data_dir(); storage::asset_dirs(); }"), ["folder", "folder"])
+        self.assertEqual(kinds("fn f() { decode_cache::build_identity(); }"), ["folder"])
         self.assertEqual(kinds("pub use rawmakase_protocol::paths::data_dir;"), ["folder"])
         self.assertEqual(kinds("fn f() { tempfile::tempdir(); NamedTempFile::new(); }"), ["temp", "temp"])
 
@@ -38,6 +39,7 @@ class Kinds(unittest.TestCase):
         self.assertEqual(kinds("fn f() { option_env!(\"X\"); }"), [])
         self.assertEqual(kinds("fn f() { tempfile::tempdir_in(dir); NamedTempFile::new_in(dir); }"), [])
         self.assertEqual(kinds("fn f() { ctx.data_dir(); data_dir(&root); }"), [])
+        self.assertEqual(kinds("pub fn cache_dir() -> PathBuf { PathBuf::new() }"), [])
         self.assertEqual(kinds("// std::env::var\nfn f() { \"Command::new\"; }"), [])
         self.assertEqual(kinds("fn f() { crate::env::thing(); }"), [])
 

@@ -204,7 +204,7 @@ pub(super) fn photo(image: CameraImage, source: &Path, cache: &Path, recipe: Rec
         values: Default::default(),
         watermark: None,
         demosaic: Demosaic::default(),
-        cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
+        cache: DecodeCache::new(cache.to_path_buf(), u64::MAX, "test"),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
         file: None,
     }

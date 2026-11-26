@@ -3,6 +3,13 @@ use rawmakase_cancel::Cancel;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc;
 
+#[cfg(test)]
+/// A cache keyed as every cache in these tests is, by the build "test": what
+/// a key is computed in.
+fn testing() -> AiCache {
+    AiCache::new(PathBuf::new(), 0, "test")
+}
+
 /// How the stand-in model behaves.
 #[derive(Default)]
 pub struct Behaviour {
@@ -135,7 +142,7 @@ pub fn fixture(provider: Provider, behaviour: Behaviour) -> Fixture {
         }) as Box<dyn TileModel + Send>)
     });
     let service = Service::with(
-        AiCache::new(dir.path().join("cache"), 1 << 30),
+        AiCache::new(dir.path().join("cache"), 1 << 30, "test"),
         provider,
         source,
         loader,
@@ -325,12 +332,12 @@ fn a_gpu_failure_after_good_tiles_reruns_on_the_cpu_under_the_cpus_key() {
     assert!(
         f.service
             .cache()
-            .contains(&key(&photo, Provider::Cpu).unwrap())
+            .contains(&key(&testing(), &photo, Provider::Cpu).unwrap())
     );
     assert!(
         !f.service
             .cache()
-            .contains(&key(&photo, Provider::CoreML).unwrap())
+            .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
     );
     let runs = f.behaviour.runs.load(Ordering::SeqCst);
     let (rx, _wanted) = f.request(&photo, &plain, None);
@@ -358,7 +365,7 @@ fn an_export_follows_its_job_to_the_cpu() {
     assert!(
         f.service
             .cache()
-            .contains(&key(&photo, Provider::Cpu).unwrap())
+            .contains(&key(&testing(), &photo, Provider::Cpu).unwrap())
     );
 }
 
@@ -387,11 +394,15 @@ fn an_export_on_a_queued_job_moved_to_the_cpu_gets_its_result() {
     drop(gate);
     assert!(matches!(until_final(&first).last(), Some(State::Ready(_))));
     export.join().unwrap().unwrap();
-    assert!(f.service.cache().contains(&key(&b, Provider::Cpu).unwrap()));
+    assert!(
+        f.service
+            .cache()
+            .contains(&key(&testing(), &b, Provider::Cpu).unwrap())
+    );
     assert!(
         !f.service
             .cache()
-            .contains(&key(&b, Provider::CoreML).unwrap())
+            .contains(&key(&testing(), &b, Provider::CoreML).unwrap())
     );
 }
 
@@ -627,7 +638,7 @@ fn a_file_replaced_while_its_job_waits_is_refused() {
     let (first, _a) = f.request(&f.photo("a.raw"), &plain, None);
     std::thread::sleep(Duration::from_millis(50));
     let b = f.photo("b.raw");
-    let original_key = key(&b, Provider::Cpu).unwrap();
+    let original_key = key(&testing(), &b, Provider::Cpu).unwrap();
     let (second, _b) = f.request(&b, &plain, None);
     std::fs::write(&b, b"another photo of other length").unwrap();
     drop(gate);
@@ -748,11 +759,15 @@ fn jobs_queued_when_the_gpu_fails_move_to_the_cpu() {
     drop(gate);
     assert!(matches!(until_final(&first).last(), Some(State::Ready(_))));
     assert!(matches!(until_final(&second).last(), Some(State::Ready(_))));
-    assert!(f.service.cache().contains(&key(&b, Provider::Cpu).unwrap()));
+    assert!(
+        f.service
+            .cache()
+            .contains(&key(&testing(), &b, Provider::Cpu).unwrap())
+    );
     assert!(
         !f.service
             .cache()
-            .contains(&key(&b, Provider::CoreML).unwrap())
+            .contains(&key(&testing(), &b, Provider::CoreML).unwrap())
     );
 }
 
@@ -952,7 +967,7 @@ fn queued_jobs_fail_when_the_worker_dies_and_the_next_request_restarts_it() {
         let mut queue = f.service.queue();
         let identity = crate::storage::Identity::read(&b).unwrap();
         queue.pending.push_back(Job {
-            key: key_of(&identity, Provider::Cpu),
+            key: key_of(&testing(), &identity, Provider::Cpu),
             provider: Provider::Cpu,
             identity,
             path: b.clone(),
@@ -1003,7 +1018,7 @@ fn a_request_while_the_dying_worker_reports_its_failures_starts_a_new_worker() {
         let mut queue = f.service.queue();
         let identity = crate::storage::Identity::read(&b).unwrap();
         queue.pending.push_back(Job {
-            key: key_of(&identity, Provider::Cpu),
+            key: key_of(&testing(), &identity, Provider::Cpu),
             provider: Provider::Cpu,
             identity,
             path: b,
@@ -1041,12 +1056,10 @@ fn a_result_key_keeps_its_form() {
         prefix_hash: "ab".into(),
     };
     assert_eq!(
-        key_of(&id, Provider::CoreML),
+        key_of(&testing(), &id, Provider::CoreML),
         format!(
             "ab-12-34-{}-a{}-CoreML-{}",
-            RAWNIND.model.sha256,
-            RAWNIND.version,
-            rawmakase_decode::decode_cache::build_identity()
+            RAWNIND.model.sha256, RAWNIND.version, "test"
         )
     );
 }
@@ -1071,7 +1084,7 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
     }
 
@@ -1083,13 +1096,13 @@ mod neural_engine {
         let (rx, _wanted) = f.request(&photo, &f.plain(), None);
         assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
         assert_eq!(*f.behaviour.loads.lock().unwrap(), [Provider::NeuralEngine]);
-        let neural = key(&photo, Provider::NeuralEngine).unwrap();
+        let neural = key(&testing(), &photo, Provider::NeuralEngine).unwrap();
         assert!(f.service.cache().contains(&neural));
         // Half precision's result never stands in for the GPU's.
         assert!(
             !f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
         let identity = crate::storage::Identity::read(&photo).unwrap();
         assert_eq!(finished(f.service.cache(), &identity), Some(neural));
@@ -1112,7 +1125,7 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
         // Not tried again in this session.
         let (rx, _wanted) = f.request(&f.photo("b.raw"), &plain, None);
@@ -1151,11 +1164,13 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
         for provider in [Provider::NeuralEngine, Provider::Cpu] {
             assert!(
-                !f.service.cache().contains(&key(&photo, provider).unwrap()),
+                !f.service
+                    .cache()
+                    .contains(&key(&testing(), &photo, provider).unwrap()),
                 "{provider:?}"
             );
         }
@@ -1182,7 +1197,7 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
     }
 
@@ -1206,7 +1221,7 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
     }
 
@@ -1214,10 +1229,14 @@ mod neural_engine {
     fn the_neural_engines_key_names_its_converted_model() {
         let f = fixture(Provider::Cpu, Behaviour::default());
         let photo = f.photo("a.raw");
-        let neural = key(&photo, Provider::NeuralEngine).unwrap();
+        let neural = key(&testing(), &photo, Provider::NeuralEngine).unwrap();
         let tag = rawmakase_inference::neural_engine::tag();
         assert!(neural.contains(tag), "{neural}");
-        assert!(!key(&photo, Provider::CoreML).unwrap().contains(tag));
+        assert!(
+            !key(&testing(), &photo, Provider::CoreML)
+                .unwrap()
+                .contains(tag)
+        );
     }
 
     /// A model removed while its first load runs fails that load; the job was cancelled,
@@ -1316,7 +1335,7 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::CoreML).unwrap())
+                .contains(&key(&testing(), &photo, Provider::CoreML).unwrap())
         );
         f.service.set_neural_engine(false);
         f.service.set_neural_engine(true);
@@ -1324,7 +1343,7 @@ mod neural_engine {
         assert!(
             f.service
                 .cache()
-                .contains(&key(&photo, Provider::NeuralEngine).unwrap())
+                .contains(&key(&testing(), &photo, Provider::NeuralEngine).unwrap())
         );
         assert_eq!(
             *f.behaviour.loads.lock().unwrap(),

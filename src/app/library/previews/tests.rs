@@ -462,7 +462,7 @@ fn finish_ai(cache: &AiCache, path: &Path) -> anyhow::Result<()> {
         rgb: vec![0.5; 3 * layout.output_pixels()],
         clipped: vec![false; layout.packed_width * layout.packed_height],
     };
-    let key = crate::ai_denoise::key(path, rawmakase_inference::Provider::Cpu)?;
+    let key = crate::ai_denoise::key(cache, path, rawmakase_inference::Provider::Cpu)?;
     cache.store(&key, &entry)
 }
 
@@ -501,7 +501,7 @@ fn an_ai_denoise_preview_follows_its_finished_result_and_stays_offline() -> anyh
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("photo.png");
     image::RgbImage::new(16, 16).save(&path)?;
-    let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
+    let ai = AiCache::new(directory.path().join("ai"), u64::MAX, "test");
     let wanted = Wanted::default();
     wanted.lock().unwrap().insert(PhotoId(1));
     let (tx, rx, _) = spawn_edited_with_ai(
@@ -557,8 +557,8 @@ fn a_raw_renders_its_preview_from_a_finished_result() -> anyhow::Result<()> {
         rgb: vec![0.3; 3 * layout.output_pixels()],
         clipped: packed.clipped,
     };
-    let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
-    let key = crate::ai_denoise::key(&path, rawmakase_inference::Provider::Cpu)?;
+    let ai = AiCache::new(directory.path().join("ai"), u64::MAX, "test");
+    let key = crate::ai_denoise::key(&ai, &path, rawmakase_inference::Provider::Cpu)?;
     ai.store(&key, &entry)?;
     let mut recipe = Recipe::default();
     recipe.switch_ai_denoise(true);
@@ -588,7 +588,7 @@ fn a_preview_of_another_models_result_is_made_again() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("photo.png");
     image::RgbImage::new(16, 16).save(&path)?;
-    let ai = AiCache::new(directory.path().join("ai"), u64::MAX);
+    let ai = AiCache::new(directory.path().join("ai"), u64::MAX, "test");
     finish_ai(&ai, &path)?;
     let source = with_ai_denoise()?;
     let previews = directory.path().join("previews.sqlite3");

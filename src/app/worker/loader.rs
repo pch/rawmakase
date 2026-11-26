@@ -593,7 +593,7 @@ pub(in crate::app) mod tests {
         let mut loader = Loader::with_parts(
             tx,
             egui::Context::default(),
-            DecodeCache::new(cache.into(), u64::MAX),
+            DecodeCache::new(cache.into(), u64::MAX, "test"),
             ahead,
             between,
         );
@@ -924,7 +924,7 @@ pub(in crate::app) mod tests {
     }
     /// A loader caching in `cache`, and what tells whether the chart is there.
     fn prefetching_loader(cache: &Path) -> (Loader, FullSize) {
-        let cache = DecodeCache::new(cache.into(), u64::MAX);
+        let cache = DecodeCache::new(cache.into(), u64::MAX, "test");
         let (tx, _rx) = mpsc::channel();
         let loader = Loader::new(tx, egui::Context::default(), cache.clone());
         (

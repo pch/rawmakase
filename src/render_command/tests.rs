@@ -42,7 +42,7 @@ fn no_denoise(dir: &Path) -> impl Fn() -> CommandLine {
     let dir = dir.to_path_buf();
     move || {
         CommandLine::new(
-            crate::ai_cache::AiCache::new(dir.join("ai"), 1 << 30),
+            crate::ai_cache::AiCache::new(dir.join("ai"), 1 << 30, "test"),
             dir.join("model"),
             dir.join("runtime"),
         )

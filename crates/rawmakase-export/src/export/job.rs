@@ -467,7 +467,7 @@ mod tests {
             values: Default::default(),
             watermark: None,
             demosaic: Demosaic::default(),
-            cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
+            cache: DecodeCache::new(cache.to_path_buf(), u64::MAX, "test"),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
             file: None,
         }
@@ -770,7 +770,7 @@ mod tests {
         let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let raw = crate::photo::open(&chart)?;
         let cached = CameraImage {
             width: 4,
@@ -784,7 +784,7 @@ mod tests {
             hdr: Default::default(),
         };
         let _ = cached.recovered.set(Arc::new(cached.clone()));
-        cache.store(&DecodeCache::key(&chart, Demosaic::default())?, &cached)?;
+        cache.store(&cache.key(&chart, Demosaic::default())?, &cached)?;
         let image = decode_full(raw, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
         assert_eq!((image.width, image.height), (4, 3));
         Ok(())
@@ -798,7 +798,7 @@ mod tests {
         let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let raw = crate::photo::open(&chart)?;
         let apart = crate::photo::open(&chart)?.develop(
             crate::camera_data::Decode::Full(Demosaic::default()),
@@ -809,7 +809,7 @@ mod tests {
         assert!(image.pixels.shares_buffer(&recovered.pixels));
         assert_ne!(image.pixels, recovered.pixels, "the chart has highlights");
         // An export never fills the cache.
-        assert!(!cache.contains(&DecodeCache::key(&chart, Demosaic::default())?));
+        assert!(!cache.contains(&cache.key(&chart, Demosaic::default())?));
         let recipe = Recipe {
             highlights: -0.7,
             ..Default::default()
@@ -832,7 +832,7 @@ mod tests {
         let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let metadata = crate::photo::open(&chart)?.metadata;
         let image = |width: u32, height: u32, fast: bool| {
             let image = CameraImage {
@@ -850,7 +850,7 @@ mod tests {
             image
         };
         cache.store(
-            &DecodeCache::key(&chart, Demosaic::default())?,
+            &cache.key(&chart, Demosaic::default())?,
             &image(4, 3, false),
         )?;
         // The half-size image, measured by a preview render.

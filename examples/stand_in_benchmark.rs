@@ -100,8 +100,11 @@ fn main() -> Result<()> {
     let recovered = develop::quality::recover_highlights(&full, Cancel::NEVER)?;
     let _ = full.recovered.set(std::sync::Arc::new(recovered));
     let cached = {
-        let decode_cache =
-            rawmakase::decode_cache::DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let decode_cache = rawmakase::decode_cache::DecodeCache::new(
+            dir.path().join("decoded"),
+            u64::MAX,
+            "bench",
+        );
         decode_cache.store("benchmark", &full)?;
         let t = Instant::now();
         let loaded = decode_cache

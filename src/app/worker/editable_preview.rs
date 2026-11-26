@@ -191,7 +191,8 @@ mod decoder_tests {
         let original =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/charts/fujifilm-x-t5-d65.dng");
         let dir = tempfile::tempdir().unwrap();
-        let cache = crate::decode_cache::DecodeCache::new(dir.path().join("cache"), u64::MAX);
+        let cache =
+            crate::decode_cache::DecodeCache::new(dir.path().join("cache"), u64::MAX, "test");
         let identity = Identity::read(&original).unwrap();
         let dest = dir.path().join("copy.dng");
         let input = BuildInput {

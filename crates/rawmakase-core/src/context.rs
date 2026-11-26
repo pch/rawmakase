@@ -92,8 +92,8 @@ impl ContextBuilder {
                     ));
                 }
                 Some(Cache {
-                    decoded: DecodeCache::under(&dir, limits.decoded),
-                    ai_denoise: AiCache::under(&dir, limits.ai_denoise),
+                    decoded: DecodeCache::under(&dir, limits.decoded, &build_id),
+                    ai_denoise: AiCache::under(&dir, limits.ai_denoise, &build_id),
                     dir,
                     build_id,
                 })

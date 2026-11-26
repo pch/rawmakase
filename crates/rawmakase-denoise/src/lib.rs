@@ -97,11 +97,16 @@ pub struct Request {
 /// The cache key of `path` with the model run on `provider`: everything the result
 /// depends on, captured once.
 #[cfg(any(test, feature = "test-support"))]
-pub fn key(path: &Path, provider: Provider) -> Result<String> {
-    Ok(key_of(&crate::storage::Identity::read(path)?, provider))
+pub fn key(cache: &AiCache, path: &Path, provider: Provider) -> Result<String> {
+    Ok(key_of(
+        cache,
+        &crate::storage::Identity::read(path)?,
+        provider,
+    ))
 }
-/// The key of a file whose identity is `id`, run on `provider`.
-fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
+/// The key of a file whose identity is `id`, run on `provider`, in `cache`,
+/// whose build it names.
+fn key_of(cache: &AiCache, id: &crate::storage::Identity, provider: Provider) -> String {
     // The Neural Engine runs a model of its own, converted from RAWNIND: its results are
     // named for it too.
     let converted = match provider {
@@ -117,6 +122,7 @@ fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
             RAWNIND.version,
             provider.name()
         ),
+        cache.build(),
     )
 }
 
@@ -143,7 +149,7 @@ pub fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<Stri
     };
     providers
         .iter()
-        .map(|provider| key_of(file, *provider))
+        .map(|provider| key_of(cache, file, *provider))
         .find(|key| cache.contains(key))
 }
 
@@ -460,7 +466,7 @@ impl Service {
         let queue = self.queue();
         ensure_running(&queue)?;
         let provider = self.provider(&queue);
-        let key = key_of(&identity, provider);
+        let key = key_of(self.cache(), &identity, provider);
         Ok((
             Keyed {
                 key,
@@ -911,7 +917,7 @@ impl Service {
                 let joined = std::mem::take(&mut queue.joined);
                 queue.running = None;
                 let next = self.usable(&queue, job.provider);
-                let moved = key_of(&job.identity, next);
+                let moved = key_of(self.cache(), &job.identity, next);
                 queue
                     .outcomes
                     .insert(job.key.clone(), Outcome::Moved(moved.clone(), next));
@@ -929,7 +935,7 @@ impl Service {
                 for mut job in pending {
                     let next = self.usable(&queue, job.provider);
                     if next != job.provider {
-                        let moved = key_of(&job.identity, next);
+                        let moved = key_of(self.cache(), &job.identity, next);
                         queue
                             .outcomes
                             .insert(job.key.clone(), Outcome::Moved(moved.clone(), next));
@@ -1093,7 +1099,7 @@ impl Service {
             keyed
         } else {
             Keyed {
-                key: key_of(&keyed.identity, provider),
+                key: key_of(self.cache(), &keyed.identity, provider),
                 provider,
                 identity: keyed.identity,
             }

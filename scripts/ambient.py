@@ -10,9 +10,10 @@ production code for the ways a crate reaches past its caller:
 - `directories`: the `directories` crate's platform folders;
 - `wgpu-env`: wgpu's `from_env` and `with_env`, which read its variables;
 - `command`: `Command::new`, which starts a program;
-- `folder`: the ambient data, local data and cache folders, called with no
-  argument (`data_dir()`, `local_data_dir()`, `asset_dirs()`, `cache_dir()`)
-  or reached through `rawmakase_protocol::paths`, which reads them from the
+- `folder`: the ambient data, local data and cache folders and the running
+  executable's build, called with no argument (`data_dir()`,
+  `local_data_dir()`, `asset_dirs()`, `cache_dir()`, `build_identity()`) or
+  reached through `rawmakase_protocol::paths`, which reads them from the
   environment;
 - `temp`: a temporary file or folder made with no folder given, which lands
   in the system's temporary folder.
@@ -98,7 +99,7 @@ KINDS = {
     "wgpu-env": re.compile(r"\b\w*(?:from_env|with_env)\w*\s*\("),
     "command": re.compile(r"(?<![\w])Command\s*::\s*new\b"),
     "folder": re.compile(
-        r"(?<![\w.])(?:data_dir|local_data_dir|xdg_data_home|asset_dirs|cache_dir)\s*\(\s*\)"
+        r"(?<![\w.])(?<!fn )(?:data_dir|local_data_dir|xdg_data_home|asset_dirs|cache_dir|build_identity)\s*\(\s*\)"
         r"|(?<![\w:])rawmakase_protocol\s*::\s*paths\b"
     ),
     "temp": re.compile(

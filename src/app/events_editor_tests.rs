@@ -792,7 +792,7 @@ fn editor_with_a_neighbour_waiting(
     );
     let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/corpus/charts/synthetic-d65.dng");
-    let cache = crate::decode_cache::DecodeCache::new(cache.into(), u64::MAX);
+    let cache = crate::decode_cache::DecodeCache::new(cache.into(), u64::MAX, "test");
     task::wait_for(e.loader.stop().into(), std::time::Duration::from_secs(5));
     e.loader = worker::Loader::new(e.tx.clone(), ctx.clone(), cache.clone());
     task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));

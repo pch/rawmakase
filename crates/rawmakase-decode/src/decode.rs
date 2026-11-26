@@ -39,7 +39,7 @@ impl FullSize {
     pub fn with_cache(path: &Path, demosaic: Demosaic, cache: DecodeCache) -> Self {
         Self {
             demosaic,
-            key: DecodeCache::key(path, demosaic).ok(),
+            key: cache.key(path, demosaic).ok(),
             cache,
         }
     }
@@ -53,7 +53,7 @@ impl FullSize {
     ) -> Self {
         Self {
             demosaic,
-            key: file.map(|file| DecodeCache::key_of(file, demosaic)),
+            key: file.map(|file| cache.key_of(file, demosaic)),
             cache,
         }
     }
@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn showing_stores_exporting_reads_and_prefetching_skips_what_is_there() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
         let open = || crate::photo::open(&chart());
         let go = AtomicBool::new(false);
@@ -178,7 +178,7 @@ mod tests {
     fn a_shown_photo_and_its_recovered_image_hold_one_buffer() -> Result<()> {
         use crate::develop::quality::{recover_highlights, recovered};
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
         let open = || crate::photo::open(&chart());
         let decoded = open()?.develop(Decode::Full(Demosaic::default()), Cancel::NEVER)?;

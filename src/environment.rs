@@ -55,9 +55,11 @@ mod tests {
             super::ai_denoise_cache(&ctx).dir(),
             crate::ai_cache::AiCache::default().dir()
         );
-        assert_eq!(
-            ctx.build_id(),
-            Some(crate::decode_cache::build_identity().as_str())
-        );
+        // The desktop keys its caches as it always has, by this executable, so
+        // the entries it made before the library existed are still read.
+        let build = crate::decode_cache::build_identity();
+        assert_eq!(ctx.build_id(), Some(build.as_str()));
+        assert_eq!(super::decode_cache(&ctx).build(), build);
+        assert_eq!(super::ai_denoise_cache(&ctx).build(), build);
     }
 }
