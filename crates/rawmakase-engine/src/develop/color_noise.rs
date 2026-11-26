@@ -26,7 +26,7 @@ use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 
 /// Pyramid levels with a threshold below the finest.
-const LEVELS: usize = 4;
+pub(crate) const LEVELS: usize = 4;
 /// The thresholds, as multiples of each level's measured noise
 /// (finest first), at the Amounts Camera Raw rendered: fitted to the color noise it
 /// keeps at each scale of synthetic noisy charts carrying their noise profile, at
@@ -126,6 +126,17 @@ impl ChromaDenoise {
         });
         Some(Self { thresholds })
     }
+    /// Threshold for pyramid level `photo_level` given `noise` measured at that level and
+    /// `finest_noise` at the finest level.
+    pub(crate) fn threshold_at(&self, photo_level: f32, noise: f32, finest_noise: f32) -> f32 {
+        // Between two of the photo's levels, the thresholds' ratio is shared out
+        // geometrically and the exponents' difference linearly.
+        let geometric = |a: f32, b: f32, f: f32| a * (b / a).powf(f);
+        let linear = |a: f32, b: f32, f: f32| a + (b - a) * f;
+        at_level(&self.thresholds, photo_level, geometric)
+            * noise
+            * (finest_noise / REFERENCE_NOISE).powf(at_level(&NOISE_EXPONENT, photo_level, linear))
+    }
     /// `im` with its color noise reduced; stops with an error when `cancel` is set.
     pub(crate) fn apply(&self, im: &CameraImage, cancel: Cancel<'_>) -> Result<CameraImage> {
         let offset = super::laplacian::photo_level_offset(im);
@@ -192,11 +203,7 @@ impl ChromaDenoise {
             // A level too small or too clipped to measure has the finer level's noise, as
             // much smaller as coarser levels usually are. Demosaiced noise is never larger
             // at a coarser level, so more than the finer level's is color detail.
-            let noise = match noise(&plane, &measurable) {
-                Some(n) if level == 0 => n,
-                Some(n) => n.min(finer_noise),
-                None => finer_noise * COARSER_NOISE,
-            };
+            let noise = chain_level_noise(level, noise(&plane, &measurable), finer_noise);
             (noise, Measurable::Level(measurable.down()))
         };
         let finest_noise = if level == 0 { noise } else { finest_noise };
@@ -212,13 +219,7 @@ impl ChromaDenoise {
         ensure!(!cancel.is_cancelled(), "Render superseded");
         let coarse_up = coarse.up(plane.w, plane.h);
         drop(coarse);
-        // Between two of the photo's levels, the thresholds' ratio is shared out
-        // geometrically and the exponents' difference linearly.
-        let geometric = |a: f32, b: f32, f: f32| a * (b / a).powf(f);
-        let linear = |a: f32, b: f32, f: f32| a + (b - a) * f;
-        let threshold = at_level(&self.thresholds, photo_level, geometric)
-            * noise
-            * (finest_noise / REFERENCE_NOISE).powf(at_level(&NOISE_EXPONENT, photo_level, linear));
+        let threshold = self.threshold_at(photo_level, noise, finest_noise);
         plane
             .data
             .par_iter_mut()
@@ -255,17 +256,27 @@ fn planes(im: &CameraImage) -> (Vec<f32>, Plane) {
 }
 /// Above this share of the sensor's range a channel may clip, and clipped pixels have
 /// no noise to measure.
-const MEASURABLE_PEAK: f32 = 0.95;
+pub(crate) const MEASURABLE_PEAK: f32 = 0.95;
 /// How much smaller a level's color noise is than the finer level's, on a Bayer
 /// photo's demosaiced noise.
-const COARSER_NOISE: f32 = 0.6;
+pub(crate) const COARSER_NOISE: f32 = 0.6;
 /// Side of the blocks the noise is measured in, at each level.
-const BLOCK: usize = 8;
+pub(crate) const BLOCK: usize = 8;
 /// Which of the blocks, from the smoothest, give the noise: real color detail only
 /// adds to a block's variation, so the smoothest blocks are the photo's noise alone.
 const BLOCK_PERCENTILE: f32 = 0.1;
 /// The fewest measurable blocks a level's noise is measured from.
 const MIN_BLOCKS: usize = 16;
+/// Chains a level's measured `noise` with `finer_noise`: coarser levels are bounded by the
+/// finer level's noise and fall back to [`COARSER_NOISE`] of it when unmeasurable.
+pub(crate) fn chain_level_noise(level: usize, measured: Option<f32>, finer_noise: f32) -> f32 {
+    match measured {
+        Some(n) if level == 0 => n,
+        Some(n) => n.min(finer_noise),
+        None => finer_noise * COARSER_NOISE,
+    }
+}
+
 /// The color noise of a level's `detail` (the level less its blur): the RMS of the
 /// detail in its smoothest measurable blocks, those with no black when there are
 /// enough of them; `None` with fewer than [`MIN_BLOCKS`] either way.
@@ -295,7 +306,7 @@ fn noise(detail: &Plane, measurable: &Mask) -> Option<f32> {
 }
 /// The noise `blocks` give, each its mean squared detail and its share of black
 /// pixels: see [`noise`].
-fn smoothest(blocks: Vec<(f32, f32)>) -> Option<f32> {
+pub(crate) fn smoothest(blocks: Vec<(f32, f32)>) -> Option<f32> {
     let within = |most: f32| -> Vec<f32> {
         blocks
             .iter()

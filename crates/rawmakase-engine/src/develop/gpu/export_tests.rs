@@ -129,6 +129,13 @@ fn wgsl_shaders_parse_and_validate_for_all_output_spaces() {
     validator
         .validate(&finish_module)
         .expect("export_finish.wgsl validates");
+
+    // Validate `pyramid.wgsl`.
+    let pyramid_module =
+        wgsl::parse_str(super::super::pyramid::wgsl_source()).expect("pyramid.wgsl parses");
+    validator
+        .validate(&pyramid_module)
+        .expect("pyramid.wgsl validates");
 }
 
 #[test]
@@ -279,7 +286,7 @@ struct MockHandle {
 impl MockGpuDriver for ScriptedMock {
     fn render_banded(
         &mut self,
-        job: &mut PreparedExport<'_>,
+        job: &PreparedExport<'_>,
         band_cap: Option<u32>,
         cancel: Cancel<'_>,
     ) -> std::result::Result<ExportImage, GpuFailure> {
@@ -761,7 +768,7 @@ fn status_does_not_block_while_gpu_export_is_in_flight() -> Result<()> {
     impl MockGpuDriver for BlockingMock {
         fn render_banded(
             &mut self,
-            job: &mut PreparedExport<'_>,
+            job: &PreparedExport<'_>,
             _band_cap: Option<u32>,
             _cancel: Cancel<'_>,
         ) -> std::result::Result<ExportImage, GpuFailure> {
@@ -923,6 +930,9 @@ fn gpu_export_band_seam_bit_exactness() -> Result<()> {
     r.highlights = -0.3;
     r.sharpening = 0.8;
     r.sharpening_radius = 3.0;
+    r.noise_chroma = 0.45;
+    r.noise_luma = 0.5;
+    r.effects.texture = 0.45;
     r.effects.clarity = 0.3;
     r.effects.dehaze = 0.2;
     r.effects.vignette = -0.6;
@@ -1301,6 +1311,9 @@ fn gpu_export_matches_develop_100_percent_preview() -> Result<()> {
     r.highlights = -0.3;
     r.sharpening = 0.6;
     r.sharpening_radius = 1.5;
+    r.noise_chroma = 0.35;
+    r.noise_luma = 0.4;
+    r.effects.texture = 0.4;
     r.effects.clarity = 0.25;
     r.effects.dehaze = 0.15;
     r.effects.vignette = -0.45;
@@ -1402,5 +1415,376 @@ fn gpu_export_release_buffers_and_reuse() -> Result<()> {
     assert_eq!(st.cpu_renders, 0);
     assert_eq!((out1.width(), out1.height()), (192, 128));
     assert_eq!((out2.width(), out2.height()), (128, 96));
+    Ok(())
+}
+
+/// Deterministic noisy synthetic photo with sharp color edges, clipped highlights, and
+/// near-black shadow patches for verifying Color NR, Luminance NR, and Texture parity.
+fn noisy_synthetic_photo(w: u32, h: u32, full_w: u32, full_h: u32, fast: bool) -> CameraImage {
+    fn hash(x: u32, y: u32, c: u32) -> f32 {
+        let mut v =
+            x.wrapping_mul(0x9e3779b9) ^ y.wrapping_mul(0x85ebca6b) ^ c.wrapping_mul(0xc2b2ae35);
+        v ^= v >> 15;
+        v = v.wrapping_mul(0x2c1b3c6d);
+        v ^= v >> 12;
+        (v as f32 / u32::MAX as f32) * 2. - 1.
+    }
+    let mut im = synthetic_photo(w, h);
+    im.metadata.width = full_w;
+    im.metadata.height = full_h;
+    im.fast = fast;
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) as usize;
+            let p = if x < w / 6 && y < h / 4 {
+                // Clipped highlight region
+                [1.1, 1.05, 1.02]
+            } else if x >= w * 5 / 6 && y < h / 4 {
+                // Black region
+                [0.0, 0.0, 0.0]
+            } else {
+                let mut base = im.pixels[i];
+                for (c, v) in base.iter_mut().enumerate() {
+                    let n = 0.025 * v.max(0.01).sqrt() * hash(x, y, c as u32 + 1);
+                    *v = (*v + n).max(0.0);
+                }
+                base
+            };
+            im.pixels[i] = p;
+        }
+    }
+    im
+}
+
+/// Direct operator-level GPU vs CPU parity for `GpuPyramid`: Color NR, Luminance NR,
+/// Texture (positive & negative), and crop-clamped box reduction across normal, odd,
+/// and half-scale decodes.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn gpu_pyramid_matches_cpu_for_chroma_luma_texture_and_box_reduce() -> Result<()> {
+    use crate::develop::{
+        color_noise::ChromaDenoise, luminance_noise::LuminanceDenoise, texture::TextureDetail,
+    };
+
+    let mut ctx = GpuExportContext::new().expect("hardware GPU required");
+    let cases = [
+        ("full_odd", noisy_synthetic_photo(257, 193, 257, 193, false)),
+        // Odd-sided half-size decode gives a fractional photo_scale (193 / 385 != 0.5).
+        (
+            "half_decode_fractional",
+            noisy_synthetic_photo(193, 129, 385, 257, true),
+        ),
+    ];
+
+    for (label, im) in &cases {
+        let upload_and_run = |ctx: &mut GpuExportContext,
+                              run: &dyn Fn(
+            &GpuExportContext,
+            &wgpu::Buffer,
+        ) -> std::result::Result<(), GpuFailure>|
+         -> Vec<[f32; 3]> {
+            ctx.scoped(|ctx| {
+                let bytes = im.pixels.len() as u64 * 12;
+                let buf = GpuExportContext::ensure_buffer(
+                    &ctx.device,
+                    &mut ctx.buffers.photo,
+                    "Test pyramid photo",
+                    bytes,
+                    wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                );
+                ctx.queue
+                    .write_buffer(&buf, 0, bytemuck::cast_slice(&im.pixels));
+                run(ctx, &buf)?;
+                GpuPyramid::readback_photo(ctx, &buf, im.width, im.height, Cancel::NEVER)
+            })
+            .unwrap_or_else(|_| panic!("GPU pyramid failed for {label}"))
+        };
+
+        // 1. Color NR (default 25 and strong 80 with non-default detail/smoothness)
+        for (a, d, s) in [(0.25, 0.5, 0.5), (0.8, 0.75, 0.25)] {
+            let dn = ChromaDenoise::new(a, d, s).unwrap();
+            let cpu = dn.apply(im, Cancel::NEVER)?;
+            let gpu = upload_and_run(&mut ctx, &|ctx, buf| {
+                ctx.pyramid.apply_chroma_denoise(
+                    ctx,
+                    buf,
+                    im.width,
+                    im.height,
+                    im.metadata.wb,
+                    im.photo_scale(),
+                    dn,
+                    Cancel::NEVER,
+                )
+            });
+            let rms = rms_f32_diff(&gpu, &cpu.pixels);
+            assert!(rms <= 5e-5, "{label} chroma({a},{d},{s}): RMS {rms} > 5e-5");
+        }
+
+        // 2. Luminance NR
+        for (a, d, c) in [(0.4, 0.5, 0.2), (0.9, 0.25, 0.7)] {
+            let dn = LuminanceDenoise::new(a, d, c).unwrap();
+            let cpu = dn.apply(im, Cancel::NEVER)?;
+            let gpu = upload_and_run(&mut ctx, &|ctx, buf| {
+                ctx.pyramid.apply_luminance_denoise(
+                    ctx,
+                    buf,
+                    im.width,
+                    im.height,
+                    im.metadata.wb,
+                    im.photo_scale(),
+                    dn,
+                    Cancel::NEVER,
+                )
+            });
+            let rms = rms_f32_diff(&gpu, &cpu.pixels);
+            assert!(rms <= 5e-5, "{label} luma({a},{d},{c}): RMS {rms} > 5e-5");
+        }
+
+        // 3. Texture (positive and negative)
+        for amount in [0.65f32, -0.5f32] {
+            let scale = im.photo_scale();
+            let cpu = TextureDetail::of(im, scale, Cancel::NEVER)?.apply(im, amount);
+            let offset = texture::level_offset(im, scale);
+            let gpu = upload_and_run(&mut ctx, &|ctx, buf| {
+                ctx.pyramid.apply_texture(
+                    ctx,
+                    buf,
+                    im.width,
+                    im.height,
+                    offset,
+                    amount,
+                    Cancel::NEVER,
+                )
+            });
+            let rms = rms_f32_diff(&gpu, &cpu.pixels);
+            assert!(rms <= 5e-5, "{label} texture({amount}): RMS {rms} > 5e-5");
+        }
+
+        // 4. Crop-clamped box reduction (both full frame and explicit crop inset)
+        let mut im_crop = im.clone();
+        im_crop.metadata.crop_left = 12;
+        im_crop.metadata.crop_top = 10;
+        im_crop.metadata.crop_width = im_crop.metadata.width.saturating_sub(24);
+        im_crop.metadata.crop_height = im_crop.metadata.height.saturating_sub(20);
+        let cpu_meas = pipeline::measurement_source(Source::new(&im_crop), 96, true);
+        let (mw, mh) = pipeline::measurement_size(im_crop.width, im_crop.height, 96);
+        let crop = local_tone::inner_crop_rect(&im_crop)
+            .map(|[x0, y0, x1, y1]| [x0 as u32, y0 as u32, x1 as u32, y1 as u32])
+            .unwrap_or([0, 0, im_crop.width, im_crop.height]);
+        let gpu_meas = ctx
+            .scoped(|ctx| {
+                let bytes = im_crop.pixels.len() as u64 * 12;
+                let buf = GpuExportContext::ensure_buffer(
+                    &ctx.device,
+                    &mut ctx.buffers.photo,
+                    "Test box_reduce photo",
+                    bytes,
+                    wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                );
+                ctx.queue
+                    .write_buffer(&buf, 0, bytemuck::cast_slice(&im_crop.pixels));
+                ctx.pyramid.box_reduce(
+                    ctx,
+                    &buf,
+                    im_crop.width,
+                    im_crop.height,
+                    crop,
+                    mw,
+                    mh,
+                    Cancel::NEVER,
+                )
+            })
+            .unwrap_or_else(|_| panic!("GPU box_reduce failed for {label}"));
+        let gpu_meas = pipeline::finish_measurement_source(
+            reduced_camera_image(&im_crop, mw, mh, gpu_meas),
+            true,
+        );
+        let rms = rms_f32_diff(&gpu_meas.pixels, &cpu_meas.pixels);
+        assert!(rms <= 1e-6, "{label} box_reduce: RMS {rms} > 1e-6");
+    }
+    Ok(())
+}
+
+/// End-to-end GPU Export vs CPU Export parity with Color NR, Luminance NR, Texture,
+/// retouching, and Auto Mask brush enabled across all OutputSpaces and pixel formats.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn gpu_export_matches_cpu_with_nr_texture_retouch_and_automask() -> Result<()> {
+    use crate::model::{
+        masks::BrushStroke,
+        retouch::{RetouchMode, RetouchOp, RetouchShape},
+    };
+
+    let im = noisy_synthetic_photo(257, 193, 257, 193, false);
+    let backend = ExportBackend::new(ExportBackendPolicy::Auto);
+    backend.set_band_height_override(Some(64));
+
+    type Case = (&'static str, Box<dyn Fn(&mut Recipe)>);
+    let cases: Vec<Case> = vec![
+        (
+            "heavy_nr_texture_clarity_sharp_resize",
+            Box::new(|r| {
+                r.exposure = 0.2;
+                r.shadows = 0.35;
+                r.highlights = -0.3;
+                r.noise_chroma = 0.4;
+                r.effects.chroma_detail = 0.6;
+                r.effects.chroma_smoothness = 0.4;
+                r.noise_luma = 0.55;
+                r.effects.luma_detail = 0.45;
+                r.effects.luma_contrast = 0.3;
+                r.effects.texture = 0.65;
+                r.effects.clarity = 0.3;
+                r.sharpening = 0.7;
+                r.effects.vignette = -0.35;
+                r.effects.grain = 0.25;
+            }),
+        ),
+        (
+            "negative_texture_and_retouch",
+            Box::new(|r| {
+                r.noise_chroma = 0.35;
+                r.noise_luma = 0.3;
+                r.effects.texture = -0.5;
+                r.retouch.push(RetouchOp {
+                    mode: RetouchMode::Clone,
+                    shape: RetouchShape::Spot {
+                        center: [0.4, 0.5],
+                        radius: 0.05,
+                    },
+                    feather: 0.5,
+                    opacity: 0.9,
+                    offset: [0.2, 0.0],
+                    patch: None,
+                });
+            }),
+        ),
+        (
+            "nr_retouch_automask_without_texture",
+            Box::new(|r| {
+                r.noise_chroma = 0.4;
+                r.noise_luma = 0.35;
+                r.effects.texture = 0.0;
+                r.retouch.push(RetouchOp {
+                    mode: RetouchMode::Clone,
+                    shape: RetouchShape::Spot {
+                        center: [0.45, 0.5],
+                        radius: 0.06,
+                    },
+                    feather: 0.5,
+                    opacity: 0.9,
+                    offset: [0.15, 0.0],
+                    patch: None,
+                });
+                r.masks.push(MaskGroup {
+                    components: vec![MaskComponent::new(MaskShape::Brush {
+                        strokes: vec![BrushStroke {
+                            points: vec![[0.35, 0.45], [0.5, 0.5], [0.65, 0.55]].into(),
+                            radius: 0.08,
+                            feather: 0.4,
+                            flow: 1.0,
+                            density: 1.0,
+                            erase: false,
+                            auto_mask: true,
+                        }],
+                    })],
+                    adjust: LocalAdjust {
+                        exposure: 0.4,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }),
+        ),
+        (
+            "nr_texture_with_automask_brush",
+            Box::new(|r| {
+                r.noise_chroma = 0.4;
+                r.noise_luma = 0.35;
+                r.effects.texture = 0.45;
+                r.masks.push(MaskGroup {
+                    components: vec![MaskComponent::new(MaskShape::Brush {
+                        strokes: vec![BrushStroke {
+                            points: vec![[0.25, 0.4], [0.55, 0.5], [0.75, 0.6]].into(),
+                            radius: 0.08,
+                            feather: 0.4,
+                            flow: 1.0,
+                            density: 1.0,
+                            erase: false,
+                            auto_mask: true,
+                        }],
+                    })],
+                    adjust: LocalAdjust {
+                        exposure: 0.45,
+                        saturation: 0.2,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }),
+        ),
+    ];
+
+    for (name, edit) in &cases {
+        let mut r = profiled_recipe(&im);
+        edit(&mut r);
+        let valid = r.checked()?;
+        for space in OutputSpace::ALL {
+            for max_edge in [0u32, 160u32] {
+                let cpu = crate::develop::render_export(
+                    &im,
+                    &valid,
+                    None,
+                    max_edge,
+                    space,
+                    Cancel::NEVER,
+                )?;
+                let gpu_f32 = backend.render_export(
+                    &im,
+                    &valid,
+                    None,
+                    max_edge,
+                    space,
+                    ExportFormat::F32,
+                    Cancel::NEVER,
+                )?;
+                let gpu_8 = backend.render_export(
+                    &im,
+                    &valid,
+                    None,
+                    max_edge,
+                    space,
+                    ExportFormat::Rgb8,
+                    Cancel::NEVER,
+                )?;
+                assert_eq!(
+                    backend.status().cpu_renders,
+                    0,
+                    "{name} {space:?} edge={max_edge} fell back to CPU"
+                );
+                let rms = rms_f32_diff(gpu_f32.pixels(), cpu.pixels());
+                assert!(
+                    rms <= 2e-4,
+                    "{name} {space:?} edge={max_edge}: f32 RMS {rms} > 2e-4"
+                );
+                let cpu_8 = cpu.rgb8();
+                let (max8, diff_px) = max_u8_diff(gpu_8.as_rgb8().unwrap(), &cpu_8);
+                let total_px = (cpu.width() * cpu.height()) as usize;
+                let exact_ratio = 1.0 - (diff_px as f64 / total_px as f64);
+                assert!(
+                    max8 <= 1,
+                    "{name} {space:?} edge={max_edge}: 8-bit max diff {max8} > 1"
+                );
+                assert!(
+                    exact_ratio >= 0.995,
+                    "{name} {space:?} edge={max_edge}: 8-bit exact ratio {exact_ratio:.5} < 0.995"
+                );
+            }
+        }
+    }
     Ok(())
 }

@@ -12,7 +12,7 @@ use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 
-const LEVELS: usize = 5;
+pub(crate) const LEVELS: usize = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct LuminanceDenoise {
@@ -38,7 +38,7 @@ impl LuminanceDenoise {
         };
         // Camera pixels carry the as-shot WB. Exclude near-clipped flats from the
         // estimate, where clipping suppresses noise without making the capture clean.
-        let white = luma(im.metadata.wb.map(|v| v.max(0.001))) * 0.97;
+        let white = white_threshold(im.metadata.wb);
         let offset = photo_level_offset(im);
         let filtered = self.filter(&plane, 0, offset, 0., white, cancel)?;
         let mut out = im.clone();
@@ -62,6 +62,18 @@ impl LuminanceDenoise {
             });
         check(cancel)?;
         Ok(out)
+    }
+
+    /// Soft-threshold value for band `photo_level` given its measured `noise`.
+    pub(crate) fn threshold_at(&self, photo_level: f32, noise: f32) -> f32 {
+        // Amount grows the threshold instead of just blending a fixed blur. Detail
+        // protects fine structures; Contrast protects coarser structure separately.
+        // Both change from the photo's finest band to the next: between them, a reduced
+        // decode's band takes them in proportion.
+        let coarse_share = photo_level.min(1.);
+        let detail = 2f32.powf((0.5 - self.detail) * (1.5 - coarse_share));
+        let contrast = 1. - self.contrast * 0.6 * coarse_share;
+        noise * 3.8 * self.amount.powf(1.3) * detail * contrast
     }
 
     /// Filters `plane` as band `level`, recursing to the coarser ones; `offset` is the
@@ -95,19 +107,10 @@ impl LuminanceDenoise {
             .par_iter_mut()
             .zip(&plane.data)
             .for_each(|(b, p)| *b = p - *b);
-        let noise = band_noise(plane, &band, white, cancel)?.map_or(finer_noise * 0.6, |n| {
-            if level == 0 { n } else { n.min(finer_noise) }
-        });
+        let noise = chain_level_noise(level, band_noise(plane, &band, white, cancel)?, finer_noise);
         let coarse = self.filter(&coarse, level + 1, offset, noise, white, cancel)?;
         let mut out = up(&coarse, plane.w, plane.h, cancel)?;
-        // Amount grows the threshold instead of just blending a fixed blur. Detail
-        // protects fine structures; Contrast protects coarser structure separately.
-        // Both change from the photo's finest band to the next: between them, a reduced
-        // decode's band takes them in proportion.
-        let coarse_share = photo_level.min(1.);
-        let detail = 2f32.powf((0.5 - self.detail) * (1.5 - coarse_share));
-        let contrast = 1. - self.contrast * 0.6 * coarse_share;
-        let threshold = noise * 3.8 * self.amount.powf(1.3) * detail * contrast;
+        let threshold = self.threshold_at(photo_level, noise);
         out.data
             .par_chunks_mut(1024)
             .enumerate()
@@ -142,6 +145,11 @@ impl LuminanceDenoise {
         check(cancel)?;
         Ok(out)
     }
+}
+
+/// Near-clipped luminance threshold in square-root camera values from as-shot `wb`.
+pub(crate) fn white_threshold(wb: [f32; 3]) -> f32 {
+    luma(wb.map(|v| v.max(0.001))) * 0.97
 }
 
 fn luma(p: [f32; 3]) -> f32 {
@@ -197,12 +205,25 @@ fn band_noise(plane: &Plane, band: &Plane, white: f32, cancel: Cancel<'_>) -> Re
         })
         .collect();
     check(cancel)?;
+    Ok(band_noise_from_blocks(&mut energies))
+}
+
+/// Chains a band's measured `noise` with `finer_noise`, clamping coarser bands to the
+/// finer band's estimate and falling back to 0.6× when unmeasurable.
+pub(crate) fn chain_level_noise(level: usize, measured: Option<f32>, finer_noise: f32) -> f32 {
+    measured.map_or(finer_noise * 0.6, |n| {
+        if level == 0 { n } else { n.min(finer_noise) }
+    })
+}
+
+/// Tenth-percentile RMS noise from valid 8×8 block mean-squared energies.
+pub(crate) fn band_noise_from_blocks(energies: &mut [f32]) -> Option<f32> {
     if energies.len() < 16 {
-        return Ok(None);
+        return None;
     }
     let k = energies.len() / 10;
     let (_, e, _) = energies.select_nth_unstable_by(k, f32::total_cmp);
-    Ok(Some(e.sqrt()))
+    Some(e.sqrt())
 }
 
 #[cfg(test)]

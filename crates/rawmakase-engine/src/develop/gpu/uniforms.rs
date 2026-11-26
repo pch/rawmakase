@@ -174,6 +174,25 @@ uniform! {
     }
 }
 
+uniform! {
+    /// `Params` in `pyramid.wgsl`: shared GPU Laplacian pyramid passes for Color NR,
+    /// Luminance NR, Texture, and crop-clamped measurement box reduction.
+    PyramidParams {
+        src_w: u32,
+        src_h: u32,
+        dst_w: u32,
+        dst_h: u32,
+        aux0: u32,
+        aux1: u32,
+        aux2: u32,
+        aux3: u32,
+        f0: f32,
+        f1: f32,
+        f2: f32,
+        f3: f32,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +268,14 @@ mod tests {
         let (members, size) = shader_params(&source);
         assert_eq!(members, rust_fields(ExportFinishParams::FIELDS));
         assert_eq!(size, std::mem::size_of::<ExportFinishParams>());
+        assert_eq!(size % 16, 0);
+    }
+
+    #[test]
+    fn pyramid_params_match_the_shader() {
+        let (members, size) = shader_params(include_str!("pyramid.wgsl"));
+        assert_eq!(members, rust_fields(PyramidParams::FIELDS));
+        assert_eq!(size, std::mem::size_of::<PyramidParams>());
         assert_eq!(size % 16, 0);
     }
 }
