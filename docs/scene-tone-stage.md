@@ -149,8 +149,11 @@ Remaining known gaps on rendered files: Dehaze (reduced across positive and nega
 amounts, though positive Dehaze still averages ~2.0–2.6 ΔE00 on held-out JPEGs), Clarity
 (reduced, ~1.8 ΔE00 mean at +100 on held-out JPEGs), Highlights/Shadows on very dark or
 bright files (reduced at `Shadows +` / `Highlights +` extremes), extreme-exposure
-saturated primaries (ProPhoto→sRGB gamut rolloff rather than S3), and parts of the cool
-magenta corner of Temp and Tint.
+saturated primaries (ProPhoto→sRGB gamut rolloff rather than S3), and bright-grey
+highlight roll-off under strong cooling / cool-magenta Temp and Tint (e.g.
+`Temp −50, Tint +50`, where Camera Raw rolls off boosted blue along an S3 white curve
+near `W* ≈ 8` while its pseudo-scene rises above 1 near white; see
+[color pipeline](color-pipeline.md)).
 
 ### Whites and Blacks
 

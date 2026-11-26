@@ -293,16 +293,22 @@ pub fn rendered_gains(temperature: f32, tint: f32) -> [f32; 3] {
 
 /// The rendered file's Temp and Tint that render most neutral the color `gains`
 /// would (the picked color is `1 / gains`): least squares on the log2 spread of its
-/// channels after the uncapped illuminant matrix, whose cross-channel terms a
-/// comparison of gains would miss, within −100…100: a coarse grid, then a pattern
-/// search to 0.01. Scoring with the uncapped matrix prevents strongly blue picks from
-/// folding into the 16×-capped cool magenta corner. A color no Temp and Tint
-/// neutralise (an eyedropper's, say) gives the nearest that do.
+/// channels after the illuminant matrix, whose cross-channel terms a comparison of
+/// gains would miss, over the uncapped domain (`camera_white >= 1 / MAX_WB_GAIN`)
+/// within −100…100: a coarse grid, then an 8-direction pattern search to 0.01.
+/// Restricting the search to the uncapped domain prevents strongly blue picks from
+/// folding into the 16×-capped cool-magenta corner and keeps very yellow picks (>4
+/// stops short of blue) on the 16× maximum-blue-gain boundary instead of falling into
+/// the zero-blue corner. A color no Temp and Tint neutralise (an eyedropper's, say)
+/// gives the nearest that do.
 pub fn rendered_controls(gains: [f32; 3]) -> [f32; 2] {
     let sample = gains.map(|g| if g.is_finite() { 1. / g.max(1e-6) } else { 1. });
     let cost = |t: f32, n: f32| {
-        let l = crate::color::mul(rendered_wb_matrix(t, n, false).0, sample)
-            .map(|v| v.max(1e-6).log2());
+        let (m, cw) = rendered_wb_matrix(t, n, false);
+        if cw.iter().any(|&c| c < 1. / MAX_WB_GAIN) {
+            return f32::INFINITY;
+        }
+        let l = crate::color::mul(m, sample).map(|v| v.max(1e-6).log2());
         let mean = l.iter().sum::<f32>() / 3.;
         l.iter().map(|v| (v - mean).powi(2)).sum::<f32>()
     };
@@ -318,7 +324,16 @@ pub fn rendered_controls(gains: [f32; 3]) -> [f32; 2] {
     let mut step = 2.5;
     while step > 0.01 {
         let (_, t0, n0) = best;
-        for (dt, dn) in [(-step, 0.), (step, 0.), (0., -step), (0., step)] {
+        for (dt, dn) in [
+            (-step, 0.),
+            (step, 0.),
+            (0., -step),
+            (0., step),
+            (-step, -step),
+            (-step, step),
+            (step, -step),
+            (step, step),
+        ] {
             let (t, n) = ((t0 + dt).clamp(-100., 100.), (n0 + dn).clamp(-100., 100.));
             let c = cost(t, n);
             if c < best.0 {
@@ -570,10 +585,36 @@ mod rendered_tests {
         }
     }
 
+    /// A very yellow pick (>4 stops short of blue) stays on the 16× maximum-blue-gain
+    /// boundary where the capped render actually boosts blue, instead of entering the
+    /// zero-blue cool-magenta corner where the pick renders with `b/g == 0`.
+    #[test]
+    fn very_yellow_pick_stays_on_the_16x_boundary_instead_of_collapsing_blue() {
+        for sample in [[1., 1., 0.1], [1., 0.8, 0.1], [1., 1., 0.05]] {
+            let gains = sample.map(|v| 1. / v);
+            let [t, n] = rendered_controls(gains);
+            let out = crate::color::mul(rendered_white_balance(t, n).matrix, sample);
+            assert!(
+                out[2] > 0.1 * out[1],
+                "very yellow pick {sample:?} landed at ({t}, {n}) with collapsed blue: {out:?}"
+            );
+        }
+    }
+
     #[test]
     fn rendered_controls_invert_rendered_white_balance() {
         for t in [-90., -50., -20., 0., 15., 40., 80.] {
             for n in [-60., -10., 0., 30., 70.] {
+                // Pairs inside the 16×-capped cool-magenta corner cannot neutralise their
+                // uncapped illuminant color in a capped render; `rendered_controls` stays
+                // on the uncapped domain.
+                if rendered_wb_matrix(t, n, false)
+                    .1
+                    .iter()
+                    .any(|&c| c < 1. / MAX_WB_GAIN)
+                {
+                    continue;
+                }
                 let [t2, n2] = rendered_controls(picked_gains(t, n));
                 assert!(
                     (t2 - t).abs() <= 1. && (n2 - n).abs() <= 1.,

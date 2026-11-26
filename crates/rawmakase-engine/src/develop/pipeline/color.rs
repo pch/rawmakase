@@ -97,7 +97,15 @@ pub(crate) fn camera_stage(m: &Metadata, r: &Recipe) -> Camera {
     );
     Camera {
         matrix: crate::color::mul_matrix(matrix, wb.matrix),
-        clip: wb.clip.map(|c| c.min(UNCLIPPED)),
+        // Camera Raw 18.7 does not apply SDR's pre-matrix camera-white clip
+        // (`CAMERA_WHITE_SCALE = 6`) to HDR rendered masters, keeping linear WB
+        // gains up past 20× graphics white across warming, cooling, and
+        // cool-magenta settings.
+        clip: if r.hdr.is_active() {
+            [UNCLIPPED; 3]
+        } else {
+            wb.clip.map(|c| c.min(UNCLIPPED))
+        },
     }
 }
 fn profile_matrix(m: &Metadata, r: &Recipe) -> [[f32; 3]; 3] {
@@ -135,5 +143,37 @@ mod tests {
             srgb[0] > srgb[1] && srgb[1] > srgb[2] && srgb[2] > 0.01,
             "Temp -25 Tint +100 camera stage should warm grey without dropping blue: {srgb:?}"
         );
+    }
+
+    /// Camera Raw 18.7 does not apply SDR's `CAMERA_WHITE_SCALE = 6` pre-matrix clip to
+    /// HDR rendered masters (measured on a 16-bit BT.2020 PQ TIFF up to 20× graphics
+    /// white across strong warming, strong cooling, and cool-magenta WB).
+    #[test]
+    fn hdr_rendered_camera_stage_leaves_clip_unclipped() {
+        let m = Metadata {
+            source: Source::Rendered,
+            ..Default::default()
+        };
+        for (t, n) in [(100., 0.), (-100., 0.), (-50., 50.), (-25., 100.)] {
+            let mut sdr = Recipe::for_rendered(&m);
+            sdr.incremental_temperature = t;
+            sdr.incremental_tint = n;
+            sdr.update_wb(&m);
+            let sdr_stage = camera_stage(&m, &sdr);
+            assert!(
+                sdr_stage.clip.iter().any(|&c| c < 10.),
+                "SDR ({t}, {n}) should keep its pre-matrix clip: {:?}",
+                sdr_stage.clip
+            );
+
+            let mut hdr = sdr.clone();
+            hdr.hdr.enabled = true;
+            let hdr_stage = camera_stage(&m, &hdr);
+            assert_eq!(
+                hdr_stage.clip, [UNCLIPPED; 3],
+                "HDR rendered master ({t}, {n}) must not apply SDR pre-matrix clip"
+            );
+            assert_eq!(hdr_stage.matrix, sdr_stage.matrix);
+        }
     }
 }

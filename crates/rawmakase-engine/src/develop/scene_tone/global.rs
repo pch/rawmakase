@@ -854,9 +854,12 @@ fn positive_blacks(blacks: f32, key: f32, calibration_key: f32) -> Box<[f32; Y_S
         low + (high - low).max(0.) * share
     }))
 }
-/// DNG RGBTone: `curve` maps the brightest and darkest channel, and the middle one
-/// keeps its relative place between them.
+/// DNG RGBTone: clamps negative inputs to 0 (as Camera Raw 18.7 does before its scene
+/// tone curve, preventing a negative channel from lifting the middle channel when
+/// `curve(0) == 0`), maps the brightest and darkest channel through `curve`, and keeps
+/// the middle channel's relative place between them.
 pub(crate) fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
+    let p = p.map(|v| v.max(0.));
     let lo = p.into_iter().fold(f32::INFINITY, f32::min);
     let hi = p.into_iter().fold(f32::NEG_INFINITY, f32::max);
     let (a, b) = (curve(lo), curve(hi));
@@ -1297,5 +1300,30 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Camera Raw 18.7 clamps negative ProPhoto channels to 0 before RGBTone in the
+    /// scene tone stage (measured on linear-profile DNGs and rendered JPEGs in the
+    /// cool-magenta corner): a negative blue channel must not lift red on saturated
+    /// cyan/green patches or greys.
+    #[test]
+    fn rgb_tone_clamps_negative_channels_without_lifting_midtones() {
+        let tone = GlobalTone::new([0.; 4], 0., 0., -12., -12., false);
+        // Saturated cyan/green where both red and blue are negative after WB: red must
+        // stay 0 rather than being lifted by `-lo / (hi - lo)`.
+        let [r, g, b] = tone.apply([-0.022, 0.523, -0.134]);
+        assert_eq!(r, 0., "negative red must stay 0, got [{r}, {g}, {b}]");
+        assert_eq!(b, 0., "negative blue must stay 0, got [{r}, {g}, {b}]");
+        assert!(g > 0.4, "{g}");
+
+        // Positive red with negative blue: `r / g` must match `0.10 / 0.65` exactly.
+        let [r, g, b] = tone.apply([0.10, 0.65, -0.24]);
+        assert_eq!(b, 0., "negative blue must stay 0, got [{r}, {g}, {b}]");
+        assert!(
+            (r / g - 0.10 / 0.65).abs() < 1e-5,
+            "negative blue lifted red: r/g = {}, want {} (rgb = [{r}, {g}, {b}])",
+            r / g,
+            0.10 / 0.65
+        );
     }
 }
