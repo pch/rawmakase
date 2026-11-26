@@ -168,8 +168,10 @@ uniform! {
         vignette_power: f32,
         vignette_midpoint: f32,
         vignette_feather: f32,
-        pad0: u32,
-        pad1: u32,
+        /// HDR master peak (`HdrLimit::peak`) for `roll_off`, unused for SDR.
+        hdr_peak: f32,
+        /// Non-zero when `hdr_finish_master` decodes sRGB-curve values back to linear.
+        hdr_decode: u32,
         pad2: u32,
     }
 }

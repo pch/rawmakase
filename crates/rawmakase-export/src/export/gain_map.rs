@@ -99,23 +99,34 @@ fn numerator(v: f32) -> i32 {
 /// (1 = graphics white), as 8-bit samples, with its metadata; `peak` is the master's
 /// brightest value.
 pub fn compute(sdr: &[[f32; 3]], hdr: &[[f32; 3]], peak: f32) -> Result<(Vec<u8>, Metadata)> {
+    use rayon::prelude::*;
     ensure!(
         sdr.len() == hdr.len() && !sdr.is_empty(),
         "Gain map renditions differ in size"
     );
     let lum = |p: &[f32; 3]| (0..3).map(|c| LUMINANCE[c] * p[c].max(0.)).sum::<f32>();
     let gains: Vec<f32> = sdr
-        .iter()
-        .zip(hdr)
+        .par_iter()
+        .zip(hdr.par_iter())
         .map(|(s, h)| ((lum(h) + OFFSET) / (lum(s) + OFFSET)).log2())
         .collect();
-    let min = gains.iter().copied().fold(f32::INFINITY, f32::min).min(0.);
-    let mut max = gains.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let (raw_min, mut max) = gains
+        .par_iter()
+        .copied()
+        .fold(
+            || (f32::INFINITY, f32::NEG_INFINITY),
+            |(lo, hi), g| (lo.min(g), hi.max(g)),
+        )
+        .reduce(
+            || (f32::INFINITY, f32::NEG_INFINITY),
+            |(lo_a, hi_a), (lo_b, hi_b)| (lo_a.min(lo_b), hi_a.max(hi_b)),
+        );
+    let min = raw_min.min(0.);
     if max - min < 1. / 256. {
         max = min + 1. / 256.;
     }
     let map = gains
-        .iter()
+        .par_iter()
         .map(|g| (((g - min) / (max - min)).clamp(0., 1.) * 255. + 0.5) as u8)
         .collect();
     Ok((

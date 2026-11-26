@@ -107,7 +107,7 @@ fn wgsl_shaders_parse_and_validate_for_all_output_spaces() {
     };
     let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
 
-    // Validate `develop.wgsl` across all 3 OutputSpaces.
+    // Validate `develop.wgsl` across all 3 OutputSpaces and the HDR variant.
     for space in OutputSpace::ALL {
         let variant = Variant {
             output_space: space,
@@ -122,8 +122,22 @@ fn wgsl_shaders_parse_and_validate_for_all_output_spaces() {
             .validate(&module)
             .unwrap_or_else(|e| panic!("develop.wgsl validation failed for {space:?}: {e}"));
     }
+    let hdr_source = crate::develop::pipeline::pixel_params::wgsl_prelude()
+        + &Variant::HDR.constants()
+        + include_str!("develop.wgsl");
+    let hdr_module = wgsl::parse_str(&hdr_source).expect("develop.wgsl (HDR) parses");
+    validator
+        .validate(&hdr_module)
+        .expect("develop.wgsl (HDR) validates");
 
-    // Validate `export_finish.wgsl`.
+    // Validate `local.wgsl` with the updated `S_PHOTO_Y0` prelude.
+    let local_source = sample_slot::wgsl_prelude() + include_str!("local.wgsl");
+    let local_module = wgsl::parse_str(&local_source).expect("local.wgsl parses");
+    validator
+        .validate(&local_module)
+        .expect("local.wgsl validates");
+
+    // Validate `export_finish.wgsl` (including HDR master entry points).
     let finish_source = PostCropVignette::wgsl_tone() + include_str!("export_finish.wgsl");
     let finish_module = wgsl::parse_str(&finish_source).expect("export_finish.wgsl parses");
     validator
@@ -1794,4 +1808,753 @@ fn gpu_export_matches_cpu_with_nr_texture_retouch_and_automask() -> Result<()> {
         }
     }
     Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// M4: HDR master, single-pass gain-map, double-buffered staging & source-strip tests
+// -----------------------------------------------------------------------------
+
+/// Builds a synthetic high-dynamic-range camera image with scene highlights well above
+/// white (up to ~6.0) alongside midtones, dark shadows, and sharp edges.
+fn synthetic_hdr_photo(w: u32, h: u32) -> CameraImage {
+    let mut im = synthetic_photo(w, h);
+    let mut pixels = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        let fy = y as f32 / h.max(1) as f32;
+        for x in 0..w {
+            let fx = x as f32 / w.max(1) as f32;
+            let bar = if ((x / 13) + (y / 11)) % 2 == 0 {
+                0.15
+            } else {
+                0.0
+            };
+            // Bright specular band near top-right reaching ~6x white for HDR headroom tests.
+            let specular = if fx > 0.55 && fy < 0.45 {
+                4.5 * (fx - 0.55) / 0.45 * (0.45 - fy) / 0.45
+            } else {
+                0.0
+            };
+            let r = 0.03 + 1.4 * fx + bar + specular;
+            let g = 0.04 + 1.2 * fy + 0.25 * (fx * 5.0).sin().abs() + bar + specular * 0.9;
+            let b = 0.03 + 1.1 * (1.0 - fx) * (0.3 + 0.7 * fy) + specular * 0.75;
+            pixels.push([r, g, b]);
+        }
+    }
+    im.pixels = pixels.into();
+    im
+}
+
+fn synthetic_hdr_file(w: u32, h: u32) -> CameraImage {
+    use crate::camera_data::{HdrLight, Source};
+    let mut pixels = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        let fy = y as f32 / h.max(1) as f32;
+        for x in 0..w {
+            let fx = x as f32 / w.max(1) as f32;
+            let edge = if (x / 12 + y / 12) % 2 == 0 { 0.4 } else { 0.0 };
+            pixels.push([
+                0.05 + 3.2 * fx + edge,
+                0.06 + 2.6 * fy + edge,
+                0.08 + 1.8 * (1. - fx),
+            ]);
+        }
+    }
+    let light = HdrLight::new(
+        w,
+        h,
+        pixels.clone(),
+        crate::color::hdr_output::HdrTransfer::Pq,
+    )
+    .expect("valid HDR light");
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        raw_width: w,
+        raw_height: h,
+        wb: [1.; 3],
+        daylight_wb: [1.; 3],
+        matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        source: Source::Rendered,
+        ..Default::default()
+    };
+    CameraImage {
+        width: w,
+        height: h,
+        recovered: Default::default(),
+        pixels: pixels.iter().map(|p| p.map(|v| v.clamp(0., 1.))).collect(),
+        metadata,
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    }
+    .with_hdr(Arc::new(light))
+    .expect("attach HDR light")
+}
+
+fn hdr_profiled_recipe(im: &CameraImage) -> Recipe {
+    let mut r = profiled_recipe(im);
+    r.hdr.enabled = true;
+    r.hdr.limit = 2.3;
+    r
+}
+
+/// Asserts that `got` matches `want` on an HDR linear ProPhoto master using the same
+/// three-tier relative tolerance as `gpu_develop_matches_cpu_hdr_master` (`p999 <= 2e-3`,
+/// `max <= 1e-2`, `mean <= 2e-4`).
+fn assert_hdr_matches(
+    got: &crate::rendered::HdrImage,
+    want: &crate::rendered::HdrImage,
+    label: &str,
+) {
+    assert_eq!(
+        (got.width, got.height),
+        (want.width, want.height),
+        "{label} size"
+    );
+    assert_eq!(got.peak, want.peak, "{label} peak");
+    assert_eq!(got.pixels.len(), want.pixels.len(), "{label} len");
+    let mut diffs = Vec::with_capacity(got.pixels.len() * 3);
+    let mut sum_rel = 0.0f64;
+    for (i, (a, b)) in got.pixels.iter().zip(&want.pixels).enumerate() {
+        for c in 0..3 {
+            assert!(
+                a[c].is_finite() && a[c] >= 0.0,
+                "{label} px {i}[{c}]={}",
+                a[c]
+            );
+            let denom = b[c].abs().max(0.05);
+            let rel = (a[c] - b[c]).abs() / denom;
+            diffs.push(rel);
+            sum_rel += f64::from(rel);
+        }
+    }
+    diffs.sort_by(f32::total_cmp);
+    let max_rel = diffs.last().copied().unwrap_or(0.0);
+    let p999 = diffs
+        .get((diffs.len() * 999) / 1000)
+        .copied()
+        .unwrap_or(0.0);
+    let mean_rel = sum_rel / diffs.len().max(1) as f64;
+    assert!(
+        p999 <= 2e-3 && max_rel <= 1e-2 && mean_rel <= 2e-4,
+        "{label}: p999={p999:.6}, max_rel={max_rel:.6}, mean_rel={mean_rel:.6}"
+    );
+}
+
+#[test]
+fn source_strip_bounds_covers_geometry_lens_and_xtrans() {
+    let mut im = synthetic_photo(240, 180);
+    // Attach a non-trivial radial distortion + lateral CA lens correction.
+    let distortion =
+        rawmakase_model::optics::Radial::new(vec![0.0, 0.5, 1.0, 1.5], vec![1.0, 1.01, 1.04, 1.08])
+            .unwrap();
+    let ca_r =
+        rawmakase_model::optics::Radial::new(vec![0.0, 1.0, 1.5], vec![1.0, 1.003, 1.006]).unwrap();
+    let ca_b =
+        rawmakase_model::optics::Radial::new(vec![0.0, 1.0, 1.5], vec![1.0, 0.997, 0.994]).unwrap();
+    im.metadata.lens = Some(rawmakase_model::optics::LensCorrection {
+        distortion: Some(distortion),
+        chromatic: Some([ca_r, ca_b]),
+        default_on: true,
+        ..Default::default()
+    });
+
+    let check_case = |label: &str, im: &CameraImage, r: &Recipe, y0: u32, y1: u32| {
+        let g = Geometry::new(im, r, 0);
+        let (sy0, sy1) = source_strip_bounds(im, r, &g, y0, y1);
+        assert!(
+            sy0 < sy1 && sy1 <= im.height,
+            "{label}: invalid ({sy0}, {sy1})"
+        );
+        let lens = crate::develop::image_space::LensMap::new(im, r);
+        let fw = g.width as f32;
+        let fh = g.height as f32;
+        let extra = if im.metadata.xtrans && lens.is_some() {
+            15.0
+        } else {
+            1.0
+        };
+        for oy in y0..y1 {
+            for ox in (0..g.width).step_by(3) {
+                let [ax, ay] = g.source((ox as f32 + 0.5) / fw, (oy as f32 + 0.5) / fh);
+                if let Some(lens) = &lens {
+                    let ([_, dy], scales) = lens.scales(ax, ay);
+                    for s in scales {
+                        let sy = lens.center[1] + dy * s - 0.5;
+                        if sy >= 0.0 && sy <= (im.height - 1) as f32 {
+                            assert!(
+                                (sy - extra).max(0.0) >= sy0 as f32
+                                    && (sy + extra).min((im.height - 1) as f32) < sy1 as f32,
+                                "{label}: ({ox},{oy}) mapped sy={sy} outside [{sy0},{sy1})"
+                            );
+                        }
+                    }
+                } else if ay >= 0.0 && ay <= (im.height - 1) as f32 {
+                    assert!(
+                        (ay - 1.0).max(0.0) >= sy0 as f32
+                            && (ay + 1.0).min((im.height - 1) as f32) < sy1 as f32,
+                        "{label}: ({ox},{oy}) mapped ay={ay} outside [{sy0},{sy1})"
+                    );
+                }
+            }
+        }
+        (sy0, sy1)
+    };
+
+    // 1. Identity band is tightly bounded around [40..80) (not full height).
+    let base = profiled_recipe(&im);
+    let (sy0, sy1) = check_case("identity", &im, &base, 40, 80);
+    assert!(sy1 - sy0 < 60, "expected tight strip, got [{sy0}, {sy1})");
+
+    // 2. Crop + straighten + lens distortion.
+    let mut tilted = base.clone();
+    tilted.crop = [0.1, 0.1, 0.9, 0.9];
+    tilted.straighten = 6.0;
+    tilted.lens_builtin = true;
+    tilted.lens_ca = true;
+    let g_tilted = Geometry::new(&im, &tilted, 0);
+    check_case("tilted_lens", &im, &tilted, 20, g_tilted.height.min(60));
+
+    // 3. 90-degree rotation spans almost the full source height even for a narrow band.
+    let mut rotated = base.clone();
+    rotated.rotation = 1;
+    let (ry0, ry1) = check_case("rot90", &im, &rotated, 10, 20);
+    assert!(
+        ry1 - ry0 > im.height / 2,
+        "rot90 strip should span source height: [{ry0},{ry1})"
+    );
+
+    // 4. X-Trans with lens CA adds the wider vertical coherence margin.
+    im.metadata.xtrans = true;
+    let mut xtrans_r = base;
+    xtrans_r.lens_builtin = true;
+    xtrans_r.lens_ca = true;
+    let (xy0, xy1) = check_case("xtrans_ca", &im, &xtrans_r, 60, 80);
+    assert!(
+        xy0 <= 42 && xy1 >= 98,
+        "expected xtrans margin in [{xy0}, {xy1})"
+    );
+}
+
+#[test]
+fn hdr_and_gain_map_cpu_only_and_mock_fallbacks() -> Result<()> {
+    let im = synthetic_hdr_photo(64, 48);
+    let mut r = hdr_profiled_recipe(&im);
+    r.sharpening = 0.4;
+    let valid = r.checked()?;
+
+    // 1. CpuOnly backend matches CPU oracle bit-for-bit for both `render_hdr` and `render_hdr_and_sdr`.
+    let cpu_backend = ExportBackend::cpu_only();
+    let oracle_hdr = crate::develop::render_hdr(&im, &valid, None, 32, Cancel::NEVER)?;
+    let oracle_sdr =
+        crate::develop::render_export(&im, &valid, None, 32, OutputSpace::Srgb, Cancel::NEVER)?;
+    let got_hdr = cpu_backend.render_hdr(&im, &valid, None, 32, Cancel::NEVER)?;
+    assert_eq!(got_hdr.pixels, oracle_hdr.pixels);
+    let (pair_hdr, pair_sdr) =
+        cpu_backend.render_hdr_and_sdr(&im, &valid, None, 32, Cancel::NEVER)?;
+    assert_eq!(pair_hdr.pixels, oracle_hdr.pixels);
+    assert_eq!(pair_sdr.pixels(), oracle_sdr.pixels());
+    let st = cpu_backend.status();
+    assert_eq!(st.gpu_renders, 0);
+    assert_eq!(st.cpu_renders, 3);
+    assert_eq!(st.fallback_count(ExportFallbackKind::ConfiguredCpu), 3);
+
+    // 2. Unsupported HDR feature (vignette != 0) falls back Tier-1 without touching GPU.
+    let (mock, handle) = ScriptedMock::new([MockAction::Succeed]);
+    let backend = ExportBackend::with_mock("Mock GPU", Box::new(mock));
+    let mut vig_r = r.clone();
+    vig_r.effects.vignette = -0.3;
+    let vig_valid = vig_r.checked()?;
+    let vig_out = backend.render_hdr(&im, &vig_valid, None, 0, Cancel::NEVER)?;
+    assert_eq!(
+        vig_out.pixels,
+        crate::develop::render_hdr(&im, &vig_valid, None, 0, Cancel::NEVER)?.pixels
+    );
+    assert_eq!(handle.calls.load(Ordering::SeqCst), 0);
+    assert!(backend.status().gpu_active);
+    assert_eq!(
+        backend
+            .status()
+            .fallback_count(ExportFallbackKind::UnsupportedRecipe),
+        1
+    );
+
+    // 3. Single-pass `render_hdr_and_sdr` invokes GPU once (one `gpu_renders` increment),
+    //    whereas an edit with SDR rendition sliders falls back to separate calls (HDR on GPU,
+    //    SDR on CPU).
+    let (mock, handle) = ScriptedMock::new([MockAction::Succeed, MockAction::Succeed]);
+    let backend = ExportBackend::with_mock("Mock GPU", Box::new(mock));
+    let _ = backend.render_hdr_and_sdr(&im, &valid, None, 0, Cancel::NEVER)?;
+    assert_eq!(backend.status().gpu_renders, 1);
+    assert_eq!(backend.status().cpu_renders, 0);
+    // With SDR rendition slider active, `can_share` is false -> HDR runs on GPU, SDR falls back to CPU.
+    let mut sdr_slider = r.clone();
+    sdr_slider.hdr.sdr.brightness = 0.25;
+    let sdr_valid = sdr_slider.checked()?;
+    let _ = backend.render_hdr_and_sdr(&im, &sdr_valid, None, 0, Cancel::NEVER)?;
+    assert_eq!(backend.status().gpu_renders, 2);
+    assert_eq!(backend.status().cpu_renders, 1);
+    assert_eq!(
+        backend
+            .status()
+            .fallback_count(ExportFallbackKind::UnsupportedRecipe),
+        1
+    );
+    let _ = handle;
+
+    // 4. HDR OOM retry halves band height and succeeds; cancellation aborts without CPU fallback.
+    struct HdrOomCancelMock {
+        attempt: usize,
+        seen_caps: Arc<Mutex<Vec<Option<u32>>>>,
+    }
+    impl MockGpuDriver for HdrOomCancelMock {
+        fn render_banded(
+            &mut self,
+            _: &PreparedExport<'_>,
+            _: Option<u32>,
+            _: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            unreachable!()
+        }
+        fn render_hdr_banded(
+            &mut self,
+            job: &PreparedHdrExport<'_>,
+            band_cap: Option<u32>,
+            cancel: Cancel<'_>,
+        ) -> std::result::Result<crate::rendered::HdrImage, GpuFailure> {
+            self.seen_caps.lock().unwrap().push(band_cap);
+            self.attempt += 1;
+            if cancel.is_cancelled() {
+                return Err(GpuFailure::Cancelled);
+            }
+            if self.attempt == 1 {
+                return Err(GpuFailure::OutOfMemory("simulated HDR OOM".into()));
+            }
+            let n = job.out_w as usize * job.out_h as usize;
+            Ok(crate::rendered::HdrImage {
+                width: job.out_w,
+                height: job.out_h,
+                pixels: vec![[1.25; 3]; n],
+                peak: job.peak,
+            })
+        }
+        fn release_buffers(&mut self) {}
+    }
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let backend = ExportBackend::with_mock(
+        "HDR OOM Mock",
+        Box::new(HdrOomCancelMock {
+            attempt: 0,
+            seen_caps: seen.clone(),
+        }),
+    );
+    let out = backend.render_hdr(&im, &valid, None, 0, Cancel::NEVER)?;
+    assert_eq!(out.pixels[0], [1.25; 3]);
+    let caps = seen.lock().unwrap();
+    assert_eq!(caps.len(), 2);
+    assert!(caps[0].is_none() && caps[1].is_some());
+    drop(caps);
+
+    let flag = AtomicBool::new(true);
+    let err = backend.render_hdr(&im, &valid, None, 0, Cancel::new(&flag));
+    assert!(err.is_err());
+    assert!(backend.status().gpu_active);
+    assert_eq!(backend.status().cpu_renders, 0);
+    Ok(())
+}
+
+/// Hardware GPU test: verifies HDR master export (`render_hdr`) and single-pass gain-map
+/// export (`render_hdr_and_sdr`) match the CPU reference across default, heavy (NR + Texture +
+/// Clarity + Sharpening + Color Mixer + curves), resized, and HDR-file inputs.
+#[test]
+#[ignore = "requires a hardware GPU compute adapter"]
+fn gpu_hdr_export_matches_cpu_and_gain_map_single_pass() -> Result<()> {
+    let im = synthetic_hdr_photo(256, 192);
+    let backend = ExportBackend::auto();
+
+    type RecipeEdit = fn(&mut Recipe);
+    let cases: [(&str, RecipeEdit); 3] = [
+        ("default_hdr", |_| {}),
+        ("heavy_hdr_nr_texture_sharpen", |r| {
+            r.exposure = 0.35;
+            r.contrast = 0.25;
+            r.whites = 0.2;
+            r.blacks = -0.15;
+            r.effects.clarity = 0.2;
+            r.noise_chroma = 0.35;
+            r.noise_luma = 0.3;
+            r.effects.texture = 0.35;
+            r.sharpening = 0.65;
+            r.hdr.limit = 4.0;
+            r.vibrance = 0.2;
+            r.saturation = 0.1;
+            r.hsl[0][1] = 0.25;
+        }),
+        ("hdr_cropped_straightened", |r| {
+            r.crop = [0.08, 0.1, 0.92, 0.88];
+            r.straighten = -3.5;
+            r.sharpening = 0.5;
+            r.hdr.limit = 2.0;
+        }),
+    ];
+
+    for (name, edit) in &cases {
+        let mut r = hdr_profiled_recipe(&im);
+        edit(&mut r);
+        let valid = r.checked()?;
+        for max_edge in [0u32, 160u32] {
+            backend.reset_stats();
+            let cpu_hdr = crate::develop::render_hdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+            let gpu_hdr = backend.render_hdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+            assert_eq!(backend.status().gpu_renders, 1, "{name} edge={max_edge}");
+            assert_eq!(backend.status().cpu_renders, 0, "{name} edge={max_edge}");
+            assert_hdr_matches(&gpu_hdr, &cpu_hdr, &format!("hdr {name} edge={max_edge}"));
+
+            // Single-pass gain-map pair shares photo upload + NR + Texture and records 1 GPU render.
+            backend.reset_stats();
+            let cpu_sdr = crate::develop::render_export(
+                &im,
+                &valid,
+                None,
+                max_edge,
+                OutputSpace::Srgb,
+                Cancel::NEVER,
+            )?;
+            let (pair_hdr, pair_sdr) =
+                backend.render_hdr_and_sdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+            assert_eq!(
+                backend.status().gpu_renders,
+                1,
+                "pair {name} edge={max_edge} should execute in one GPU pass"
+            );
+            assert_eq!(
+                backend.status().cpu_renders,
+                0,
+                "pair {name} edge={max_edge}"
+            );
+            assert_hdr_matches(
+                &pair_hdr,
+                &cpu_hdr,
+                &format!("pair_hdr {name} edge={max_edge}"),
+            );
+            let (max8, diff_px) = max_u8_diff(&pair_sdr.rgb8(), &cpu_sdr.rgb8());
+            let total = (cpu_sdr.width() * cpu_sdr.height()) as usize;
+            let exact = 1.0 - diff_px as f64 / total as f64;
+            assert!(
+                max8 <= 1 && exact >= 0.995,
+                "pair_sdr {name} edge={max_edge}: max8={max8}, exact={exact:.5}"
+            );
+        }
+    }
+
+    // HDR file (`metadata.hdr_source.is_some()`): `render_hdr` runs on GPU and
+    // `render_hdr_and_sdr` falls back to separate HDR + SDR GPU passes cleanly.
+    let hdr_file = synthetic_hdr_file(160, 120);
+    let mut file_r = Recipe::for_new_rendered(&hdr_file.metadata);
+    file_r.exposure = 0.5;
+    file_r.hdr.limit = 4.0;
+    let file_valid = file_r.checked()?;
+    for max_edge in [0u32, 96u32] {
+        backend.reset_stats();
+        let cpu_hdr =
+            crate::develop::render_hdr(&hdr_file, &file_valid, None, max_edge, Cancel::NEVER)?;
+        let gpu_hdr = backend.render_hdr(&hdr_file, &file_valid, None, max_edge, Cancel::NEVER)?;
+        assert_eq!(backend.status().gpu_renders, 1);
+        assert_eq!(backend.status().cpu_renders, 0);
+        assert_hdr_matches(&gpu_hdr, &cpu_hdr, &format!("hdr_file edge={max_edge}"));
+
+        // Gain-map pair on an HDR file separates into HDR GPU + SDR GPU passes cleanly.
+        backend.reset_stats();
+        let cpu_sdr = crate::develop::render_export(
+            &hdr_file,
+            &file_valid,
+            None,
+            max_edge,
+            OutputSpace::Srgb,
+            Cancel::NEVER,
+        )?;
+        let (pair_hdr, pair_sdr) =
+            backend.render_hdr_and_sdr(&hdr_file, &file_valid, None, max_edge, Cancel::NEVER)?;
+        assert_hdr_matches(
+            &pair_hdr,
+            &cpu_hdr,
+            &format!("hdr_file pair_hdr edge={max_edge}"),
+        );
+        let (max8, _) = max_u8_diff(&pair_sdr.rgb8(), &cpu_sdr.rgb8());
+        assert!(max8 <= 1, "hdr_file pair_sdr edge={max_edge}: max8={max8}");
+    }
+    Ok(())
+}
+
+/// Hardware GPU test: verifies HDR master band seams are bit-exact between single-band and
+/// multi-band (6 bands with double-buffered staging overlap) for both full-res and resized output.
+#[test]
+#[ignore = "requires a hardware GPU compute adapter"]
+fn gpu_hdr_export_band_seam_bit_exactness() -> Result<()> {
+    let im = synthetic_hdr_photo(384, 340);
+    let mut r = hdr_profiled_recipe(&im);
+    r.sharpening = 0.7;
+    r.noise_chroma = 0.3;
+    r.noise_luma = 0.25;
+    r.effects.texture = 0.3;
+    r.hdr.limit = 3.0;
+    let valid = r.checked()?;
+
+    let backend = ExportBackend::auto();
+    for max_edge in [0u32, 260u32] {
+        backend.set_band_height_override(Some(u32::MAX));
+        let single = backend.render_hdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+        backend.set_band_height_override(Some(64));
+        let multi = backend.render_hdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+        backend.set_band_height_override(None);
+
+        assert_eq!(backend.status().cpu_renders, 0);
+        assert_eq!((single.width, single.height), (multi.width, multi.height));
+        for (i, (a, b)) in single.pixels.iter().zip(&multi.pixels).enumerate() {
+            let bits_a = a.map(f32::to_bits);
+            let bits_b = b.map(f32::to_bits);
+            assert_eq!(
+                bits_a, bits_b,
+                "HDR seam mismatch at pixel {i} (max_edge={max_edge}): {a:?} vs {b:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Hardware GPU test: forces source-strip upload mode via `set_max_binding_override` and
+/// verifies bit-accurate SDR, HDR, and gain-map parity across crop, straighten, lens
+/// distortion/CA, X-Trans, NR, and Texture, plus clean Tier-1 `ExceedsLimits` fallback when
+/// a 90-degree rotation makes even a single-row strip exceed the storage limit.
+#[test]
+#[ignore = "requires a hardware GPU compute adapter"]
+fn gpu_export_source_strip_banding_under_simulated_storage_limit() -> Result<()> {
+    let mut im = synthetic_hdr_photo(320, 260);
+    let distortion = rawmakase_model::optics::Radial::new(
+        vec![0.0, 0.5, 1.0, 1.5],
+        vec![1.0, 1.008, 1.02, 1.04],
+    )
+    .unwrap();
+    let ca_r =
+        rawmakase_model::optics::Radial::new(vec![0.0, 1.0, 1.5], vec![1.0, 1.002, 1.004]).unwrap();
+    let ca_b =
+        rawmakase_model::optics::Radial::new(vec![0.0, 1.0, 1.5], vec![1.0, 0.998, 0.996]).unwrap();
+    im.metadata.lens = Some(rawmakase_model::optics::LensCorrection {
+        distortion: Some(distortion),
+        chromatic: Some([ca_r, ca_b]),
+        default_on: true,
+        ..Default::default()
+    });
+
+    // Full photo is 320 * 260 * 12 = 998,400 bytes; cap at 450,000 bytes so full-photo upload
+    // cannot fit and source-strip upload banding is forced.
+    let strip_limit = 450_000u64;
+    let backend = ExportBackend::auto();
+
+    let mut r = hdr_profiled_recipe(&im);
+    r.crop = [0.06, 0.08, 0.94, 0.92];
+    r.straighten = 3.0;
+    r.lens_builtin = true;
+    r.lens_ca = true;
+    r.noise_chroma = 0.35;
+    r.noise_luma = 0.25;
+    r.effects.texture = 0.35;
+    r.sharpening = 0.6;
+    let valid = r.checked()?;
+
+    for max_edge in [0u32, 200u32] {
+        let cpu_sdr = crate::develop::render_export(
+            &im,
+            &valid,
+            None,
+            max_edge,
+            OutputSpace::Srgb,
+            Cancel::NEVER,
+        )?;
+        let cpu_hdr = crate::develop::render_hdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+
+        backend.reset_stats();
+        backend.set_max_binding_override(Some(strip_limit));
+        let gpu_sdr = backend.render_export(
+            &im,
+            &valid,
+            None,
+            max_edge,
+            OutputSpace::Srgb,
+            ExportFormat::Rgb8,
+            Cancel::NEVER,
+        )?;
+        let (gpu_hdr, pair_sdr) =
+            backend.render_hdr_and_sdr(&im, &valid, None, max_edge, Cancel::NEVER)?;
+        backend.set_max_binding_override(None);
+
+        assert_eq!(
+            backend.status().gpu_renders,
+            2,
+            "strip mode edge={max_edge}"
+        );
+        assert_eq!(
+            backend.status().cpu_renders,
+            0,
+            "strip mode edge={max_edge}"
+        );
+
+        let (max8, diff_px) = max_u8_diff(gpu_sdr.as_rgb8().unwrap(), &cpu_sdr.rgb8());
+        let exact = 1.0 - diff_px as f64 / (cpu_sdr.width() * cpu_sdr.height()) as f64;
+        assert!(
+            max8 <= 1 && exact >= 0.995,
+            "strip SDR edge={max_edge}: max8={max8}, exact={exact:.5}"
+        );
+        let (pmax8, pdiff) = max_u8_diff(&pair_sdr.rgb8(), &cpu_sdr.rgb8());
+        let pexact = 1.0 - pdiff as f64 / (cpu_sdr.width() * cpu_sdr.height()) as f64;
+        assert!(
+            pmax8 <= 1 && pexact >= 0.995,
+            "strip pair SDR edge={max_edge}: max8={pmax8}, exact={pexact:.5}"
+        );
+        assert_hdr_matches(&gpu_hdr, &cpu_hdr, &format!("strip HDR edge={max_edge}"));
+    }
+
+    // X-Trans with lateral CA under strip mode.
+    im.metadata.xtrans = true;
+    let mut xtrans_r = profiled_recipe(&im);
+    xtrans_r.lens_builtin = true;
+    xtrans_r.lens_ca = true;
+    xtrans_r.sharpening = 0.4;
+    let xtrans_valid = xtrans_r.checked()?;
+    let cpu_xtrans = crate::develop::render_export(
+        &im,
+        &xtrans_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        Cancel::NEVER,
+    )?;
+    backend.reset_stats();
+    backend.set_max_binding_override(Some(strip_limit));
+    let gpu_xtrans = backend.render_export(
+        &im,
+        &xtrans_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        ExportFormat::Rgb8,
+        Cancel::NEVER,
+    )?;
+    backend.set_max_binding_override(None);
+    assert_eq!(backend.status().gpu_renders, 1);
+    assert_eq!(backend.status().cpu_renders, 0);
+    let (max8, _) = max_u8_diff(gpu_xtrans.as_rgb8().unwrap(), &cpu_xtrans.rgb8());
+    assert!(max8 <= 1, "strip X-Trans max8={max8}");
+
+    // 90-degree rotation makes even a 1-row output band span the full source height
+    // (~998 KB > 450 KB), triggering Tier-1 `ExceedsLimits` while keeping GPU active.
+    im.metadata.xtrans = false;
+    let mut rot_r = profiled_recipe(&im);
+    rot_r.rotation = 1;
+    let rot_valid = rot_r.checked()?;
+    backend.reset_stats();
+    backend.set_max_binding_override(Some(strip_limit));
+    let rot_out = backend.render_export(
+        &im,
+        &rot_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        ExportFormat::Rgb8,
+        Cancel::NEVER,
+    )?;
+    backend.set_max_binding_override(None);
+    let rot_cpu =
+        crate::develop::render_export(&im, &rot_valid, None, 0, OutputSpace::Srgb, Cancel::NEVER)?;
+    assert_eq!(rot_out.as_rgb8().unwrap(), rot_cpu.rgb8().as_slice());
+    let st = backend.status();
+    assert!(st.gpu_active, "Tier-1 ExceedsLimits must keep GPU active");
+    assert_eq!(st.cpu_renders, 1);
+    assert_eq!(st.fallback_count(ExportFallbackKind::ExceedsLimits), 1);
+
+    // Regression: after a strip-mode export creates `buffers.photo` without `COPY_SRC`,
+    // a subsequent smaller full-photo export whose size sits inside the cached buffer's
+    // reuse window and triggers `readback_photo` (NR + Clone retouch) must reallocate with
+    // `COPY_SRC` rather than hitting a validation error and disabling the GPU.
+    use crate::model::retouch::{RetouchMode, RetouchOp, RetouchShape};
+    let small = synthetic_photo(140, 140);
+    let mut nr_retouch = profiled_recipe(&small);
+    nr_retouch.noise_chroma = 0.35;
+    nr_retouch.noise_luma = 0.3;
+    nr_retouch.retouch.push(RetouchOp {
+        mode: RetouchMode::Clone,
+        shape: RetouchShape::Spot {
+            center: [0.45, 0.5],
+            radius: 0.06,
+        },
+        feather: 0.5,
+        opacity: 0.9,
+        offset: [0.15, 0.0],
+        patch: None,
+    });
+    let nr_retouch_valid = nr_retouch.checked()?;
+    backend.reset_stats();
+    let small_gpu = backend.render_export(
+        &small,
+        &nr_retouch_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        ExportFormat::Rgb8,
+        Cancel::NEVER,
+    )?;
+    let small_cpu = crate::develop::render_export(
+        &small,
+        &nr_retouch_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        Cancel::NEVER,
+    )?;
+    let st = backend.status();
+    assert!(
+        st.gpu_active,
+        "GPU must remain active after strip -> full-photo readback transition: {:?}",
+        st.fallback_reason
+    );
+    assert_eq!(st.gpu_renders, 1);
+    assert_eq!(st.cpu_renders, 0);
+    let (max8, _) = max_u8_diff(small_gpu.as_rgb8().unwrap(), &small_cpu.rgb8());
+    assert!(max8 <= 1, "strip -> full-photo NR+retouch max8={max8}");
+    Ok(())
+}
+
+/// Deterministic regression test: `build_pass_plan` bails out immediately when a
+/// 90-degree-rotated large sensor cannot fit even a single-row source strip within
+/// `effective_max_binding`, avoiding repeated full-photo band scans.
+#[test]
+fn build_pass_plan_bails_early_on_rotated_unfit_strip() {
+    let im = synthetic_photo(640, 480);
+    let mut r = profiled_recipe(&im);
+    r.rotation = 1;
+    let g = Geometry::new(&im, &r, 0);
+    let strip_limit = 500_000u64; // full source is 640 * 480 * 12 = 3,686,400 B
+    let res = build_pass_plan(
+        &im,
+        &r,
+        &r,
+        g,
+        im.photo_scale(),
+        g.width,
+        g.height,
+        ExportTarget::Sdr {
+            space: OutputSpace::Srgb,
+            format: ExportFormat::Rgb8,
+        },
+        true,
+        None,
+        strip_limit,
+        65535,
+    );
+    match res {
+        Err(GpuFailure::PerPhoto(ExportFallbackKind::ExceedsLimits, _)) => {}
+        Ok(_) => panic!("expected ExceedsLimits for rotated unfit strip"),
+        Err(_) => panic!("expected PerPhoto(ExceedsLimits)"),
+    }
 }

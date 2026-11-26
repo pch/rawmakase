@@ -43,6 +43,9 @@ slots! {
     XTRANS: 1,
     // The transparency mask's width and height (`Metadata::coverage`), 0 without one.
     COVERAGE: 2,
+    // First source row held in `photo` (0 when the full photo is uploaded; non-zero
+    // when source-strip banding uploads a horizontal slice of a large sensor).
+    PHOTO_Y0: 1,
 }
 
 /// `S_*` offset constants for `local.wgsl`, and `RADIAL_STEPS`, the halvings its
@@ -106,8 +109,9 @@ mod tests {
                 ("MANUAL", 52),
                 ("XTRANS", 55),
                 ("COVERAGE", 56),
+                ("PHOTO_Y0", 58),
             ]
         );
-        assert_eq!(HEADER, 58);
+        assert_eq!(HEADER, 59);
     }
 }

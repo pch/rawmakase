@@ -53,6 +53,7 @@ impl GainMapPixels {
     /// size.
     pub fn new(base: ExportImage, master: &crate::rendered::HdrImage) -> Result<Self> {
         use crate::color::hdr_output::HdrGamut;
+        use rayon::prelude::*;
         ensure!(
             base.space() == crate::color::OutputSpace::Srgb
                 && (base.width(), base.height()) == (master.width, master.height),
@@ -61,12 +62,12 @@ impl GainMapPixels {
         let to_rgb = HdrGamut::Rec709.prophoto_to_rgb();
         let hdr: Vec<[f32; 3]> = master
             .pixels
-            .iter()
+            .par_iter()
             .map(|p| crate::color::mul(to_rgb, *p))
             .collect();
         let sdr: Vec<[f32; 3]> = base
             .pixels()
-            .iter()
+            .par_iter()
             .map(|p| p.map(|v| crate::color::srgb_decode(v.clamp(0., 1.))))
             .collect();
         let (map, metadata) = gain_map::compute(&sdr, &hdr, master.peak)?;
@@ -94,12 +95,13 @@ impl HdrPixels {
         master: &crate::rendered::HdrImage,
         output: crate::color::hdr_output::HdrOutput,
     ) -> Self {
+        use rayon::prelude::*;
         Self {
             width: master.width,
             height: master.height,
             pixels: master
                 .pixels
-                .iter()
+                .par_iter()
                 .map(|p| output.encode(*p, master.peak))
                 .collect(),
             output,

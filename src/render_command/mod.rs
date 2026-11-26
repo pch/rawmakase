@@ -383,20 +383,20 @@ pub fn render(
         develop::ExportBackend::cpu_only()
     };
     if let Some(encoding) = o.hdr_output() {
-        let master = develop::render_hdr(&im, &edit.checked()?, ai.as_ref(), o.max_edge, cancel)?;
-        let pixels = if encoding.gain_map {
-            let base = backend.render_export(
-                &im,
-                &edit.checked()?,
-                ai.as_ref(),
-                o.max_edge,
-                OutputSpace::Srgb,
-                develop::ExportFormat::F32,
-                cancel,
-            )?;
-            crate::export::Pixels::GainMap(crate::export::GainMapPixels::new(base, &master)?)
+        let checked = edit.checked()?;
+        let (width, height, peak, pixels) = if encoding.gain_map {
+            let (master, base) =
+                backend.render_hdr_and_sdr(&im, &checked, ai.as_ref(), o.max_edge, cancel)?;
+            let (w, h, peak) = (master.width, master.height, master.peak);
+            let pixels =
+                crate::export::Pixels::GainMap(crate::export::GainMapPixels::new(base, &master)?);
+            (w, h, peak, pixels)
         } else {
-            crate::export::Pixels::Hdr(crate::export::HdrPixels::encode(&master, encoding))
+            let master = backend.render_hdr(&im, &checked, ai.as_ref(), o.max_edge, cancel)?;
+            let (w, h, peak) = (master.width, master.height, master.peak);
+            let pixels =
+                crate::export::Pixels::Hdr(crate::export::HdrPixels::encode(&master, encoding));
+            (w, h, peak, pixels)
         };
         crate::export::export_pixels(
             output,
@@ -410,15 +410,15 @@ pub fn render(
         writeln!(
             console.out,
             "{}x{} HDR export, peak {} | total {:?}",
-            master.width,
-            master.height,
-            master.peak,
+            width,
+            height,
+            peak,
             t.elapsed()
         )?;
         return Ok(());
     }
     if o.hdr {
-        let out = develop::render_hdr(&im, &edit.checked()?, ai.as_ref(), o.max_edge, cancel)?;
+        let out = backend.render_hdr(&im, &edit.checked()?, ai.as_ref(), o.max_edge, cancel)?;
         let rendered = crate::rendered::Rendered {
             width: out.width,
             height: out.height,
