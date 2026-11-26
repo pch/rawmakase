@@ -2,7 +2,7 @@
 //! before its pixels are decoded, and its decode.
 use crate::{Context, Error, Image, Result};
 use rawmakase_cancel::Cancel;
-use rawmakase_decode::decode::{DecodePolicy, FullSize};
+use rawmakase_decode::decode::FullSize;
 use rawmakase_decode::photo::Opened;
 use rawmakase_engine::develop::quality;
 use rawmakase_interop::edits;
@@ -193,19 +193,10 @@ impl Photo {
         let demosaic = Demosaic::default();
         let image = match (decode, ctx.decoded()) {
             (Decode::Half, _) => raw.develop(camera_data::Decode::Half, cancel),
+            // Keyed by the file as opened, not as it is now.
             (Decode::Full, Some(cache)) => {
-                // Keyed by the file as opened, not as it is now.
-                let full = FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone());
-                match full.cached(&raw.metadata) {
-                    Some(image) => Ok(image),
-                    None => full
-                        .decode(raw, DecodePolicy::Show, cancel)
-                        .inspect(|image| {
-                            if keep {
-                                full.store(image, cancel);
-                            }
-                        }),
-                }
+                FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone())
+                    .recovered(raw, keep, cancel)
             }
             (Decode::Full, None) => raw
                 .develop(camera_data::Decode::Full(demosaic), cancel)

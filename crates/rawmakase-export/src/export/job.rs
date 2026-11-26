@@ -7,7 +7,7 @@ use super::{
 use crate::export_settings::ExportSettings;
 use crate::{
     camera_data::{CameraImage, Demosaic},
-    decode::{DecodePolicy, FullSize},
+    decode::FullSize,
     decode_cache::DecodeCache,
     exif,
     model::recipe::Recipe,
@@ -345,14 +345,7 @@ pub fn decode_full(
     cache: &DecodeCache,
     cancel: Cancel<'_>,
 ) -> Result<CameraImage> {
-    let full = FullSize::with_cache(source, demosaic, cache.clone());
-    match full.cached(&raw.metadata) {
-        Some(image) => Ok(image),
-        None => crate::develop::quality::with_recovered(
-            full.decode(raw, DecodePolicy::Export, cancel)?,
-            cancel,
-        ),
-    }
+    FullSize::with_cache(source, demosaic, cache.clone()).recovered(raw, false, cancel)
 }
 
 /// The complete AI Denoise source of `photo` (full-size `image`) when its edit renders
@@ -401,18 +394,15 @@ fn full_size(
         )?));
     };
     let full = FullSize::with_cache(source, demosaic, cache.clone());
-    Ok(Arc::new(match full.cached(&image.metadata) {
-        Some(cached) => cached,
-        // Recovered in its own buffer, as `decode_full` does.
-        None => crate::develop::quality::with_recovered(
-            full.decode(
-                crate::photo::open(source, lenses)?,
-                DecodePolicy::Export,
-                cancel,
-            )?,
-            cancel,
-        )?,
-    }))
+    // Looked for before the file is opened, which a copy in the cache spares.
+    if let Some(cached) = full.cached(&image.metadata) {
+        return Ok(Arc::new(cached));
+    }
+    Ok(Arc::new(full.recovered(
+        crate::photo::open(source, lenses)?,
+        false,
+        cancel,
+    )?))
 }
 
 fn xmp(

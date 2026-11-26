@@ -100,6 +100,27 @@ impl FullSize {
             let _ = self.cache.store(key, image);
         }
     }
+    /// The image as a render takes it, with its highlights recovered: the
+    /// cache's copy, else `raw` (this photo, opened) decoded and recovered,
+    /// and kept for next time when `store`. An export doesn't store, so a
+    /// batch never fills the cache; Develop, its library and an editable
+    /// preview's source decode through here alike.
+    pub fn recovered(&self, raw: Raw, store: bool, cancel: Cancel<'_>) -> Result<CameraImage> {
+        if let Some(image) = self.cached(&raw.metadata) {
+            return Ok(image);
+        }
+        let policy = if store {
+            DecodePolicy::Show
+        } else {
+            DecodePolicy::Export
+        };
+        let image =
+            crate::develop::quality::with_recovered(self.decode(raw, policy, cancel)?, cancel)?;
+        if store {
+            self.store(&image, cancel);
+        }
+        Ok(image)
+    }
     /// The image as `policy` gets it in one step: the cache's copy, else opened
     /// with `open`, decoded and, unless exporting, stored. `None` for a prefetch the
     /// cache already has.
@@ -203,6 +224,25 @@ mod tests {
         let export = full.decode(open()?, DecodePolicy::Export, Cancel::NEVER)?;
         assert!(export.recovered.get().is_none());
         assert_eq!(bits(&export), bits(&decoded));
+        Ok(())
+    }
+
+    /// A render's full-size image is recovered whether it is kept or not, and
+    /// is the same image either way; only one that is kept is stored.
+    #[test]
+    fn a_recovered_image_is_stored_only_when_kept() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
+        let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
+        let open = || crate::photo::open(&chart(), &crate::photo::LensProfiles::none());
+        let exported = full.recovered(open()?, false, Cancel::NEVER)?;
+        assert!(exported.recovered.get().is_some());
+        assert!(!full.is_cached());
+        let shown = full.recovered(open()?, true, Cancel::NEVER)?;
+        assert!(full.is_cached());
+        assert_eq!(shown.pixels, exported.pixels);
+        let cached = full.recovered(open()?, false, Cancel::NEVER)?;
+        assert_eq!(cached.pixels, shown.pixels);
         Ok(())
     }
 }
