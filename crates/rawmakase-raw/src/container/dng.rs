@@ -301,8 +301,8 @@ pub(crate) fn open(bytes: crate::io::Source<'_>, t: TiffFile) -> Result<RawInfo>
             info.lens_info = notes.lens_info;
         }
         // Fujifilm's: the maker note's dynamic range, and the RAF header's
-        // exposure bias Adobe DNG Converter keeps. Walk record headers via
-        // `Source` so a >16 MiB DNGPrivateData tag is never materialized whole.
+        // exposure bias Adobe DNG Converter keeps. Walk record headers and
+        // matched records via `Source` so >16 MiB payloads still read cleanly.
         if let Some(tag_len) = entry
             .type_size()
             .and_then(|s| u64::from(entry.count).checked_mul(s as u64))
@@ -310,14 +310,12 @@ pub(crate) fn open(bytes: crate::io::Source<'_>, t: TiffFile) -> Result<RawInfo>
         {
             use crate::vendor::fujifilm as fuji;
             if let Some(dr) = adobe_record(private, *b"MakN")
-                .as_deref()
-                .and_then(|n| n.get(6..))
+                .and_then(|n| n.slice_from(6))
                 .and_then(fuji::dynamic_range)
             {
                 info.fuji_dynamic_range = dr;
             }
             if let Some(shift) = adobe_record(private, *b"RAF ")
-                .as_deref()
                 .and_then(fuji::dng_directory)
                 .and_then(|dir| fuji::exposure_shift(&fuji::Records::parse(dir)))
             {
@@ -450,22 +448,22 @@ pub(crate) fn transparency(
     ))
 }
 
-/// The data of record `name` in Adobe's DNGPrivateData ("Adobe\0", then
+/// The sub-view of record `name` in Adobe's DNGPrivateData ("Adobe\0", then
 /// records of a four-byte name, a big-endian length and the data; DNG
 /// Specification 1.7, DNGPrivateData, and our own reading of Adobe DNG
-/// Converter's DNGs). Walks headers without copying the entire tag so large
-/// sibling records past `MAX_PIECE` do not block reading small ones.
+/// Converter's DNGs). Walks record headers via [`crate::io::Source`] and stops
+/// on an unloaded sparse gap without capping the record count.
 fn adobe_record<'a>(
     private: impl Into<crate::io::Source<'a>>,
     name: [u8; 4],
-) -> Option<std::borrow::Cow<'a, [u8]>> {
+) -> Option<crate::io::Source<'a>> {
     let view = private.into();
     if !view.starts_with(b"Adobe\0") {
         return None;
     }
     let mut pos = 6u64;
-    for _ in 0..4096 {
-        if pos.checked_add(8).is_none_or(|end| end > view.len()) {
+    while pos.checked_add(8).is_some_and(|end| end <= view.len()) {
+        if view.has_gap(pos, 8) {
             break;
         }
         let rec_name = view.array::<4>(pos)?;
@@ -473,7 +471,7 @@ fn adobe_record<'a>(
         let data_at = pos + 8;
         let next = data_at.checked_add(len).filter(|&end| end <= view.len())?;
         if rec_name == name {
-            return view.get(data_at, len);
+            return view.slice_exact(data_at, len);
         }
         pos = next;
     }
@@ -2254,16 +2252,22 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn fujifilm_private_record_beyond_max_piece() {
+    fn fuji_exposure_raf_payload(num: i16, den: u16) -> Vec<u8> {
         let mut dir = 1u32.to_be_bytes().to_vec();
-        // Record 0x9650: +50 / 100 = +0.5 EV.
-        dir.extend([0x96, 0x50, 0, 4, 0, 50, 0, 100]);
+        dir.extend([0x96, 0x50, 0, 4]);
+        dir.extend(num.to_be_bytes());
+        dir.extend(den.to_be_bytes());
         let mut raf = b"MM".to_vec();
         raf.extend(4u32.to_be_bytes());
         raf.extend(b"0201");
         raf.extend((dir.len() as u32).to_be_bytes());
         raf.extend(dir);
+        raf
+    }
+
+    #[test]
+    fn fujifilm_private_record_beyond_max_piece() {
+        let raf = fuji_exposure_raf_payload(50, 100);
         let mut private = b"Adobe\0".to_vec();
         private.extend(b"RAF ");
         private.extend((raf.len() as u32).to_be_bytes());
@@ -2278,6 +2282,40 @@ pub(crate) mod tests {
         let partial = crate::header_from_file(&mut std::io::Cursor::new(&f)).unwrap();
         assert_eq!(partial.info.fuji_exposure_shift, whole.fuji_exposure_shift);
         assert!(partial.read < f.len() as u64 / 2);
+    }
+
+    #[test]
+    fn fujifilm_raf_record_with_trailing_bytes_beyond_max_piece() {
+        let mut raf = fuji_exposure_raf_payload(50, 100);
+        raf.resize(raf.len() + (17 << 20), 0);
+        let mut private = b"Adobe\0".to_vec();
+        private.extend(b"RAF ");
+        private.extend((raf.len() as u32).to_be_bytes());
+        private.extend(&raf);
+        let f = dng(2, 1, &[(50740, 1, private.len() as u32, private)]);
+        let whole = crate::open(&f).unwrap();
+        assert_eq!(whole.fuji_exposure_shift, 0.5);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&f)).unwrap();
+        assert_eq!(partial.info.fuji_exposure_shift, whole.fuji_exposure_shift);
+        assert!(partial.read < f.len() as u64 / 2);
+    }
+
+    #[test]
+    fn fujifilm_private_record_past_more_than_4096_siblings() {
+        let raf = fuji_exposure_raf_payload(50, 100);
+        let mut private = b"Adobe\0".to_vec();
+        for _ in 0..4096 {
+            private.extend(b"NOOP");
+            private.extend(0u32.to_be_bytes());
+        }
+        private.extend(b"RAF ");
+        private.extend((raf.len() as u32).to_be_bytes());
+        private.extend(&raf);
+        let f = dng(2, 1, &[(50740, 1, private.len() as u32, private)]);
+        let whole = crate::open(&f).unwrap();
+        assert_eq!(whole.fuji_exposure_shift, 0.5);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&f)).unwrap();
+        assert_eq!(partial.info.fuji_exposure_shift, whole.fuji_exposure_shift);
     }
 
     /// AsShotWhiteXY's neutral: the calibration (here an identity

@@ -74,10 +74,10 @@ pub(crate) fn open(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
     let (jpeg, jpeg_len) = (pointer(bytes, 0)?, pointer(bytes, 1)?);
     let (dir, dir_len) = (pointer(bytes, 2)?, pointer(bytes, 3)?);
     let (raw_at, raw_len) = (pointer(bytes, 4)?, pointer(bytes, 5)?);
-    let dir_bytes = bytes
-        .get(u64::from(dir), u64::from(dir_len))
+    let dir_slice = bytes
+        .slice_exact(u64::from(dir), u64::from(dir_len))
         .ok_or_else(|| corrupt("RAF records"))?;
-    let records = Records::parse(&dir_bytes);
+    let records = Records::parse(dir_slice);
     let mut info = crate::info::base(Variant::RafUnpacked);
     info.make = "Fujifilm".into();
     let head_bytes = bytes.get(0, bytes.len().min(60)).unwrap_or_default();
@@ -343,7 +343,7 @@ fn tiff_plan(
     info.presets = fuji::presets(
         records,
         &illuminants,
-        records.get(fuji::RAF_DATA).unwrap_or_default(),
+        records.get(fuji::RAF_DATA).as_deref().unwrap_or_default(),
         as_shot,
     );
     Ok(RafPlan {

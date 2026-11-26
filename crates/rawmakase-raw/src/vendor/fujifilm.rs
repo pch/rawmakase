@@ -16,7 +16,8 @@
 //! filter starts), the rules below are our own measurements of how RAWmakase
 //! has always read these files, so saved edits keep their geometry and scale.
 use crate::info::{Cfa, Presets};
-use crate::io::{Bytes, Order};
+use crate::io::{Bytes, Order, Source};
+use std::borrow::Cow;
 
 pub(crate) const RAW_SIZE: u16 = 0x100;
 pub(crate) const CROP_TOP_LEFT: u16 = 0x110;
@@ -56,21 +57,21 @@ const DEVELOPMENT_DYNAMIC_RANGE: u16 = 0x1403;
 
 /// The RAF header's directory: (tag, value) records, big-endian.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Records<'a>(Vec<(u16, &'a [u8])>);
+pub(crate) struct Records<'a>(Vec<(u16, Source<'a>)>);
 
 impl<'a> Records<'a> {
     /// The records of the directory `dir`: a count, then per record its tag,
     /// its length and its bytes.
-    pub(crate) fn parse(dir: &'a [u8]) -> Self {
-        let b = Bytes::new(dir, Order::Big);
-        let count = b.u32(0).unwrap_or(0).min(4096);
+    pub(crate) fn parse(dir: impl Into<Source<'a>>) -> Self {
+        let b = dir.into();
+        let count = b.u32(Order::Big, 0).unwrap_or(0).min(4096);
         let mut at = 4u64;
         let mut out = Vec::new();
         for _ in 0..count {
-            let (Ok(tag), Ok(len)) = (b.u16(at), b.u16(at + 2)) else {
+            let (Some(tag), Some(len)) = (b.u16(Order::Big, at), b.u16(Order::Big, at + 2)) else {
                 break;
             };
-            let Ok(value) = b.slice(at + 4, u64::from(len)) else {
+            let Some(value) = b.slice_exact(at + 4, u64::from(len)) else {
                 break;
             };
             out.push((tag, value));
@@ -78,12 +79,17 @@ impl<'a> Records<'a> {
         }
         Self(out)
     }
-    pub(crate) fn get(&self, tag: u16) -> Option<&'a [u8]> {
-        self.0.iter().find(|r| r.0 == tag).map(|r| r.1)
+    pub(crate) fn get(&self, tag: u16) -> Option<Cow<'a, [u8]>> {
+        let s = self.0.iter().find(|r| r.0 == tag).map(|r| r.1)?;
+        s.get(0, s.len())
     }
     /// A record of two 16-bit values.
     pub(crate) fn pair(&self, tag: u16) -> Option<[u32; 2]> {
-        let v = self.get(tag).filter(|v| v.len() == 4)?;
+        let s = self.0.iter().find(|r| r.0 == tag).map(|r| r.1)?;
+        if s.len() != 4 {
+            return None;
+        }
+        let v = s.array::<4>(0)?;
         Some([
             u32::from(u16::from_be_bytes([v[0], v[1]])),
             u32::from(u16::from_be_bytes([v[2], v[3]])),
@@ -344,45 +350,46 @@ fn raf_data_list(data: &[u8]) -> Option<Vec<(u32, [u32; 3])>> {
 /// DNG's private data ("RAF " record): the byte order, the length of the
 /// header's bytes from its format version on, those bytes, the directory's
 /// length and the directory (our own reading of the dataset's DNGs).
-pub(crate) fn dng_directory(raf: &[u8]) -> Option<&[u8]> {
-    let b = Bytes::new(raf, Order::Big);
-    if raf.get(..2)? != b"MM" {
+pub(crate) fn dng_directory<'a>(raf: impl Into<Source<'a>>) -> Option<Source<'a>> {
+    let b = raf.into();
+    if !b.starts_with(b"MM") {
         return None;
     }
-    let header = u64::from(b.u32(2).ok()?);
+    let header = u64::from(b.u32(Order::Big, 2)?);
     let at = 6u64.checked_add(header)?;
-    let len = u64::from(b.u32(at).ok()?);
-    b.slice(at + 4, len).ok()
+    let len = u64::from(b.u32(Order::Big, at)?);
+    b.slice_exact(at + 4, len)
 }
 
 /// DevelopmentDynamicRange from the maker notes (EXIF tag 0x927C: "FUJIFILM",
 /// then the little-endian offset of a directory whose offsets are from the
 /// notes' start).
-pub(crate) fn dynamic_range(notes: &[u8]) -> Option<u32> {
+pub(crate) fn dynamic_range<'a>(notes: impl Into<Source<'a>>) -> Option<u32> {
     note_short(notes, DEVELOPMENT_DYNAMIC_RANGE).map(u32::from)
 }
 
 /// The short `tag` of the maker notes.
-fn note_short(notes: &[u8], tag: u16) -> Option<u16> {
-    if !notes.starts_with(b"FUJIFILM") {
+fn note_short<'a>(notes: impl Into<Source<'a>>, tag: u16) -> Option<u16> {
+    let b = notes.into();
+    if !b.starts_with(b"FUJIFILM") {
         return None;
     }
-    let b = Bytes::new(notes, Order::Little);
-    let at = u64::from(b.u32(8).ok()?);
-    let count = b.u16(at).ok()?;
+    let at = u64::from(b.u32(Order::Little, 8)?);
+    let count = b.u16(Order::Little, at)?;
     (0..u64::from(count)).find_map(|i| {
         let e = at + 2 + 12 * i;
-        let found = b.u16(e).ok()?;
-        let kind = b.u16(e + 2).ok()?;
+        let found = b.u16(Order::Little, e)?;
+        let kind = b.u16(Order::Little, e + 2)?;
         (found == tag && kind == rawmakase_tiff::kind::SHORT)
-            .then(|| b.u16(e + 8).ok())
+            .then(|| b.u16(Order::Little, e + 8))
             .flatten()
     })
 }
 
 /// The film simulation of the maker notes: a black and white one is in Saturation
 /// (0x1003), a color one in FilmMode (0x1401).
-pub(crate) fn film_simulation(notes: &[u8]) -> Option<String> {
+pub(crate) fn film_simulation<'a>(notes: impl Into<Source<'a>>) -> Option<String> {
+    let notes = notes.into();
     let mono = note_short(notes, 0x1003).and_then(|v| {
         Some(match v {
             0x300 => "Monochrome",

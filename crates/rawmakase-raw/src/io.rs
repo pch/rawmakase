@@ -61,15 +61,6 @@ impl<'a> Bytes<'a> {
             .and_then(|end| self.data.get(start..end))
             .ok_or_else(|| corrupt(format!("{len} bytes at {at} past the end of the file")))
     }
-    /// The 16-bit value at `at`.
-    pub(crate) fn u16(&self, at: u64) -> Result<u16> {
-        let b = self.slice(at, 2)?;
-        let b = [b[0], b[1]];
-        Ok(match self.order {
-            Order::Little => u16::from_le_bytes(b),
-            Order::Big => u16::from_be_bytes(b),
-        })
-    }
     /// The 32-bit value at `at`.
     pub(crate) fn u32(&self, at: u64) -> Result<u32> {
         let b = self.slice(at, 4)?;
@@ -163,77 +154,50 @@ impl SparseData {
     /// Returns whether `[start, end)` (clamped to [`Self::len`]) contains any
     /// byte not read yet.
     pub(crate) fn has_gap(&self, start: u64, end: u64) -> bool {
-        let mut cursor = start.min(self.len);
-        let end = end.min(self.len);
-        if cursor >= end {
-            return false;
-        }
-        for (seg_start, seg_data) in &self.segments {
-            let seg_end = *seg_start + seg_data.len() as u64;
-            if seg_end <= cursor {
-                continue;
-            }
-            if *seg_start > cursor {
-                return true;
-            }
-            cursor = cursor.max(seg_end);
-            if cursor >= end {
-                return false;
-            }
-        }
-        cursor < end
+        self.next_gap(start, end).is_some()
     }
 
-    /// The unfilled `[from, to)` sub-ranges within `[start, end)` (clamped to
-    /// [`Self::len`]).
-    fn gaps(&self, start: u64, end: u64) -> Vec<(u64, u64)> {
+    /// The first unfilled `[from, to)` sub-range at or after `start` within
+    /// `[start, end)` (clamped to [`Self::len`]).
+    fn next_gap(&self, start: u64, end: u64) -> Option<(u64, u64)> {
         let mut cursor = start.min(self.len);
         let end = end.min(self.len);
-        let mut gaps = Vec::new();
         if cursor >= end {
-            return gaps;
+            return None;
         }
-        for (seg_start, seg_data) in &self.segments {
-            let seg_end = *seg_start + seg_data.len() as u64;
-            if seg_end <= cursor {
-                continue;
-            }
+        let mut idx = self.first_segment_after(cursor);
+        while let Some((seg_start, seg_data)) = self.segments.get(idx) {
             if *seg_start >= end {
                 break;
             }
             if cursor < *seg_start {
-                gaps.push((cursor, (*seg_start).min(end)));
+                return Some((cursor, (*seg_start).min(end)));
             }
-            cursor = cursor.max(seg_end);
+            cursor = cursor.max(*seg_start + seg_data.len() as u64);
             if cursor >= end {
-                break;
+                return None;
             }
+            idx += 1;
         }
-        if cursor < end {
-            gaps.push((cursor, end));
-        }
-        gaps
+        (cursor < end).then_some((cursor, end))
     }
 
     /// Reads any missing bytes in `[at, at + len)` (clamped to [`Self::len`])
     /// from `file`, merging adjacent or overlapping segments so subsequent
     /// slice reads borrow without copying.
     pub(crate) fn fill(&mut self, file: &mut (impl Read + Seek), at: u64, len: u64) -> Option<()> {
-        let gaps = self.gaps(at, at.saturating_add(len));
-        if gaps.is_empty() {
-            return Some(());
-        }
-        for (gs, ge) in gaps {
+        let end = at.saturating_add(len).min(self.len);
+        let mut cursor = at.min(end);
+        while let Some((gs, ge)) = self.next_gap(cursor, end) {
             let gap_len = usize::try_from(ge - gs).ok()?;
             let mut buf = Vec::new();
             buf.try_reserve_exact(gap_len).ok()?;
             buf.resize(gap_len, 0);
-            file.seek(SeekFrom::Start(gs)).ok()?;
-            file.read_exact(&mut buf).ok()?;
             self.segments.try_reserve(1).ok()?;
-            self.read += ge - gs;
+            read_exact_at(file, gs, &mut buf, &mut self.read)?;
             self.segments.push((gs, buf));
             self.coalesce()?;
+            cursor = ge;
         }
         Some(())
     }
@@ -255,22 +219,49 @@ impl SparseData {
         let mut out = Vec::new();
         out.try_reserve_exact(len_usize).ok()?;
         out.resize(len_usize, 0);
-        if len == 0 {
-            return Some(out);
-        }
-        self.copy_into(at, &mut out);
-        for (gs, ge) in self.gaps(at, end) {
-            let dst_off = (gs - at) as usize;
-            let gap_len = (ge - gs) as usize;
-            file.seek(SeekFrom::Start(gs)).ok()?;
-            file.read_exact(&mut out[dst_off..dst_off + gap_len]).ok()?;
-            self.read += ge - gs;
+        let mut cursor = at;
+        let mut idx = self.first_segment_after(at);
+        while cursor < end {
+            if let Some((seg_start, seg_data)) = self.segments.get(idx)
+                && *seg_start < end
+            {
+                if cursor < *seg_start {
+                    let gap_end = (*seg_start).min(end);
+                    let dst_off = (cursor - at) as usize;
+                    let gap_len = (gap_end - cursor) as usize;
+                    read_exact_at(
+                        file,
+                        cursor,
+                        &mut out[dst_off..dst_off + gap_len],
+                        &mut self.read,
+                    )?;
+                    cursor = gap_end;
+                    continue;
+                }
+                let seg_end = (*seg_start + seg_data.len() as u64).min(end);
+                let count = (seg_end - cursor) as usize;
+                let dst_off = (cursor - at) as usize;
+                let src_off = (cursor - *seg_start) as usize;
+                out[dst_off..dst_off + count].copy_from_slice(&seg_data[src_off..src_off + count]);
+                cursor = seg_end;
+                idx += 1;
+            } else {
+                let dst_off = (cursor - at) as usize;
+                let gap_len = (end - cursor) as usize;
+                read_exact_at(
+                    file,
+                    cursor,
+                    &mut out[dst_off..dst_off + gap_len],
+                    &mut self.read,
+                )?;
+                break;
+            }
         }
         Some(out)
     }
 
     fn coalesce(&mut self) -> Option<()> {
-        self.segments.sort_by_key(|(start, _)| *start);
+        self.segments.sort_unstable_by_key(|(start, _)| *start);
         let mut write = 0usize;
         for read in 0..self.segments.len() {
             if write == 0 {
@@ -462,8 +453,20 @@ impl SparseData {
     }
 }
 
+fn read_exact_at(
+    file: &mut (impl Read + Seek),
+    at: u64,
+    dst: &mut [u8],
+    read: &mut u64,
+) -> Option<()> {
+    file.seek(SeekFrom::Start(at)).ok()?;
+    file.read_exact(dst).ok()?;
+    *read += dst.len() as u64;
+    Some(())
+}
+
 /// Random-access view over a whole in-memory file slice or a sparse file.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum Source<'a> {
     Slice(&'a [u8]),
     Sparse {
@@ -496,6 +499,22 @@ impl<'a> Source<'a> {
         match self {
             Self::Slice(s) => s.len() as u64,
             Self::Sparse { len, .. } => len,
+        }
+    }
+
+    /// Returns whether `[at, at + len)` overflows, falls out of bounds, or
+    /// covers any byte not loaded yet in a sparse view.
+    pub(crate) fn has_gap(self, at: u64, len: u64) -> bool {
+        let Some(end) = at.checked_add(len) else {
+            return true;
+        };
+        match self {
+            Self::Slice(s) => end > s.len() as u64,
+            Self::Sparse {
+                data,
+                base,
+                len: view_len,
+            } => end > view_len || data.has_gap(base + at, base + end),
         }
     }
 
