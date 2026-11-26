@@ -1301,4 +1301,41 @@ mod tests {
         assert!(render(&["--quality", "80", "--tap", "scene-input"]).is_err());
         assert!(render(&["--quality", "80", "--hdr"]).is_err());
     }
+
+    /// CLI `render` and `render-batch` default to CPU for deterministic output and
+    /// opt into the headless GPU backend with `--gpu` (which conflicts with `--tap`).
+    #[test]
+    fn render_and_render_batch_default_to_cpu_and_accept_gpu_flag() {
+        let render = |args: &[&str]| {
+            Args::try_parse_from(
+                ["rawmakase", "render", "in.dng", "out.jpg"]
+                    .iter()
+                    .chain(args),
+            )
+        };
+        let batch = |args: &[&str]| {
+            Args::try_parse_from(
+                ["rawmakase", "render-batch", "in.dng", "jobs.json"]
+                    .iter()
+                    .chain(args),
+            )
+        };
+        assert!(matches!(
+            render(&[]).unwrap().command,
+            Some(Command::Render(Render { gpu: false, .. }))
+        ));
+        assert!(matches!(
+            render(&["--gpu"]).unwrap().command,
+            Some(Command::Render(Render { gpu: true, .. }))
+        ));
+        assert!(render(&["--gpu", "--tap", "scene-input"]).is_err());
+        assert!(matches!(
+            batch(&[]).unwrap().command,
+            Some(Command::RenderBatch(RenderBatch { gpu: false, .. }))
+        ));
+        assert!(matches!(
+            batch(&["--gpu"]).unwrap().command,
+            Some(Command::RenderBatch(RenderBatch { gpu: true, .. }))
+        ));
+    }
 }

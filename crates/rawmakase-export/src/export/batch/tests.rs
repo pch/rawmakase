@@ -1470,3 +1470,181 @@ fn a_size_limit_fits_each_jpeg_or_notes_why_not() -> Result<()> {
     }
     Ok(())
 }
+
+/// `batch::run_with_backend` with `ExportBackend::auto()` matches the CPU reference
+/// across zero-copy `Rgb8` (PNG/JPEG), zero-copy `Rgb16` (TIFF), resized exports,
+/// and watermarked exports (which must keep `F32` pixels for floating-point blending).
+#[test]
+fn batch_with_backend_matches_cpu_across_formats_and_watermarks() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng"])?;
+    let photos = f.batch_photos()?;
+    let cpu_backend = crate::develop::ExportBackend::cpu_only();
+    let auto_backend = crate::develop::ExportBackend::auto();
+
+    for (label, format, resize, watermark) in [
+        ("png-full", Format::Png, false, false),
+        ("tif-resized", Format::Tiff, true, false),
+        ("jpg-full", Format::Jpeg, false, false),
+        ("png-watermark", Format::Png, false, true),
+    ] {
+        let mut s_cpu = settings(&f.out().join(format!("{label}-cpu")));
+        s_cpu.format = format;
+        s_cpu.resize = resize;
+        s_cpu.long_edge = 96;
+        let mut s_gpu = s_cpu.clone();
+        s_gpu.folder = Some(f.out().join(format!("{label}-gpu")));
+
+        let mut b_cpu = f.batch(photos.clone(), s_cpu);
+        let mut b_gpu = f.batch(photos.clone(), s_gpu);
+        if watermark {
+            let wm = crate::watermark::Watermark {
+                name: "BenchMark".into(),
+                text: "RAWmakase".into(),
+                ..crate::watermark::fonts::test_watermark()
+            };
+            b_cpu.watermark = Some(wm.clone());
+            b_gpu.watermark = Some(wm);
+        }
+
+        let out_cpu = run_with_backend(&b_cpu, lanes(2), &cpu_backend, Cancel::NEVER, |_| {});
+        let out_gpu = run_with_backend(&b_gpu, lanes(2), &auto_backend, Cancel::NEVER, |_| {});
+        assert_eq!(out_cpu.len(), 2);
+        assert_eq!(out_gpu.len(), 2);
+
+        for (i, (c, g)) in out_cpu.iter().zip(&out_gpu).enumerate() {
+            let pc = exported(c);
+            let pg = exported(g);
+            match format {
+                Format::Png => {
+                    let ic = image::open(pc)?.to_rgb8();
+                    let ig = image::open(pg)?.to_rgb8();
+                    assert_eq!(ic.dimensions(), ig.dimensions(), "{label}[{i}]");
+                    let max_diff = ic
+                        .as_raw()
+                        .iter()
+                        .zip(ig.as_raw())
+                        .map(|(&x, &y)| x.abs_diff(y))
+                        .max()
+                        .unwrap_or(0);
+                    assert!(max_diff <= 1, "{label}[{i}]: max_diff={max_diff}");
+                }
+                Format::Jpeg => {
+                    // Lossy 8×8 DCT + 4:2:0 subsampling can amplify a 1-LSB input
+                    // difference locally across a block, so bound both RMS and peak.
+                    let ic = image::open(pc)?.to_rgb8();
+                    let ig = image::open(pg)?.to_rgb8();
+                    assert_eq!(ic.dimensions(), ig.dimensions(), "{label}[{i}]");
+                    let mut sum_sq = 0u64;
+                    let mut max_diff = 0u8;
+                    for (&x, &y) in ic.as_raw().iter().zip(ig.as_raw()) {
+                        let d = x.abs_diff(y);
+                        max_diff = max_diff.max(d);
+                        sum_sq += u64::from(d) * u64::from(d);
+                    }
+                    let rms = (sum_sq as f64 / ic.as_raw().len() as f64).sqrt();
+                    assert!(
+                        rms <= 1.5 && max_diff <= 16,
+                        "{label}[{i}]: rms={rms:.3}, max_diff={max_diff}"
+                    );
+                }
+                Format::Tiff => {
+                    let ic = image::open(pc)?.to_rgb16();
+                    let ig = image::open(pg)?.to_rgb16();
+                    assert_eq!(ic.dimensions(), ig.dimensions(), "{label}[{i}]");
+                    let max_diff = ic
+                        .as_raw()
+                        .iter()
+                        .zip(ig.as_raw())
+                        .map(|(&x, &y)| x.abs_diff(y))
+                        .max()
+                        .unwrap_or(0);
+                    assert!(max_diff <= 6, "{label}[{i}]: max_diff={max_diff}");
+                }
+                Format::Jxl => unreachable!(),
+            }
+        }
+    }
+
+    let status = auto_backend.status();
+    assert_eq!(status.gpu_renders + status.cpu_renders, 8);
+    Ok(())
+}
+
+/// `Queue::with_backend` shares one `ExportBackend` across consecutive batches,
+/// reports non-blocking backend status, releases buffers when idle, and closes cleanly.
+#[test]
+fn queue_with_backend_runs_batches_and_closes_cleanly() -> Result<()> {
+    let f = fixture(&["a.dng", "b.dng"])?;
+    let photos = f.batch_photos()?;
+    let backend = Arc::new(crate::develop::ExportBackend::auto());
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut queue = crate::export::queue::Queue::with_backend(
+        lanes(2),
+        backend,
+        |_, _, _| {},
+        move |ticket, outcomes| {
+            let _ = tx.send((ticket, outcomes));
+        },
+        || {},
+    );
+    let mut s1 = settings(&f.out().join("q1"));
+    s1.format = Format::Png;
+    let mut s2 = settings(&f.out().join("q2"));
+    s2.format = Format::Tiff;
+    let t1 = queue.submit(f.batch(photos.clone(), s1));
+    let t2 = queue.submit(f.batch(photos, s2));
+    let wait = std::time::Duration::from_secs(120);
+    let (done1, o1) = rx.recv_timeout(wait)?;
+    let (done2, o2) = rx.recv_timeout(wait)?;
+    assert_eq!((done1, done2), (t1, t2));
+    assert!(o1.iter().all(|o| matches!(o, Outcome::Exported { .. })));
+    assert!(o2.iter().all(|o| matches!(o, Outcome::Exported { .. })));
+    let status = queue.backend_status();
+    assert_eq!(status.gpu_renders + status.cpu_renders, 4);
+    let thread = queue.close().expect("queue worker thread");
+    thread.join().unwrap();
+    Ok(())
+}
+
+/// The batch-scoped `ProfileCache` produces identical profile lists to
+/// `camera_profiles::installed` and keeps distinct cameras / lenses / matrices apart.
+#[test]
+fn profile_cache_matches_installed_and_separates_distinct_cameras() {
+    let cache = ProfileCache::default();
+    let base = crate::camera_data::Metadata {
+        make: "TestMake".into(),
+        model: "TestModel".into(),
+        cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        ..Default::default()
+    };
+    let expected = crate::camera_profiles::installed(&base).0;
+    assert_eq!(cache.installed(&base), expected);
+    // Second lookup hits the cached slot and returns the exact same profiles.
+    assert_eq!(cache.installed(&base), expected);
+
+    // Changing cam_xyz must produce a distinct cache entry and match `installed`.
+    let mut different_matrix = base.clone();
+    different_matrix.cam_xyz = [[0.9, 0.1, 0.], [0., 1., 0.], [0., 0.1, 0.9]];
+    assert_eq!(
+        cache.installed(&different_matrix),
+        crate::camera_profiles::installed(&different_matrix).0
+    );
+    assert_ne!(cache.installed(&different_matrix), expected);
+
+    // Changing only dng_matrix_profile_signature must produce a distinct entry
+    // so matrix-only DNGs keep their own calibration signature separate from
+    // native RAWs with the same camera matrix.
+    let mut different_sig = base.clone();
+    different_sig.dng_matrix_profile_signature = Some("org.example.dng-writer".into());
+    let expected_sig = crate::camera_profiles::installed(&different_sig).0;
+    assert_eq!(cache.installed(&different_sig), expected_sig);
+    assert_ne!(expected_sig, expected);
+
+    // Rendered metadata bypasses the cache without panicking or colliding.
+    let mut rendered = base;
+    rendered.source = crate::camera_data::Source::Rendered;
+    assert_eq!(
+        cache.installed(&rendered),
+        crate::camera_profiles::installed(&rendered).0
+    );
+}

@@ -1,8 +1,10 @@
 //! `rawmakase render` and `rawmakase render-batch` without the desktop app: a photo
-//! developed on the CPU and written as an export, with no window, editor, session or
-//! GPU. The binary parses the command line and passes in what the desktop keeps (the
-//! raw defaults chosen in Preferences, AI Denoise with the user's cache, model and
-//! runtime) and where to print; nothing here reads the session or reaches `app`
+//! developed on the CPU by default (or on the headless GPU compute backend with
+//! `--gpu`, falling back to the CPU reference on unsupported edits or errors) and
+//! written as an export, with no window, editor or session. The binary parses the
+//! command line and passes in what the desktop keeps (the raw defaults chosen in
+//! Preferences, AI Denoise with the user's cache, model and runtime) and where to
+//! print; nothing here reads the session or reaches `app`
 //! (`scripts/deps-closures.txt`).
 //!
 //! The two commands start from different edits and stay distinct. [`render`] layers
@@ -128,6 +130,11 @@ pub struct Render {
     /// --hdr-export's included; 92 by default. A .jxl output takes --jxl-quality.
     #[arg(long, value_parser = clap::value_parser!(u8).range(1..=100), conflicts_with_all = ["tap", "hdr", "jxl_quality"])]
     pub quality: Option<u8>,
+    /// Use the headless GPU compute backend when available, falling back to the CPU
+    /// reference on unsupported edits or GPU errors. Off by default for deterministic
+    /// CPU reference output.
+    #[arg(long, conflicts_with = "tap")]
+    pub gpu: bool,
 }
 
 impl Render {
@@ -165,6 +172,11 @@ pub struct RenderBatch {
     /// 92 by default. TIFF, PNG and JPEG XL outputs are lossless.
     #[arg(long, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: Option<u8>,
+    /// Use the headless GPU compute backend when available, falling back to the CPU
+    /// reference on unsupported edits or GPU errors. Off by default for deterministic
+    /// CPU reference output.
+    #[arg(long)]
+    pub gpu: bool,
 }
 
 /// One job of a `render-batch` list.
@@ -365,15 +377,21 @@ pub fn render(
     let developed = t.elapsed();
     let im = Arc::new(im);
     let ai = ai_denoise().source(input, &file, &im, &edit, cancel)?;
+    let backend = if o.gpu {
+        develop::ExportBackend::auto()
+    } else {
+        develop::ExportBackend::cpu_only()
+    };
     if let Some(encoding) = o.hdr_output() {
         let master = develop::render_hdr(&im, &edit.checked()?, ai.as_ref(), o.max_edge, cancel)?;
         let pixels = if encoding.gain_map {
-            let base = develop::render_export(
+            let base = backend.render_export(
                 &im,
                 &edit.checked()?,
                 ai.as_ref(),
                 o.max_edge,
                 OutputSpace::Srgb,
+                develop::ExportFormat::F32,
                 cancel,
             )?;
             crate::export::Pixels::GainMap(crate::export::GainMapPixels::new(base, &master)?)
@@ -417,12 +435,15 @@ pub fn render(
         )?;
         return Ok(());
     }
-    let out = develop::render_export(
+    let target_format = Format::from_path(output).unwrap_or(Format::Jpeg);
+    let pixel_format = crate::export::job::pixel_format_for(target_format, false);
+    let out = backend.render_export(
         &im,
         &edit.checked()?,
         ai.as_ref(),
         o.max_edge,
         o.color_space,
+        pixel_format,
         cancel,
     )?;
     let rendered = t.elapsed() - developed;
@@ -475,8 +496,14 @@ pub fn render_batch(
     let (profiles, _) = crate::camera_profiles::installed(&im.metadata);
     let base = Recipe::with_profiles(&im.metadata, &profiles);
     let camera = Some(camera(input, &im.metadata));
-    // One AI Denoise service for every job: the model loads once.
+    // One AI Denoise service and one export backend for every job: the model and GPU
+    // pipelines initialize once.
     let ai_denoise = ai_denoise();
+    let backend = if o.gpu {
+        develop::ExportBackend::auto()
+    } else {
+        develop::ExportBackend::cpu_only()
+    };
     for job in jobs.iter().filter(|j| !j.output.exists()) {
         let rendered = (|| -> Result<()> {
             let space = match &job.color_space {
@@ -492,12 +519,15 @@ pub fn render_batch(
                 Some(&develop::Measures(&im)),
             )?;
             let ai = ai_denoise.source(input, &file, &im, &edit, cancel)?;
-            let out = develop::render_export(
+            let target_format = Format::from_path(&job.output).unwrap_or(Format::Jpeg);
+            let pixel_format = crate::export::job::pixel_format_for(target_format, false);
+            let out = backend.render_export(
                 &im,
                 &edit.checked()?,
                 ai.as_ref(),
                 job.max_edge,
                 space,
+                pixel_format,
                 cancel,
             )?;
             crate::export::export_image(

@@ -4,6 +4,7 @@
 //! [`Lanes`]' budget. A waiting batch holds edits, not images, and can be removed
 //! before it starts.
 use super::batch::{self, Batch, Lanes, Outcome, Progress};
+use crate::develop::{ExportBackend, ExportBackendStatus};
 use rawmakase_cancel::Cancel;
 use std::{
     collections::VecDeque,
@@ -16,6 +17,7 @@ use std::{
 /// The queue of export batches and the thread that runs them.
 pub struct Queue {
     shared: Arc<Shared>,
+    backend: Arc<ExportBackend>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -62,9 +64,28 @@ impl Queue {
 
     /// [`Queue::new`], also telling `each` every photo's outcome as soon as
     /// it has one (see [`batch::run_each`]), by ticket and index, before its
-    /// batch's `finished`.
+    /// batch's `finished`. Runs on the CPU reference backend.
     pub fn with_each(
         lanes: Lanes,
+        each: impl Fn(u64, usize, &Outcome) + Send + Sync + 'static,
+        finished: impl Fn(u64, Vec<Outcome>) + Send + 'static,
+        changed: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        Self::with_backend(
+            lanes,
+            Arc::new(ExportBackend::cpu_only()),
+            each,
+            finished,
+            changed,
+        )
+    }
+
+    /// [`Queue::with_each`], rendering SDR exports through `backend`, shared across
+    /// every batch and lane of the queue. Releases reusable GPU working buffers once
+    /// the queue drains to idle so finished exports do not hold VRAM.
+    pub fn with_backend(
+        lanes: Lanes,
+        backend: Arc<ExportBackend>,
         each: impl Fn(u64, usize, &Outcome) + Send + Sync + 'static,
         finished: impl Fn(u64, Vec<Outcome>) + Send + 'static,
         changed: impl Fn() + Send + Sync + 'static,
@@ -75,6 +96,7 @@ impl Queue {
             changed: Box::new(changed),
         });
         let worker = shared.clone();
+        let worker_backend = backend.clone();
         let thread = std::thread::spawn(move || {
             while let Some((ticket, batch, cancel)) = worker.next() {
                 // Each photo's panic is caught by the batch, which keeps the others'
@@ -82,9 +104,10 @@ impl Queue {
                 // whole batch, so the queue still clears it and runs the next one.
                 let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     (worker.changed)();
-                    batch::run_each(
+                    batch::run_each_with_backend(
                         &batch,
                         lanes,
+                        &worker_backend,
                         Cancel::new(&cancel),
                         |progress| {
                             if let Ok(mut state) = worker.state.lock()
@@ -101,17 +124,31 @@ impl Queue {
                     let failed = Outcome::Failed("the export failed unexpectedly".into());
                     vec![failed; batch.photos.len()]
                 });
-                if let Ok(mut state) = worker.state.lock() {
+                let idle = if let Ok(mut state) = worker.state.lock() {
                     state.running = None;
-                }
+                    state.waiting.is_empty()
+                } else {
+                    true
+                };
                 finished(ticket, outcomes);
                 (worker.changed)();
+                if idle {
+                    worker_backend.release_buffers();
+                }
             }
+            worker_backend.release_buffers();
         });
         Self {
             shared,
+            backend,
             thread: Some(thread),
         }
+    }
+
+    /// Snapshot of this queue's export backend state and cumulative telemetry.
+    /// Never blocks on an in-flight GPU export.
+    pub fn backend_status(&self) -> ExportBackendStatus {
+        self.backend.status()
     }
 
     /// Queues `batch`, returning its ticket.

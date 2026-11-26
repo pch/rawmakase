@@ -359,6 +359,7 @@ fn render_batch_writes_its_jpegs_at_the_quality_asked_for() {
             jobs: listing,
             color_space: OutputSpace::Srgb,
             quality,
+            gpu: false,
         };
         let run = run(|console| render_batch(&options, &ai, Cancel::NEVER, console));
         assert!(run.result.is_ok() && run.err.is_empty(), "{}", run.err);
@@ -398,6 +399,7 @@ fn render_batch_skips_existing_outputs_and_reports_failed_jobs() {
                 jobs: listing.clone(),
                 color_space: OutputSpace::Srgb,
                 quality: None,
+                gpu: false,
             },
             &ai,
             Cancel::NEVER,
@@ -472,4 +474,120 @@ fn a_stage_tap_is_only_written_under_a_tiff_name() {
     for name in ["tap.tif", "tap.TIFF"] {
         save_stage(&dir.path().join(name), &source, tap(), false).unwrap();
     }
+}
+
+/// `--gpu` on `render` and `render-batch` succeeds (using GPU when available and
+/// falling back cleanly to CPU otherwise) and matches the CPU default output.
+#[test]
+fn render_and_render_batch_with_gpu_flag_match_cpu_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let photo = chart(dir.path(), "chart.dng");
+    let xmp = exposure_xmp(dir.path(), "a.xmp", "+0.25");
+    let ai = no_denoise(dir.path());
+
+    // Single `render` to PNG (Rgb8 zero-copy) and 16-bit TIFF (Rgb16 zero-copy).
+    for ext in ["png", "tif"] {
+        let cpu_out = dir.path().join(format!("single-cpu.{ext}"));
+        let gpu_out = dir.path().join(format!("single-gpu.{ext}"));
+        for (gpu, out) in [(false, &cpu_out), (true, &gpu_out)] {
+            let options = Render {
+                input: photo.clone(),
+                output: out.clone(),
+                xmp: Some(xmp.clone()),
+                max_edge: 128,
+                gpu,
+                ..Default::default()
+            };
+            let res = run(|console| {
+                render(
+                    &options,
+                    &DevelopDefaults::default,
+                    &ai,
+                    Cancel::NEVER,
+                    console,
+                )
+            });
+            assert!(
+                res.result.is_ok(),
+                "{ext} gpu={gpu}: {:?} {}",
+                res.result,
+                res.err
+            );
+        }
+        if ext == "png" {
+            let a = image::open(&cpu_out).unwrap().to_rgb8();
+            let b = image::open(&gpu_out).unwrap().to_rgb8();
+            assert_eq!(a.dimensions(), b.dimensions());
+            let max_diff = a
+                .as_raw()
+                .iter()
+                .zip(b.as_raw())
+                .map(|(&x, &y)| x.abs_diff(y))
+                .max()
+                .unwrap_or(0);
+            assert!(max_diff <= 1, "PNG max diff {max_diff}");
+        } else {
+            let a = image::open(&cpu_out).unwrap().to_rgb16();
+            let b = image::open(&gpu_out).unwrap().to_rgb16();
+            assert_eq!(a.dimensions(), b.dimensions());
+            let max_diff = a
+                .as_raw()
+                .iter()
+                .zip(b.as_raw())
+                .map(|(&x, &y)| x.abs_diff(y))
+                .max()
+                .unwrap_or(0);
+            assert!(max_diff <= 6, "TIFF max diff {max_diff}");
+        }
+    }
+
+    // `render-batch` with `--gpu` vs CPU default across multiple jobs.
+    let run_batch = |folder: &str, gpu: bool| {
+        let folder = dir.path().join(folder);
+        std::fs::create_dir(&folder).unwrap();
+        let jobs = serde_json::json!([
+            {"xmp": xmp, "output": folder.join("a.png"), "max_edge": 96},
+            {"xmp": xmp, "output": folder.join("b.tif"), "max_edge": 96},
+        ]);
+        let listing = folder.join("jobs.json");
+        std::fs::write(&listing, jobs.to_string()).unwrap();
+        let options = RenderBatch {
+            input: photo.clone(),
+            jobs: listing,
+            color_space: OutputSpace::Srgb,
+            quality: None,
+            gpu,
+        };
+        let res = run(|console| render_batch(&options, &ai, Cancel::NEVER, console));
+        assert!(
+            res.result.is_ok() && res.err.is_empty(),
+            "gpu={gpu}: {}",
+            res.err
+        );
+        (folder.join("a.png"), folder.join("b.tif"))
+    };
+    let (cpu_png, cpu_tif) = run_batch("batch-cpu", false);
+    let (gpu_png, gpu_tif) = run_batch("batch-gpu", true);
+    let a = image::open(&cpu_png).unwrap().to_rgb8();
+    let b = image::open(&gpu_png).unwrap().to_rgb8();
+    assert_eq!(a.dimensions(), b.dimensions());
+    let png_diff = a
+        .as_raw()
+        .iter()
+        .zip(b.as_raw())
+        .map(|(&x, &y)| x.abs_diff(y))
+        .max()
+        .unwrap_or(0);
+    assert!(png_diff <= 1, "batch PNG max diff {png_diff}");
+    let a = image::open(&cpu_tif).unwrap().to_rgb16();
+    let b = image::open(&gpu_tif).unwrap().to_rgb16();
+    assert_eq!(a.dimensions(), b.dimensions());
+    let tif_diff = a
+        .as_raw()
+        .iter()
+        .zip(b.as_raw())
+        .map(|(&x, &y)| x.abs_diff(y))
+        .max()
+        .unwrap_or(0);
+    assert!(tif_diff <= 6, "batch TIFF max diff {tif_diff}");
 }

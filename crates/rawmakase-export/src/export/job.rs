@@ -43,15 +43,56 @@ pub struct Photo {
     pub file: Option<crate::storage::Identity>,
 }
 
-/// Exports `photo` to `target`, reporting progress from 0 to 1. Stops between
-/// stages once `cancel` is set. Returns what the export has to say besides
-/// "Exported", such as a Simple Copyright Watermark left out for want of a
-/// copyright, or a JPEG larger than its size limit.
+/// Pixel format to request from the export renderer for an SDR export written in
+/// `format`: 8-bit packed RGB for JPEG/PNG/JPEG XL and 16-bit packed RGB for TIFF,
+/// keeping `F32` whenever a watermark needs floating-point compositing on the CPU.
+pub fn pixel_format_for(
+    format: crate::export_settings::Format,
+    has_watermark: bool,
+) -> crate::develop::ExportFormat {
+    use crate::develop::ExportFormat;
+    use crate::export_settings::Format;
+    if has_watermark {
+        return ExportFormat::F32;
+    }
+    match format {
+        Format::Jpeg | Format::Png | Format::Jxl => ExportFormat::Rgb8,
+        Format::Tiff => ExportFormat::Rgb16,
+    }
+}
+
+/// Exports `photo` to `target` on the CPU reference backend, reporting progress from
+/// 0 to 1. Stops between stages once `cancel` is set. Returns what the export has to
+/// say besides "Exported", such as a Simple Copyright Watermark left out for want of
+/// a copyright, or a JPEG larger than its size limit.
 pub fn run(
     photo: Photo,
     settings: &ExportSettings,
     target: &Path,
     replace: super::Replace,
+    cancel: Cancel<'_>,
+    progress: impl Fn(f32),
+) -> Result<Option<String>> {
+    run_with_backend(
+        photo,
+        settings,
+        target,
+        replace,
+        &crate::develop::ExportBackend::cpu_only(),
+        cancel,
+        progress,
+    )
+}
+
+/// [`run`], rendering SDR outputs through `backend` (GPU with deterministic CPU
+/// fallback when configured) and requesting zero-copy packed pixel formats matching
+/// `target`'s container when no watermark is applied.
+pub fn run_with_backend(
+    photo: Photo,
+    settings: &ExportSettings,
+    target: &Path,
+    replace: super::Replace,
+    backend: &crate::develop::ExportBackend,
     cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
@@ -66,7 +107,16 @@ pub fn run(
     } else if let Some(format) = format {
         format.supports(settings.output_space()?)?;
     }
-    let prepared = prepare(&photo, None, settings, cancel, &progress)?;
+    let target_format = format.unwrap_or(settings.format);
+    let prepared = prepare_with_backend(
+        &photo,
+        None,
+        settings,
+        backend,
+        Some(target_format),
+        cancel,
+        &progress,
+    )?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -95,15 +145,39 @@ pub struct Prepared {
     pub notice: Option<String>,
 }
 
-/// Renders `photo` for an export with `settings`, reporting progress up to 0.85.
-/// Stops between stages once `cancel` is set. Settings whose color space can't be
-/// exported (in their format, or from a later release) are refused first. `preset`
-/// is a watermark a batch loaded once for all its photos, laid on in place of
-/// `photo.watermark`.
+/// Renders `photo` for an export with `settings` on the CPU reference backend in
+/// floating-point pixels, reporting progress up to 0.85. Stops between stages once
+/// `cancel` is set. Settings whose color space can't be exported (in their format, or
+/// from a later release) are refused first. `preset` is a watermark a batch loaded
+/// once for all its photos, laid on in place of `photo.watermark`.
 pub fn prepare(
     photo: &Photo,
     preset: Option<&crate::watermark::Ready>,
     settings: &ExportSettings,
+    cancel: Cancel<'_>,
+    progress: &impl Fn(f32),
+) -> Result<Prepared> {
+    prepare_with_backend(
+        photo,
+        preset,
+        settings,
+        &crate::develop::ExportBackend::cpu_only(),
+        None,
+        cancel,
+        progress,
+    )
+}
+
+/// [`prepare`], rendering SDR outputs through `backend`. When `target_format` is
+/// `Some` and no watermark will be drawn, requests packed `Rgb8` or `Rgb16` pixels
+/// directly from `backend` so encoding avoids an extra full-frame conversion pass.
+/// When `target_format` is `None` or a watermark is active, renders `F32` pixels.
+pub fn prepare_with_backend(
+    photo: &Photo,
+    preset: Option<&crate::watermark::Ready>,
+    settings: &ExportSettings,
+    backend: &crate::develop::ExportBackend,
+    target_format: Option<crate::export_settings::Format>,
     cancel: Cancel<'_>,
     progress: &impl Fn(f32),
 ) -> Result<Prepared> {
@@ -170,13 +244,15 @@ pub fn prepare(
             }
             if output.gain_map {
                 // The base is the edit's SDR rendition, rendered as an sRGB export and
-                // marked as it is, so the map between them keeps the mark.
-                let mut base = crate::develop::render_export(
+                // marked as it is, so the map between them keeps the mark. Gain-map
+                // computation reads linear floating-point pixels from `base`.
+                let mut base = backend.render_export(
                     &image,
                     &recipe,
                     ai.as_ref(),
                     options.max_edge,
                     crate::color::OutputSpace::Srgb,
+                    crate::develop::ExportFormat::F32,
                     cancel,
                 )?;
                 if let Some(w) = &watermark {
@@ -188,12 +264,17 @@ pub fn prepare(
             }
         }
         None => {
-            let mut rendered = crate::develop::render_export(
+            let pixel_format = match target_format {
+                Some(fmt) => pixel_format_for(fmt, watermark.is_some()),
+                None => crate::develop::ExportFormat::F32,
+            };
+            let mut rendered = backend.render_export(
                 &image,
                 &recipe,
                 ai.as_ref(),
                 options.max_edge,
                 settings.output_space()?,
+                pixel_format,
                 cancel,
             )?;
             if let Some(w) = &watermark

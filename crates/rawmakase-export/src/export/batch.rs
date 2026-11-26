@@ -424,6 +424,18 @@ pub fn run(
     run_each(batch, lanes, cancel, progress, |_, _| {})
 }
 
+/// [`run`], rendering SDR outputs through `backend` (shared across all lanes of the
+/// batch so one compute device and pipeline cache serve every photo).
+pub fn run_with_backend(
+    batch: &Batch,
+    lanes: Lanes,
+    backend: &crate::develop::ExportBackend,
+    cancel: Cancel<'_>,
+    progress: impl Fn(Progress) + Sync,
+) -> Vec<Outcome> {
+    run_each_with_backend(batch, lanes, backend, cancel, progress, |_, _| {})
+}
+
 /// [`run`], also telling `each` every photo's outcome as soon as it has one,
 /// with the photo's index: an exported file is in place by then. Photos run
 /// side by side, so they come in the order they finish, from the lanes'
@@ -431,6 +443,25 @@ pub fn run(
 pub fn run_each(
     batch: &Batch,
     lanes: Lanes,
+    cancel: Cancel<'_>,
+    progress: impl Fn(Progress) + Sync,
+    each: impl Fn(usize, &Outcome) + Sync,
+) -> Vec<Outcome> {
+    run_each_with_backend(
+        batch,
+        lanes,
+        &crate::develop::ExportBackend::cpu_only(),
+        cancel,
+        progress,
+        each,
+    )
+}
+
+/// [`run_each`], rendering SDR outputs through `backend`.
+pub fn run_each_with_backend(
+    batch: &Batch,
+    lanes: Lanes,
+    backend: &crate::develop::ExportBackend,
     cancel: Cancel<'_>,
     progress: impl Fn(Progress) + Sync,
     each: impl Fn(usize, &Outcome) + Sync,
@@ -447,7 +478,9 @@ pub fn run_each(
     };
     let shared = Shared {
         batch,
+        backend,
         preset: preset.as_ref(),
+        profiles: ProfileCache::default(),
         reserved: Mutex::new(batch.plan.reserved.clone()),
         sources: Originals::new(&batch.photos),
         gate: Gate::new(lanes.memory),
@@ -506,7 +539,12 @@ pub fn run_each(
 /// What every photo of a running batch shares.
 struct Shared<'a> {
     batch: &'a Batch,
+    backend: &'a crate::develop::ExportBackend,
     preset: Option<&'a Result<crate::watermark::Ready, String>>,
+    /// Installed camera profiles snapshotted per camera identity for the duration of
+    /// this batch so lanes do not re-walk the profile library directories for every
+    /// photo from the same camera.
+    profiles: ProfileCache,
     /// The names taken, for a name chosen while the batch runs.
     reserved: Mutex<Reservations>,
     /// The batch's originals, resolved when the first file is replaced: no
@@ -514,6 +552,75 @@ struct Shared<'a> {
     sources: Originals<'a>,
     gate: Gate,
     cancel: Cancel<'a>,
+}
+
+/// Every [`crate::camera_data::Metadata`] field inspected by
+/// `camera_profiles::installed` for a RAW without an embedded DCP.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ProfileCacheKey {
+    make: String,
+    model: String,
+    adobe_names: Vec<String>,
+    lens_model: String,
+    focal_35mm_bits: u32,
+    cam_xyz_bits: [[u32; 3]; 3],
+    dng_matrix_profile_signature: Option<String>,
+}
+
+impl ProfileCacheKey {
+    fn of(m: &crate::camera_data::Metadata) -> Option<Self> {
+        if m.is_rendered() || m.embedded_dcp.is_some() {
+            return None;
+        }
+        let canon = |v: f32| {
+            if v.is_nan() {
+                f32::NAN.to_bits()
+            } else if v == 0. {
+                0.0f32.to_bits()
+            } else {
+                v.to_bits()
+            }
+        };
+        Some(Self {
+            make: m.make.clone(),
+            model: m.model.clone(),
+            adobe_names: m.adobe_names.clone(),
+            lens_model: m.lens_model.clone(),
+            focal_35mm_bits: canon(m.focal_35mm),
+            cam_xyz_bits: m.cam_xyz.map(|row| row.map(canon)),
+            dng_matrix_profile_signature: m.dng_matrix_profile_signature.clone(),
+        })
+    }
+}
+
+type ProfileList = Vec<Arc<crate::camera_profiles::CameraProfile>>;
+type ProfileSlot = Arc<OnceLock<ProfileList>>;
+
+/// Batch-scoped snapshot of installed camera profiles, keyed by [`ProfileCacheKey`].
+/// Each distinct camera walks the profile directories at most once per batch even when
+/// multiple export lanes start on photos from the same camera simultaneously.
+#[derive(Default)]
+struct ProfileCache {
+    by_camera: Mutex<HashMap<ProfileCacheKey, ProfileSlot>>,
+}
+
+impl ProfileCache {
+    fn installed(&self, m: &crate::camera_data::Metadata) -> ProfileList {
+        let Some(key) = ProfileCacheKey::of(m) else {
+            return crate::camera_profiles::installed(m).0;
+        };
+        let slot = {
+            let mut map = self
+                .by_camera
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            map.entry(key)
+                .or_insert_with(|| Arc::new(OnceLock::new()))
+                .clone()
+        };
+        slot.get_or_init(|| crate::camera_profiles::installed(m).0)
+            .clone()
+    }
 }
 
 /// Exports the batch's photo at `index`.
@@ -609,7 +716,10 @@ fn export(
     let (batch, cancel) = (shared.batch, shared.cancel);
     let result = (|| -> Result<Written, Stop> {
         // The photo's memory stays counted until its file is in place.
-        let (prepared, mut notes, _admitted) = render(shared, photo, preset, progress)?;
+        let target_format = crate::export_settings::Format::from_path(&planned.target)
+            .unwrap_or(batch.settings.format);
+        let (prepared, mut notes, _admitted) =
+            render(shared, photo, target_format, preset, progress)?;
         let size = (prepared.rendered.width(), prepared.rendered.height());
         notes.extend(planned.notes.iter().cloned());
         if let Some(parent) = planned.target.parent() {
@@ -651,6 +761,7 @@ fn export(
 fn render<'a>(
     shared: &'a Shared<'_>,
     photo: &BatchPhoto,
+    target_format: crate::export_settings::Format,
     preset: Option<&crate::watermark::Ready>,
     progress: &impl Fn(f32),
 ) -> Result<(job::Prepared, Vec<String>, Admitted<'a>)> {
@@ -661,7 +772,7 @@ fn render<'a>(
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
         Edit::Catalog(record) => {
-            let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
+            let profiles = shared.profiles.installed(opened.metadata());
             let profiles = rawmakase_decode::camera_look::with_default(
                 &photo.source,
                 opened.metadata(),
@@ -722,7 +833,7 @@ fn render<'a>(
     {
         notes.push(issue.message().into());
     }
-    let prepared = job::prepare(
+    let prepared = job::prepare_with_backend(
         &job::Photo {
             image,
             source: photo.source.clone(),
@@ -736,6 +847,8 @@ fn render<'a>(
         },
         preset,
         &batch.settings,
+        shared.backend,
+        Some(target_format),
         cancel,
         &|p| progress(p * 0.9),
     )?;
