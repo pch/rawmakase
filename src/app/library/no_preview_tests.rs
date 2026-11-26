@@ -534,3 +534,96 @@ fn a_developed_thumbnail_follows_the_profile_library() -> Result<()> {
     assert_ne!(before.tag(), after.tag(), "the old thumbnail is found");
     Ok(())
 }
+
+/// A developed thumbnail that failed, its file offline say, is developed again
+/// once the Library checks its files again, as an embedded thumbnail that
+/// failed is asked for again then; it is not left blank until a restart.
+#[test]
+fn a_developed_thumbnail_that_failed_is_tried_again_with_the_files() -> Result<()> {
+    let (_directory, mut library) = library_with(scanner_dng)?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let sent = library.detach_edited_previews();
+    let (thumbs, asked) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = thumbs;
+    let (results, answered) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_rx = answered;
+    let (renders, rendered) = std::sync::mpsc::channel();
+    library.cache.edit_rx = rendered;
+    let thumbnail_fails = || {
+        results.send(previews::PreviewResult {
+            path: photo.path.clone(),
+            image: None,
+            display: Default::default(),
+            cache_error: None,
+            skipped: false,
+        })
+    };
+    library.request_previews(&photo, &ctx);
+    thumbnail_fails()?;
+    library.cache.poll(&ctx);
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { ticket, .. }) = sent.try_recv() else {
+        panic!("no render asked for");
+    };
+    renders.send(previews::EditResult::Failed(photo.id, ticket))?;
+    library.cache.poll(&ctx);
+    assert_eq!(asked.try_iter().count(), 1);
+    // The file is back: the Library checks its files again.
+    library.check_files();
+    library.request_previews(&photo, &ctx);
+    assert_eq!(asked.try_iter().count(), 1, "the thumbnail not asked again");
+    thumbnail_fails()?;
+    library.cache.poll(&ctx);
+    library.request_previews(&photo, &ctx);
+    assert!(
+        matches!(sent.try_recv(), Some(previews::EditJob::Render { .. })),
+        "not developed again"
+    );
+    Ok(())
+}
+
+/// A photo whose thumbnail failed but which Develop then rendered shows that
+/// render, and the status line no longer counts it unavailable.
+#[test]
+fn a_photo_shown_from_develop_is_not_counted_unavailable() -> Result<()> {
+    let (_directory, mut library) = library_with(scanner_dng)?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let (_sent, _renders) = without_its_thumbnail(&mut library)?;
+    assert_eq!(status(&library), ["1 preview unavailable"]);
+    library.update_edited(
+        &ctx,
+        photo.id,
+        None,
+        previews::PreviewAi::Off,
+        image::RgbImage::new(4, 3),
+        &crate::model::recipe::Recipe::default(),
+    );
+    library.request_previews(&photo, &ctx);
+    assert!(library.texture(&photo).is_some());
+    let shown = status(&library);
+    assert!(shown.is_empty(), "{shown:?}");
+    Ok(())
+}
+
+/// Only a RAW is developed in place of its thumbnail: a JPEG whose thumbnail
+/// fails was already decoded whole, so it is not decoded again to fail again.
+#[test]
+fn a_raster_whose_thumbnail_fails_is_not_developed() -> Result<()> {
+    let (_directory, mut library) = library_with(|folder| {
+        let path = folder.join("broken.jpg");
+        std::fs::write(&path, b"\xff\xd8 not a photo").unwrap();
+        path
+    })?;
+    let sent = library.detach_edited_previews();
+    assert!(settle(&mut library));
+    let photo = library.session.photos()[0].clone();
+    assert!(library.cache.failed.contains(&photo.path));
+    assert!(
+        sent.try_recv().is_none(),
+        "developed in place of its thumbnail"
+    );
+    stays_settled(&mut library, 20);
+    Ok(())
+}

@@ -479,7 +479,7 @@ impl Library {
     /// Checks which files are online again, after the catalog was read.
     fn check_files(&mut self) {
         self.availability.start(self.session.photos(), &self.ctx);
-        self.cache.failed.clear();
+        self.cache.retry_failed();
         self.screen.retry_failed();
         self.filter();
     }

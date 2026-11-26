@@ -40,6 +40,10 @@ impl Progress {
     pub(crate) fn developing(&mut self, path: &Path) {
         self.failed.remove(path);
     }
+    /// A preview of the file at `path` is shown, if not its embedded one.
+    pub(crate) fn shown(&mut self, path: &Path) {
+        self.failed.remove(path);
+    }
     /// Developing the file at `path` in place of its embedded preview failed.
     pub(crate) fn not_developed(&mut self, path: &Path) {
         self.failed.insert(path.to_path_buf());

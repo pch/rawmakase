@@ -54,6 +54,9 @@ pub(super) struct PreviewTextures {
     /// embedded preview their file can't give, by ticket, with the file,
     /// until their results come back.
     pub(super) stand_ins: HashMap<u64, PathBuf>,
+    /// Photos whose latest developed stand-in failed, its file offline say, by
+    /// the ticket of that request; tried again by [`Self::retry_failed`].
+    stand_ins_failed: HashMap<PhotoId, u64>,
     /// Offline photos' up-to-date editable previews, by photo: where Develop's
     /// renders of a photo opened from its copy are looked up too.
     copies: HashMap<PhotoId, PathBuf>,
@@ -127,6 +130,7 @@ impl PreviewTextures {
             edited_requested: HashMap::new(),
             unedited: HashSet::new(),
             stand_ins: HashMap::new(),
+            stand_ins_failed: HashMap::new(),
             copies: HashMap::new(),
             next_ticket: 0,
             edit_seen: HashSet::new(),
@@ -232,6 +236,7 @@ impl PreviewTextures {
             // only when that fails too.
             if let (EditResult::Failed(..), Some(path), true) = (&result, &stand_in, latest) {
                 self.progress.not_developed(path);
+                self.stand_ins_failed.insert(id, ticket);
             }
             match result {
                 EditResult::Ready(_, _, im) if latest => self.insert_edited(ctx, id, &im),
@@ -382,6 +387,7 @@ impl PreviewTextures {
         self.edited_order.retain(|other| *other != id);
         self.edited_requested.remove(&id);
         self.unedited.remove(&id);
+        self.stand_ins_failed.remove(&id);
         self.edit_seen.remove(&id);
         self.kept.remove(&id);
         self.ahead_scan.1 = 0;
@@ -413,12 +419,19 @@ impl PreviewTextures {
         edit: impl FnOnce() -> Option<EditSource>,
         defaults: impl FnOnce() -> EditSource,
     ) {
-        if !self.edited.contains_key(&photo.id) {
+        if self.edited.contains_key(&photo.id) {
+            // Shown, if not from its embedded thumbnail: not unavailable.
+            self.progress.shown(&photo.path);
+        } else {
             self.request_thumbnail(&photo.path, ctx);
         }
         self.request_edited(photo, edit);
-        // Found without an edit, now or before its thumbnail failed.
-        if self.failed.contains(&photo.path) && self.unedited.remove(&photo.id) {
+        // Found without an edit, now or before its thumbnail failed. Only a
+        // RAW: a raster file's thumbnail was decoded from the whole file.
+        if crate::storage::is_raw(&photo.path)
+            && self.failed.contains(&photo.path)
+            && self.unedited.remove(&photo.id)
+        {
             self.request_stand_in(photo, defaults());
         }
     }
@@ -452,6 +465,17 @@ impl PreviewTextures {
         let stand_ins = &self.stand_ins;
         self.edited_requested
             .retain(|_, ticket| !stand_ins.contains_key(ticket));
+    }
+    /// Lets the previews that failed be asked for again, e.g. once their
+    /// files are back online: embedded thumbnails, and the photos developed
+    /// in their place, unless asked for again since.
+    pub(super) fn retry_failed(&mut self) {
+        self.failed.clear();
+        for (id, ticket) in self.stand_ins_failed.drain() {
+            if self.edited_requested.get(&id) == Some(&ticket) {
+                self.edited_requested.remove(&id);
+            }
+        }
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());
