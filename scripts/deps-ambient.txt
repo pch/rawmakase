@@ -22,7 +22,7 @@ crates/rawmakase-denoise/src/bench.rs temp 1
 crates/rawmakase-engine/src/develop/gpu/export.rs env 2
 crates/rawmakase-engine/src/develop/gpu/export.rs wgpu-env 1
 crates/rawmakase-engine/src/develop/gpu/mod.rs env 1
-crates/rawmakase-engine/src/develop/gpu/mod.rs wgpu-env 8
+crates/rawmakase-engine/src/develop/gpu/mod.rs wgpu-env 9
 crates/rawmakase-engine/src/develop/local_tone_rule.rs env 2
 crates/rawmakase-engine/src/develop/pipeline/tone.rs env 1
 crates/rawmakase-export/src/watermark/font_dirs.rs directories 1

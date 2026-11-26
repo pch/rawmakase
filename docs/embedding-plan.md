@@ -808,11 +808,11 @@ so the design is proved on one path before it is spread.
    app crate holds what needs a window; a library crate reads no
    environment and starts no program).
 
-   Built. The check found 82 sites in 45 files and kinds; counting the
+   Built. The check found 83 sites in 45 files and kinds; counting the
    ambient folders, which the plan's first list of patterns left out, is
-   what makes it see the sixty-odd `data_dir()` calls. Eighteen crate roots
-   gained `forbid(unsafe_code)`, the engine's among them, and the
-   extensions' and the remote worker's binaries.
+   what makes it see the sixty-odd `data_dir()` calls. Twenty-one crate
+   roots gained `forbid(unsafe_code)`, the engine's among them, and the
+   extensions', the tools' and the remote worker's binaries.
 2. Typed causes: `Cancelled` in `rawmakase-cancel`, an invalid recipe or
    setting, a file's identity changed, a missing profile or preset. Each
    has today's text as its message.

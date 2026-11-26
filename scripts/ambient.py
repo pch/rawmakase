@@ -40,6 +40,34 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deps import attributed_end, strip_comments_and_literals  # noqa: E402
 
+ITEM = re.compile(
+    r"(?:\s*#\[[^\]]*\])*\s*(?:pub(?:\s*\([^)]*\))?\s+)?"
+    r"(?:async|const|unsafe|extern|static|fn|struct|enum|union|trait|impl|type|mod|use|macro_rules!)\b"
+)
+
+
+def item_end(code, start):
+    """End of what an attribute ending at `start` applies to. An item (a
+    function, impl, module, import...) ends at its `;` or at the brace that
+    closes its body, whatever commas its signature has (`-> Result<T, E>`);
+    anything else (a field, a variant, a match arm, a statement) ends as
+    [`attributed_end`] says."""
+    if not ITEM.match(code, start):
+        return attributed_end(code, start)
+    depth = 0
+    for k in range(start, len(code)):
+        if code[k] in "([{":
+            depth += 1
+        elif code[k] in ")]}":
+            depth -= 1
+            if depth < 0:
+                return k
+            if depth == 0 and code[k] == "}":
+                return k + 1
+        elif code[k] == ";" and depth == 0:
+            return k + 1
+    return len(code)
+
 ROOT = Path(__file__).resolve().parent.parent
 LIST = ROOT / "scripts" / "deps-ambient.txt"
 
@@ -64,9 +92,9 @@ CRATES = [
 ]
 
 KINDS = {
-    "env": re.compile(r"(?<![\w:])(?:std\s*::\s*)?env\s*::\s*\w+"),
+    "env": re.compile(r"(?<![\w:])(?:std\s*::\s*)?env\s*::\s*(?:\w+|\{)"),
     "directories": re.compile(r"(?<![\w:])directories\s*::"),
-    "wgpu-env": re.compile(r"\b\w*(?:from_env|with_env)\s*\("),
+    "wgpu-env": re.compile(r"\b\w*(?:from_env|with_env)\w*\s*\("),
     "command": re.compile(r"(?<![\w])Command\s*::\s*new\b"),
     "folder": re.compile(
         r"(?<![\w.])(?:data_dir|local_data_dir|xdg_data_home|asset_dirs|cache_dir)\s*\(\s*\)"
@@ -131,7 +159,7 @@ def blank_strings_keep_features(text):
 
 def test_only_spans(code):
     return [
-        (m.start(), attributed_end(code, m.end())) for m in CFG.finditer(code) if test_only(m.group(1))
+        (m.start(), item_end(code, m.end())) for m in CFG.finditer(code) if test_only(m.group(1))
     ]
 
 
@@ -154,6 +182,8 @@ def sites():
     found = defaultdict(list)
     for crate in CRATES:
         src = ROOT / "crates" / crate / "src"
+        if not src.is_dir():
+            sys.exit(f"{Path(__file__).name} names {crate}, which has no {src.relative_to(ROOT)}")
         skipped = test_files(src)
         for path in sorted(src.rglob("*.rs")):
             if path.name == "tests.rs" or path.name.endswith("_tests.rs"):
@@ -167,7 +197,7 @@ def sites():
                     if any(start <= m.start() < end for start, end in excluded):
                         continue
                     line = code.count("\n", 0, m.start()) + 1
-                    found[(str(path.relative_to(ROOT)), kind)].append(line)
+                    found[(path.relative_to(ROOT).as_posix(), kind)].append(line)
     return found
 
 

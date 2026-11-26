@@ -25,6 +25,8 @@ class Kinds(unittest.TestCase):
         self.assertEqual(kinds("use std::env;\nfn f() { env::current_exe(); }"), ["env"])
         self.assertEqual(kinds("fn f() { directories::UserDirs::new(); }"), ["directories"])
         self.assertEqual(kinds("fn f() { wgpu::Backends::from_env(); f.with_env(); }"), ["wgpu-env", "wgpu-env"])
+        self.assertEqual(kinds("fn f() { wgpu::BackendOptions::from_env_or_default(); }"), ["wgpu-env"])
+        self.assertEqual(kinds("use std::env::{var, var_os};"), ["env"])
         self.assertEqual(kinds("fn f() { Command::new(\"ps\"); }"), ["command"])
         self.assertEqual(kinds("fn f() { data_dir(); storage::asset_dirs(); }"), ["folder", "folder"])
         self.assertEqual(kinds("pub use rawmakase_protocol::paths::data_dir;"), ["folder"])
@@ -51,6 +53,19 @@ class TestOnly(unittest.TestCase):
         self.assertEqual(kinds("#[cfg(any(test, unix))]\nfn f() { data_dir(); }"), ["folder"])
         self.assertEqual(kinds("#[cfg(unix)]\nfn f() { data_dir(); }"), ["folder"])
         self.assertEqual(kinds("#[cfg(not(test))]\nfn f() { data_dir(); }"), ["folder"])
+
+    def test_a_signature_s_commas_keep_the_body_test_only(self):
+        code = (
+            "#[cfg(test)]\nfn dir() -> Result<tempfile::TempDir, std::io::Error> {\n"
+            "    std::env::var(\"X\");\n    tempfile::tempdir()\n}\nfn f() { data_dir(); }"
+        )
+        self.assertEqual(kinds(code), ["folder"])
+        code = "#[cfg(test)]\nimpl<A, B> T for (A, B) where A: X, B: Y { fn f() { data_dir(); } }"
+        self.assertEqual(kinds(code), [])
+
+    def test_a_test_only_field_or_arm_ends_at_its_comma(self):
+        code = "match x {\n    #[cfg(test)]\n    A => data_dir(),\n    B => data_dir(),\n}"
+        self.assertEqual(kinds(code), ["folder"])
 
     def test_only_the_item_is_left_out(self):
         code = "#[cfg(test)]\nfn t() { data_dir(); }\nfn f() { data_dir(); }"
