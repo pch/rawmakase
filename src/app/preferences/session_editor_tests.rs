@@ -6,12 +6,13 @@ fn session_preferences_use_the_injected_store() -> anyhow::Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("session.json");
     let ctx = egui::Context::default();
-    let mut editor = Editor::with_context(
-        &ctx,
-        None,
-        crate::app::preferences::session::Session::default(),
-        Some(path.clone()),
-    );
+    // Not a first launch, which would open the default catalog beside the
+    // session on a task of its own, and record it if it opened in time.
+    let session = crate::app::preferences::session::Session {
+        last_path: Some(dir.path().join("earlier.ARW")),
+        ..Default::default()
+    };
+    let mut editor = Editor::with_context(&ctx, None, session, Some(path.clone()));
     editor.document.opened_at(dir.path().join("photo.ARW"));
     editor
         .tx
