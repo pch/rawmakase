@@ -30,7 +30,7 @@ fn desktop() -> PathBuf {
         // release build left from before.
         .max_by_key(|(built, _)| *built)
         .map(|(_, p)| p)
-        .expect("rawmakase built in the repository's target folder: `cargo build --release --bin rawmakase` in its root")
+        .expect("rawmakase built in the repository's target folder: `cargo build --bin rawmakase` in its root")
 }
 
 fn run(command: &mut Command) {

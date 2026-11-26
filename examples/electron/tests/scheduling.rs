@@ -204,12 +204,18 @@ fn a_result_for_a_view_that_is_gone_is_dropped() {
     assert_eq!(t.shown(), (2, false, 2));
     t.nothing_more();
 
-    let gone = t.submit(3, true);
+    // An edit with a draft due, its view gone while it waits behind a
+    // running render: neither its draft nor its frame renders.
+    t.submit(3, false);
+    assert_eq!(t.started(), (3, false));
+    let gone = t.submit(4, true);
     gone.store(true, Ordering::Relaxed);
-    t.submit(4, false);
-    assert_eq!(t.started(), (4, false), "edit 3 rendered nothing");
     t.release();
-    assert_eq!(t.shown(), (4, false, 4));
+    assert_eq!(t.shown(), (3, false, 3));
+    t.submit(5, false);
+    assert_eq!(t.started(), (5, false), "edit 4 rendered nothing");
+    t.release();
+    assert_eq!(t.shown(), (5, false, 5));
     t.nothing_more();
 }
 

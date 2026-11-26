@@ -263,7 +263,7 @@ impl Editor {
         // Edits made while this photo was opening went to the one before it. Its
         // first frame is numbered after them, so it is never taken for an older
         // one.
-        let edit = edit.max(state.last_edit);
+        let edit = edit.max(state.last_edit.saturating_add(1));
         self.submit(&mut state, edit);
         Ok(describe(&state).to_string())
     }

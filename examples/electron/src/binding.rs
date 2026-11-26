@@ -66,6 +66,8 @@ impl Addon {
         let rendered = on_rendered
             .build_threadsafe_function::<Rendered>()
             .callee_handled::<false>()
+            // The render thread holding it doesn't keep Node running.
+            .weak::<true>()
             .build()?;
         let config = Config {
             data_dir: folders.data_dir.into(),

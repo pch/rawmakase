@@ -81,10 +81,12 @@ impl<W: Send + 'static> Worker<W> {
         std::thread::spawn(move || {
             let mut renderer = make();
             let mut shown = Shown::default();
-            let mut run = |renderer: &mut R, job: &Numbered<Job<W>>, draft: bool| {
+            // Whether the render was shown: a cancelled, failed or panicked one
+            // has no frame to follow it.
+            let mut run = |renderer: &mut R, job: &Numbered<Job<W>>, draft: bool| -> bool {
                 let Numbered { number, job } = job;
                 if job.cancel.load(Ordering::Relaxed) {
-                    return;
+                    return false;
                 }
                 let started = Instant::now();
                 let cancel = Cancel::new(&job.cancel);
@@ -93,7 +95,7 @@ impl<W: Send + 'static> Worker<W> {
                 }));
                 match rendered {
                     // A result for a photo or a view that is gone is stale.
-                    Ok(Ok(_)) if cancel.is_cancelled() => {}
+                    Ok(Ok(_)) if cancel.is_cancelled() => false,
                     Ok(Ok(output)) => {
                         if shown.accept(*number, draft) {
                             sink(Event::Shown {
@@ -103,18 +105,23 @@ impl<W: Send + 'static> Worker<W> {
                                 took: started.elapsed(),
                             });
                         }
+                        true
                     }
-                    Ok(Err(error)) if error.is_cancelled() => {}
-                    Ok(Err(error)) => sink(Event::Failed {
-                        edit: job.edit,
-                        message: format!("{error:#}"),
-                    }),
+                    Ok(Err(error)) if error.is_cancelled() => false,
+                    Ok(Err(error)) => {
+                        sink(Event::Failed {
+                            edit: job.edit,
+                            message: format!("{error:#}"),
+                        });
+                        false
+                    }
                     Err(_) => {
                         *renderer = make();
                         sink(Event::Failed {
                             edit: job.edit,
                             message: "Rendering failed unexpectedly".into(),
                         });
+                        false
                     }
                 }
             };
@@ -132,8 +139,10 @@ impl<W: Send + 'static> Worker<W> {
                         false
                     }
                 };
-                if due && !job.job.cancel.load(Ordering::Relaxed) {
-                    run(&mut renderer, &job, true);
+                if due {
+                    if !run(&mut renderer, &job, true) {
+                        continue;
+                    }
                     match jobs.take_within(quiet) {
                         Taken::Job(newer) => {
                             next = Some(newer);
@@ -143,7 +152,7 @@ impl<W: Send + 'static> Worker<W> {
                         Taken::Quiet => {}
                     }
                 }
-                run(&mut renderer, &job, false);
+                let _ = run(&mut renderer, &job, false);
             }
         });
         Self { mailbox }
