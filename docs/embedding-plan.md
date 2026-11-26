@@ -1,7 +1,9 @@
 # A library for other apps: plan
 
 Status: Plan (2026-11-26), being built on one branch (`t3/library`, one pull
-request); stage 1, steps 1–5, is built and in review; no step has landed.
+request); stage 1, steps 1–5, is built, revised after its review (the
+surface closed, the render loop the library's; see step 5), and in review;
+no step has landed.
 Its API's shape was tried in a prototype (stage 0), and the plan was
 corrected from it. One library that another app links to open, decode,
 edit, render and export photos as RAWmakase does, without the desktop
@@ -218,24 +220,24 @@ The library is three things:
   nothing yet.
 - **A photo handle that knows its file.** Decoding consumes the opened file
   (`Raw::develop` takes `self`), so a photo handle keeps what it opened
-  and opens the file again for each later decode: the desktop's staged
-  open, Half then Full, reads the file twice, as the app's does today.
-  Export needs the source file too (the overwrite check, the camera's
-  EXIF), so it takes the photo, or a decoded image that knows the photo it
-  came from, and never a bare buffer.
-- **The edit's values, as they are.** A recipe, a photo's metadata, export
-  settings and the edit session are the model's own types, and wrapping
-  them would only copy them. An app reads them freely. It changes a recipe
-  through the model's rules where a setting has them: a slider as a
-  parameter, by its id, so that what depends on it follows (white balance
-  from Temp and Tint), and a curve through the curve's methods. The guide
-  says which fields are safe to assign. They are
-  re-exported from the model, interop and editing crates, and the types
-  their fields and methods name come with them: that part of those crates
-  is the library's surface, and is treated so. A module joins the surface
-  when its items are documented (`missing_docs` is turned on for it where
-  it is defined; the lint in the library crate covers only what the
-  library defines).
+  and opens the file again for a later decode: the desktop's staged open, Half then Full, reads the file
+  twice, as the app's does today. While the app holds the last full
+  decode, a full decode and an export use it. Export needs the source file
+  too (the overwrite check, the camera's EXIF), so it takes the photo, and
+  never a bare buffer.
+- **The edit, as the library's types.** A recipe, a photo's metadata, a
+  preset, the raw defaults and export settings are the library's own
+  types over the model's and interop's. Re-exported as they were, they
+  showed every method the renderer and the desktop use (most taking the
+  decoder's metadata or a camera profile, which an app can't make) and two
+  dozen types an app couldn't name. A recipe is changed through the
+  library's rules: a slider as a parameter, by its id, so that what
+  depends on it follows (white balance from Temp and Tint), and a curve
+  through the curve's methods; the rest of an edit joins as the library
+  gives it rules. Plain values (the tone curve, a slider's description, an
+  HDR encoding) are re-exported as they are. No item of the library names
+  a type an app can't name from it: the listing's check refuses one. The
+  edit session (stage 3) is shown the same way.
 - **A context**, described below, which every operation that needs
   configuration goes through.
 
@@ -313,10 +315,6 @@ An app makes one `Context` and keeps it. It is given, as values:
   keeps passing what it keys by today, so its caches stay valid;
 - the system font file and the font folders, where the app wants watermarks
   to use them;
-- the raw defaults, as a value: today they are read from the desktop's
-  `session.json` in the app crate (`app::user_raw_defaults`), and the
-  library can open a photo "as the app opens it" only when it is given
-  them. An app that gives none gets Adobe Default;
 - the GPU, when a `gpu-*` feature is on: the backend, flags and power
   preference to open one with, or the app's own device and queue;
 - the ONNX Runtime library's path, for AI Denoise;
@@ -326,7 +324,7 @@ An app makes one `Context` and keeps it. It is given, as values:
 It owns what is made from them, each shareable between threads: the camera
 profile, lens profile and preset libraries with their caches, a handle on
 the installed Lensfun database that sees an install made while the app
-runs, the raw defaults, the fonts, the decode and AI Denoise caches, AI
+runs, the fonts, the decode and AI Denoise caches, AI
 Denoise's service, and the list of its own exports in flight. What the
 desktop changes while it runs stays changeable: a cache's limit and folder,
 the Neural Engine choice, and a cache moved back to its default folder goes
@@ -352,6 +350,15 @@ builds them, with what a front end needs beside them: the frame as 8-bit
 RGBA (the engine gives float RGB), the tone curve sampled for drawing, and
 the size a decoded image renders to at a view's size, without which a
 caller can't tell whether a draft is due.
+
+The raw defaults are not the context's. An app's preferences change them
+while photos are open, and a context is shared and fixed once built, so a
+copy in it would go stale: the context reads them into a value
+(`Context::raw_defaults`) that each new photo is started from, as the
+desktop passes its own to each job. The render thread's loop over the
+mailbox, the draft rule and the stale frames is the library's too
+(`RenderLoop`), which the app runs on its own render thread: every front
+end needed it whole.
 
 Operations are methods on the context or on what it hands out. Two contexts
 in one process, with different folders, each see their own libraries,
@@ -656,8 +663,9 @@ let ctx = Context::builder()
     .cache(&app.cache, CacheLimits::default(), app.build_id())
     .build()?;
 
+let defaults = ctx.raw_defaults(&app.raw_defaults); // the app's preferences, read
 let photo = ctx.open(path, cancel)?;            // header, metadata, profiles that fit
-let mut recipe = photo.starting_recipe()?;      // raw defaults, as the app opens it
+let mut recipe = photo.starting_recipe(&defaults)?; // as the app opens it
 photo.set(&mut recipe, Parameter::Temperature, 5200.)?; // white balance follows
 
 let image = photo.decode(Decode::Full, cancel)?; // reads the file again each time
@@ -1113,8 +1121,8 @@ so the design is proved on one path before it is spread.
    (152); measure 4 passes on three chart DNGs, and its Rust side is checked
    in CI's "Reference apps" job.
 
-   What the port found missing, for the plan to settle before the Swift app
-   (stage 2) repeats it: the render thread's loop (take an edit, render the
+   What the port found missing, settled since (see the revision below):
+   the render thread's loop (take an edit, render the
    draft if one is due, wait for quiet, render the frame, drop a cancelled
    render, rebuild the renderer after a panic, filter with `Shown`) is the
    same for every front end and still 171 lines of the example's, so by the
@@ -1136,6 +1144,41 @@ so the design is proved on one path before it is spread.
    from the file after the photo was decoded, as the desktop's does, and
    checks the file again only through AI Denoise; exports capturing their
    files whole are steps 13 and 15's.
+
+   Revised after stage 1's review. The surface is closed: every type an
+   item names is the library's or one it re-exports, and
+   `scripts/public-api.py` fails on any other workspace path. `Recipe`,
+   `Parameter` (made from the model's one table, `with_parameters!`),
+   `Preset`, `Applied`, `Metadata`, `Profile`, `RawDefaults` with its
+   choices, and `ExportSettings` (only what an export honours: its folder,
+   naming, watermark and Send To were the dialog's, and its `load` and
+   `save` read the desktop's file) are the library's own; the listing went
+   from 823 items to 555. The raw defaults left the context for
+   `Context::raw_defaults` and `Photo::starting_recipe`'s argument. The
+   render loop the port found missing is the library's `RenderLoop`, with
+   the worker's tests over a held renderer; the quiet time is
+   `RenderLoop::QUIET` (50 ms), an app's to change, and follows the input's
+   pace, not the renderer's. A full decode the app holds (one
+   `Photo::decode` made, which the cache keeps) is used again by the next
+   full decode and the export, through the same context. The library's
+   `ExportSettings` refuses what the desktop's would clamp (quality,
+   size limit, long edge, resolution), and a render loop's job whose photo
+   or view is gone reports nothing, its failures included.
+
+   Opening still reads a RAW whole for its facts. The header read the
+   desktop's photo info and Sync use leaves a maker note, a DNG's private
+   data or a Sony SR2 directory beyond its first 512 KB unread, as zeros,
+   where white balance, the lens and the camera's crop come from; the
+   dataset's check compares only photo info. Reading the header alone
+   waits for a dataset check that the facts an edit starts from (white
+   balance, lens, crops) are the whole file's for every camera. What the library
+   repeated of the crates under it is theirs: the full-size decode with
+   its cache (`FullSize::recovered`, which the export job uses too) and an
+   export's checks before a decode (`export::check_destination`, made
+   public with typed causes, and `job::check`, which `job::run` calls
+   first). `Renderer::draft_due` still starts over when the image or the
+   Fit size changes: the frame for a new decode or size is not an edit, and
+   the next edit drafts by the new frame's time.
 
 ### 2. Platforms and the GPU
 
