@@ -21,6 +21,9 @@ pub(crate) struct Installer {
     removing: bool,
     /// Why the last install failed, until the next one starts.
     failed: Option<String>,
+    /// Test-only model directory override so editor tests stay isolated from user data.
+    #[cfg(test)]
+    test_dir: Option<PathBuf>,
 }
 
 impl Installer {
@@ -31,11 +34,22 @@ impl Installer {
             thread: None,
             removing: false,
             failed: None,
+            #[cfg(test)]
+            test_dir: None,
         }
+    }
+    #[cfg(test)]
+    pub(in crate::app) fn set_test_dir(&mut self, dir: PathBuf) {
+        self.test_dir = Some(dir);
+        self.forget();
     }
     pub(in crate::app) fn installed(&self) -> bool {
         if self.removing {
             return false;
+        }
+        #[cfg(test)]
+        if let Some(dir) = &self.test_dir {
+            return dir.is_dir();
         }
         // Looked at again after a second, so the drawer does not stat on every frame.
         match self.seen.get() {
@@ -52,6 +66,10 @@ impl Installer {
     }
     /// The folder holding the model's files.
     pub(in crate::app) fn path(&self) -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(dir) = &self.test_dir {
+            return self.installed().then(|| dir.clone());
+        }
         self.installed().then(crate::model_install::dir)
     }
     pub(in crate::app) fn busy(&self) -> bool {
@@ -134,7 +152,14 @@ impl Installer {
         if self.busy() || !self.installed() {
             return;
         }
-        self.remove_dir(crate::model_install::dir(), unload, tx, ctx);
+        #[cfg(test)]
+        let dir = self
+            .test_dir
+            .clone()
+            .unwrap_or_else(crate::model_install::dir);
+        #[cfg(not(test))]
+        let dir = crate::model_install::dir();
+        self.remove_dir(dir, unload, tx, ctx);
     }
     fn remove_dir(
         &mut self,

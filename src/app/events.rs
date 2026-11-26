@@ -200,7 +200,14 @@ impl Editor {
                     self.ai_denoise_model.removed();
                     match result {
                         Ok(()) => self.messages.done("AI Denoise model removed"),
-                        Err(e) => self.messages.fail(format!("Model not removed: {e}")),
+                        Err(e) => {
+                            self.messages.fail(format!("Model not removed: {e}"));
+                            if let Some(path) = self.ai_denoise_model.path() {
+                                self.ai_denoise.set_model(Some(path));
+                                self.document.ai = Default::default();
+                                self.schedule();
+                            }
+                        }
                     }
                 }
                 Event::XmpLibrary { scan, library } => self.presets_scanned(scan, library),
