@@ -27,9 +27,9 @@ impl AiSource {
         &self.0
     }
     /// This source reduced as [`crate::develop::preview`] reduces its photo to
-    /// `max`, so it fits the reduced photo. Box reduction and the blend are both
-    /// linear, so the reduced photo's blend is the blend reduced, apart from the
-    /// highlight recovery the reduced photo makes on its own.
+    /// `max`, so it fits the reduced photo. Box reduction and the blend match apart
+    /// from below-black clipping before reduction and the highlight recovery the
+    /// reduced photo makes on its own.
     pub fn reduced(&self, max: u32) -> Self {
         let reduced = super::pipeline::preview_source((&*self.0).into(), max);
         match (reduced.width, reduced.height) == (self.0.width, self.0.height) {

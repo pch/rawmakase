@@ -215,14 +215,22 @@ pub(crate) fn finish_measurement_source(
 /// to the nearest active pixel before box integration so out-of-crop borders do not
 /// bleed black into the copy or drag down `PhotoMeasures::dark` and the tone histogram.
 fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
-    let Some([x0, y0, x1, y1]) = crate::develop::local_tone::inner_crop_rect(im.image) else {
-        return preview_source(im, max);
-    };
-    let (x0, y0, x1, y1) = (x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+    let crop = crate::develop::local_tone::inner_crop_rect(im.image)
+        .map(|[x0, y0, x1, y1]| (x0 as u32, y0 as u32, x1 as u32, y1 as u32));
+    // Clip negative demosaiced noise samples with `clip_at_black` before box
+    // reduction so `PhotoMeasures::dark`, `default_black`, and the local-tone
+    // measurement copy stay calibrated to non-negative shadow levels without
+    // introducing color bias.
     let read = |i: usize| {
-        let x = (i as u32 % im.width).clamp(x0, x1 - 1);
-        let y = (i as u32 / im.width).clamp(y0, y1 - 1);
-        im.px((y * im.width + x) as usize)
+        let p = match crop {
+            Some((x0, y0, x1, y1)) => {
+                let x = (i as u32 % im.width).clamp(x0, x1 - 1);
+                let y = (i as u32 / im.width).clamp(y0, y1 - 1);
+                im.px((y * im.width + x) as usize)
+            }
+            None => im.px(i),
+        };
+        crate::develop::color_noise::clip_at_black(p)
     };
     let (w, h) = measurement_size(im.width, im.height, max);
     let pixels = if (w, h) == (im.width, im.height) {
@@ -243,11 +251,37 @@ fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
     }
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
+    // Clip signed below-black noise before box reduction (and on already-small
+    // images) so previews and Auto copies keep full-resolution shadow brightness
+    // consistently at every size without magenta bias.
     let (w, h) = measurement_size(im.width, im.height, max);
     if (w, h) == (im.width, im.height) {
-        return im.image.clone();
+        let len = (im.width * im.height) as usize;
+        if !(0..len).into_par_iter().any(|i| {
+            let p = im.px(i);
+            p[0] < 0. || p[1] < 0. || p[2] < 0.
+        }) {
+            return im.image.clone();
+        }
+        let pixels: Vec<[f32; 3]> = (0..len)
+            .into_par_iter()
+            .map(|i| crate::develop::color_noise::clip_at_black(im.px(i)))
+            .collect();
+        return CameraImage {
+            recovered: Default::default(),
+            width: im.width,
+            height: im.height,
+            pixels: pixels.into(),
+            metadata: im.metadata.clone(),
+            fast: im.fast,
+            scale_factor: im.scale_factor,
+            scale_clipped: im.scale_clipped,
+            hdr: Default::default(),
+        };
     }
-    let pixels = box_reduce(im.width, im.height, w, h, |i| im.px(i));
+    let pixels = box_reduce(im.width, im.height, w, h, |i| {
+        crate::develop::color_noise::clip_at_black(im.px(i))
+    });
     CameraImage {
         recovered: Default::default(),
         width: w,

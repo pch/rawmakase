@@ -141,15 +141,15 @@ const RECORDED: &[(&str, &str)] = &[
     ),
     (
         "chart.jpg",
-        "5e7e78d3870783c61bb3bab2dd6b24792ad94d3873f939bbeeed7bba908b20ae",
+        "62efe1893f4bf10bce81cd2d98fadfe2d470a64e89e81c6efd8cbd0c75c1237f",
     ),
     (
         "chart.tif",
-        "9d71750c7c15a8069f5c731aff543e3c4182eaffa6febbf78b30c529186f773e",
+        "972cc5807c23ce1fd78ba7c66136121e7e919dd993813548341e77a26bb7ff7a",
     ),
     (
         "chart.png",
-        "c665a6698faa62bc65db700f933e96100d99ebc075ab8356159380188a40d45f",
+        "e3bbc1a4ddb8084b59c1211e0b4cead10bb7bf461e73af9b5463c44e160087f1",
     ),
 ];
 

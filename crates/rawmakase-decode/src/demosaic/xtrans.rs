@@ -141,7 +141,7 @@ impl Band {
         if let (Some((a, ca)), Some((b, cb))) = (along(&sides[0], own), along(&sides[1], own)) {
             est += CURVATURE * (c - (ca * b + cb * a) / (a + b));
         }
-        est.clamp(lo, hi).max(0.)
+        est.clamp(lo, hi)
     }
 }
 
@@ -334,16 +334,21 @@ fn candidate(band: &Band, sides: &[Side; 2]) -> Vec<[f32; 3]> {
                 let line = |side: &Side| {
                     let k = side.distance[c as usize][i];
                     let j = (i as isize + k as isize * side.step) as usize;
-                    (k != 0).then(|| (k as f32, band.raw[j] - green[j]))
+                    (k != 0).then(|| (k as f32, band.raw[j], green[j]))
                 };
-                if let (Some((a, da)), Some((b, db))) = (line(&sides[0]), line(&sides[1])) {
-                    rgb[i][c as usize] = (green[i] + (da * b + db * a) / (a + b)).max(0.);
+                if let (Some((a, sa, ga)), Some((b, sb, gb))) = (line(&sides[0]), line(&sides[1])) {
+                    let (da, db) = (sa - ga, sb - gb);
+                    let est = green[i] + (da * b + db * a) / (a + b);
+                    let all_non_neg =
+                        green[i] >= 0. && sa >= 0. && sb >= 0. && ga >= 0. && gb >= 0.;
+                    rgb[i][c as usize] = if all_non_neg { est.max(0.) } else { est };
                     continue;
                 }
                 // Otherwise the nearest samples within radius 1, else 2, weighted by
                 // inverse distance.
                 let mut sum = 0.;
                 let mut total = 0.;
+                let mut all_non_neg = green[i] >= 0.;
                 for radius in 1..=2isize {
                     for dy in -radius..=radius {
                         for dx in -radius..=radius {
@@ -352,7 +357,10 @@ fn candidate(band: &Band, sides: &[Side; 2]) -> Vec<[f32; 3]> {
                                 continue;
                             }
                             let weight = 1. / ((dx * dx + dy * dy) as f32).sqrt();
-                            sum += (band.raw[j] - green[j]) * weight;
+                            let sample = band.raw[j];
+                            let gj = green[j];
+                            all_non_neg &= sample >= 0. && gj >= 0.;
+                            sum += (sample - gj) * weight;
                             total += weight;
                         }
                     }
@@ -360,7 +368,8 @@ fn candidate(band: &Band, sides: &[Side; 2]) -> Vec<[f32; 3]> {
                         break;
                     }
                 }
-                rgb[i][c as usize] = (green[i] + if total > 0. { sum / total } else { 0. }).max(0.);
+                let est = green[i] + if total > 0. { sum / total } else { 0. };
+                rgb[i][c as usize] = if all_non_neg { est.max(0.) } else { est };
             }
         }
     }

@@ -302,8 +302,9 @@ impl Table {
         }
     }
     fn apply(&self, rgb: [f32; 3], other: Option<&Table>, weight: f32) -> [f32; 3] {
+        let rgb = rgb.map(|v| v.max(0.));
         let max = rgb.into_iter().fold(0f32, f32::max);
-        let min = rgb.into_iter().fold(f32::INFINITY, f32::min).max(0.);
+        let min = rgb.into_iter().fold(f32::INFINITY, f32::min);
         let d = max - min;
         let h = if d < 1e-9 {
             0.

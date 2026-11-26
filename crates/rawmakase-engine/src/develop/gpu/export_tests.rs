@@ -1467,8 +1467,15 @@ fn gpu_pyramid_matches_cpu_for_chroma_luma_texture_and_box_reduce() -> Result<()
     };
 
     let mut ctx = GpuExportContext::new().expect("hardware GPU required");
+    let mut signed = noisy_synthetic_photo(129, 97, 129, 97, false);
+    for (i, p) in signed.pixels.iter_mut().enumerate() {
+        if i % 3 == 0 {
+            *p = [p[0] - 0.02, p[1] - 0.005, p[2] - 0.015];
+        }
+    }
     let cases = [
         ("full_odd", noisy_synthetic_photo(257, 193, 257, 193, false)),
+        ("signed_shadows", signed),
         // Odd-sided half-size decode gives a fractional photo_scale (193 / 385 != 0.5).
         (
             "half_decode_fractional",

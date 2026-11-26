@@ -79,7 +79,11 @@ impl TextureDetail {
                 data: im
                     .pixels
                     .par_iter()
-                    .map(|p| p[c].max(1e-6).log2())
+                    .map(|p| {
+                        crate::develop::color_noise::clip_at_black(*p)[c]
+                            .max(1e-6)
+                            .log2()
+                    })
                     .collect(),
             };
             *out = detail(&logs, offset, cancel)?
@@ -97,7 +101,11 @@ impl TextureDetail {
         out.recovered = Default::default();
         out.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
             for (v, detail) in p.iter_mut().zip(&self.channels) {
-                *v *= (s * detail[i] as f32).exp2();
+                // Detail was measured on `log2(max(v, 1e-6))`, so leave below-black
+                // negative sensor noise unscaled instead of amplifying it.
+                if *v > 0. {
+                    *v *= (s * detail[i] as f32).exp2();
+                }
             }
         });
         out
@@ -239,5 +247,40 @@ mod tests {
         let full = TextureDetail::of(&image(0), 1., Cancel::new(&cancel)).unwrap();
         assert_eq!(draft.channels, reduced.channels);
         assert_ne!(draft.channels, full.channels);
+    }
+
+    #[test]
+    fn negative_channels_are_not_amplified_by_texture() {
+        let (w, h) = (64u32, 64u32);
+        let im = CameraImage {
+            recovered: Default::default(),
+            width: w,
+            height: h,
+            pixels: (0..w * h)
+                .map(|i| {
+                    if i % 2 == 0 {
+                        [-0.02, 0.01, -0.03]
+                    } else {
+                        [0.05, 0.04, 0.06]
+                    }
+                })
+                .collect(),
+            metadata: Default::default(),
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let detail = TextureDetail::of(&im, 1., Cancel::NEVER).unwrap();
+        for amount in [-1., 1.] {
+            let out = detail.apply(&im, amount);
+            for (orig, got) in im.pixels.iter().zip(&out.pixels) {
+                for c in 0..3 {
+                    if orig[c] <= 0. {
+                        assert_eq!(got[c], orig[c], "amount={amount} ch={c}");
+                    }
+                }
+            }
+        }
     }
 }

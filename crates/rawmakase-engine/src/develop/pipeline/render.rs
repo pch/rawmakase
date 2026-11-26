@@ -323,7 +323,9 @@ pub(super) fn detail(
         let s = crate::develop::texture::strength(r.effects.texture + d[slot::TEXTURE]) - global;
         let detail = texture.at(x, y, w, h);
         for (v, d) in p.iter_mut().zip(detail) {
-            *v *= (s * d).exp2();
+            if *v > 0. {
+                *v *= (s * d).exp2();
+            }
         }
     });
     Ok(Arc::new(out))
