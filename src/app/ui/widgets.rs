@@ -1044,7 +1044,7 @@ pub(in crate::app) enum SliderEvent {
     Peeked,
 }
 /// A press on a slider's label released within this many seconds is a click, and
-/// held longer is none. The label peeks either way.
+/// held longer is none. Only a press held longer peeks.
 pub(in crate::app) const LABEL_CLICK: f64 = 0.2;
 fn peek_scope_id() -> egui::Id {
     egui::Id::new("rawmakase-peek-scope")
@@ -1107,7 +1107,7 @@ struct LabelHold {
     /// When a press too long for a click last ended.
     ended: Option<f64>,
 }
-/// What a slider's label asks this frame. Held, it peeks; the release of a press
+/// What a slider's label asks this frame. Held past [`LABEL_CLICK`], it peeks; the release of a press
 /// longer than [`LABEL_CLICK`] is no click, and a press soon after no double-click,
 /// so holding it again and again to compare never resets the slider.
 fn label_event(ui: &egui::Ui, label: &egui::Response) -> SliderEvent {
@@ -1143,6 +1143,15 @@ fn label_event(ui: &egui::Ui, label: &egui::Response) -> SliderEvent {
         // A new press, whatever became of the last one's release.
         hold.pressed = Some(pressed_at);
         ui.data_mut(|d| d.insert_temp(id, hold));
+        // A press no longer than a click shows nothing yet, so a click never
+        // flashes the default. The repaint starts the peek even if nothing else
+        // draws a frame while the button is held still.
+        let held_for = now - pressed_at;
+        if held_for <= LABEL_CLICK {
+            ui.ctx()
+                .request_repaint_after_secs((LABEL_CLICK - held_for) as f32 + 0.001);
+            return SliderEvent::None;
+        }
         if other_input {
             ui.ctx().request_repaint();
             return SliderEvent::None;

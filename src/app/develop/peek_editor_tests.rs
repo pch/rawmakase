@@ -66,7 +66,7 @@ impl Window {
     /// Presses the label and holds it too long for a click.
     fn hold(&mut self) {
         self.button(true);
-        self.wait(LABEL_CLICK);
+        self.wait(LABEL_CLICK + 0.05);
     }
     fn exposure(&self) -> f32 {
         self.e.document.edit.recipe().exposure
@@ -88,8 +88,9 @@ fn exposed() -> Window {
 fn holding_a_label_shows_the_default_until_released_and_edits_nothing() {
     let mut w = exposed();
     w.button(true);
-    assert_eq!(w.shown().exposure, 0., "at once");
-    w.wait(LABEL_CLICK);
+    assert_eq!(w.shown().exposure, 1., "not while it may still be a click");
+    w.wait(LABEL_CLICK + 0.05);
+    assert_eq!(w.shown().exposure, 0., "once it is too long for one");
     // Past the time egui still takes a press for a click, too.
     for _ in 0..4 {
         assert_eq!((w.shown().exposure, w.rendering()), (0., 0.));
@@ -108,7 +109,7 @@ fn holding_a_label_shows_the_default_until_released_and_edits_nothing() {
 fn a_label_still_selects_on_a_click_and_resets_on_a_double_click() {
     let mut w = exposed();
     w.button(true);
-    assert_eq!(w.shown().exposure, 0., "a click peeks too");
+    assert_eq!(w.shown().exposure, 1., "a click never flashes the default");
     w.button(false);
     assert_eq!(w.shown().exposure, 1.);
     assert_eq!(w.e.view.selected_setting, Some(ParameterId::Exposure));
