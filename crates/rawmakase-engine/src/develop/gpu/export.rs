@@ -29,6 +29,7 @@
 
 use super::{
     develop::{Developer, Variant},
+    pyramid::{GpuPyramid, PyramidHost},
     resident::Resident,
     sampling as sample_slot,
     uniforms::ExportFinishParams,
@@ -40,14 +41,17 @@ use crate::{
     develop::{
         AiSource, ExportFormat, ExportImage, ExportPixels, Geometry,
         effects::{GrainField, PostCropVignette},
-        pipeline::{
-            self, Toned,
-            pixel_params::{self, PixelParams},
-        },
+        local_tone,
+        masks::{Selection, Weigher},
+        pipeline::{self, Source, pixel_params},
         quality,
+        recipe::{Denoise, RenderedRecipe},
+        retouch::{self, Retouching},
         sharpening::Sharpener,
+        texture,
     },
     model::{
+        masks::MaskShape,
         point_color::{SwatchView, without_visualization},
         recipe::Recipe,
         valid::ValidRecipe,
@@ -529,19 +533,20 @@ impl ExportBackend {
             return Ok(out);
         }
 
-        // Validate active mask rasters early (missing raster is a hard error on both paths).
-        for m in resolved.recipe.masks.iter().filter(|m| m.is_active()) {
+        // Validate camera profile & active mask rasters early (hard errors on both paths).
+        let r = resolved.recipe.as_ref();
+        if let Some(p) = &r.profile {
+            p.ensure_camera(&image.metadata)?;
+        }
+        if r.lens_ca {
+            crate::lens::auto_ca::prime(image);
+        }
+        for m in r.masks.iter().filter(|m| m.is_active()) {
             rawmakase_model::storage::mask_assets::ensure_shaped(
                 crate::model::masks::bitmap_refs(std::slice::from_ref(m)),
             )?;
         }
 
-        // Prepare CPU pre-stages (highlight recovery, NR/AI blend, retouch, Texture, map).
-        // These do not mutate `image`, so a CPU fallback always has clean inputs.
-        let source = resolved.source(image, ai, cancel, None)?;
-        ensure!(!cancel.is_cancelled(), "Render superseded");
-
-        let r = resolved.recipe.as_ref();
         let g = resolved.geometry;
         let scale = image.photo_scale();
         let (out_w, out_h) = quality::output_size(g.width, g.height, max_edge);
@@ -550,37 +555,22 @@ impl ExportBackend {
         base.sharpening = 0.;
         base.validate()?;
 
-        let texture = crate::develop::texture::measured(&base);
-        let untextured = (texture != 0.).then(|| source.image.clone());
-        let textured_img = if texture != 0. {
-            base.effects.texture = 0.;
-            quality::textured(&source.image, texture, scale, cancel, None)?
-        } else {
-            source.image.clone()
+        // Prepare highlight recovery and optional AI Denoise blend on CPU (neither mutates
+        // `image`). Color NR, Luminance NR, measurement box-reduction and Texture run on
+        // the GPU inside `execute_on_gpu` so fallback never duplicates pyramid work.
+        let recovered = quality::recovered(image, cancel)?;
+        ensure!(!cancel.is_cancelled(), "Render superseded");
+
+        let denoise = r.denoise_with(ai.filter(|a| a.fits(image)));
+        let ai_base = match denoise.as_ref().and_then(|d| d.ai.as_ref()) {
+            Some(ai_blend) => ai_blend.apply(&recovered),
+            None => recovered,
         };
         ensure!(!cancel.is_cancelled(), "Render superseded");
 
-        let (measured, unretouched) = quality::measurement_copies(&source, &base, None, cancel)?;
-        let toned = Toned {
-            image: textured_img,
-            scale,
-            untextured,
-            measured: Some(measured),
-            unretouched: Some(unretouched),
-            measures: None,
-        };
-        let Some(mut params) = pixel_params::pixel_params(toned.source(), &base) else {
-            let out = crate::develop::render_export(image, recipe, ai, max_edge, space, cancel)?
-                .into_format(format);
-            let mut meta = self.lock_meta();
-            meta.cpu_renders += 1;
-            meta.record_fallback(ExportFallbackKind::UnsupportedRecipe);
-            return Ok(out);
-        };
-        params.color = None;
-
         let job = PreparedExport {
-            toned: &toned,
+            ai_base: &ai_base,
+            denoise,
             base: &base,
             recipe: r,
             geometry: g,
@@ -589,7 +579,6 @@ impl ExportBackend {
             out_h,
             space,
             format,
-            params,
         };
 
         // Acquire the serialized GPU execution lock (`meta` remains free for `status()`).
@@ -675,7 +664,8 @@ fn unsupported_recipe_reason(r: &Recipe) -> Option<&'static str> {
 }
 
 struct PreparedExport<'a> {
-    toned: &'a Toned,
+    ai_base: &'a Arc<CameraImage>,
+    denoise: Option<Denoise>,
     base: &'a Recipe,
     recipe: &'a Recipe,
     geometry: Geometry,
@@ -684,7 +674,34 @@ struct PreparedExport<'a> {
     out_h: u32,
     space: OutputSpace,
     format: ExportFormat,
-    params: PixelParams,
+}
+
+fn has_auto_mask_brush(r: &Recipe) -> bool {
+    r.masks.iter().filter(|m| m.is_active()).any(|m| {
+        m.components.iter().any(|c| match &c.shape {
+            MaskShape::Brush { strokes } => strokes.iter().any(|s| s.auto_mask),
+            _ => false,
+        })
+    })
+}
+
+fn reduced_camera_image(
+    base: &CameraImage,
+    width: u32,
+    height: u32,
+    pixels: Vec<[f32; 3]>,
+) -> CameraImage {
+    CameraImage {
+        recovered: Default::default(),
+        width,
+        height,
+        pixels: pixels.into(),
+        metadata: base.metadata.clone(),
+        fast: base.fast,
+        scale_factor: base.scale_factor,
+        scale_clipped: base.scale_clipped,
+        hdr: Default::default(),
+    }
 }
 
 /// Executes a prepared export on `exec`'s GPU engine, performing lazy initialization
@@ -692,7 +709,7 @@ struct PreparedExport<'a> {
 fn execute_on_gpu(
     exec: &mut ExecState,
     meta: &Mutex<StatusState>,
-    mut job: PreparedExport<'_>,
+    job: PreparedExport<'_>,
     cancel: Cancel<'_>,
 ) -> std::result::Result<ExportImage, GpuFailure> {
     if cancel.is_cancelled() {
@@ -740,9 +757,9 @@ fn execute_on_gpu(
             return Err(GpuFailure::Cancelled);
         }
         let attempt = match &mut exec.engine {
-            Engine::Gpu(ctx) => ctx.render_banded(&mut job, band_cap, cancel),
+            Engine::Gpu(ctx) => ctx.render_banded(&job, band_cap, cancel),
             #[cfg(test)]
-            Engine::Mock(mock) => mock.render_banded(&mut job, band_cap, cancel),
+            Engine::Mock(mock) => mock.render_banded(&job, band_cap, cancel),
             Engine::Uninitialized | Engine::Disabled => {
                 unreachable!("engine initialized or handled above")
             }
@@ -962,6 +979,7 @@ struct GpuExportContext {
     queue: wgpu::Queue,
     health: Arc<DeviceHealth>,
     name: String,
+    pyramid: GpuPyramid,
     sample_layout: wgpu::BindGroupLayout,
     sample_pipeline: wgpu::ComputePipeline,
     develop_layout: wgpu::BindGroupLayout,
@@ -973,6 +991,38 @@ struct GpuExportContext {
     finish_pipelines: [wgpu::ComputePipeline; 7],
     no_kept: wgpu::Buffer,
     buffers: ExportBuffers,
+}
+
+impl PyramidHost for GpuExportContext {
+    type Error = GpuFailure;
+
+    fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    fn submit(&self, encoder: wgpu::CommandEncoder) -> wgpu::SubmissionIndex {
+        self.queue.submit([encoder.finish()])
+    }
+
+    fn wait(
+        &self,
+        submission: wgpu::SubmissionIndex,
+        cancel: Cancel<'_>,
+    ) -> std::result::Result<(), GpuFailure> {
+        self.wait_band(submission, cancel)
+    }
+
+    fn cancelled(&self) -> GpuFailure {
+        GpuFailure::Cancelled
+    }
+
+    fn readback_error(&self, message: String) -> GpuFailure {
+        GpuFailure::Session(ExportFallbackKind::DeviceLostOrTimeout, message)
+    }
+
+    fn exceeds_limits(&self, message: String) -> GpuFailure {
+        GpuFailure::PerPhoto(ExportFallbackKind::ExceedsLimits, message)
+    }
 }
 
 const FINISH_BLUR_H: usize = 0;
@@ -1046,6 +1096,7 @@ impl GpuExportContext {
         let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
         let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
 
+        let pyramid = GpuPyramid::new(&device);
         let (sample_layout, sample_pipeline) = Resident::create_sample_pipeline(&device);
         let (develop_layout, develop_pipeline_layout) = Developer::create_layouts(&device);
         let (finish_layout, finish_pipelines) = create_export_finish_pipelines(&device);
@@ -1071,6 +1122,7 @@ impl GpuExportContext {
             queue,
             health,
             name: info.name,
+            pyramid,
             sample_layout,
             sample_pipeline,
             develop_layout,
@@ -1202,7 +1254,7 @@ impl GpuExportContext {
 
     fn render_banded(
         &mut self,
-        job: &mut PreparedExport<'_>,
+        job: &PreparedExport<'_>,
         band_cap: Option<u32>,
         cancel: Cancel<'_>,
     ) -> std::result::Result<ExportImage, GpuFailure> {
@@ -1219,24 +1271,18 @@ impl GpuExportContext {
             .min(limits.max_buffer_size);
         let max_wg = limits.max_compute_workgroups_per_dimension;
 
-        let source_img = &job.toned.image;
+        let source_img = job.ai_base;
         let source_bytes = source_img.pixels.len() as u64 * 12;
         let coverage_bytes = source_img
             .metadata
             .coverage
             .as_ref()
             .map_or(16, |c| (c.values.len() as u64).next_multiple_of(4).max(16));
-        let tables_bytes = (job.params.tables.len() as u64 * 4).max(16);
-        let grid_bytes = job
-            .params
-            .grid
-            .as_ref()
-            .map_or(16, |gr| (gr.values().len() as u64 * 4).max(16));
 
         if source_bytes > max_binding
             || coverage_bytes > max_binding
-            || tables_bytes > max_binding
-            || grid_bytes > max_binding
+            || source_img.width.div_ceil(16) > max_wg
+            || source_img.height.div_ceil(16) > max_wg
             || full_w.div_ceil(16) > max_wg
             || out_w.div_ceil(16) > max_wg
         {
@@ -1323,6 +1369,14 @@ impl GpuExportContext {
         let vignette = PostCropVignette::new(&job.recipe.effects, [full_w, full_h]);
         let grain = GrainField::new(&job.recipe.effects, full_w.max(full_h) as f32 / job.scale);
         let has_masks = job.base.masks.iter().any(|m| m.is_active());
+        let chroma = job.denoise.as_ref().and_then(|d| d.chroma);
+        let luminance = job.denoise.as_ref().and_then(|d| d.luminance);
+        let retouch_ops = Retouching::of(job.recipe);
+        let texture_amount = texture::measured(job.base);
+        let mut base_no_tex = job.base.clone();
+        if texture_amount != 0. {
+            base_no_tex.effects.texture = 0.;
+        }
 
         // Prebuild static sampling parameter template (per-band REGION & COUNT updated in loop).
         let mut sampling_template = vec![0f32; sample_slot::HEADER];
@@ -1339,8 +1393,12 @@ impl GpuExportContext {
             sampling_template[sample_slot::COVERAGE.start + 1] = c.height as f32;
         }
         let mut lens_tables = Vec::new();
-        let lens =
-            pipeline::lens_gpu_params(source_img, job.base, sample_slot::HEADER, &mut lens_tables);
+        let lens = pipeline::lens_gpu_params(
+            source_img,
+            &base_no_tex,
+            sample_slot::HEADER,
+            &mut lens_tables,
+        );
         sampling_template[sample_slot::LENS.start..sample_slot::GAIN_MAP.end]
             .copy_from_slice(&lens);
         sampling_template.extend(lens_tables);
@@ -1353,19 +1411,207 @@ impl GpuExportContext {
             ExportFormat::Rgb16 => ExportPixels::Rgb16(vec![0u16; total_out_pixels * 3]),
         };
 
+        let (meas_w, meas_h) =
+            pipeline::measurement_size(source_img.width, source_img.height, local_tone::MAP_EDGE);
+        let meas_crop = local_tone::inner_crop_rect(source_img)
+            .map(|[x0, y0, x1, y1]| [x0 as u32, y0 as u32, x1 as u32, y1 as u32])
+            .unwrap_or([0, 0, source_img.width, source_img.height]);
+        let file_correction = !base_no_tex.file_lens_correction_left_out(&source_img.metadata);
+
         self.scoped(|ctx| {
             if cancel.is_cancelled() {
                 return Err(GpuFailure::Cancelled);
             }
 
-            // Upload per-photo resident inputs once.
-            let photo_buf = Self::upload_storage(
+            // 1. Upload camera image once (with COPY_SRC for optional retouch/Auto Mask readback).
+            let photo_buf = Self::ensure_buffer(
                 &ctx.device,
-                &ctx.queue,
                 &mut ctx.buffers.photo,
                 "Export photo",
-                bytemuck::cast_slice(&source_img.pixels),
+                source_bytes,
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
             );
+            if !source_img.pixels.is_empty() {
+                ctx.queue
+                    .write_buffer(&photo_buf, 0, bytemuck::cast_slice(&source_img.pixels));
+            }
+
+            // 2. Run Color NR and Luminance NR in-place on `photo_buf` using the shared
+            //    GPU Laplacian pyramid module.
+            let photo_scale = source_img.photo_scale();
+            if let Some(d) = chroma {
+                ctx.pyramid.apply_chroma_denoise(
+                    ctx,
+                    &photo_buf,
+                    source_img.width,
+                    source_img.height,
+                    source_img.metadata.wb,
+                    photo_scale,
+                    d,
+                    cancel,
+                )?;
+            }
+            if let Some(d) = luminance {
+                ctx.pyramid.apply_luminance_denoise(
+                    ctx,
+                    &photo_buf,
+                    source_img.width,
+                    source_img.height,
+                    source_img.metadata.wb,
+                    photo_scale,
+                    d,
+                    cancel,
+                )?;
+            }
+
+            // 3. Build measurement copies (`unretouched` and `measured`) by box-reducing the
+            //    GPU `photo_buf` (~2 MB readback) and applying CPU lens shading/corner clamping.
+            let unretouched_pixels = ctx.pyramid.box_reduce(
+                ctx,
+                &photo_buf,
+                source_img.width,
+                source_img.height,
+                meas_crop,
+                meas_w,
+                meas_h,
+                cancel,
+            )?;
+            let unretouched_measured = Arc::new(pipeline::finish_measurement_source(
+                reduced_camera_image(source_img, meas_w, meas_h, unretouched_pixels),
+                file_correction,
+            ));
+
+            let mut gpu_modified = chroma.is_some() || luminance.is_some();
+            let mut cpu_guide_override: Option<CameraImage> = None;
+            let measured = if retouch_ops.is_empty() {
+                unretouched_measured.clone()
+            } else {
+                let retouch_src_owned;
+                let retouch_src: &CameraImage = if gpu_modified {
+                    let pixels = GpuPyramid::readback_photo(
+                        ctx,
+                        &photo_buf,
+                        source_img.width,
+                        source_img.height,
+                        cancel,
+                    )?;
+                    retouch_src_owned = reduced_camera_image(
+                        source_img,
+                        source_img.width,
+                        source_img.height,
+                        pixels,
+                    );
+                    &retouch_src_owned
+                } else {
+                    source_img
+                };
+                if cancel.is_cancelled() {
+                    return Err(GpuFailure::Cancelled);
+                }
+                let retouched_img = retouch::apply(retouch_src, retouch_ops).map_err(|e| {
+                    if cancel.is_cancelled() {
+                        GpuFailure::Cancelled
+                    } else {
+                        GpuFailure::Hard(e)
+                    }
+                })?;
+                if cancel.is_cancelled() {
+                    return Err(GpuFailure::Cancelled);
+                }
+                ctx.queue
+                    .write_buffer(&photo_buf, 0, bytemuck::cast_slice(&retouched_img.pixels));
+                gpu_modified = true;
+                let meas_pixels = ctx.pyramid.box_reduce(
+                    ctx,
+                    &photo_buf,
+                    source_img.width,
+                    source_img.height,
+                    meas_crop,
+                    meas_w,
+                    meas_h,
+                    cancel,
+                )?;
+                if has_masks && has_auto_mask_brush(&base_no_tex) && texture_amount == 0. {
+                    cpu_guide_override = Some(retouched_img);
+                }
+                Arc::new(pipeline::finish_measurement_source(
+                    reduced_camera_image(source_img, meas_w, meas_h, meas_pixels),
+                    file_correction,
+                ))
+            };
+
+            // 4. Build per-pixel develop parameters & Shadows/Highlights map from the
+            //    measurement copies (which intentionally exclude measured Texture).
+            let mut param_source = Source::new(source_img);
+            param_source.measured = Some(&measured);
+            param_source.unretouched = Some(&unretouched_measured);
+            let Some(mut params) = pixel_params::pixel_params(param_source, &base_no_tex) else {
+                return Err(GpuFailure::PerPhoto(
+                    ExportFallbackKind::UnsupportedRecipe,
+                    "Recipe is not supported by GPU develop".into(),
+                ));
+            };
+            params.color = None;
+
+            let tables_bytes = (params.tables.len() as u64 * 4).max(16);
+            let grid_bytes = params
+                .grid
+                .as_ref()
+                .map_or(16, |gr| (gr.values().len() as u64 * 4).max(16));
+            if tables_bytes > max_binding || grid_bytes > max_binding {
+                return Err(GpuFailure::PerPhoto(
+                    ExportFallbackKind::ExceedsLimits,
+                    "Develop tables or map exceed GPU storage buffer limit".into(),
+                ));
+            }
+
+            // 5. Run measured Texture in-place on `photo_buf` after measurement copies.
+            if texture_amount != 0. {
+                let offset = texture::level_offset(source_img, job.scale);
+                ctx.pyramid.apply_texture(
+                    ctx,
+                    &photo_buf,
+                    source_img.width,
+                    source_img.height,
+                    offset,
+                    texture_amount,
+                    cancel,
+                )?;
+                gpu_modified = true;
+            }
+
+            // 6. Prepare per-photo mask weigher once (so brush rasters are built once, not
+            //    once per band). Only read back `photo_buf` when an Auto Mask brush needs
+            //    the post-NR/post-Texture camera pixels as its color guide.
+            let mask_guide_owned: Option<CameraImage> =
+                if has_masks && has_auto_mask_brush(&base_no_tex) && gpu_modified {
+                    if let Some(img) = cpu_guide_override {
+                        Some(img)
+                    } else {
+                        let pixels = GpuPyramid::readback_photo(
+                            ctx,
+                            &photo_buf,
+                            source_img.width,
+                            source_img.height,
+                            cancel,
+                        )?;
+                        Some(reduced_camera_image(
+                            source_img,
+                            source_img.width,
+                            source_img.height,
+                            pixels,
+                        ))
+                    }
+                } else {
+                    None
+                };
+            let mask_guide_img: &CameraImage = mask_guide_owned.as_ref().unwrap_or(source_img);
+            let weigher = has_masks
+                .then(|| Weigher::new(mask_guide_img, &base_no_tex.masks, Selection::Active));
+
+            // 7. Upload static per-photo auxiliary buffers.
             let coverage_buf = match &source_img.metadata.coverage {
                 Some(mask) => {
                     let packed: Vec<u32> = mask
@@ -1393,7 +1639,7 @@ impl GpuExportContext {
                     wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 ),
             };
-            let grid_buf = match &job.params.grid {
+            let grid_buf = match &params.grid {
                 Some(grid) => Self::upload_storage(
                     &ctx.device,
                     &ctx.queue,
@@ -1417,28 +1663,26 @@ impl GpuExportContext {
                 bytemuck::cast_slice(&finish_weights),
             );
 
-            // Upload params/tables now if unmasked or if mask headers/tables were already
-            // installed by an earlier OOM attempt; otherwise band 0 installs them via `set_masks`.
-            let mut masks_initialized =
-                has_masks && job.params.get(pixel_params::slot::MASKS)[0] > 0.;
-            let mut params_buf = if !has_masks || masks_initialized {
+            // Upload params/tables now if unmasked; otherwise band 0 installs mask headers via `set_masks`.
+            let mut masks_initialized = false;
+            let mut params_buf = if !has_masks {
                 Some(Self::upload_storage(
                     &ctx.device,
                     &ctx.queue,
                     &mut ctx.buffers.params,
                     "Export develop params",
-                    bytemuck::cast_slice(&job.params.params),
+                    bytemuck::cast_slice(&params.params),
                 ))
             } else {
                 None
             };
-            let mut tables_buf = if !has_masks || masks_initialized {
+            let mut tables_buf = if !has_masks {
                 Some(Self::upload_storage(
                     &ctx.device,
                     &ctx.queue,
                     &mut ctx.buffers.tables,
                     "Export develop tables",
-                    bytemuck::cast_slice(&job.params.tables),
+                    bytemuck::cast_slice(&params.tables),
                 ))
             } else {
                 None
@@ -1456,29 +1700,20 @@ impl GpuExportContext {
                 let crop_h = band.sy_h();
 
                 // Evaluate per-band mask weights when active.
-                if has_masks {
+                if let Some(weigher) = weigher.as_ref() {
                     let region = [0, band.y_comp0, full_w, comp_h];
-                    let weights = pipeline::mask_weights(
-                        job.toned, job.base, &g, region, 0., None, None, cancel,
-                    )
-                    .map_err(|e| {
-                        if cancel.is_cancelled() {
-                            GpuFailure::Cancelled
-                        } else {
-                            GpuFailure::Hard(e)
-                        }
-                    })?;
+                    let weights = weigher.weights(mask_guide_img, &base_no_tex, &g, region, None);
+                    if cancel.is_cancelled() {
+                        return Err(GpuFailure::Cancelled);
+                    }
                     if !masks_initialized {
-                        if !job
-                            .params
-                            .set_masks(job.toned.source(), job.base, weights.as_deref())
-                        {
+                        if !params.set_masks(param_source, &base_no_tex, Some(&weights)) {
                             return Err(GpuFailure::PerPhoto(
                                 ExportFallbackKind::UnsupportedRecipe,
                                 "Mask configuration not supported on GPU".into(),
                             ));
                         }
-                        if (job.params.tables.len() as u64 * 4) > max_binding {
+                        if (params.tables.len() as u64 * 4) > max_binding {
                             return Err(GpuFailure::PerPhoto(
                                 ExportFallbackKind::ExceedsLimits,
                                 "Mask tables exceed GPU storage buffer limit".into(),
@@ -1489,22 +1724,22 @@ impl GpuExportContext {
                             &ctx.queue,
                             &mut ctx.buffers.params,
                             "Export develop params",
-                            bytemuck::cast_slice(&job.params.params),
+                            bytemuck::cast_slice(&params.params),
                         ));
                         tables_buf = Some(Self::upload_storage(
                             &ctx.device,
                             &ctx.queue,
                             &mut ctx.buffers.tables,
                             "Export develop tables",
-                            bytemuck::cast_slice(&job.params.tables),
+                            bytemuck::cast_slice(&params.tables),
                         ));
                         masks_initialized = true;
-                    } else if let Some(w) = weights.as_deref() {
-                        job.params.update_mask_weights(w);
+                    } else {
+                        params.update_mask_weights(&weights);
                     }
                 }
 
-                let mask_weights_bytes = job.params.weights.len() as u64 * 4;
+                let mask_weights_bytes = params.weights.len() as u64 * 4;
                 if mask_weights_bytes > max_binding {
                     return Err(GpuFailure::PerPhoto(
                         ExportFallbackKind::ExceedsLimits,
@@ -1516,7 +1751,7 @@ impl GpuExportContext {
                     &ctx.queue,
                     &mut ctx.buffers.mask_weights,
                     "Export band mask weights",
-                    bytemuck::cast_slice(&job.params.weights),
+                    bytemuck::cast_slice(&params.weights),
                 );
 
                 // Ensure reusable band buffers fit this band.
@@ -1667,7 +1902,7 @@ impl GpuExportContext {
                             usage: wgpu::BufferUsages::UNIFORM,
                         });
 
-                let develop_pipeline = ctx.develop_pipeline(Variant::of_in(&job.params, job.space));
+                let develop_pipeline = ctx.develop_pipeline(Variant::of_in(&params, job.space));
 
                 // Bind groups for sample_region, develop, and export_finish.
                 let sample_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -2028,7 +2263,7 @@ fn create_export_finish_pipelines(
 trait MockGpuDriver {
     fn render_banded(
         &mut self,
-        job: &mut PreparedExport<'_>,
+        job: &PreparedExport<'_>,
         band_cap: Option<u32>,
         cancel: Cancel<'_>,
     ) -> std::result::Result<ExportImage, GpuFailure>;

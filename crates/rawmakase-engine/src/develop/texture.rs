@@ -26,10 +26,10 @@ pub(crate) fn measured(r: &crate::model::recipe::Recipe) -> f32 {
 
 /// Pyramid levels, in full-resolution pixels: level `l` holds detail about `2^l`
 /// pixels across.
-const LEVELS: usize = 6;
+pub(crate) const LEVELS: usize = 6;
 /// Each level's weight and the log2 contrast above which it is compressed.
-const WEIGHTS: [f32; LEVELS] = [1.402, 0.665, 1.571, 0.583, 0., 0.072];
-const THRESHOLDS: [f32; LEVELS] = [0.506, 0.098, 0.167, 0.192, 0.135, 0.176];
+pub(crate) const WEIGHTS: [f32; LEVELS] = [1.402, 0.665, 1.571, 0.583, 0., 0.072];
+pub(crate) const THRESHOLDS: [f32; LEVELS] = [0.506, 0.098, 0.167, 0.192, 0.135, 0.176];
 /// Strength by Texture.
 const AMOUNTS: [f32; 6] = [-1., -0.5, 0., 0.25, 0.5, 1.];
 const STRENGTH: [f32; 6] = [-0.752, -0.499, 0., 0.334, 0.546, 0.852];
@@ -50,21 +50,27 @@ pub(crate) struct TextureDetail {
     channels: [Vec<i16>; 3],
 }
 /// The log2 detail per stored step: ±4 EV at 1/8192 EV.
-const DETAIL_STEP: f32 = 1. / 8192.;
+pub(crate) const DETAIL_STEP: f32 = 1. / 8192.;
+
+/// The full-resolution pyramid level that `im`'s finest level represents at `scale`.
+pub(crate) fn level_offset(im: &CameraImage, scale: f32) -> usize {
+    // The image's size against the full-resolution photo's, also for a half-size
+    // draft decode whose caller passes scale 1 (`render_stage`).
+    let full = im.metadata.width.max(im.metadata.height);
+    let scale = if full > 0 {
+        (im.width.max(im.height) as f32 / full as f32).min(scale.max(1e-3))
+    } else {
+        scale
+    };
+    // A reduced image's level 0 is a coarser full-resolution level.
+    (-scale.max(1e-3).log2()).round().max(0.) as usize
+}
+
 impl TextureDetail {
     /// The detail of `im`, an image `scale` times the full-resolution photo's size;
     /// stops with an error when `cancel` is set.
     pub(crate) fn of(im: &CameraImage, scale: f32, cancel: Cancel<'_>) -> Result<Self> {
-        // The image's size against the full-resolution photo's, also for a half-size
-        // draft decode whose caller passes scale 1 (`render_stage`).
-        let full = im.metadata.width.max(im.metadata.height);
-        let scale = if full > 0 {
-            (im.width.max(im.height) as f32 / full as f32).min(scale.max(1e-3))
-        } else {
-            scale
-        };
-        // A reduced image's level 0 is a coarser full-resolution level.
-        let offset = (-scale.max(1e-3).log2()).round().max(0.) as usize;
+        let offset = level_offset(im, scale);
         let mut channels: [Vec<i16>; 3] = Default::default();
         for (c, out) in channels.iter_mut().enumerate() {
             let logs = Plane {

@@ -102,6 +102,7 @@ use wgpu::util::DeviceExt;
 mod develop;
 pub mod export;
 mod present;
+mod pyramid;
 mod resident;
 pub(crate) mod sampling;
 mod uniforms;

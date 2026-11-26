@@ -120,7 +120,26 @@ pub fn preview(im: &CameraImage, max: u32) -> CameraImage {
 /// photo without any of it: no shading and no clamp of the corners its distortion
 /// would leave out of frame.
 pub(crate) fn measurement_source(im: Source, max: u32, file_correction: bool) -> CameraImage {
-    let mut copy = crop_clamped_preview(im, max);
+    finish_measurement_source(crop_clamped_preview(im, max), file_correction)
+}
+/// Dimensions of [`crop_clamped_preview`] for a `width` × `height` image reduced to `max`.
+pub(crate) fn measurement_size(width: u32, height: u32, max: u32) -> (u32, u32) {
+    if width.max(height) <= max {
+        (width, height)
+    } else {
+        let scale = max as f32 / width.max(height) as f32;
+        (
+            (width as f32 * scale).round() as u32,
+            (height as f32 * scale).round() as u32,
+        )
+    }
+}
+/// Applies the lens shading and distortion-corner clamping tail of [`measurement_source`]
+/// to an already box-reduced measurement copy.
+pub(crate) fn finish_measurement_source(
+    mut copy: CameraImage,
+    file_correction: bool,
+) -> CameraImage {
     let lens = (copy.metadata.lens.as_ref()).filter(|l| file_correction || !l.default_on);
     let grid = lens.and_then(|l| l.gain_map.clone());
     let radial = lens

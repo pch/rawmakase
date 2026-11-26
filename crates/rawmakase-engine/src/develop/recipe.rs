@@ -57,9 +57,9 @@ impl RenderedRecipe for Recipe {
 /// luminance noise reduction.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Denoise {
-    ai: Option<crate::develop::ai_denoise::AiBlend>,
-    chroma: Option<crate::develop::color_noise::ChromaDenoise>,
-    luminance: Option<crate::develop::luminance_noise::LuminanceDenoise>,
+    pub(crate) ai: Option<crate::develop::ai_denoise::AiBlend>,
+    pub(crate) chroma: Option<crate::develop::color_noise::ChromaDenoise>,
+    pub(crate) luminance: Option<crate::develop::luminance_noise::LuminanceDenoise>,
 }
 impl Denoise {
     /// `source` (the plain image, highlights recovered) with all of it applied.
