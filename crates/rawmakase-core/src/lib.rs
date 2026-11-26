@@ -97,7 +97,7 @@ pub use mailbox::{Mailbox, Numbered, Shown, Taken};
 pub use photo::{Decode, Photo};
 /// The values an [`ExportSettings`]'s fields take.
 #[cfg(feature = "export")]
-pub use rawmakase_interop::export_settings::{Format, Include};
+pub use rawmakase_interop::export_settings::Include;
 #[cfg(feature = "export")]
 pub use rawmakase_model::color::OutputSpace;
 #[cfg(feature = "export")]

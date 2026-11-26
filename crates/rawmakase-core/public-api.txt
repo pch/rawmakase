@@ -12,7 +12,6 @@ impl core::clone::Clone for rawmakase_core::DecodeStats
 impl core::clone::Clone for rawmakase_core::DefaultChoice
 impl core::clone::Clone for rawmakase_core::ErrorKind
 impl core::clone::Clone for rawmakase_core::ExportSettings
-impl core::clone::Clone for rawmakase_core::Format
 impl core::clone::Clone for rawmakase_core::HdrGamut
 impl core::clone::Clone for rawmakase_core::HdrOutput
 impl core::clone::Clone for rawmakase_core::HdrTransfer
@@ -53,7 +52,6 @@ impl core::cmp::PartialEq for rawmakase_core::DecodeStats
 impl core::cmp::PartialEq for rawmakase_core::DefaultChoice
 impl core::cmp::PartialEq for rawmakase_core::ErrorKind
 impl core::cmp::PartialEq for rawmakase_core::ExportSettings
-impl core::cmp::PartialEq for rawmakase_core::Format
 impl core::cmp::PartialEq for rawmakase_core::HdrGamut
 impl core::cmp::PartialEq for rawmakase_core::HdrOutput
 impl core::cmp::PartialEq for rawmakase_core::HdrTransfer
@@ -72,7 +70,6 @@ impl core::default::Default for rawmakase_core::CacheLimits
 impl core::default::Default for rawmakase_core::ContextBuilder
 impl core::default::Default for rawmakase_core::DefaultChoice
 impl core::default::Default for rawmakase_core::ExportSettings
-impl core::default::Default for rawmakase_core::Format
 impl core::default::Default for rawmakase_core::HdrGamut
 impl core::default::Default for rawmakase_core::HdrOutput
 impl core::default::Default for rawmakase_core::HdrTransfer
@@ -98,7 +95,6 @@ impl core::fmt::Debug for rawmakase_core::DefaultChoice
 impl core::fmt::Debug for rawmakase_core::Error
 impl core::fmt::Debug for rawmakase_core::ErrorKind
 impl core::fmt::Debug for rawmakase_core::ExportSettings
-impl core::fmt::Debug for rawmakase_core::Format
 impl core::fmt::Debug for rawmakase_core::Frame
 impl core::fmt::Debug for rawmakase_core::HdrGamut
 impl core::fmt::Debug for rawmakase_core::HdrOutput
@@ -126,7 +122,6 @@ impl core::marker::Copy for rawmakase_core::CacheLimits
 impl core::marker::Copy for rawmakase_core::Decode
 impl core::marker::Copy for rawmakase_core::DecodeStats
 impl core::marker::Copy for rawmakase_core::ErrorKind
-impl core::marker::Copy for rawmakase_core::Format
 impl core::marker::Copy for rawmakase_core::HdrGamut
 impl core::marker::Copy for rawmakase_core::HdrOutput
 impl core::marker::Copy for rawmakase_core::HdrTransfer
@@ -150,7 +145,6 @@ impl core::marker::Send for rawmakase_core::DefaultChoice
 impl core::marker::Send for rawmakase_core::Error
 impl core::marker::Send for rawmakase_core::ErrorKind
 impl core::marker::Send for rawmakase_core::ExportSettings
-impl core::marker::Send for rawmakase_core::Format
 impl core::marker::Send for rawmakase_core::Frame
 impl core::marker::Send for rawmakase_core::HdrGamut
 impl core::marker::Send for rawmakase_core::HdrOutput
@@ -183,7 +177,6 @@ impl core::marker::Sync for rawmakase_core::DefaultChoice
 impl core::marker::Sync for rawmakase_core::Error
 impl core::marker::Sync for rawmakase_core::ErrorKind
 impl core::marker::Sync for rawmakase_core::ExportSettings
-impl core::marker::Sync for rawmakase_core::Format
 impl core::marker::Sync for rawmakase_core::Frame
 impl core::marker::Sync for rawmakase_core::HdrGamut
 impl core::marker::Sync for rawmakase_core::HdrOutput
@@ -207,8 +200,6 @@ impl serde_core::ser::Serialize for rawmakase_core::CameraDefault
 impl serde_core::ser::Serialize for rawmakase_core::CameraProfile
 impl serde_core::ser::Serialize for rawmakase_core::Control
 impl serde_core::ser::Serialize for rawmakase_core::DefaultChoice
-impl serde_core::ser::Serialize for rawmakase_core::ExportSettings
-impl serde_core::ser::Serialize for rawmakase_core::Format
 impl serde_core::ser::Serialize for rawmakase_core::HdrGamut
 impl serde_core::ser::Serialize for rawmakase_core::HdrOutput
 impl serde_core::ser::Serialize for rawmakase_core::HdrTransfer
@@ -227,8 +218,6 @@ impl<'a> core::marker::Sync for rawmakase_core::Cancel<'a>
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::CameraDefault
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::CameraProfile
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::DefaultChoice
-impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::ExportSettings where rawmakase_core::ExportSettings: core::default::Default
-impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Format
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrGamut
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrOutput
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrTransfer
@@ -256,7 +245,6 @@ impl<T> core::marker::Sync for rawmakase_core::Numbered<T> where T: core::marker
 impl<T> core::marker::Sync for rawmakase_core::Taken<T> where rawmakase_core::Numbered<T>: core::marker::Sync
 pub const fn rawmakase_core::Parameter::name(self) -> &'static str
 pub const rawmakase_core::Cancel::NEVER: Self [impl<'a> rawmakase_core::Cancel<'a>]
-pub const rawmakase_core::Format::ALL: [Self; 4]
 pub const rawmakase_core::HdrGamut::ALL: [Self; 3]
 pub const rawmakase_core::HdrTransfer::ALL: [Self; 3]
 pub const rawmakase_core::Include::ALL: [Self; 6]
@@ -268,7 +256,6 @@ pub const rawmakase_core::Recipe::CROP_RANGE: core::ops::range::RangeInclusive<f
 pub enum rawmakase_core::Decode
 pub enum rawmakase_core::DefaultChoice
 pub enum rawmakase_core::ErrorKind #[non_exhaustive]
-pub enum rawmakase_core::Format
 pub enum rawmakase_core::HdrGamut
 pub enum rawmakase_core::HdrTransfer
 pub enum rawmakase_core::Include
@@ -321,35 +308,6 @@ pub fn rawmakase_core::DefaultChoice::label(&self) -> alloc::string::String
 pub fn rawmakase_core::DefaultChoice::preset(preset: &rawmakase_core::Preset) -> Self
 pub fn rawmakase_core::Error::is_cancelled(&self) -> bool
 pub fn rawmakase_core::Error::kind(&self) -> rawmakase_core::ErrorKind
-pub fn rawmakase_core::ExportSettings::base_folder(&self, source: &std::path::Path, places: &rawmakase_interop::export_settings::UserFolders) -> core::option::Option<std::path::PathBuf>
-pub fn rawmakase_core::ExportSettings::check_output(&self) -> anyhow::Result<()>
-pub fn rawmakase_core::ExportSettings::choose_color_space(&mut self, space: rawmakase_core::OutputSpace)
-pub fn rawmakase_core::ExportSettings::choose_format(&mut self, format: rawmakase_core::Format)
-pub fn rawmakase_core::ExportSettings::choose_hdr(&mut self, hdr: core::option::Option<rawmakase_core::HdrOutput>)
-pub fn rawmakase_core::ExportSettings::choose_naming(&mut self, naming: rawmakase_interop::export_settings::Naming)
-pub fn rawmakase_core::ExportSettings::choose_tokens(&mut self, tokens: &str)
-pub fn rawmakase_core::ExportSettings::custom_tokens(&self) -> core::option::Option<&str>
-pub fn rawmakase_core::ExportSettings::export_folder<'a>(&self, sources: impl core::iter::traits::collect::IntoIterator<Item = &'a std::path::Path>, places: &rawmakase_interop::export_settings::UserFolders) -> core::option::Option<std::path::PathBuf>
-pub fn rawmakase_core::ExportSettings::file_name_for(&self, source: &std::path::Path, at: &rawmakase_interop::export_settings::NameContext<'_>) -> (alloc::string::String, alloc::vec::Vec<alloc::string::String>)
-pub fn rawmakase_core::ExportSettings::hdr_output(&self) -> anyhow::Result<core::option::Option<rawmakase_core::HdrOutput>>
-pub fn rawmakase_core::ExportSettings::later_color_space(&self) -> core::option::Option<&serde_json::value::Value>
-pub fn rawmakase_core::ExportSettings::load() -> core::option::Option<Self>
-pub fn rawmakase_core::ExportSettings::mime_type(&self) -> &'static str
-pub fn rawmakase_core::ExportSettings::name_template(&self) -> rawmakase_interop::export_settings::NameTemplate
-pub fn rawmakase_core::ExportSettings::naming(&self) -> rawmakase_interop::export_settings::Naming
-pub fn rawmakase_core::ExportSettings::options(&self) -> rawmakase_interop::export_settings::ExportOptions
-pub fn rawmakase_core::ExportSettings::output_space(&self) -> anyhow::Result<rawmakase_core::OutputSpace>
-pub fn rawmakase_core::ExportSettings::save(&self) -> anyhow::Result<()>
-pub fn rawmakase_core::ExportSettings::target(&self, source: &std::path::Path, places: &rawmakase_interop::export_settings::UserFolders) -> core::option::Option<std::path::PathBuf>
-pub fn rawmakase_core::ExportSettings::target_for(&self, source: &std::path::Path, at: &rawmakase_interop::export_settings::NameContext<'_>, places: &rawmakase_interop::export_settings::UserFolders) -> core::option::Option<(std::path::PathBuf, alloc::vec::Vec<alloc::string::String>)>
-pub fn rawmakase_core::Format::check_hdr(format: rawmakase_core::Format, output: rawmakase_core::HdrOutput) -> anyhow::Result<()>
-pub fn rawmakase_core::Format::extension(self) -> &'static str
-pub fn rawmakase_core::Format::extensions_listed() -> alloc::string::String
-pub fn rawmakase_core::Format::from_path(path: &std::path::Path) -> core::option::Option<rawmakase_core::Format>
-pub fn rawmakase_core::Format::holds_hdr(self) -> bool
-pub fn rawmakase_core::Format::mime_type(self) -> &'static str
-pub fn rawmakase_core::Format::raster(self) -> rawmakase_model::storage::formats::RasterFormat
-pub fn rawmakase_core::Format::supports(self, space: rawmakase_core::OutputSpace) -> anyhow::Result<()>
 pub fn rawmakase_core::Frame::height(&self) -> u32
 pub fn rawmakase_core::Frame::is_draft(&self) -> bool
 pub fn rawmakase_core::Frame::rgb16(&self) -> alloc::vec::Vec<u16>
@@ -526,47 +484,18 @@ pub rawmakase_core::ErrorKind::Invalid
 pub rawmakase_core::ErrorKind::Missing
 pub rawmakase_core::ErrorKind::Other
 pub rawmakase_core::ErrorKind::Unsupported
-pub rawmakase_core::ExportSettings::after_export: rawmakase_interop::export_settings::AfterExport
 pub rawmakase_core::ExportSettings::capture: bool
 pub rawmakase_core::ExportSettings::color_space: rawmakase_core::OutputSpace
-pub rawmakase_core::ExportSettings::custom_text: alloc::string::String
-pub rawmakase_core::ExportSettings::descriptive: bool
-pub rawmakase_core::ExportSettings::destination: rawmakase_interop::export_settings::Destination
 pub rawmakase_core::ExportSettings::develop: bool
-pub rawmakase_core::ExportSettings::existing: rawmakase_interop::export_settings::Existing
-pub rawmakase_core::ExportSettings::folder: core::option::Option<std::path::PathBuf>
-pub rawmakase_core::ExportSettings::format: rawmakase_core::Format
 pub rawmakase_core::ExportSettings::hdr: core::option::Option<rawmakase_core::HdrOutput>
 pub rawmakase_core::ExportSettings::include: rawmakase_core::Include
 pub rawmakase_core::ExportSettings::jxl_lossy: bool
-pub rawmakase_core::ExportSettings::later_color_space: rawmakase_interop::export_settings::LaterColorSpace
-pub rawmakase_core::ExportSettings::later_fields: rawmakase_interop::export_settings::LaterFields
-pub rawmakase_core::ExportSettings::later_format: rawmakase_interop::export_settings::LaterFormat
-pub rawmakase_core::ExportSettings::later_hdr: rawmakase_interop::export_settings::LaterHdr
-pub rawmakase_core::ExportSettings::later_naming: rawmakase_interop::export_settings::LaterNaming
-pub rawmakase_core::ExportSettings::limit_size: bool
 pub rawmakase_core::ExportSettings::location: bool
-pub rawmakase_core::ExportSettings::long_edge: u32
-pub rawmakase_core::ExportSettings::name_template: core::option::Option<rawmakase_interop::export_settings::CustomNaming>
-pub rawmakase_core::ExportSettings::naming: core::option::Option<rawmakase_interop::export_settings::Naming>
+pub rawmakase_core::ExportSettings::long_edge: core::option::Option<u32>
 pub rawmakase_core::ExportSettings::ppi: u32
 pub rawmakase_core::ExportSettings::quality: u8
 pub rawmakase_core::ExportSettings::remove_location: bool
-pub rawmakase_core::ExportSettings::rename: bool
-pub rawmakase_core::ExportSettings::resize: bool
-pub rawmakase_core::ExportSettings::send_to: core::option::Option<alloc::string::String>
-pub rawmakase_core::ExportSettings::send_to_options: rawmakase_interop::export_settings::SendToOptions
-pub rawmakase_core::ExportSettings::size_limit: u32
-pub rawmakase_core::ExportSettings::start_number: u32
-pub rawmakase_core::ExportSettings::subfolder: bool
-pub rawmakase_core::ExportSettings::subfolder_name: alloc::string::String
-pub rawmakase_core::ExportSettings::uppercase: bool
-pub rawmakase_core::ExportSettings::watermark: bool
-pub rawmakase_core::ExportSettings::watermark_name: alloc::string::String
-pub rawmakase_core::Format::Jpeg
-pub rawmakase_core::Format::Jxl
-pub rawmakase_core::Format::Png
-pub rawmakase_core::Format::Tiff
+pub rawmakase_core::ExportSettings::size_limit: core::option::Option<u32>
 pub rawmakase_core::HdrGamut::DisplayP3
 pub rawmakase_core::HdrGamut::Rec2020
 pub rawmakase_core::HdrGamut::Rec709

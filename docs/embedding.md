@@ -165,3 +165,10 @@ which CI compares with the code. Each change to them is noted here.
   format its file's extension names, whatever the settings' `format`.
 - **The model's Recipe from main**: `Recipe::lens_file_correction` and its
   three methods, which came with the re-exported `Recipe`.
+- **Export settings of the library's own**: `ExportSettings` is the
+  library's, with only what an export honours: the color space or HDR
+  encoding, quality, lossy JPEG XL, a JPEG's size limit, a long edge, the
+  resolution and which metadata goes in. The desktop dialog's settings it
+  replaces (their folder, naming, watermark, Send To, and `load` and
+  `save` of the desktop's own file) are no longer shown, nor `Format`: an
+  export's format is its file's extension.
