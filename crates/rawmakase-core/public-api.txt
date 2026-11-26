@@ -433,6 +433,9 @@ pub fn rawmakase_core::Recipe::auto_straighten(&self) -> core::option::Option<ra
 pub fn rawmakase_core::Recipe::builtin_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
 pub fn rawmakase_core::Recipe::checked(&self) -> anyhow::Result<rawmakase_model::model::valid::ValidRecipe<'_>>
 pub fn rawmakase_core::Recipe::color_profile(&self, m: &rawmakase_core::Metadata) -> core::option::Option<alloc::borrow::Cow<'_, rawmakase_core::CameraProfile>>
+pub fn rawmakase_core::Recipe::file_lens_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
+pub fn rawmakase_core::Recipe::file_lens_correction_left_out(&self, m: &rawmakase_core::Metadata) -> bool
+pub fn rawmakase_core::Recipe::file_lens_correction_replaced(&self, m: &rawmakase_core::Metadata) -> bool
 pub fn rawmakase_core::Recipe::fixed_lens_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
 pub fn rawmakase_core::Recipe::for_metadata(m: &rawmakase_core::Metadata) -> Self
 pub fn rawmakase_core::Recipe::for_new_rendered(m: &rawmakase_core::Metadata) -> Self
@@ -737,6 +740,7 @@ pub rawmakase_core::Recipe::incremental_tint: f32
 pub rawmakase_core::Recipe::lens_builtin: bool
 pub rawmakase_core::Recipe::lens_ca: bool
 pub rawmakase_core::Recipe::lens_distortion: f32
+pub rawmakase_core::Recipe::lens_file_correction: bool
 pub rawmakase_core::Recipe::lens_manual_distortion: f32
 pub rawmakase_core::Recipe::lens_profile: bool
 pub rawmakase_core::Recipe::lens_profile_choice: rawmakase_model::lens::choice::LensProfileChoice

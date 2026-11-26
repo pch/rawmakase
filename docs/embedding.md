@@ -163,3 +163,5 @@ which CI compares with the code. Each change to them is noted here.
   `CameraDefault`. `Image::output_size` and `size_in` return a `Result`,
   since they resolve the recipe as the renderer does. An export writes the
   format its file's extension names, whatever the settings' `format`.
+- **The model's Recipe from main**: `Recipe::lens_file_correction` and its
+  three methods, which came with the re-exported `Recipe`.
