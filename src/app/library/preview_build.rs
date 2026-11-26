@@ -164,9 +164,15 @@ fn build_one(
             "it is larger than a preview can be ({JPEG_LIMIT} pixels a side)"
         ));
     }
-    let encoded = match PreviewCache::encode_sized(&image) {
-        Ok(encoded) => encoded,
-        Err(e) => return Outcome::Failed(format!("it could not be kept: {e:#}")),
+    let encoded = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        PreviewCache::encode_sized(&image)
+    })) {
+        Ok(Ok(encoded)) => encoded,
+        Ok(Err(e)) => return Outcome::Failed(format!("it could not be kept: {e:#}")),
+        Err(panic) => {
+            let message = crate::app::worker::panic_message(&*panic);
+            return Outcome::Failed(format!("stopped unexpectedly: {message}"));
+        }
     };
     if cancel.is_cancelled() {
         return Outcome::Cancelled;

@@ -399,9 +399,30 @@ fn cache(cache: &Mutex<Option<PreviewCache>>) -> std::sync::MutexGuard<'_, Optio
 fn reopen(at: &Mutex<Option<PreviewCache>>, path: &Path) {
     *cache(at) = PreviewCache::open(path).ok();
 }
+/// Runs a best-effort cache operation under the cache lock, reopening SQLite
+/// if the operation panics. Returns `false` if a panic occurred.
+fn with_cache_entry(
+    cache_at: &Mutex<Option<PreviewCache>>,
+    cache_path: &Path,
+    at: &Path,
+    tag: &str,
+    action: impl FnOnce(&PreviewCache, &Path, &str),
+) -> bool {
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if let Some(cache) = &*cache(cache_at) {
+            action(cache, at, tag);
+        }
+    }))
+    .is_err()
+    {
+        reopen(cache_at, cache_path);
+        return false;
+    }
+    true
+}
 /// Loads the first decodable cached preview among `(path, tag)` targets,
-/// holding the cache mutex only for SQLite lookups and corrupt-row removal
-/// while decoding JPEG bytes off-lock.
+/// holding the cache mutex only for SQLite lookups, post-decode hit touches,
+/// and corrupt-row removal while decoding JPEG bytes off-lock.
 fn load_first_tagged(
     cache_at: &Mutex<Option<PreviewCache>>,
     cache_path: &Path,
@@ -432,20 +453,20 @@ fn load_first_tagged(
                 return None;
             }
         };
+        let (at, tag) = &targets[index];
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             PreviewCache::decode_thumbnail(&jpeg)
         })) {
-            Ok(Some(image)) => return Some(image),
+            Ok(Some(image)) => {
+                with_cache_entry(cache_at, cache_path, at, tag, |cache, at, tag| {
+                    cache.touch_tagged(at, tag, &jpeg);
+                });
+                return Some(image);
+            }
             Ok(None) => {
-                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    if let Some(cache) = &*cache(cache_at) {
-                        let (at, tag) = &targets[index];
-                        let _ = cache.delete_corrupt_tagged(at, tag, &jpeg);
-                    }
-                }))
-                .is_err()
-                {
-                    reopen(cache_at, cache_path);
+                if !with_cache_entry(cache_at, cache_path, at, tag, |cache, at, tag| {
+                    let _ = cache.delete_corrupt_tagged(at, tag, &jpeg);
+                }) {
                     return None;
                 }
                 start = index + 1;
@@ -455,14 +476,15 @@ fn load_first_tagged(
     }
     None
 }
-/// Writes an off-lock encoded preview to the cache on-lock, suppressing
-/// stale-stamp skips, reopening SQLite after a cache panic, and reporting any
-/// genuine cache failure.
+/// Writes an off-lock encoded preview to the cache on-lock, skipping writes
+/// once `cancel` is set, suppressing stale-stamp skips, reopening SQLite
+/// after a cache panic, and reporting any genuine cache failure.
 #[allow(clippy::too_many_arguments)]
 fn store_encoded_tagged(
     cache_at: &Mutex<Option<PreviewCache>>,
     cache_path: &Path,
     results: &Results,
+    cancel: Option<&AtomicBool>,
     path: &Path,
     family: &str,
     tag: &str,
@@ -471,6 +493,9 @@ fn store_encoded_tagged(
 ) {
     let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut guard = cache(cache_at);
+        if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+            return None;
+        }
         let cache = guard.as_mut()?;
         let encoded = match encoded {
             Ok(encoded) => encoded,
@@ -504,6 +529,7 @@ impl Renders {
             &self.cache,
             &self.cache_path,
             &self.results,
+            None,
             path,
             family,
             tag,
@@ -639,15 +665,19 @@ impl Renders {
                         plain_of(&source),
                     ),
                 };
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
                 let encoded = PreviewCache::encode_thumbnail(&image);
                 Some((stamp, image, source.preview_tag(shows), encoded))
             }));
             let image = match rendered {
-                Ok(Some((stamp, image, tag, encoded))) => {
+                Ok(Some((stamp, image, tag, encoded))) if !cancel.load(Ordering::Relaxed) => {
                     store_encoded_tagged(
                         &cache_at,
                         &cache_path,
                         &results,
+                        Some(&cancel),
                         &path,
                         &source.tag(),
                         &tag,
@@ -656,7 +686,7 @@ impl Renders {
                     );
                     Some(image)
                 }
-                Ok(None) | Err(_) => None,
+                Ok(Some(_)) | Ok(None) | Err(_) => None,
             };
             results.send(if cancel.load(Ordering::Relaxed) {
                 EditResult::Skipped(id, ticket)

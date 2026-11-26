@@ -181,7 +181,8 @@ impl EncodedPreview {
     }
 }
 /// A cached sized-preview row fetched from SQLite for off-lock decoding with
-/// [`PreviewCache::decode_sized`] or conditional cleanup with
+/// [`PreviewCache::decode_sized`], hit recording with
+/// [`PreviewCache::touch_sized_jpeg`], or conditional cleanup with
 /// [`PreviewCache::delete_corrupt_sized`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoadedSizedPreview {
@@ -480,7 +481,8 @@ impl PreviewCache {
     }
     /// Loads the cached JPEG bytes for `path` under `tag`, checking freshness
     /// and source staleness (an offline original stays usable). Callers decode
-    /// with [`PreviewCache::decode_thumbnail`] off-lock and call
+    /// with [`PreviewCache::decode_thumbnail`] off-lock, then call
+    /// [`PreviewCache::touch_tagged`] on success or
     /// [`PreviewCache::delete_corrupt_tagged`] if decoding fails.
     pub fn load_tagged_jpeg(&self, path: &Path, tag: &str) -> Result<Option<Vec<u8>>> {
         let key = tagged(path, tag);
@@ -504,7 +506,7 @@ impl PreviewCache {
         // An offline original keeps its preview, as in Lightroom.
         let stale = stale(path, size, &modified);
         // Maintenance is best effort, as another connection may hold the database, and
-        // never changes the answer: a failed delete still misses, a failed touch hits.
+        // never changes the answer: a failed delete still misses.
         let row = Row {
             path: &self::key(path),
             family: None,
@@ -514,10 +516,6 @@ impl PreviewCache {
             let _ = self.delete_tagged_row(path, tag);
             return Ok(None);
         }
-        let _ = self
-            .db
-            .prepare_cached("UPDATE previews SET last_used=? WHERE source_path=?")
-            .and_then(|mut s| s.execute(params![now(), &key]));
         Ok(Some(jpeg))
     }
     /// Removes a stale or obsolete thumbnail row under `path` and `tag`.
@@ -526,6 +524,17 @@ impl PreviewCache {
             .prepare_cached("DELETE FROM previews WHERE source_path=?")?
             .execute([tagged(path, tag)])?;
         Ok(())
+    }
+    /// Records a cache hit on the thumbnail for `path` under `tag` only if its
+    /// stored JPEG bytes still match `jpeg`, so corrupt rows never gain
+    /// `last_used` priority and concurrent replacements keep theirs. Best
+    /// effort, as another connection may hold the database: a failed touch
+    /// still hits.
+    pub fn touch_tagged(&self, path: &Path, tag: &str, jpeg: &[u8]) {
+        let _ = self
+            .db
+            .prepare_cached("UPDATE previews SET last_used=?1 WHERE source_path=?2 AND jpeg=?3")
+            .and_then(|mut s| s.execute(params![now(), tagged(path, tag), jpeg]));
     }
     /// Removes a cached thumbnail for `path` under `tag` only if its stored
     /// JPEG bytes still match `jpeg`, preserving any valid replacement written
@@ -542,7 +551,10 @@ impl PreviewCache {
             return Ok(None);
         };
         match Self::decode_thumbnail(&jpeg) {
-            Some(image) => Ok(Some(image)),
+            Some(image) => {
+                self.touch_tagged(path, tag, &jpeg);
+                Ok(Some(image))
+            }
             None => {
                 let _ = self.delete_corrupt_tagged(path, tag, &jpeg);
                 Ok(None)
@@ -678,8 +690,8 @@ impl PreviewCache {
     /// Loads the cached sized preview JPEG and stored dimensions for `path` and
     /// `identity`, checking generation and source staleness (an offline original
     /// stays usable). Callers decode with [`PreviewCache::decode_sized`]
-    /// off-lock and call [`PreviewCache::delete_corrupt_sized`] if decoding
-    /// fails.
+    /// off-lock, then call [`PreviewCache::touch_sized_jpeg`] on success or
+    /// [`PreviewCache::delete_corrupt_sized`] if decoding fails.
     pub fn load_sized_jpeg(
         &self,
         path: &Path,
@@ -706,17 +718,11 @@ impl PreviewCache {
         let Some((size, modified, generation, width, height, jpeg)) = row else {
             return Ok(None);
         };
-        // Best effort, as for thumbnails: a failed delete still misses, a failed touch hits.
+        // Best effort, as for thumbnails: a failed delete still misses.
         if generation != SIZED_GENERATION || stale(path, size, &modified) {
             let _ = self.delete_sized_row(path, identity, kind);
             return Ok(None);
         }
-        let _ = self
-            .db
-            .prepare_cached(
-                "UPDATE sized_previews SET last_used=? WHERE source_path=? AND identity=? AND kind=?",
-            )
-            .and_then(|mut s| s.execute(params![now(), &source, identity, kind.code()]));
         Ok(Some(LoadedSizedPreview {
             width,
             height,
@@ -731,6 +737,33 @@ impl PreviewCache {
             )?
             .execute(params![key(path), identity, kind.code()])?;
         Ok(())
+    }
+    /// Records a cache hit on a sized preview of `kind` for `path` and
+    /// `identity` only if its stored dimensions and JPEG bytes still match
+    /// `loaded`. Best effort, as another connection may hold the database.
+    pub fn touch_sized_jpeg(
+        &self,
+        path: &Path,
+        identity: &str,
+        kind: PreviewKind,
+        loaded: &LoadedSizedPreview,
+    ) {
+        let _ = self
+            .db
+            .prepare_cached(
+                "UPDATE sized_previews SET last_used=?1 WHERE source_path=?2 AND identity=?3 AND kind=?4 AND width=?5 AND height=?6 AND jpeg=?7",
+            )
+            .and_then(|mut s| {
+                s.execute(params![
+                    now(),
+                    key(path),
+                    identity,
+                    kind.code(),
+                    loaded.width,
+                    loaded.height,
+                    loaded.jpeg.as_slice(),
+                ])
+            });
     }
     /// Removes a cached sized preview of `kind` for `path` and `identity` only
     /// if its stored dimensions and JPEG bytes still match `loaded`,
@@ -769,7 +802,10 @@ impl PreviewCache {
             return Ok(None);
         };
         match Self::decode_sized(&loaded) {
-            Some(image) => Ok(Some(image)),
+            Some(image) => {
+                self.touch_sized_jpeg(path, identity, kind, &loaded);
+                Ok(Some(image))
+            }
             None => {
                 let _ = self.delete_corrupt_sized(path, identity, kind, &loaded);
                 Ok(None)
@@ -2493,6 +2529,113 @@ mod tests {
                 .load_sized_jpeg(&raw, "edit", PreviewKind::Standard)?
                 .is_none()
         );
+        Ok(())
+    }
+    #[test]
+    fn corrupt_jpegs_do_not_promote_last_used_and_touch_requires_matching_bytes() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let (raw, mut cache) = photo(&d)?;
+        let stamp = Stamp::read(&raw)?;
+        for n in 0..8u64 {
+            store_variant(&mut cache, &raw, &family(n), "-fit")?;
+            cache.db.execute(
+                "UPDATE previews SET last_used=?2 WHERE source_path=?1",
+                params![tagged(&raw, &format!("{}-fit", family(n))), 100 + n as i64],
+            )?;
+        }
+        let corrupt_tag = format!("{}-fit", family(0));
+        cache.db.execute(
+            "UPDATE previews SET jpeg=X'001122' WHERE source_path=?1",
+            [tagged(&raw, &corrupt_tag)],
+        )?;
+
+        let corrupt = cache.load_tagged_jpeg(&raw, &corrupt_tag)?.unwrap();
+        assert!(PreviewCache::decode_thumbnail(&corrupt).is_none());
+        let oldest_used: i64 = cache.db.query_row(
+            "SELECT last_used FROM previews WHERE source_path=?1",
+            [tagged(&raw, &corrupt_tag)],
+            |r| r.get(0),
+        )?;
+        assert_eq!(oldest_used, 100);
+
+        // Storing a 9th family before deleting the corrupt row must evict the
+        // untouched oldest family (f0), leaving all 8 valid families (f1..f8).
+        store_variant(&mut cache, &raw, &family(8), "-fit")?;
+        cache.delete_corrupt_tagged(&raw, &corrupt_tag, &corrupt)?;
+        let expected: Vec<String> = (1..=8).map(family).collect();
+        assert_eq!(families(&cache, &raw)?, expected);
+
+        let valid_tag = format!("{}-fit", family(1));
+        let valid_key = tagged(&raw, &valid_tag);
+        let valid_jpeg = cache.load_tagged_jpeg(&raw, &valid_tag)?.unwrap();
+        let before_touch: i64 = cache.db.query_row(
+            "SELECT last_used FROM previews WHERE source_path=?1",
+            [&valid_key],
+            |r| r.get(0),
+        )?;
+        assert_eq!(before_touch, 101);
+        cache.touch_tagged(&raw, &valid_tag, b"wrong-bytes");
+        let after_mismatch: i64 = cache.db.query_row(
+            "SELECT last_used FROM previews WHERE source_path=?1",
+            [&valid_key],
+            |r| r.get(0),
+        )?;
+        assert_eq!(after_mismatch, 101);
+        cache.touch_tagged(&raw, &valid_tag, &valid_jpeg);
+        let after_touch: i64 = cache.db.query_row(
+            "SELECT last_used FROM previews WHERE source_path=?1",
+            [&valid_key],
+            |r| r.get(0),
+        )?;
+        assert!(after_touch > 101);
+
+        // Sized off-lock loads also defer last_used updates until touch_sized_jpeg.
+        let encoded_sized = PreviewCache::encode_sized(&image::RgbImage::new(32, 16))?;
+        cache.store_sized_jpeg(
+            &raw,
+            "edit-1",
+            PreviewKind::Standard,
+            &stamp,
+            2048,
+            &encoded_sized,
+        )?;
+        cache.db.execute(
+            "UPDATE sized_previews SET last_used=100 WHERE source_path=?1 AND identity='edit-1' AND kind=?2",
+            params![key(&raw), PreviewKind::Standard.code()],
+        )?;
+        let loaded_sized = cache
+            .load_sized_jpeg(&raw, "edit-1", PreviewKind::Standard)?
+            .unwrap();
+        let sized_before_touch: i64 = cache.db.query_row(
+            "SELECT last_used FROM sized_previews WHERE source_path=?1 AND identity='edit-1' AND kind=?2",
+            params![key(&raw), PreviewKind::Standard.code()],
+            |r| r.get(0),
+        )?;
+        assert_eq!(sized_before_touch, 100);
+        assert!(PreviewCache::decode_sized(&loaded_sized).is_some());
+        cache.touch_sized_jpeg(
+            &raw,
+            "edit-1",
+            PreviewKind::Standard,
+            &LoadedSizedPreview {
+                width: loaded_sized.width() + 1,
+                height: loaded_sized.height(),
+                jpeg: loaded_sized.jpeg().to_vec(),
+            },
+        );
+        let sized_after_mismatch: i64 = cache.db.query_row(
+            "SELECT last_used FROM sized_previews WHERE source_path=?1 AND identity='edit-1' AND kind=?2",
+            params![key(&raw), PreviewKind::Standard.code()],
+            |r| r.get(0),
+        )?;
+        assert_eq!(sized_after_mismatch, 100);
+        cache.touch_sized_jpeg(&raw, "edit-1", PreviewKind::Standard, &loaded_sized);
+        let sized_after_touch: i64 = cache.db.query_row(
+            "SELECT last_used FROM sized_previews WHERE source_path=?1 AND identity='edit-1' AND kind=?2",
+            params![key(&raw), PreviewKind::Standard.code()],
+            |r| r.get(0),
+        )?;
+        assert!(sized_after_touch > 100);
         Ok(())
     }
 }

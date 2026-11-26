@@ -407,3 +407,140 @@ fn stale_source_after_render_skips_store_without_cache_error() -> anyhow::Result
     );
     Ok(())
 }
+
+#[test]
+fn valid_cached_preview_touches_last_used_only_after_off_lock_decode() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "photo.png")?;
+    let cache_path = directory.path().join("previews.sqlite3");
+    let job = render_job(1, &path, false);
+    let EditJob::Render { ref source, .. } = job else {
+        unreachable!();
+    };
+    let family = source.tag();
+    let tag = source.preview_tag(PreviewAi::Off);
+    {
+        let mut cache = PreviewCache::open(&cache_path)?;
+        cache.store_tagged(
+            &path,
+            &family,
+            &tag,
+            &Stamp::read(&path)?,
+            &image::RgbImage::new(8, 8),
+        )?;
+    }
+    rusqlite::Connection::open(&cache_path)?.execute("UPDATE previews SET last_used=100", [])?;
+
+    let shared = Arc::<Shared>::default();
+    shared.lock().jobs.push(Queued {
+        job,
+        missed: false,
+        dropped: false,
+    });
+    let wanted = Wanted::default();
+    wanted.lock().unwrap().insert(PhotoId(1));
+    let cache = PreviewCache::open(&cache_path)?;
+    let (renders, rx) = counting(&shared, Some(cache), wanted);
+    renders.look(0, false);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(EditResult::Ready(PhotoId(1), 1, _))
+    ));
+    drop(renders);
+    let last_used: i64 = rusqlite::Connection::open(&cache_path)?.query_row(
+        "SELECT last_used FROM previews",
+        [],
+        |r| r.get(0),
+    )?;
+    assert!(last_used > 100);
+    Ok(())
+}
+
+#[test]
+fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
+    static HANDSHAKE: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+    fn cancelling_render(
+        _: &Path,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
+        let (entered_tx, proceed_rx) = HANDSHAKE.lock().unwrap().take().unwrap();
+        let _ = entered_tx.send(());
+        let _ = proceed_rx.recv();
+        // Return an image even though cancel flipped, exercising the post-render
+        // pre-encode and pre-store cancellation guards.
+        Ok(image::RgbImage::new(8, 8))
+    }
+
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "photo.png")?;
+    let cache_path = directory.path().join("previews.sqlite3");
+    let job = render_job(1, &path, false);
+    let EditJob::Render { ref source, .. } = job else {
+        unreachable!();
+    };
+    let family = source.tag();
+    let tag = source.preview_tag(PreviewAi::Off);
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (proceed_tx, proceed_rx) = mpsc::channel();
+    *HANDSHAKE.lock().unwrap() = Some((entered_tx, proceed_rx));
+
+    let shared = Arc::<Shared>::default();
+    shared.lock().jobs.push(Queued {
+        job,
+        missed: false,
+        dropped: false,
+    });
+    let cache = PreviewCache::open(&cache_path)?;
+    let (tx, rx) = mpsc::channel();
+    let renders = Renders {
+        background: None,
+        full: None,
+        cache: Arc::new(Mutex::new(Some(cache))),
+        cache_path: cache_path.clone(),
+        wanted: Wanted::default(),
+        results: Results {
+            tx,
+            shared: shared.clone(),
+            ctx: egui::Context::default(),
+        },
+        render: cancelling_render,
+        render_ai: render_edited_with_ai,
+    };
+    renders.start(0);
+    entered_rx.recv_timeout(std::time::Duration::from_secs(5))?;
+    for running in &shared.lock().running {
+        running.cancel.store(true, Ordering::Relaxed);
+    }
+    proceed_tx.send(())?;
+
+    assert!(matches!(
+        rx.recv_timeout(std::time::Duration::from_secs(5))?,
+        EditResult::Skipped(PhotoId(1), 1)
+    ));
+    assert!(rx.try_recv().is_err());
+
+    // Even if encoding already finished before cancellation, store_encoded_tagged
+    // skips writing once cancel is set under the cache lock.
+    let stamp = Stamp::read(&path)?;
+    let encoded = Ok(PreviewCache::encode_thumbnail(&image::RgbImage::new(8, 8))?);
+    let cancelled = AtomicBool::new(true);
+    store_encoded_tagged(
+        &renders.cache,
+        &renders.cache_path,
+        &renders.results,
+        Some(&cancelled),
+        &path,
+        &family,
+        &tag,
+        &stamp,
+        &encoded,
+    );
+    assert!(rx.try_recv().is_err());
+
+    drop(renders);
+    let reopened = PreviewCache::open(&cache_path)?;
+    assert_eq!(reopened.usage()?.thumbnails, 0);
+    assert!(reopened.load_tagged_jpeg(&path, &tag)?.is_none());
+    Ok(())
+}

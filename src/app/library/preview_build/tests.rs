@@ -1164,3 +1164,69 @@ fn a_refresh_with_nothing_to_build_keeps_the_last_failures() {
     assert_eq!(state.progress.failed.len(), 1, "{:?}", state.progress);
     assert_eq!((state.progress.done, state.progress.total), (2, 2));
 }
+
+#[test]
+fn off_lock_encode_panic_fails_build_without_reopening_cache() {
+    static HANDSHAKE: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+    static GOOD_RENDERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    fn panic_then_good_render(item: &Item, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+        if item.name == "bad.ARW" {
+            let (entered_tx, proceed_rx) = HANDSHAKE.lock().unwrap().take().unwrap();
+            let _ = entered_tx.send(());
+            let _ = proceed_rx.recv();
+            return Ok(image::RgbImage::from_raw(1, 1, vec![0; 4]).unwrap());
+        }
+        GOOD_RENDERS.fetch_add(1, Ordering::SeqCst);
+        Ok(image::RgbImage::from_pixel(
+            32,
+            16,
+            image::Rgb([180, 110, 50]),
+        ))
+    }
+
+    let (dir, mut e, ids) = editor_with_catalog(&["bad.ARW", "good.ARW"]).unwrap();
+    let cache_path = dir.path().join("previews.sqlite3");
+    let [bad, good] = ids[..] else {
+        panic!("two photos")
+    };
+    e.preview_builds = PreviewBuilds::for_tests(cache_path.clone(), panic_then_good_render);
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (proceed_tx, proceed_rx) = mpsc::channel();
+    *HANDSHAKE.lock().unwrap() = Some((entered_tx, proceed_rx));
+
+    e.build_previews(&[bad], PreviewKind::Standard).unwrap();
+    entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    // Replace the cache path with a directory once the worker already has it
+    // open, so any panic reopen attempt would replace the connection with None.
+    #[cfg(unix)]
+    {
+        std::fs::remove_file(&cache_path).unwrap();
+        std::fs::create_dir_all(&cache_path).unwrap();
+    }
+    proceed_tx.send(()).unwrap();
+    settle(&mut e);
+
+    let progress = e.preview_builds.progress().unwrap();
+    assert_eq!(progress.failed.len(), 1, "{progress:?}");
+    assert_eq!(progress.failed[0].0, "bad.ARW");
+    assert!(
+        progress.failed[0].1.contains("stopped unexpectedly"),
+        "{progress:?}"
+    );
+
+    e.build_previews(&[good], PreviewKind::Standard).unwrap();
+    settle(&mut e);
+    assert!(
+        e.preview_builds.progress().unwrap().failed.is_empty(),
+        "{:?}",
+        e.preview_builds.progress()
+    );
+    assert_eq!(GOOD_RENDERS.load(Ordering::SeqCst), 1);
+
+    // Building the same photo again hits the kept connection as fresh without
+    // re-rendering.
+    e.build_previews(&[good], PreviewKind::Standard).unwrap();
+    settle(&mut e);
+    assert!(e.preview_builds.progress().unwrap().failed.is_empty());
+    assert_eq!(GOOD_RENDERS.load(Ordering::SeqCst), 1);
+}
