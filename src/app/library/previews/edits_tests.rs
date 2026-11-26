@@ -260,3 +260,150 @@ fn photos_shown_go_before_the_ones_asked_ahead() {
         Step::Look(0, false)
     ));
 }
+
+#[test]
+fn corrupt_cached_preview_is_deleted_off_lock_and_misses_cleanly() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "photo.png")?;
+    let cache_path = directory.path().join("previews.sqlite3");
+    let job = render_job(1, &path, false);
+    let EditJob::Render { ref source, .. } = job else {
+        unreachable!();
+    };
+    let family = source.tag();
+    let tag = source.preview_tag(PreviewAi::Off);
+    {
+        let mut cache = PreviewCache::open(&cache_path)?;
+        cache.store_tagged(
+            &path,
+            &family,
+            &tag,
+            &Stamp::read(&path)?,
+            &image::RgbImage::new(8, 8),
+        )?;
+    }
+    rusqlite::Connection::open(&cache_path)?.execute("UPDATE previews SET jpeg=X'001122'", [])?;
+
+    let shared = Arc::<Shared>::default();
+    shared.lock().jobs.push(Queued {
+        job,
+        missed: false,
+        dropped: false,
+    });
+    let cache = PreviewCache::open(&cache_path)?;
+    let (renders, rx) = counting(&shared, Some(cache), Wanted::default());
+    renders.look(0, false);
+
+    assert!(rx.try_recv().is_err());
+    {
+        let state = shared.lock();
+        assert_eq!(state.jobs.len(), 1);
+        assert!(state.jobs[0].missed);
+    }
+    drop(renders);
+    let cache = PreviewCache::open(&cache_path)?;
+    assert_eq!(cache.usage()?.thumbnails, 0);
+    assert!(cache.load_tagged_jpeg(&path, &tag)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn off_lock_encode_panic_fails_render_without_reopening_cache() -> anyhow::Result<()> {
+    fn invalid_rgb_render(
+        _: &Path,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
+        Ok(image::RgbImage::from_raw(1, 1, vec![0; 4]).unwrap())
+    }
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "photo.png")?;
+    let cache_path = directory.path().join("previews.sqlite3");
+    let cache = PreviewCache::open(&cache_path)?;
+    let poison_reopen_path = directory.path().join("not-a-db");
+    std::fs::create_dir_all(&poison_reopen_path)?;
+
+    let shared = Arc::<Shared>::default();
+    shared.lock().jobs.push(Queued {
+        job: render_job(1, &path, false),
+        missed: false,
+        dropped: false,
+    });
+    let (tx, rx) = mpsc::channel();
+    let renders = Renders {
+        background: None,
+        full: None,
+        cache: Arc::new(Mutex::new(Some(cache))),
+        cache_path: poison_reopen_path,
+        wanted: Wanted::default(),
+        results: Results {
+            tx,
+            shared,
+            ctx: egui::Context::default(),
+        },
+        render: invalid_rgb_render,
+        render_ai: render_edited_with_ai,
+    };
+    renders.start(0);
+    assert!(matches!(
+        rx.recv_timeout(std::time::Duration::from_secs(5))?,
+        EditResult::Failed(PhotoId(1), 1)
+    ));
+    assert!(rx.try_recv().is_err());
+    assert!(renders.cache.lock().unwrap().is_some());
+    Ok(())
+}
+
+#[test]
+fn stale_source_after_render_skips_store_without_cache_error() -> anyhow::Result<()> {
+    fn rewriting_render(
+        path: &Path,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
+        let _ = image::RgbImage::new(24, 24).save(path);
+        Ok(image::RgbImage::new(4, 4))
+    }
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "photo.png")?;
+    let cache_path = directory.path().join("previews.sqlite3");
+    let cache = PreviewCache::open(&cache_path)?;
+    let job = render_job(1, &path, false);
+    let EditJob::Render { ref source, .. } = job else {
+        unreachable!();
+    };
+    let tag = source.preview_tag(PreviewAi::Off);
+    let shared = Arc::<Shared>::default();
+    shared.lock().jobs.push(Queued {
+        job,
+        missed: false,
+        dropped: false,
+    });
+    let (tx, rx) = mpsc::channel();
+    let renders = Renders {
+        background: None,
+        full: None,
+        cache: Arc::new(Mutex::new(Some(cache))),
+        cache_path: cache_path.clone(),
+        wanted: Wanted::default(),
+        results: Results {
+            tx,
+            shared,
+            ctx: egui::Context::default(),
+        },
+        render: rewriting_render,
+        render_ai: render_edited_with_ai,
+    };
+    renders.start(0);
+    assert!(matches!(
+        rx.recv_timeout(std::time::Duration::from_secs(5))?,
+        EditResult::Ready(PhotoId(1), 1, _)
+    ));
+    assert!(rx.try_recv().is_err());
+    assert!(
+        PreviewCache::open(&cache_path)?
+            .load_tagged_jpeg(&path, &tag)?
+            .is_none()
+    );
+    Ok(())
+}

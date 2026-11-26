@@ -164,13 +164,20 @@ fn build_one(
             "it is larger than a preview can be ({JPEG_LIMIT} pixels a side)"
         ));
     }
-    if let Err(e) = cache.store_sized(
+    let encoded = match PreviewCache::encode_sized(&image) {
+        Ok(encoded) => encoded,
+        Err(e) => return Outcome::Failed(format!("it could not be kept: {e:#}")),
+    };
+    if cancel.is_cancelled() {
+        return Outcome::Cancelled;
+    }
+    if let Err(e) = cache.store_sized_jpeg(
         &item.path,
         &item.identity,
         item.kind,
         &stamp,
         item.edge,
-        &image,
+        &encoded,
     ) {
         return Outcome::Failed(format!("it could not be kept: {e:#}"));
     }

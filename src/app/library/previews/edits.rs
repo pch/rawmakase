@@ -5,7 +5,7 @@ use super::source::{EditSource, PreviewAi};
 use super::thumbnails::Worker;
 use crate::app::preferences::monitor::DisplayProfile;
 use crate::catalog::PhotoId;
-use crate::catalog::preview_cache::{PreviewCache, Stamp};
+use crate::catalog::preview_cache::{EncodedPreview, PreviewCache, Stamp, StoreOutcome};
 use eframe::egui;
 use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai::cache::AiCache;
@@ -298,8 +298,8 @@ enum Step {
 /// latest request first, then the photos asked for ahead in the order asked.
 /// At [`Pace::Background`] one render runs at a time on two background
 /// threads; at [`Pace::Full`] up to [`FULL_RENDERS`] side by side on every
-/// core but one. The cache is read and written by the worker and its renders
-/// under one lock.
+/// core but one. The cache connection is shared under one lock while JPEG
+/// encoding and decoding run outside it.
 /// Closing the queue cancels the renders under way; the worker ends once
 /// they have stopped.
 pub(in crate::app::library) fn spawn_edited(
@@ -399,25 +399,117 @@ fn cache(cache: &Mutex<Option<PreviewCache>>) -> std::sync::MutexGuard<'_, Optio
 fn reopen(at: &Mutex<Option<PreviewCache>>, path: &Path) {
     *cache(at) = PreviewCache::open(path).ok();
 }
+/// Loads the first decodable cached preview among `(path, tag)` targets,
+/// holding the cache mutex only for SQLite lookups and corrupt-row removal
+/// while decoding JPEG bytes off-lock.
+fn load_first_tagged(
+    cache_at: &Mutex<Option<PreviewCache>>,
+    cache_path: &Path,
+    targets: &[(&Path, String)],
+) -> Option<image::RgbImage> {
+    let mut start = 0;
+    while start < targets.len() {
+        let fetched = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let cache = cache(cache_at);
+            let cache = cache.as_ref()?;
+            targets
+                .iter()
+                .enumerate()
+                .skip(start)
+                .find_map(|(index, (at, tag))| {
+                    cache
+                        .load_tagged_jpeg(at, tag)
+                        .ok()
+                        .flatten()
+                        .map(|jpeg| (index, jpeg))
+                })
+        }));
+        let (index, jpeg) = match fetched {
+            Ok(Some(hit)) => hit,
+            Ok(None) => return None,
+            Err(_) => {
+                reopen(cache_at, cache_path);
+                return None;
+            }
+        };
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            PreviewCache::decode_thumbnail(&jpeg)
+        })) {
+            Ok(Some(image)) => return Some(image),
+            Ok(None) => {
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if let Some(cache) = &*cache(cache_at) {
+                        let (at, tag) = &targets[index];
+                        let _ = cache.delete_corrupt_tagged(at, tag, &jpeg);
+                    }
+                }))
+                .is_err()
+                {
+                    reopen(cache_at, cache_path);
+                    return None;
+                }
+                start = index + 1;
+            }
+            Err(_) => return None,
+        }
+    }
+    None
+}
+/// Writes an off-lock encoded preview to the cache on-lock, suppressing
+/// stale-stamp skips, reopening SQLite after a cache panic, and reporting any
+/// genuine cache failure.
+#[allow(clippy::too_many_arguments)]
+fn store_encoded_tagged(
+    cache_at: &Mutex<Option<PreviewCache>>,
+    cache_path: &Path,
+    results: &Results,
+    path: &Path,
+    family: &str,
+    tag: &str,
+    stamp: &Stamp,
+    encoded: &anyhow::Result<EncodedPreview>,
+) {
+    let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut guard = cache(cache_at);
+        let cache = guard.as_mut()?;
+        let encoded = match encoded {
+            Ok(encoded) => encoded,
+            Err(error) => return Some(error.to_string()),
+        };
+        match cache.store_tagged_jpeg(path, family, tag, stamp, encoded) {
+            Ok(StoreOutcome::Stored | StoreOutcome::Stale) => None,
+            Err(error) => Some(error.to_string()),
+        }
+    }));
+    match stored {
+        Ok(Some(error)) => results.send(EditResult::CacheError(error)),
+        Ok(None) => {}
+        Err(_) => reopen(cache_at, cache_path),
+    }
+}
 impl Renders {
     /// Keeps `image`, rendered from the file at `path` as `stamp` gives it,
     /// as its preview under `tag`, a variant of the edit `family`; a file
     /// changed since gets none of it, and that is not a cache failure.
     fn store(&self, path: &Path, family: &str, tag: &str, stamp: &Stamp, image: &image::RgbImage) {
-        let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            match &mut *cache(&self.cache) {
-                Some(cache) if Stamp::read(path).ok().as_ref() == Some(stamp) => cache
-                    .store_tagged(path, family, tag, stamp, image)
-                    .err()
-                    .map(|error| error.to_string()),
-                _ => None,
-            }
-        }));
-        match stored {
-            Ok(Some(error)) => self.results.send(EditResult::CacheError(error)),
-            Ok(None) => {}
-            Err(_) => reopen(&self.cache, &self.cache_path),
+        if Stamp::read(path).ok().as_ref() != Some(stamp) {
+            return;
         }
+        let Ok(encoded) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            PreviewCache::encode_thumbnail(image)
+        })) else {
+            return;
+        };
+        store_encoded_tagged(
+            &self.cache,
+            &self.cache_path,
+            &self.results,
+            path,
+            family,
+            tag,
+            stamp,
+            &encoded,
+        );
     }
     /// Answers the job at `index` from the cache, else renders it when
     /// `render`, else marks it to wait for a render.
@@ -456,16 +548,7 @@ impl Renders {
                     .map(move |tag| (at.as_path(), tag))
             })
             .collect();
-        let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let cache = cache(&self.cache);
-            let cache = cache.as_ref()?;
-            tags.iter()
-                .find_map(|(at, tag)| cache.load_tagged(at, tag).ok().flatten())
-        }))
-        .unwrap_or_else(|_| {
-            reopen(&self.cache, &self.cache_path);
-            None
-        });
+        let hit = load_first_tagged(&self.cache, &self.cache_path, &tags);
         let mut state = self.results.shared.lock();
         match hit {
             Some(image) => {
@@ -540,7 +623,6 @@ impl Renders {
         );
         let task = move || {
             let _finished = Finished(results.shared.clone(), slot);
-            let mut cache_error = None;
             let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 // Given up before it began: not even the file is read.
                 if cancel.load(Ordering::Relaxed) {
@@ -557,26 +639,25 @@ impl Renders {
                         plain_of(&source),
                     ),
                 };
-                if let Some(cache) = &mut *cache(&cache_at)
-                    && let Err(error) = cache.store_tagged(
+                let encoded = PreviewCache::encode_thumbnail(&image);
+                Some((stamp, image, source.preview_tag(shows), encoded))
+            }));
+            let image = match rendered {
+                Ok(Some((stamp, image, tag, encoded))) => {
+                    store_encoded_tagged(
+                        &cache_at,
+                        &cache_path,
+                        &results,
                         &path,
                         &source.tag(),
-                        &source.preview_tag(shows),
+                        &tag,
                         &stamp,
-                        &image,
-                    )
-                {
-                    cache_error = Some(error.to_string());
+                        &encoded,
+                    );
+                    Some(image)
                 }
-                Some(image)
-            }));
-            let image = rendered.unwrap_or_else(|_| {
-                reopen(&cache_at, &cache_path);
-                None
-            });
-            if let Some(error) = cache_error {
-                results.send(EditResult::CacheError(error));
-            }
+                Ok(None) | Err(_) => None,
+            };
             results.send(if cancel.load(Ordering::Relaxed) {
                 EditResult::Skipped(id, ticket)
             } else {
