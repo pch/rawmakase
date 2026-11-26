@@ -185,7 +185,7 @@ for manifest in $(git ls-files 'examples/*/Cargo.toml'); do
         echo "$found" | sed 's/^/    /' >&2
         status=1
     fi
-    deps=$(grep -oE '^rawmakase-[a-z-]+' "$manifest" | sort -u)
+    deps=$(grep -oE '^rawmakase-[a-z-]+' "$manifest" | sort -u || true)
     if [ "$deps" != "rawmakase-core" ]; then
         echo "$manifest names one RAWmakase crate, rawmakase-core, not: $deps" >&2
         status=1

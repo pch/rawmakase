@@ -10,7 +10,7 @@
 //! Needs the desktop binary, so it is ignored by default:
 //!
 //! ```sh
-//! cargo build --release --bin rawmakase      # in the repository's root
+//! cargo build --bin rawmakase                # in the repository's root
 //! cargo test --test pixels -- --ignored      # here
 //! ```
 use std::path::{Path, PathBuf};
@@ -22,10 +22,14 @@ fn desktop() -> PathBuf {
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../target")
                 .join(profile)
-                .join("rawmakase")
+                .join(format!("rawmakase{}", std::env::consts::EXE_SUFFIX))
         })
         .into_iter()
-        .find(|p| p.is_file())
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        // The one built last: what `make check` or CI has just built, never a
+        // release build left from before.
+        .max_by_key(|(built, _)| *built)
+        .map(|(_, p)| p)
         .expect("rawmakase built in the repository's target folder: `cargo build --release --bin rawmakase` in its root")
 }
 

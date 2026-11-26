@@ -426,7 +426,8 @@ jobs:
     # apart from the app's. examples/embed's export is compared with the
     # desktop's `rawmakase render`, which is built first. examples/electron's
     # Rust side is linted with and without its Node addon and tested without
-    # it; Node and Electron are not built here.
+    # it, its export compared with the desktop's too; Node and Electron are
+    # not built here.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -462,7 +463,7 @@ jobs:
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo clippy --locked --all-targets --features addon -- -D warnings
-          cargo test --locked
+          cargo test --locked -- --include-ignored
 
   postgres:
     name: Portable catalog SQL

@@ -52,7 +52,7 @@ itself, and every other module forbids it.
 ```sh
 cargo test                   # the editor and the render thread, without Node
 cargo test -- --ignored      # the desktop's pixels; needs the desktop binary:
-                             #   cargo build --release --bin rawmakase   (repository root)
+                             #   cargo build --bin rawmakase             (repository root)
 npm run probe                # the scripted window: timings and screenshots in probe-out/
 cargo run --release --bin headless -- bench --home <dir> <photo> --edge <pixels>
 ```

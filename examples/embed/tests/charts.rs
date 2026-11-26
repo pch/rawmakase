@@ -115,12 +115,19 @@ fn what_an_app_acts_on_has_its_kind() {
 /// with an empty data folder of its own, and the decoded pixels are equal.
 /// Needs the desktop's binary, which CI builds first.
 #[test]
-#[ignore = "needs the desktop's binary: cargo build --release --bin rawmakase"]
+#[ignore = "needs the desktop's binary: cargo build --bin rawmakase"]
 fn an_export_has_the_desktop_s_pixels() {
     let desktop = ["release", "debug"]
-        .map(|profile| repository().join("target").join(profile).join("rawmakase"))
+        .map(|profile| {
+            let name = format!("rawmakase{}", std::env::consts::EXE_SUFFIX);
+            repository().join("target").join(profile).join(name)
+        })
         .into_iter()
-        .find(|p| p.is_file())
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        // The one built last: what `make check` or CI has just built, never a
+        // release build left from before.
+        .max_by_key(|(built, _)| *built)
+        .map(|(_, p)| p)
         .expect("rawmakase built in the repository's target folder");
     let dir = tempfile::tempdir().unwrap();
     let chart = charts()
