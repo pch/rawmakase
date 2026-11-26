@@ -1176,6 +1176,166 @@ fn unload_within_returns_false_when_teardown_outlasts_deadline() {
 }
 
 #[test]
+fn fresh_request_after_unload_timeout_queues_behind_cancelled_decode_and_finishes() {
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let started_tx = Mutex::new(Some(started_tx));
+    let release_rx = Mutex::new(release_rx);
+    let calls = AtomicUsize::new(0);
+    let dir = tempfile::tempdir().unwrap();
+    let behaviour = Arc::new(Behaviour::default());
+    let source: Source = Arc::new(move |path: &Path, cancel: Cancel<'_>| {
+        anyhow::ensure!(path.exists(), "no such photo");
+        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            if let Some(tx) = started_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            let _ = release_rx.lock().unwrap().recv();
+        }
+        if cancel.is_cancelled() {
+            bail!("decode cancelled");
+        }
+        Ok(PackedBayer::pack(W, H, &mosaic(), [0, 0]))
+    });
+    let b = behaviour.clone();
+    let loader: Loader = Arc::new(move |_: &Path, provider: Provider| {
+        b.loads.lock().unwrap().push(provider);
+        Ok(Box::new(Fake {
+            provider,
+            behaviour: b.clone(),
+        }) as Box<dyn TileModel + Send>)
+    });
+    let service = Service::with(
+        AiCache::new(dir.path().join("cache"), 1 << 30),
+        Provider::Cpu,
+        source,
+        loader,
+    );
+    let model = dir.path().join("model");
+    std::fs::create_dir(&model).unwrap();
+    std::fs::write(model.join(RAWNIND.model.name), b"m").unwrap();
+    service.set_model(Some(model.clone()));
+    let f = Fixture {
+        service,
+        behaviour,
+        dir,
+    };
+    let photo = f.photo("a.raw");
+    let plain = f.plain();
+    let (_first, _w1) = f.request(&photo, &plain, None);
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("initial decode started");
+    // Unload times out while the decode is still blocked; the running job is now cancelled.
+    assert!(
+        !f.service.unload_within(Duration::from_millis(50)),
+        "unload_within() must time out while decode is blocked"
+    );
+    // Removal failed, so the model stays installed and a fresh Develop request asks for the same photo.
+    f.service.set_model(Some(model));
+    let (fresh, _w2) = f.request(&photo, &plain, None);
+    assert!(matches!(
+        fresh.recv_timeout(Duration::from_secs(5)),
+        Ok(State::Queued)
+    ));
+    let _ = release_tx.send(());
+    drop(release_tx);
+    let states = until_final(&fresh);
+    assert!(
+        matches!(states.last(), Some(State::Ready(_))),
+        "fresh request must run behind the cancelled job and finish ready: {states:?}"
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while f.service.busy() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "service stayed busy after fresh request finished"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    if let Some(handle) = f.service.stop() {
+        handle.join().unwrap();
+    }
+}
+
+#[test]
+fn fresh_export_after_unload_timeout_queues_behind_cancelled_decode_and_succeeds() {
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let started_tx = Mutex::new(Some(started_tx));
+    let release_rx = Mutex::new(release_rx);
+    let calls = AtomicUsize::new(0);
+    let dir = tempfile::tempdir().unwrap();
+    let behaviour = Arc::new(Behaviour::default());
+    let source: Source = Arc::new(move |path: &Path, cancel: Cancel<'_>| {
+        anyhow::ensure!(path.exists(), "no such photo");
+        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            if let Some(tx) = started_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            let _ = release_rx.lock().unwrap().recv();
+        }
+        if cancel.is_cancelled() {
+            bail!("decode cancelled");
+        }
+        Ok(PackedBayer::pack(W, H, &mosaic(), [0, 0]))
+    });
+    let b = behaviour.clone();
+    let loader: Loader = Arc::new(move |_: &Path, provider: Provider| {
+        b.loads.lock().unwrap().push(provider);
+        Ok(Box::new(Fake {
+            provider,
+            behaviour: b.clone(),
+        }) as Box<dyn TileModel + Send>)
+    });
+    let service = Service::with(
+        AiCache::new(dir.path().join("cache"), 1 << 30),
+        Provider::Cpu,
+        source,
+        loader,
+    );
+    let model = dir.path().join("model");
+    std::fs::create_dir(&model).unwrap();
+    std::fs::write(model.join(RAWNIND.model.name), b"m").unwrap();
+    service.set_model(Some(model.clone()));
+    let f = Fixture {
+        service,
+        behaviour,
+        dir,
+    };
+    let photo = f.photo("a.raw");
+    let plain = f.plain();
+    let (_first, _w1) = f.request(&photo, &plain, None);
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("initial decode started");
+    assert!(!f.service.unload_within(Duration::from_millis(50)));
+    f.service.set_model(Some(model));
+    let export_handle = {
+        let (service, plain) = (f.service.clone(), plain);
+        std::thread::spawn(move || export(&service, &photo, &plain, Cancel::NEVER))
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while f.service.queue().waiting.is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "fresh export never started waiting"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let _ = release_tx.send(());
+    drop(release_tx);
+    let image = export_handle
+        .join()
+        .unwrap()
+        .expect("fresh export must run behind the cancelled job and succeed");
+    assert_eq!(image.width, W as u32);
+    if let Some(handle) = f.service.stop() {
+        handle.join().unwrap();
+    }
+}
+
+#[test]
 fn idle_timeout_unloads_models_without_blocking_stop_and_reloads_on_demand() {
     let (started_tx, started_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();

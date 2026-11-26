@@ -237,6 +237,15 @@ struct Queue {
     stopped: bool,
 }
 
+impl Queue {
+    /// Whether `key` is the currently running job and has not been cancelled.
+    fn active_running(&self, key: &str) -> bool {
+        self.running
+            .as_ref()
+            .is_some_and(|(k, c)| *k == key && !c.load(Ordering::Relaxed))
+    }
+}
+
 /// How long loaded models stay resident while the worker is idle before being dropped
 /// to release ONNX Runtime / Core ML memory.
 const IDLE_UNLOAD: Duration = Duration::from_secs(60);
@@ -694,7 +703,7 @@ impl Service {
             // Only refused when quitting.
             Err(_) => return,
         };
-        let running = queue.running.as_ref().is_some_and(|(k, _)| *k == key);
+        let running = queue.active_running(&key);
         if running || queue.pending.iter().any(|j| j.key == key) {
             // Joined to a job of the same file that may run under another path (a
             // hard link): its results come only while this request's own file is
@@ -1086,8 +1095,16 @@ impl Service {
             // keeps it otherwise); failures are small. Only waiters on the key itself
             // count: one on a key moved here may be cancelled before it follows, and
             // nothing would then let go of the result. It finds it in the cache.
+            // When a cancelled run already has a fresh job queued behind it for the
+            // same key, do not record the cancelled failure so the replacement job
+            // delivers its own outcome.
             let waited = queue.waiting.get(&job.key).is_some_and(|n| *n > 0);
-            if waited || !matches!(outcome, Outcome::Done(_)) {
+            let superseded = cancelled && queue.pending.iter().any(|j| j.key == job.key);
+            let record = match &outcome {
+                Outcome::Done(_) => waited,
+                Outcome::Failed(_) | Outcome::Moved(..) => !superseded,
+            };
+            if record {
                 queue.outcomes.insert(job.key.clone(), outcome.clone());
             }
             (cancelled, joined)
@@ -1239,7 +1256,7 @@ impl Service {
             region: None,
             develop: Vec::new(),
         };
-        let running = queue.running.as_ref().is_some_and(|(k, _)| *k == key);
+        let running = queue.active_running(&key);
         if !running && !queue.pending.iter().any(|j| j.key == key) {
             queue.pending.push_back(job(&key));
         }
@@ -1267,8 +1284,8 @@ impl Service {
                 None => {
                     // Not in memory (kept only while waited for, and this waiter came
                     // after): the cache has it, or it runs again.
-                    let known = queue.running.as_ref().is_some_and(|(k, _)| *k == key)
-                        || queue.pending.iter().any(|j| j.key == key);
+                    let known =
+                        queue.active_running(&key) || queue.pending.iter().any(|j| j.key == key);
                     if !known {
                         drop(queue);
                         if let Some(entry) = self.shared.cache.load(&key) {
@@ -1281,7 +1298,7 @@ impl Service {
                         }
                         queue = self.queue();
                         ensure_running(&queue)?;
-                        let known = queue.running.as_ref().is_some_and(|(k, _)| *k == key)
+                        let known = queue.active_running(&key)
                             || queue.pending.iter().any(|j| j.key == key)
                             || queue.outcomes.contains_key(&key);
                         if !known {
