@@ -1529,8 +1529,9 @@ mod tests {
         let rendered = rendered_fixture(&[[180, 90, 50]; 64]);
         let mut raw = rendered.clone();
         raw.metadata.source = rawmakase_model::camera_data::Source::Raw;
+        // Negative Saturation (−75) still distinguishes rendered vs RAW mixer grids.
         let r = Recipe {
-            saturation: 0.75,
+            saturation: -0.75,
             ..Recipe::for_rendered(&rendered.metadata)
         };
         let cam_ren = camera_stage(&rendered.metadata, &r);
@@ -1545,10 +1546,22 @@ mod tests {
             lut_ren.mixer.as_ref().unwrap().delta,
             lut_raw.mixer.as_ref().unwrap().delta
         );
-        // GPU pixel_params uploads the same rendered mixer grid and saturation_gray.
+        // GPU pixel_params uploads the exact same mixer grid for rendered and RAW alike.
         let gpu_ren = super::pixel_params::pixel_params(Source::new(&rendered), &r).unwrap();
         let mixer_at = gpu_ren.get(super::pixel_params::slot::MIXER)[0] as usize;
         let uploaded = &gpu_ren.tables[mixer_at..mixer_at + expected_ren.delta.len() * 3];
         assert_eq!(uploaded, expected_ren.delta.as_flattened());
+        // Positive Vibrance and Saturation > +50 unify RAW SDR and rendered grids on CPU and GPU.
+        let r_pos = Recipe {
+            saturation: 0.75,
+            vibrance: 0.5,
+            ..Recipe::for_rendered(&rendered.metadata)
+        };
+        let expected_pos =
+            crate::develop::color_mixer::ColorMixer::for_source(&r_pos, false).unwrap();
+        let gpu_raw = super::pixel_params::pixel_params(Source::new(&raw), &r_pos).unwrap();
+        let raw_at = gpu_raw.get(super::pixel_params::slot::MIXER)[0] as usize;
+        let uploaded_raw = &gpu_raw.tables[raw_at..raw_at + expected_pos.delta.len() * 3];
+        assert_eq!(uploaded_raw, expected_pos.delta.as_flattened());
     }
 }
