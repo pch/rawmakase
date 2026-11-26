@@ -50,6 +50,10 @@ pub(super) struct PreviewTextures {
     /// Should the file's embedded preview fail, the photo is asked about
     /// again and developed with the defaults instead.
     unedited: HashSet<PhotoId>,
+    /// Requests for previews developed with the defaults in place of the
+    /// embedded preview their file can't give, by ticket, with the file,
+    /// until their results come back.
+    stand_ins: HashMap<u64, PathBuf>,
     /// Offline photos' up-to-date editable previews, by photo: where Develop's
     /// renders of a photo opened from its copy are looked up too.
     copies: HashMap<PhotoId, PathBuf>,
@@ -122,6 +126,7 @@ impl PreviewTextures {
             edit_rx,
             edited_requested: HashMap::new(),
             unedited: HashSet::new(),
+            stand_ins: HashMap::new(),
             copies: HashMap::new(),
             next_ticket: 0,
             edit_seen: HashSet::new(),
@@ -218,6 +223,7 @@ impl PreviewTextures {
                 | EditResult::Failed(id, ticket) => (*id, *ticket),
             };
             let ahead = self.ahead.remove(&ticket);
+            self.stand_ins.remove(&ticket);
             if !ahead {
                 self.edits_pending = self.edits_pending.saturating_sub(1);
             }
@@ -405,12 +411,42 @@ impl PreviewTextures {
         if !self.edited.contains_key(&photo.id) {
             self.request_thumbnail(&photo.path, ctx);
         }
-        let no_thumbnail = self.failed.contains(&photo.path);
-        // Asked about before its thumbnail failed, and found without an edit.
-        if no_thumbnail && self.unedited.remove(&photo.id) {
-            self.edited_requested.remove(&photo.id);
+        self.request_edited(photo, edit);
+        // Found without an edit, now or before its thumbnail failed.
+        if self.failed.contains(&photo.path) && self.unedited.remove(&photo.id) {
+            self.request_stand_in(photo, defaults());
         }
-        self.request_edited(photo, || edit().or_else(|| no_thumbnail.then(defaults)));
+    }
+    /// Queues the photo's preview developed with `defaults`, in place of the
+    /// embedded preview its file can't give.
+    fn request_stand_in(&mut self, photo: &Photo, defaults: EditSource) {
+        let ticket = self.ticket();
+        self.edited_requested.insert(photo.id, ticket);
+        if self
+            .edit_tx
+            .send(EditJob::Render {
+                id: photo.id,
+                ticket,
+                path: photo.path.clone(),
+                copy: self.copies.get(&photo.id).cloned(),
+                source: defaults,
+                ahead: false,
+                display: self.display.clone(),
+            })
+            .is_ok()
+        {
+            self.edits_pending += 1;
+            self.stand_ins.insert(ticket, photo.path.clone());
+        }
+    }
+    /// The defaults changed: previews still being developed with the old ones
+    /// in place of an embedded preview are no longer the latest, so what they
+    /// bring is dropped, and their photos are developed again with the new
+    /// ones the next time they are shown.
+    pub(super) fn defaults_changed(&mut self) {
+        let stand_ins = &self.stand_ins;
+        self.edited_requested
+            .retain(|_, ticket| !stand_ins.contains_key(ticket));
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());

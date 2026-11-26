@@ -342,3 +342,78 @@ fn a_file_that_neither_shows_nor_develops_fails_once() -> Result<()> {
     assert!(library.texture(&photo).is_none());
     Ok(())
 }
+
+/// The Library's only photo shown once with its edited previews detached and
+/// answered by hand, and its embedded thumbnail failed: what it sends to the
+/// edited preview worker, and where that worker's answers go.
+fn without_its_thumbnail(
+    library: &mut Library,
+) -> Result<(
+    previews::Sent,
+    std::sync::mpsc::Sender<previews::EditResult>,
+)> {
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let sent = library.detach_edited_previews();
+    let (thumbs, _asked) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = thumbs;
+    let (results, answered) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_rx = answered;
+    let (renders, rendered) = std::sync::mpsc::channel();
+    library.cache.edit_rx = rendered;
+    library.request_previews(&photo, &ctx);
+    results.send(previews::PreviewResult {
+        path: photo.path.clone(),
+        image: None,
+        display: Default::default(),
+        cache_error: None,
+        skipped: false,
+    })?;
+    library.cache.poll(&ctx);
+    Ok((sent, renders))
+}
+
+/// Raw Defaults other than the default ones.
+fn other_defaults() -> std::sync::Arc<crate::raw_defaults::DevelopDefaults> {
+    let settings = crate::raw_defaults::RawDefaults {
+        camera_overrides: true,
+        ..Default::default()
+    };
+    std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
+        settings,
+        |_| None,
+    ))
+}
+
+/// Raw Defaults changed while a developed thumbnail is still rendering: what
+/// comes back was rendered with the old ones and is not shown, and the photo is
+/// developed again with the new ones.
+#[test]
+fn a_defaults_change_drops_a_developed_thumbnail_still_rendering() -> Result<()> {
+    let (_directory, mut library) = library_with(scanner_dng)?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let (sent, renders) = without_its_thumbnail(&mut library)?;
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { ticket, .. }) = sent.try_recv() else {
+        panic!("no render asked for");
+    };
+    let defaults = other_defaults();
+    library.set_defaults(defaults.clone());
+    renders.send(previews::EditResult::Ready(
+        photo.id,
+        ticket,
+        image::RgbImage::new(4, 3),
+    ))?;
+    library.cache.poll(&ctx);
+    assert!(
+        library.texture(&photo).is_none(),
+        "shown with the old defaults"
+    );
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { source, .. }) = sent.try_recv() else {
+        panic!("not developed again");
+    };
+    assert_eq!(source.tag(), previews::EditSource::Defaults(defaults).tag());
+    Ok(())
+}

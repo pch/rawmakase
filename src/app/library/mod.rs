@@ -1786,6 +1786,7 @@ impl Library {
     ) {
         self.defaults = defaults;
         self.screen.clear();
+        self.cache.defaults_changed();
         // Develop's renders of photos without an edit: back to the embedded
         // preview until Develop shows one with the new defaults.
         let unedited: Vec<PhotoId> = self
