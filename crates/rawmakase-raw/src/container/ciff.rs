@@ -269,6 +269,16 @@ fn parts(raw: &[u8], samples: usize) -> (Option<&[u8]>, &[u8]) {
     }
 }
 
+fn read_name_field(bytes: Source<'_>, start: u64, end: u64) -> (String, u64) {
+    let nul = bytes.find_byte(start, end, 0).unwrap_or(end);
+    let len = (nul - start).min(MAX_NAME as u64);
+    let text = bytes
+        .get(start, len)
+        .map(|b| String::from_utf8_lossy(&b).trim().to_string())
+        .unwrap_or_default();
+    (text, nul)
+}
+
 /// Reads a CRW's header facts.
 pub(crate) fn open(bytes: Source<'_>) -> Result<RawInfo> {
     let r = Records::parse(bytes)?;
@@ -286,14 +296,19 @@ pub(crate) fn open(bytes: Source<'_>) -> Result<RawInfo> {
         .first()
         .ok_or_else(|| Error::Unsupported("CRW without a decoder table".into()))?;
     let mut info = crate::info::base(Variant::CrwCompressed);
-    let names = r.get_upto(0x080a, 4096).unwrap_or_default();
-    let mut names = names.split(|&b| b == 0).map(|s| {
-        String::from_utf8_lossy(&s[..s.len().min(MAX_NAME)])
-            .trim()
-            .to_string()
-    });
-    info.make = names.next().unwrap_or_default();
-    info.model = names.next().unwrap_or_default();
+    let (make, model) = if let Some(range) = r.range(0x080a) {
+        let (make, sep) = read_name_field(r.bytes, range.start, range.end);
+        let model = if sep < range.end {
+            read_name_field(r.bytes, sep + 1, range.end).0
+        } else {
+            String::new()
+        };
+        (make, model)
+    } else {
+        (String::new(), String::new())
+    };
+    info.make = make;
+    info.model = model;
     if FOUR_COLOUR.contains(&info.model.trim_start_matches("Canon ")) {
         return Err(Error::Unsupported(
             "CRW of a cyan, magenta, yellow and green filter".into(),
@@ -614,6 +629,24 @@ mod tests {
             crate::open(&g1),
             Err(crate::Error::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn padded_make_still_checks_four_colour_model() {
+        let mut names = vec![b' '; 4096];
+        names.extend_from_slice(b"\0Canon PowerShot G1\0");
+        let bytes = ciff(block(&[
+            (0x080a, names),
+            (0x1031, shorts(&[0, 128, 1, 0, 0, 0, 0, 127, 0])),
+            (0x1835, longs(&[0])),
+            (0x2005, vec![0; 514 + 32]),
+        ]));
+        assert!(matches!(
+            crate::open(&bytes),
+            Err(crate::Error::Unsupported(_))
+        ));
+        assert!(crate::header_from_file(&mut std::io::Cursor::new(&bytes)).is_none());
+        assert!(crate::preview_from_file(&mut std::io::Cursor::new(&bytes), 640).is_none());
     }
 
     #[test]

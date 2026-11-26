@@ -295,27 +295,34 @@ pub(crate) fn open(bytes: crate::io::Source<'_>, t: TiffFile) -> Result<RawInfo>
         && let Some(at) = t.offset_of(entry)
     {
         // Nikon's maker note, in Adobe's record of DNGPrivateData.
-        let private = t.bytes_of(ifd0, 50740);
-        let private = private.as_deref().unwrap_or_default();
         let model = crate::names::model("Nikon", &info.make, &info.model);
         if let Some(notes) = crate::vendor::nikon::read_dng(bytes, at, &model) {
             info.lens_id = notes.lens_id;
             info.lens_info = notes.lens_info;
         }
         // Fujifilm's: the maker note's dynamic range, and the RAF header's
-        // exposure bias Adobe DNG Converter keeps.
-        use crate::vendor::fujifilm as fuji;
-        if let Some(dr) = adobe_record(private, *b"MakN")
-            .and_then(|n| n.get(6..))
-            .and_then(fuji::dynamic_range)
+        // exposure bias Adobe DNG Converter keeps. Walk record headers via
+        // `Source` so a >16 MiB DNGPrivateData tag is never materialized whole.
+        if let Some(tag_len) = entry
+            .type_size()
+            .and_then(|s| u64::from(entry.count).checked_mul(s as u64))
+            && let Some(private) = t.data.slice_exact(at, tag_len)
         {
-            info.fuji_dynamic_range = dr;
-        }
-        if let Some(shift) = adobe_record(private, *b"RAF ")
-            .and_then(fuji::dng_directory)
-            .and_then(|dir| fuji::exposure_shift(&fuji::Records::parse(dir)))
-        {
-            info.fuji_exposure_shift = shift;
+            use crate::vendor::fujifilm as fuji;
+            if let Some(dr) = adobe_record(private, *b"MakN")
+                .as_deref()
+                .and_then(|n| n.get(6..))
+                .and_then(fuji::dynamic_range)
+            {
+                info.fuji_dynamic_range = dr;
+            }
+            if let Some(shift) = adobe_record(private, *b"RAF ")
+                .as_deref()
+                .and_then(fuji::dng_directory)
+                .and_then(|dir| fuji::exposure_shift(&fuji::Records::parse(dir)))
+            {
+                info.fuji_exposure_shift = shift;
+            }
         }
     }
     info.previews = t.previews();
@@ -446,16 +453,29 @@ pub(crate) fn transparency(
 /// The data of record `name` in Adobe's DNGPrivateData ("Adobe\0", then
 /// records of a four-byte name, a big-endian length and the data; DNG
 /// Specification 1.7, DNGPrivateData, and our own reading of Adobe DNG
-/// Converter's DNGs).
-fn adobe_record(private: &[u8], name: [u8; 4]) -> Option<&[u8]> {
-    let mut rest = private.strip_prefix(b"Adobe\0")?;
-    while rest.len() >= 8 {
-        let len = u32::from_be_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize;
-        let data = rest.get(8..8usize.checked_add(len)?)?;
-        if rest[..4] == name {
-            return Some(data);
+/// Converter's DNGs). Walks headers without copying the entire tag so large
+/// sibling records past `MAX_PIECE` do not block reading small ones.
+fn adobe_record<'a>(
+    private: impl Into<crate::io::Source<'a>>,
+    name: [u8; 4],
+) -> Option<std::borrow::Cow<'a, [u8]>> {
+    let view = private.into();
+    if !view.starts_with(b"Adobe\0") {
+        return None;
+    }
+    let mut pos = 6u64;
+    for _ in 0..4096 {
+        if pos.checked_add(8).is_none_or(|end| end > view.len()) {
+            break;
         }
-        rest = &rest[8 + len..];
+        let rec_name = view.array::<4>(pos)?;
+        let len = u64::from(view.u32(Order::Big, pos + 4)?);
+        let data_at = pos + 8;
+        let next = data_at.checked_add(len).filter(|&end| end <= view.len())?;
+        if rec_name == name {
+            return view.get(data_at, len);
+        }
+        pos = next;
     }
     None
 }
@@ -2232,6 +2252,32 @@ pub(crate) mod tests {
         for n in 0..private.len() {
             let _ = super::adobe_record(&private[..n], *b"RAF ");
         }
+    }
+
+    #[test]
+    fn fujifilm_private_record_beyond_max_piece() {
+        let mut dir = 1u32.to_be_bytes().to_vec();
+        // Record 0x9650: +50 / 100 = +0.5 EV.
+        dir.extend([0x96, 0x50, 0, 4, 0, 50, 0, 100]);
+        let mut raf = b"MM".to_vec();
+        raf.extend(4u32.to_be_bytes());
+        raf.extend(b"0201");
+        raf.extend((dir.len() as u32).to_be_bytes());
+        raf.extend(dir);
+        let mut private = b"Adobe\0".to_vec();
+        private.extend(b"RAF ");
+        private.extend((raf.len() as u32).to_be_bytes());
+        private.extend(&raf);
+        let pad = 17u32 << 20;
+        private.extend(b"PADD");
+        private.extend(pad.to_be_bytes());
+        private.resize(private.len() + pad as usize, 0);
+        let f = dng(2, 1, &[(50740, 1, private.len() as u32, private)]);
+        let whole = crate::open(&f).unwrap();
+        assert_eq!(whole.fuji_exposure_shift, 0.5);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&f)).unwrap();
+        assert_eq!(partial.info.fuji_exposure_shift, whole.fuji_exposure_shift);
+        assert!(partial.read < f.len() as u64 / 2);
     }
 
     /// AsShotWhiteXY's neutral: the calibration (here an identity

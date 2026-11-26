@@ -117,7 +117,7 @@ pub(crate) fn open(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
     {
         return Err(corrupt("RAF raw data"));
     }
-    let mut plan = if bytes.starts_with_at(raw_start, b"II*\0") {
+    let mut plan = if raw_size >= 4 && bytes.starts_with_at(raw_start, b"II*\0") {
         tiff_plan(bytes, raw_start, &records, &mut info)?
     } else {
         older_plan(bytes, &version, raw_start, raw_size, &records, &mut info)?
@@ -963,5 +963,20 @@ pub(crate) mod tests {
             0,
         );
         assert!(crate::open(&file).is_err());
+    }
+
+    #[test]
+    fn short_declared_raw_block_does_not_select_tiff_plan() {
+        let data: Vec<u8> = (0..96u8).collect();
+        let raw = block(&entries(8, 6, 14), &data);
+        assert!(raw.starts_with(b"II*\0"));
+        let mut file = raf("FinePix S1", &[(0x100, pair(2, 2))], &raw, 2);
+        // Shrink declared raw length (pointer 5 at offset 104) to 3 bytes so the
+        // 4th TIFF signature byte `\0` sits outside the declared raw block.
+        file[104..108].copy_from_slice(&3u32.to_be_bytes());
+        let whole = crate::open(&file).unwrap();
+        assert_eq!(whole.variant, crate::Variant::RafUnpacked);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
+        assert_eq!(partial.info.variant, crate::Variant::RafUnpacked);
     }
 }

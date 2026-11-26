@@ -97,15 +97,7 @@ fn largest_in_pieces(
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, allow)?;
     let (at, len) = crate::preview::find(&info, f.source()).ok()?;
-    f.fill(at, len)?;
-    let preview = crate::embedded_source(f.source(), (at, len))
-        .ok()?
-        .into_owned();
-    Some(PartialPreview {
-        info,
-        preview,
-        read: f.read(),
-    })
+    read_preview(&mut f, info, at, len)
 }
 
 /// Whether a preview read in pieces is the one the whole file gives, for
@@ -212,10 +204,18 @@ fn in_pieces(
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, allow)?;
     let (at, len) = crate::preview::find_reaching(&info, f.source(), edge).ok()?;
-    f.fill(at, len)?;
-    let preview = crate::embedded_source(f.source(), (at, len))
-        .ok()?
-        .into_owned();
+    read_preview(&mut f, info, at, len)
+}
+
+/// Reads the chosen preview directly into one output buffer without retaining
+/// a second copy inside [`Sparse`].
+fn read_preview<R: Read + Seek>(
+    f: &mut Sparse<'_, R>,
+    info: RawInfo,
+    at: u64,
+    len: u64,
+) -> Option<PartialPreview> {
+    let preview = crate::mend_owned_preview(f.read_range(at, len)?);
     Some(PartialPreview {
         info,
         preview,
@@ -313,6 +313,12 @@ impl<'r, R: Read + Seek> Sparse<'r, R> {
     /// what has been read already.
     fn fill(&mut self, at: u64, len: u64) -> Option<()> {
         self.data.fill(self.file, at, len)
+    }
+    /// Reads `[at, at + len)` directly into one `Vec<u8>`, reusing bytes already
+    /// in `self.data` and reading only unread gaps without keeping the range in
+    /// `self.data`.
+    fn read_range(&mut self, at: u64, len: u64) -> Option<Vec<u8>> {
+        self.data.read_range(self.file, at, len)
     }
     /// Reads the parts the file's container keeps its header in beyond the
     /// start and the end ([`crate::variant::header_parts`]): a RAF's records

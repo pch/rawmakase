@@ -543,6 +543,24 @@ fn a_cr2_whose_strip_headers_are_longer_than_the_part_read_is_none() {
     assert!(header_from_file(&mut Cursor::new(&file)).is_some());
 }
 
+#[test]
+fn a_cr2_whose_strip_extends_past_eof_is_none() {
+    let mut file = cr2_of_an_older_body(&jpeg(640, 480, 10_000), 0, &[]);
+    let t = crate::container::tiff::TiffFile::parse(&file[..], 0).unwrap();
+    let raw = &t.ifds[3];
+    let strip_at = t.int(raw, 273).unwrap() as usize;
+    let strip_len = t.int(raw, 279).unwrap();
+    // In `cr2_of_an_older_body` with `gap = 0`, entry 279's 4-byte value sits
+    // right before the 4-byte zero next-IFD pointer and the strip start.
+    assert_eq!(&file[strip_at - 8..strip_at - 4], &strip_len.to_le_bytes());
+    file[strip_at - 8..strip_at - 4].copy_from_slice(&100_000u32.to_le_bytes());
+    file.truncate(strip_at + (64 << 10));
+    assert!(crate::open(&file).is_err());
+    assert!(preview_from_file(&mut Cursor::new(&file), 640).is_none());
+    assert!(largest_preview_from_file(&mut Cursor::new(&file)).is_none());
+    assert!(header_from_file(&mut Cursor::new(&file)).is_none());
+}
+
 /// Some Olympus compacts store a JPEG after their two fields of sensor
 /// data, listed by no directory: its first bytes are read where the fields
 /// end, so that it is found as in the whole file.
@@ -707,6 +725,27 @@ fn each_byte_is_read_once() {
             .get(350, 9_990 - 350)
             .is_some_and(|zeros| zeros.iter().all(|b| *b == 0))
     );
+}
+
+#[test]
+fn read_range_merges_segments_and_gaps_into_one_buffer_without_growing_sparse_data() {
+    let file: Vec<u8> = (0..10_000u32).map(|i| ((i * 37) % 251) as u8).collect();
+    let mut cursor = Cursor::new(&file);
+    let mut s = Sparse::new(&mut cursor).unwrap();
+    s.fill(800, 700).unwrap();
+    s.fill(3_000, 1_000).unwrap();
+    s.fill(6_500, 1_000).unwrap();
+    let filled_before = s.data.filled_ranges();
+    let alloc_before = s.data.allocated_bytes();
+    let read_before = s.read();
+
+    let out = s.read_range(1_000, 6_000).unwrap();
+    assert_eq!(out, file[1_000..7_000]);
+    assert_eq!(s.read(), read_before + (3_000 - 1_500) + (6_500 - 4_000));
+    assert_eq!(s.data.filled_ranges(), filled_before);
+    assert_eq!(s.data.allocated_bytes(), alloc_before);
+    assert!(s.read_range(9_000, 2_000).is_none());
+    assert_eq!(s.read_range(10_000, 0), Some(Vec::new()));
 }
 
 #[test]

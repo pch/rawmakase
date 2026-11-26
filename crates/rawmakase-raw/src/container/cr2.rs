@@ -85,6 +85,9 @@ fn strip_head(
     at: u64,
     len: u64,
 ) -> Option<std::borrow::Cow<'_, [u8]>> {
+    if at.checked_add(len).is_none_or(|end| end > bytes.len()) {
+        return None;
+    }
     let take = match bytes {
         crate::io::Source::Slice(_) => len,
         crate::io::Source::Sparse { .. } => len.min(STRIP_HEAD),

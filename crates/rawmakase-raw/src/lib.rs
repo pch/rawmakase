@@ -182,15 +182,7 @@ fn embedded(
     range: (u64, u64),
 ) -> std::result::Result<std::borrow::Cow<'_, [u8]>, NoPreview> {
     let slice = slice_range(bytes, range).ok_or(NoPreview::Missing)?;
-    Ok(mend_jpeg(std::borrow::Cow::Borrowed(slice)))
-}
-
-pub(crate) fn embedded_source<'a>(
-    bytes: io::Source<'a>,
-    (at, len): (u64, u64),
-) -> std::result::Result<std::borrow::Cow<'a, [u8]>, NoPreview> {
-    let jpeg = bytes.get(at, len).ok_or(NoPreview::Missing)?;
-    Ok(mend_jpeg(jpeg))
+    Ok(mend_jpeg(slice))
 }
 
 fn slice_range(bytes: &[u8], (at, len): (u64, u64)) -> Option<&[u8]> {
@@ -199,15 +191,26 @@ fn slice_range(bytes: &[u8], (at, len): (u64, u64)) -> Option<&[u8]> {
     bytes.get(start..end)
 }
 
-fn mend_jpeg<'a>(jpeg: std::borrow::Cow<'a, [u8]>) -> std::borrow::Cow<'a, [u8]> {
-    match jpeg.as_ref() {
-        [first, rest @ ..] if *first != 0xff && !preview::is_jpeg_xl(&jpeg, 0) => {
-            let mut mended = vec![0xff];
-            mended.extend_from_slice(rest);
-            std::borrow::Cow::Owned(mended)
-        }
-        _ => jpeg,
+fn needs_jpeg_soi_mend(bytes: &[u8]) -> bool {
+    bytes.first().is_some_and(|&b| b != 0xff) && !preview::is_jpeg_xl(bytes, 0)
+}
+
+fn mend_jpeg(jpeg: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if needs_jpeg_soi_mend(jpeg) {
+        let mut mended = vec![0xff];
+        mended.extend_from_slice(&jpeg[1..]);
+        std::borrow::Cow::Owned(mended)
+    } else {
+        std::borrow::Cow::Borrowed(jpeg)
     }
+}
+
+/// Applies JPEG start-of-image mending in place when needed, without copying.
+pub(crate) fn mend_owned_preview(mut jpeg: Vec<u8>) -> Vec<u8> {
+    if needs_jpeg_soi_mend(&jpeg) {
+        jpeg[0] = 0xff;
+    }
+    jpeg
 }
 
 /// The sensor data of the file `info` was read from; stops with

@@ -80,11 +80,13 @@ again later, and only the properties asked for are decoded.
 `preview_from_file(file, edge)` reads a RAW's preview for a thumbnail `edge`
 pixels on its long side without the rest of the file, for Library thumbnails
 on every volume. Unlike the reads above, it gives the existing readers a
-buffer the file's size, filled only where read: the file's start and end, the
-parts its container keeps its header in beyond those, each preview
-candidate's start up to its JPEG frame header, at which the file is opened
-again (NEF's reader sizes its previews from their frames, and a RAF's takes
-the EXIF from its embedded JPEG), then the preview chosen.
+sparse view (`io::Source`) over the file's length backed only by the ranges
+read: the file's start and end, the parts its container keeps its header in
+beyond those, and each preview candidate's start up to its JPEG frame header,
+at which the file is opened again (NEF's reader sizes its previews from their
+frames, and a RAF's takes the EXIF from its embedded JPEG); the chosen preview
+is then read directly into its output buffer without holding another copy in
+the sparse view.
 
 The container's parts are asked for until it names nothing new
 (`variant::header_parts`), as one part read shows where the next is:

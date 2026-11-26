@@ -230,14 +230,46 @@ impl SparseData {
             buf.resize(gap_len, 0);
             file.seek(SeekFrom::Start(gs)).ok()?;
             file.read_exact(&mut buf).ok()?;
+            self.segments.try_reserve(1).ok()?;
             self.read += ge - gs;
             self.segments.push((gs, buf));
-            self.coalesce();
+            self.coalesce()?;
         }
         Some(())
     }
 
-    fn coalesce(&mut self) {
+    /// Reads `[at, at + len)` directly into one newly allocated buffer, reusing
+    /// already-loaded bytes and reading only missing gaps from `file` without
+    /// inserting them into `self.segments`.
+    pub(crate) fn read_range(
+        &mut self,
+        file: &mut (impl Read + Seek),
+        at: u64,
+        len: u64,
+    ) -> Option<Vec<u8>> {
+        let end = at.checked_add(len)?;
+        if end > self.len {
+            return None;
+        }
+        let len_usize = usize::try_from(len).ok()?;
+        let mut out = Vec::new();
+        out.try_reserve_exact(len_usize).ok()?;
+        out.resize(len_usize, 0);
+        if len == 0 {
+            return Some(out);
+        }
+        self.copy_into(at, &mut out);
+        for (gs, ge) in self.gaps(at, end) {
+            let dst_off = (gs - at) as usize;
+            let gap_len = (ge - gs) as usize;
+            file.seek(SeekFrom::Start(gs)).ok()?;
+            file.read_exact(&mut out[dst_off..dst_off + gap_len]).ok()?;
+            self.read += ge - gs;
+        }
+        Some(out)
+    }
+
+    fn coalesce(&mut self) -> Option<()> {
         self.segments.sort_by_key(|(start, _)| *start);
         let mut write = 0usize;
         for read in 0..self.segments.len() {
@@ -252,11 +284,18 @@ impl SparseData {
             let curr_start = self.segments[read].0;
             if curr_start <= prev_end {
                 let overlap = (prev_end - curr_start) as usize;
-                let curr = std::mem::take(&mut self.segments[read].1);
-                if overlap < curr.len() {
+                let extra = self.segments[read].1.len().saturating_sub(overlap);
+                if extra > 0 {
+                    if self.segments[write - 1].1.try_reserve_exact(extra).is_err() {
+                        self.segments.retain(|(_, d)| !d.is_empty());
+                        return None;
+                    }
+                    let curr = std::mem::take(&mut self.segments[read].1);
                     self.segments[write - 1]
                         .1
                         .extend_from_slice(&curr[overlap..]);
+                } else {
+                    self.segments[read].1 = Vec::new();
                 }
             } else {
                 if write != read {
@@ -266,6 +305,7 @@ impl SparseData {
             }
         }
         self.segments.truncate(write);
+        Some(())
     }
 
     fn first_segment_after(&self, at: u64) -> usize {
