@@ -61,10 +61,21 @@ pub fn profile_manager(ctx: &rawmakase_core::Context) -> crate::camera_profiles:
 /// What photos are opened with and their edits resolved among, taken
 /// together from a context: its imported lens profiles and installed camera
 /// profiles. Cheap to clone; the default has neither.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Libraries {
     pub lenses: crate::photo::LensProfiles,
     pub profiles: crate::camera_profiles::ProfileLibrary,
+    /// Lensfun's database, which a Lensfun lens an edit names resolves against.
+    pub lensfun: crate::lens::lensfun::installed::Handle,
+}
+impl Default for Libraries {
+    fn default() -> Self {
+        Self {
+            lenses: Default::default(),
+            profiles: Default::default(),
+            lensfun: crate::lens::lensfun::installed::Handle::none(),
+        }
+    }
 }
 
 /// The libraries of a context [`context`] made.
@@ -72,7 +83,13 @@ pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
     Libraries {
         lenses: lens_profiles(ctx).clone(),
         profiles: camera_profiles(ctx).clone(),
+        lensfun: lensfun(ctx).clone(),
     }
+}
+
+/// Lensfun's database of a context [`context`] made, in the data folder.
+pub fn lensfun(ctx: &rawmakase_core::Context) -> &crate::lens::lensfun::installed::Handle {
+    rawmakase_core::workspace::lensfun(ctx)
 }
 
 /// What the caches' entries made by this build are keyed by: the executable's

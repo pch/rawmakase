@@ -3,6 +3,10 @@
 use super::*;
 use std::time::{Duration, Instant};
 
+/// No Lensfun database, as the tests have none installed.
+static NO_LENSFUN: crate::lens::lensfun::installed::Handle =
+    crate::lens::lensfun::installed::Handle::Given(None);
+
 /// Renders a gray tile per preset, logging each one it starts. A preset whose id
 /// begins with `panic` panics, `fail` fails, and `block` waits until released or
 /// cancelled (then failing, as a cancelled render does).
@@ -88,6 +92,7 @@ impl Photo {
             recipe: &self.recipe,
             metadata: &self.image.metadata,
             profiles: &[],
+            lensfun: &NO_LENSFUN,
             monitor: None,
             library: &self.library,
             photo: (Some(self.path.clone()), None),

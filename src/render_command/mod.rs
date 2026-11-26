@@ -325,6 +325,7 @@ pub fn render(
             &im.metadata,
             &profiles,
             Some(&develop::Measures(&im)),
+            &libraries.lensfun,
         )?;
         if let Some(e) = o.exposure {
             edit.exposure = e;
@@ -520,6 +521,7 @@ pub fn render_batch(
                 &im.metadata,
                 &profiles,
                 Some(&develop::Measures(&im)),
+                &libraries.lensfun,
             )?;
             let ai = ai_denoise.source(input, &file, &im, &edit, cancel)?;
             let target_format = Format::from_path(&job.output).unwrap_or(Format::Jpeg);

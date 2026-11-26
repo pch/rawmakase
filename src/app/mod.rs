@@ -207,6 +207,10 @@ impl Editor {
     pub(in crate::app) fn preset_library(&self) -> &crate::presets::PresetLibrary {
         crate::environment::presets(&self.core)
     }
+    /// Lensfun's database as it is installed now: the context's.
+    pub(in crate::app) fn lensfun_db(&self) -> &crate::lens::lensfun::installed::Handle {
+        crate::environment::lensfun(&self.core)
+    }
     /// The installed camera profiles: the context's.
     pub(in crate::app) fn camera_profiles(&self) -> &crate::camera_profiles::ProfileLibrary {
         crate::environment::camera_profiles(&self.core)
@@ -388,6 +392,7 @@ impl Editor {
         let lenses = crate::environment::lens_profiles(&core).clone();
         let profiles = crate::environment::camera_profiles(&core).clone();
         let libraries = crate::environment::libraries(&core);
+        let lensfun = libraries.lensfun.clone();
         let profile_library = crate::environment::camera_profiles(&core).fingerprint();
         let loader = worker::Loader::new(
             tx.clone(),
@@ -554,6 +559,7 @@ impl Editor {
             ai_remove: Default::default(),
             lensfun: crate::app::develop::lensfun::Lensfun::suggesting(
                 !session.no_lensfun_suggestions,
+                lensfun.clone(),
             ),
             folder_sync: Default::default(),
             file_ops: Default::default(),
@@ -563,9 +569,10 @@ impl Editor {
                 session.edit_in_color_space.as_deref(),
             ),
             loupe_tried: None,
-            raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
-                session.raw_defaults.clone(),
-            )),
+            raw_defaults: std::sync::Arc::new(
+                crate::raw_defaults::DevelopDefaults::load(session.raw_defaults.clone())
+                    .with_lensfun(lensfun),
+            ),
             profile_library,
             controls: crate::app::shell::automation::Hub::inactive(),
             automation: crate::app::shell::commands::Automation::default(),

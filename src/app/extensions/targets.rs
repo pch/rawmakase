@@ -728,6 +728,7 @@ impl Editor {
             cache: Some(self.decode_cache().clone()),
             lenses: self.lens_profiles().clone(),
             profiles: self.camera_profiles().clone(),
+            lensfun: self.lensfun_db().clone(),
         };
         let finished = |outcome| Finished {
             ticket,

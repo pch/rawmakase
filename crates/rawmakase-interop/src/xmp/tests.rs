@@ -31,7 +31,13 @@ fn markers_of_earlier_releases_are_ignored() -> Result<()> {
     assert!(!text.contains("RAWmakaseMarkers"), "{text}");
     assert!(!text.contains("RAWmakaseWhiteBalanceModel"), "{text}");
     let plain = r#"c:Temperature="5000" c:Tint="10" c:Sharpness="40" c:Clarity2012="20""#;
-    let expected = parse(Path::new("plain.xmp"), &xml(plain, ""))?.apply(&fresh, &m, &[], None)?;
+    let expected = parse(Path::new("plain.xmp"), &xml(plain, ""))?.apply(
+        &fresh,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     for markers in [
         r#"c:RAWmakaseMarkers="2""#,
         r#"c:RAWmakaseMarkers="3" c:RAWmakaseOriginal="Sharpening,Clarity""#,
@@ -41,7 +47,13 @@ fn markers_of_earlier_releases_are_ignored() -> Result<()> {
         r#"c:RAWmakasePreset="2""#,
     ] {
         let attrs = format!("{markers} {plain}");
-        let back = parse(Path::new("old.xmp"), &xml(&attrs, ""))?.apply(&fresh, &m, &[], None)?;
+        let back = parse(Path::new("old.xmp"), &xml(&attrs, ""))?.apply(
+            &fresh,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(
             Recipe {
                 preset_name: expected.preset_name.clone(),
@@ -72,7 +84,13 @@ fn lenient_white_balance_failure_preserves_its_basic_edits() -> Result<()> {
         r#"c:WhiteBalance="Unsupported" c:Exposure2012="0.7""#,
     ] {
         let preset = parse(Path::new("broken-wb.xmp"), &xml(attrs, ""))?;
-        let (back, warnings) = preset.apply_lenient(&base, &m, &[], None)?;
+        let (back, warnings) = preset.apply_lenient(
+            &base,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert!(!warnings.is_empty());
         assert_eq!(
             (back.temperature, back.tint, back.wb),
@@ -167,7 +185,13 @@ fn legacy_split_toning_restores_full_overlap_but_modern_presets_preserve_it() ->
             "",
         ),
     )?;
-    let r = old.apply(&base, &Metadata::default(), &[], None)?;
+    let r = old.apply(
+        &base,
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.grading[0], [2. / 3., 0.5, 0.]);
     assert_eq!(r.effects.blending, 1.);
     assert_eq!(r.grading[1], [0.; 3]);
@@ -179,7 +203,13 @@ fn legacy_split_toning_restores_full_overlap_but_modern_presets_preserve_it() ->
             "",
         ),
     )?;
-    let r = modern.apply(&base, &Metadata::default(), &[], None)?;
+    let r = modern.apply(
+        &base,
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.effects.blending, 0.75);
     assert_eq!(r.grading[1], base.grading[1]);
     assert_eq!(r.effects.global_grade, base.effects.global_grade);
@@ -197,14 +227,26 @@ fn photo_sidecar_empty_point_colors_and_preset_provenance() {
     let p = parse(Path::new("photo.xmp"), &text).unwrap();
     assert!(p.blockers.is_empty(), "{:?}", p.blockers);
     let r = p
-        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .apply(
+            &Recipe::default(),
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert_eq!(r.exposure, 0.5);
     assert!(r.point_colors.is_empty());
     let hdr = text.replace("c:HDREditMode=\"0\"", "c:HDREditMode=\"1\"");
     let r = parse(Path::new("hdr.xmp"), &hdr)
         .unwrap()
-        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .apply(
+            &Recipe::default(),
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert!(r.hdr.is_active());
     // With an adjustment HDR does not render yet, HDR on is kept, not dropped: the
@@ -215,7 +257,13 @@ fn photo_sidecar_empty_point_colors_and_preset_provenance() {
     );
     let p = parse(Path::new("hdr.xmp"), &clarity).unwrap();
     let r = p
-        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .apply(
+            &Recipe::default(),
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert!(r.hdr.is_active() && r.effects.clarity < 0.);
     let error = crate::model::hdr::check_recipe(&r).unwrap_err().to_string();
@@ -240,7 +288,13 @@ fn point_colors_import_and_write_back() {
     .unwrap();
     assert!(p.blockers.is_empty(), "{:?}", p.blockers);
     let r = p
-        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .apply(
+            &Recipe::default(),
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     // Camera Raw drops the swatch whose hue is out of range; variances stay paired.
     assert_eq!(r.point_colors.len(), 2);
@@ -281,7 +335,13 @@ fn resolved_photo_white_balance_differs_from_as_shot_preset() -> Result<()> {
     };
     let attrs = r#"c:WhiteBalance="As Shot" c:Temperature="6500" c:Tint="25""#;
     let preset = parse(Path::new("preset.xmp"), &xml(attrs, ""))?;
-    let result = preset.apply(&Recipe::default(), &m, &[], None)?;
+    let result = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(result.wb, [1.; 3]);
     let sidecar = parse(
         Path::new("photo.xmp"),
@@ -292,7 +352,13 @@ fn resolved_photo_white_balance_differs_from_as_shot_preset() -> Result<()> {
             "",
         ),
     )?;
-    let result = sidecar.apply(&Recipe::default(), &m, &[], None)?;
+    let result = sidecar.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(result.temperature, 6500.);
     assert_eq!(result.tint, 25.);
     assert_ne!(result.wb, [1.; 3]);
@@ -307,10 +373,29 @@ fn a_crop_angle_from_xmp_is_not_auto() -> Result<()> {
     let mut auto = Recipe::default();
     auto.set_auto_straighten(Some(0.));
     let angle = parse(Path::new("preset.xmp"), &xml(r#"c:CropAngle="0""#, ""))?;
-    assert_eq!(angle.apply(&auto, &m, &[], None)?.straighten_auto, None);
+    assert_eq!(
+        angle
+            .apply(
+                &auto,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )?
+            .straighten_auto,
+        None
+    );
     let exposure = parse(Path::new("preset.xmp"), &xml(r#"c:Exposure2012="0.5""#, ""))?;
     assert_eq!(
-        exposure.apply(&auto, &m, &[], None)?.auto_straighten(),
+        exposure
+            .apply(
+                &auto,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )?
+            .auto_straighten(),
         Some(AutoStraighten::Measured(0.))
     );
     Ok(())
@@ -334,20 +419,38 @@ fn named_white_balance_presets_apply_their_values() -> Result<()> {
         auto_white_balance: Some([5500., 10.]),
         ..Default::default()
     };
-    let r = preset.apply(&auto, &m, &[], None)?;
+    let r = preset.apply(
+        &auto,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!((r.temperature, r.tint), (5500., 10.));
     assert_eq!(r.auto_white_balance, None);
     // Stored values win, and one missing value falls back to the name's.
     let attrs = r#"c:WhiteBalance="Flash" c:Temperature="5300""#;
     let preset = parse(Path::new("preset.xmp"), &xml(attrs, ""))?;
-    let r = preset.apply(&Recipe::default(), &m, &[], None)?;
+    let r = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!((r.temperature, r.tint), (5300., 0.));
     assert!(
         parse(
             Path::new("preset.xmp"),
             &xml(r#"c:WhiteBalance="Moonlight""#, "")
         )?
-        .apply(&Recipe::default(), &m, &[], None)
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none()
+        )
         .is_err()
     );
     Ok(())
@@ -367,7 +470,13 @@ fn auto_white_balance_presets_use_the_wb_menus_auto() -> Result<()> {
         r#"c:WhiteBalance="Auto" c:CropLeft="0" c:CropTop="0" c:CropRight="0.45" c:CropBottom="1""#;
     let preset = parse(Path::new("preset.xmp"), &xml(attrs, ""))?;
     let photo = FakeMeasures::default();
-    let result = preset.apply(&Recipe::default(), &m, &[], Some(&photo))?;
+    let result = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        Some(&photo),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(result.crop, [0., 0., 0.45, 1.]);
     assert_eq!(
         photo.white_balance_crops.borrow().as_slice(),
@@ -401,7 +510,13 @@ fn lightroom_crops_are_relative_to_the_frame_around_the_camera_crop() -> Result<
     let base = Recipe::with_profiles(&m, &[]);
     assert_eq!(base.crop, [1. / 6., 0., 5. / 6., 1.]);
     let apply = |attrs: &str| -> Result<Recipe> {
-        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, &m, &[], None)
+        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(
+            &base,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let adobe = r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0.166667" c:CropBottom="1" c:CropRight="0.833333""#;
     let square = apply(adobe)?.crop;
@@ -464,7 +579,13 @@ fn lightroom_crops_of_a_photo_held_upright_are_of_the_unrotated_frame() -> Resul
     let base = Recipe::with_profiles(&m, &[]);
     near(base.crop, [0., 0.0555, 1., 0.9445]);
     let apply = |m: &Metadata, attrs: &str| -> Result<Recipe> {
-        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, m, &[], None)
+        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(
+            &base,
+            m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let adobe = r#"c:HasCrop="True" c:CropTop="0" c:CropLeft="0.0555" c:CropBottom="1" c:CropRight="0.9445""#;
     let r = apply(&m, adobe)?;
@@ -509,7 +630,13 @@ fn lightroom_crops_of_a_photo_held_upright_are_of_the_unrotated_frame() -> Resul
         &crate::xmp::preset_write::PresetInfo::new("Top", "Mine"),
         &crate::model::settings_groups::GroupSelection::all(),
     );
-    let back = parse(Path::new("top.xmp"), &preset)?.apply(&base, &cw, &[], None)?;
+    let back = parse(Path::new("top.xmp"), &preset)?.apply(
+        &base,
+        &cw,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     near(back.crop, drawn.crop);
     Ok(())
 }
@@ -555,7 +682,13 @@ fn presets_of_crops_past_the_frame_read_back() -> Result<()> {
             &crate::xmp::preset_write::PresetInfo::new("Crop", "Mine"),
             &crate::model::settings_groups::GroupSelection::all(),
         );
-        let back = parse(Path::new("crop.xmp"), &preset)?.apply(&base, &m, &[], None)?;
+        let back = parse(Path::new("crop.xmp"), &preset)?.apply(
+            &base,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert!(
             back.crop
                 .iter()
@@ -583,7 +716,13 @@ fn lightroom_crop_angle_turns_its_crop() -> Result<()> {
     };
     let base = Recipe::with_profiles(&m, &[]);
     let apply = |m: &Metadata, attrs: &str| -> Result<Recipe> {
-        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(&base, m, &[], None)
+        parse(Path::new("photo.xmp"), &xml(attrs, ""))?.apply(
+            &base,
+            m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     // The output's size in the photo's pixels, as shown.
     let size = |r: &Recipe, [w, h]: [f32; 2]| {
@@ -670,7 +809,13 @@ fn lightroom_crop_angle_turns_its_crop() -> Result<()> {
     assert!(packet.contains(r#"crs:CropAngle="-3.00""#), "{packet}");
     assert!(packet.contains(r#"crs:HasCrop="True""#), "{packet}");
     assert!(!packet.contains(r#"crs:CropLeft="0.000000""#), "{packet}");
-    let back = parse(Path::new("back.xmp"), &packet)?.apply(&base, &m, &[], None)?;
+    let back = parse(Path::new("back.xmp"), &packet)?.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(back.straighten, 3.);
     assert!(
         back.crop
@@ -697,7 +842,13 @@ fn lightroom_crop_angle_turns_its_crop() -> Result<()> {
         &crate::model::settings_groups::GroupSelection::all(),
     );
     assert!(preset.contains(r#"crs:CropAngle="-4.00""#), "{preset}");
-    let back = parse(Path::new("level.xmp"), &preset)?.apply(&base, &m, &[], None)?;
+    let back = parse(Path::new("level.xmp"), &preset)?.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(back.straighten, 4.);
     assert!(
         back.crop
@@ -741,7 +892,13 @@ fn the_smallest_crop_reads_back_in_every_orientation() -> Result<()> {
                 };
                 let packet = write::packet(&r, &m, &photo);
                 let back = parse(Path::new("min.xmp"), &packet)?
-                    .apply(&base, &m, &[], None)
+                    .apply(
+                        &base,
+                        &m,
+                        &[],
+                        None,
+                        &crate::lens::lensfun::installed::Handle::none(),
+                    )
                     .with_context(|| format!("flip {flip}, {straighten}°, {crop:?}"))?;
                 assert!(
                     back.crop
@@ -772,7 +929,13 @@ fn partial_preset_preserves_omitted_settings_and_zero_resets() -> Result<()> {
         ..Default::default()
     };
     r.effects.monochrome = true;
-    let out = p.apply(&r, &Metadata::default(), &[], None)?;
+    let out = p.apply(
+        &r,
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(out.exposure, 1.7);
     assert_eq!(out.temperature, 4700.);
     assert_eq!(out.contrast, 0.);
@@ -790,7 +953,13 @@ fn names_entities_and_rgb_curves_parse_with_namespace_aliases() -> Result<()> {
         ),
     )?;
     assert_eq!(p.name, "Warm & soft");
-    let r = p.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = p.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.curve, ToneCurve::default());
     assert_eq!(r.effects.channels[0].points.len(), 2);
     assert_eq!(r.effects.channels[0].points[0], [1. / 255., 12. / 255.]);
@@ -804,7 +973,13 @@ fn child_scalar_values_and_multiple_descriptions() -> Result<()> {
         r#"<r:RDF xmlns:r="{RDF}" xmlns:c="{CRS}" xmlns:d="urn:other"><r:Description><d:Exposure2012>99</d:Exposure2012></r:Description><r:Description><c:Exposure2012>+0.5</c:Exposure2012><c:Clarity2012>-20</c:Clarity2012></r:Description></r:RDF>"#
     );
     let p = parse(Path::new("p.xmp"), &text)?;
-    let r = p.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = p.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.5);
     assert!((r.effects.clarity + 0.2).abs() < 1e-6);
     Ok(())
@@ -820,7 +995,16 @@ fn missing_profiles_unknown_settings_and_looks_never_partially_apply() -> Result
         r#"c:Exposure2012="2" c:ImaginaryControl="0""#,
     ] {
         let p = parse(Path::new("p.xmp"), &xml(attrs, ""))?;
-        assert!(p.apply(&base, &Metadata::default(), &[], None).is_err());
+        assert!(
+            p.apply(
+                &base,
+                &Metadata::default(),
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
+            .is_err()
+        );
         assert_eq!(base.exposure, 1.);
     }
     let p = parse(
@@ -831,7 +1015,16 @@ fn missing_profiles_unknown_settings_and_looks_never_partially_apply() -> Result
         ),
     )?;
     assert_eq!(p.settings["Exposure2012"], "2");
-    assert!(p.apply(&base, &Metadata::default(), &[], None).is_err());
+    assert!(
+        p.apply(
+            &base,
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none()
+        )
+        .is_err()
+    );
     Ok(())
 }
 #[test]
@@ -868,11 +1061,23 @@ fn profile_amount_applies_to_looks_that_have_one() -> Result<()> {
     let p = preset("Test Creative", "0.5")?;
     assert!(p.blockers.is_empty(), "{:?}", p.blockers);
     assert!(p.look_available(&m, &profiles));
-    let r = p.apply(&base, &m, &profiles, None)?;
+    let r = p.apply(
+        &base,
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.profile.as_ref().unwrap().name, "Test Creative");
     assert_eq!((r.profile_amount, r.exposure), (0.5, 2.));
     // 0% keeps the look, at no strength.
-    let r = preset("Test Creative", "0")?.apply(&base, &m, &profiles, None)?;
+    let r = preset("Test Creative", "0")?.apply(
+        &base,
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.profile.as_ref().unwrap().name, "Test Creative");
     assert_eq!(r.profile_amount, 0.);
     // Camera Raw's photo sidecars use resource children instead of attributes.
@@ -889,7 +1094,13 @@ fn profile_amount_applies_to_looks_that_have_one() -> Result<()> {
     };
     for amount in [0., 0.5, 2.] {
         let p = resource(&amount.to_string(), "")?;
-        let r = p.apply(&base, &m, &profiles, None)?;
+        let r = p.apply(
+            &base,
+            &m,
+            &profiles,
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(r.profile_amount, amount);
     }
     for invalid in ["-1", "2.5", "NaN", ""] {
@@ -917,7 +1128,13 @@ fn profile_amount_applies_to_looks_that_have_one() -> Result<()> {
             ),
         ),
     )?
-    .apply(&earlier, &m, &profiles, None)?;
+    .apply(
+        &earlier,
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.profile.as_ref().unwrap().name, open::COLOR);
     assert_eq!(r.profile_amount, 1.);
     // An amount Lightroom cannot store is malformed.
@@ -963,7 +1180,13 @@ fn a_renamed_look_is_found_by_its_uuid() -> Result<()> {
     let p = preset(&format!("<c:UUID>{uuid}</c:UUID>"))?;
     assert!(p.look_available(&m, &profiles));
     assert!(p.profile_substitute(&m, &profiles).is_none());
-    let r = p.apply(&base, &m, &profiles, None)?;
+    let r = p.apply(
+        &base,
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.profile.as_ref().unwrap().name, "Renamed Creative");
     assert_eq!(r.profile_amount, 0.5);
     for other in ["", "<c:UUID>0123456789ABCDEF0123456789ABCDEF</c:UUID>"] {
@@ -1000,7 +1223,7 @@ fn a_looks_own_grayscale_flag_sets_the_treatment() -> Result<()> {
                 ),
             ),
         )?
-        .apply(&base, &m, &profiles, None)?;
+        .apply(&base, &m, &profiles, None, &crate::lens::lensfun::installed::Handle::none())?;
         assert_eq!(r.profile.as_ref().unwrap().name, "Test Creative");
         Ok(r.effects.monochrome)
     };
@@ -1026,7 +1249,7 @@ fn a_looks_own_grayscale_flag_sets_the_treatment() -> Result<()> {
             r#"<c:Look r:parseType="Resource"><c:Name>Test Creative</c:Name><c:Parameters r:parseType="Resource"><c:ConvertToGrayscale>False</c:ConvertToGrayscale></c:Parameters></c:Look>"#,
         ),
     )?
-    .apply(&base, &m, &profiles, None)?;
+    .apply(&base, &m, &profiles, None, &crate::lens::lensfun::installed::Handle::none())?;
     assert!(!r.effects.monochrome);
     // A look that isn't available leaves the photo's flag, with the rest of the edit.
     let (r, skipped) = parse(
@@ -1038,7 +1261,13 @@ fn a_looks_own_grayscale_flag_sets_the_treatment() -> Result<()> {
             ),
         ),
     )?
-    .apply_lenient(&base, &m, &profiles, None)?;
+    .apply_lenient(
+        &base,
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(!skipped.is_empty());
     assert!(r.effects.monochrome);
     Ok(())
@@ -1057,13 +1286,20 @@ fn every_lightroom_vignette_style_imports() -> Result<()> {
             &Metadata::default(),
             &[],
             None,
+            &crate::lens::lensfun::installed::Handle::none(),
         )?;
         assert_eq!(r.effects.vignette_style, style);
     }
     let attrs = r#"c:PostCropVignetteAmount="-40" c:PostCropVignetteStyle="4""#;
     assert!(
         parse(Path::new("p.xmp"), &xml(attrs, ""))?
-            .apply(&Recipe::default(), &Metadata::default(), &[], None)
+            .apply(
+                &Recipe::default(),
+                &Metadata::default(),
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     Ok(())
@@ -1075,7 +1311,13 @@ fn refine_saturation_imports_and_out_of_range_values_are_rejected() -> Result<()
             Path::new("p.xmp"),
             &xml(&format!("c:CurveRefineSaturation=\"{value}\""), ""),
         )?
-        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .apply(
+            &Recipe::default(),
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     assert_eq!(apply("0")?.curve_saturation, 0.);
     assert_eq!(apply("50")?.curve_saturation, 0.5);
@@ -1091,6 +1333,7 @@ fn refine_saturation_imports_and_out_of_range_values_are_rejected() -> Result<()
         &Metadata::default(),
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     assert_eq!(r.curve_saturation, 0.3);
     Ok(())
@@ -1103,8 +1346,14 @@ fn malformed_numbers_rejected() -> Result<()> {
             &xml(&format!("c:Exposure2012=\"{value}\""), ""),
         )?;
         assert!(
-            p.apply(&Recipe::default(), &Metadata::default(), &[], None)
-                .is_err()
+            p.apply(
+                &Recipe::default(),
+                &Metadata::default(),
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
+            .is_err()
         );
     }
     Ok(())
@@ -1133,7 +1382,13 @@ fn lenient_apply_keeps_supported_settings_and_reports_the_rest() -> Result<()> {
         Path::new("p.xmp"),
         &xml(r#"c:Exposure2012="2" c:CameraProfile="Missing""#, ""),
     )?;
-    let (recipe, skipped) = p.apply_lenient(&base, &Metadata::default(), &[], None)?;
+    let (recipe, skipped) = p.apply_lenient(
+        &base,
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(recipe.exposure, 2.);
     assert_eq!(recipe.profile, base.profile);
     assert!(skipped.iter().any(|s| s.contains("Missing camera profile")));
@@ -1148,7 +1403,13 @@ fn empty_flags_are_unset_and_curves_still_apply() -> Result<()> {
             r#"<c:ToneCurvePV2012><r:Seq><r:li>0, 50</r:li><r:li>255, 255</r:li></r:Seq></c:ToneCurvePV2012>"#,
         ),
     )?;
-    let r = p.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = p.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(!r.effects.monochrome);
     assert_eq!(r.curve.points[0], [0., 50. / 255.]);
     Ok(())
@@ -1203,10 +1464,22 @@ fn lightroom_spots_and_masks_convert_to_image_space() -> Result<()> {
     // Strict application reports the AI mask; lenient application imports the rest.
     assert!(
         preset
-            .apply(&Recipe::default(), &landscape, &[], None)
+            .apply(
+                &Recipe::default(),
+                &landscape,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
-    let (r, skipped) = preset.apply_lenient(&Recipe::default(), &landscape, &[], None)?;
+    let (r, skipped) = preset.apply_lenient(
+        &Recipe::default(),
+        &landscape,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(skipped.len(), 1, "{skipped:?}");
     assert!(skipped[0].contains("Select Subject"));
     assert_eq!(r.exposure, 0.2);
@@ -1254,7 +1527,13 @@ fn lightroom_spots_and_masks_convert_to_image_space() -> Result<()> {
         flip: 6,
         ..landscape
     };
-    let (r, _) = preset.apply_lenient(&Recipe::default(), &portrait, &[], None)?;
+    let (r, _) = preset.apply_lenient(
+        &Recipe::default(),
+        &portrait,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(
         matches!(r.retouch[0].shape, RetouchShape::Spot { center, radius } if near(center, [0.7, 0.3]) && radius == 0.05)
     );
@@ -1300,6 +1579,7 @@ fn upright_imports_lightroom_stored_corrections() -> Result<()> {
         &Metadata::default(),
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     let u = &r.upright;
     assert_eq!(u.mode, crate::model::transform::UprightMode::Vertical);
@@ -1312,7 +1592,13 @@ fn upright_imports_lightroom_stored_corrections() -> Result<()> {
         Path::new("preset.xmp"),
         &xml(r#"c:Exposure2012="0.5" c:PerspectiveUpright="3""#, ""),
     )?;
-    let r = preset.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = preset.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.5);
     assert_eq!(r.upright.mode, crate::model::transform::UprightMode::Level);
     assert!(r.upright.corrections.is_empty());
@@ -1324,8 +1610,13 @@ fn upright_imports_lightroom_stored_corrections() -> Result<()> {
             "",
         ),
     )?;
-    let (r, warnings) =
-        sidecar.apply_lenient(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let (r, warnings) = sidecar.apply_lenient(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.5);
     assert!(r.upright.is_default());
     assert!(warnings.iter().any(|w| w.contains("PerspectiveUpright")));
@@ -1344,14 +1635,26 @@ fn upright_modes_without_a_stored_correction_stay_unanalysed() {
     )
     .unwrap();
     let r = preset
-        .apply(&Recipe::default(), &Metadata::default(), &[], None)
+        .apply(
+            &Recipe::default(),
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert!(r.upright.corrections.is_empty());
 }
 #[test]
 fn remove_chromatic_aberration_imports_and_presets_leave_it_when_omitted() -> Result<()> {
     let apply = |attrs: &str, r: &Recipe| {
-        parse(Path::new("ca.xmp"), &xml(attrs, ""))?.apply(r, &Metadata::default(), &[], None)
+        parse(Path::new("ca.xmp"), &xml(attrs, ""))?.apply(
+            r,
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let on = apply(r#"c:AutoLateralCA="1""#, &Recipe::default())?;
     assert!(on.lens_ca);
@@ -1362,7 +1665,13 @@ fn remove_chromatic_aberration_imports_and_presets_leave_it_when_omitted() -> Re
 #[test]
 fn manual_distortion_imports() -> Result<()> {
     let apply = |attrs: &str, r: &Recipe| {
-        parse(Path::new("d.xmp"), &xml(attrs, ""))?.apply(r, &Metadata::default(), &[], None)
+        parse(Path::new("d.xmp"), &xml(attrs, ""))?.apply(
+            r,
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let r = apply(r#"c:LensManualDistortionAmount="-35""#, &Recipe::default())?;
     assert!((r.lens_manual_distortion + 0.35).abs() < 1e-6);
@@ -1383,7 +1692,13 @@ fn new_lens_settings_drop_an_upright_analysis_made_through_the_old_ones() -> Res
     base.upright.mode = UprightMode::Level;
     base.upright.corrections = vec![[1., 0., 0., 0., 1., 0., 0., 0., 1.]; 4];
     let apply = |attrs: &str, r: &Recipe| {
-        parse(Path::new("d.xmp"), &xml(attrs, ""))?.apply(r, &Metadata::default(), &[], None)
+        parse(Path::new("d.xmp"), &xml(attrs, ""))?.apply(
+            r,
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let r = apply(r#"c:LensManualDistortionAmount="30""#, &base)?;
     assert!(r.upright.corrections.is_empty());
@@ -1408,6 +1723,7 @@ fn new_lens_settings_drop_an_upright_analysis_made_through_the_old_ones() -> Res
         &Metadata::default(),
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     assert!(r.upright.corrections.is_empty());
     Ok(())
@@ -1425,7 +1741,13 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
             "",
         ),
     )?;
-    let r = resolved.apply(&Recipe::default(), &m, &[], None)?;
+    let r = resolved.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(r.effects.monochrome);
     assert_eq!(r.effects.gray_mix[0], -12. * 0.01);
     assert_eq!(r.effects.gray_mix[5], 30. * 0.01);
@@ -1435,7 +1757,13 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
         r#"c:ConvertToGrayscale="False" c:AutoGrayscaleMix="True""#,
     ] {
         let p = parse(Path::new("p.xmp"), &xml(attrs, ""))?;
-        p.apply(&Recipe::default(), &m, &[], None)?;
+        p.apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
     }
     let invalid = parse(
         Path::new("p.xmp"),
@@ -1444,7 +1772,17 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
             "",
         ),
     )?;
-    assert!(invalid.apply(&Recipe::default(), &m, &[], None).is_err());
+    assert!(
+        invalid
+            .apply(
+                &Recipe::default(),
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
+            .is_err()
+    );
     let mut base = Recipe::default();
     base.effects.gray_mix[2] = 0.4;
     let auto = parse(
@@ -1456,7 +1794,13 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
     )?;
     // Without the photo (listing which presets fit it), the current mix stays, as
     // Auto white balance leaves white balance.
-    let r = auto.apply(&base, &m, &[], None)?;
+    let r = auto.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(r.effects.monochrome);
     assert_eq!(r.exposure, 0.5);
     assert_eq!(r.effects.gray_mix, base.effects.gray_mix);
@@ -1467,7 +1811,13 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
         ..Default::default()
     };
     let photo = FakeMeasures::default();
-    let r = auto.apply(&base, &photo_metadata, &[], Some(&photo))?;
+    let r = auto.apply(
+        &base,
+        &photo_metadata,
+        &[],
+        Some(&photo),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(r.effects.monochrome);
     assert_eq!(r.effects.gray_mix, FakeMeasures::MIX);
     assert_eq!(photo.gray_mix_widths.borrow().as_slice(), [16]);
@@ -1488,7 +1838,18 @@ fn auto_grayscale_mix_uses_stored_mixer_or_estimates_it() -> Result<()> {
         Path::new("auto.xmp"),
         &xml(r#"c:AutoGrayscaleMix="True""#, ""),
     )?;
-    assert_eq!(auto.apply(&base, &m, &[], None)?.effects.gray_mix, [0.; 8]);
+    assert_eq!(
+        auto.apply(
+            &base,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none()
+        )?
+        .effects
+        .gray_mix,
+        [0.; 8]
+    );
     Ok(())
 }
 /// Camera Raw reads the Red, Green and Blue point curves only as the full set
@@ -1513,6 +1874,7 @@ fn channel_curves_apply_only_as_a_full_set() -> Result<()> {
         &Metadata::default(),
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     assert_eq!(r.effects.channels[0].points[1], [128. / 255., 150. / 255.]);
     for partial in [
@@ -1530,6 +1892,7 @@ fn channel_curves_apply_only_as_a_full_set() -> Result<()> {
             &Metadata::default(),
             &[],
             None,
+            &crate::lens::lensfun::installed::Handle::none(),
         )?;
         assert_eq!(r.effects.channels, Recipe::default().effects.channels);
     }
@@ -1540,7 +1903,13 @@ fn channel_curves_apply_only_as_a_full_set() -> Result<()> {
 #[test]
 fn constrain_crop_imports() -> Result<()> {
     let apply = |attrs: &str, r: &Recipe| {
-        parse(Path::new("c.xmp"), &xml(attrs, ""))?.apply(r, &Metadata::default(), &[], None)
+        parse(Path::new("c.xmp"), &xml(attrs, ""))?.apply(
+            r,
+            &Metadata::default(),
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let on = apply(r#"c:CropConstrainToWarp="1""#, &Recipe::default())?;
     assert!(on.constrain_crop);
@@ -1575,6 +1944,7 @@ fn guided_upright_guides_round_trip_as_camera_raw_writes_them() -> Result<()> {
         &m,
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     let u = &r.upright;
     assert_eq!(u.mode, UprightMode::Guided);
@@ -1614,21 +1984,39 @@ fn guided_upright_guides_round_trip_as_camera_raw_writes_them() -> Result<()> {
     assert!(packet.contains(
         r#"crs:UprightFourSegments_1="0.700000000,0.100000000,0.750000000,0.900000000""#
     ));
-    let back = parse(Path::new("export.xmp"), &packet)?.apply(&Recipe::default(), &m, &[], None)?;
+    let back = parse(Path::new("export.xmp"), &packet)?.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(back.upright, r.upright);
     // Guides without a stored correction are still reported: renders outside the
     // editor (the command line, Library previews) have no analysis to solve them beside.
     let attrs = r#"xmlns:ps="http://ns.adobe.com/photoshop/1.0/" ps:SidecarForExtension="ARW" c:PerspectiveUpright="5" c:UprightFourSegmentsCount="2" c:UprightFourSegments_0="0.3,0.1,0.25,0.9" c:UprightFourSegments_1="0.7,0.1,0.75,0.9""#;
     assert!(
         parse(Path::new("photo.xmp"), &xml(attrs, ""))?
-            .apply(&Recipe::default(), &m, &[], None)
+            .apply(
+                &Recipe::default(),
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     // A broken guide is refused, not guessed at.
     let attrs = r#"c:PerspectiveUpright="5" c:UprightFourSegmentsCount="1" c:UprightFourSegments_0="0.3 0.1 0.25 0.9""#;
     assert!(
         parse(Path::new("p.xmp"), &xml(attrs, ""))?
-            .apply(&Recipe::default(), &m, &[], None)
+            .apply(
+                &Recipe::default(),
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     Ok(())
@@ -1649,7 +2037,13 @@ fn red_eye_corrections_import_from_camera_raw_and_catalogs() -> Result<()> {
         height: 1024,
         ..Default::default()
     };
-    let (r, warnings) = preset.apply_lenient(&Recipe::default(), &landscape, &[], None)?;
+    let (r, warnings) = preset.apply_lenient(
+        &Recipe::default(),
+        &landscape,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(r.red_eye.len(), 2);
     // Pet Eye, with Lightroom's default catchlight: 0.5 is the centre and 0 or 1 a
@@ -1677,7 +2071,13 @@ fn red_eye_corrections_import_from_camera_raw_and_catalogs() -> Result<()> {
         flip: 6,
         ..landscape.clone()
     };
-    let (r, _) = preset.apply_lenient(&Recipe::default(), &portrait, &[], None)?;
+    let (r, _) = preset.apply_lenient(
+        &Recipe::default(),
+        &portrait,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     let eye = &r.red_eye[0];
     assert!(near(eye.center[0], 1. - 0.341797) && near(eye.center[1], 0.520833));
     assert!(near(eye.correlation, -0.2));
@@ -1705,7 +2105,13 @@ fn red_eye_corrections_import_from_camera_raw_and_catalogs() -> Result<()> {
             Path::new("photo.xmp"),
             &xml(r#"c:EnableRedEye="True""#, &body),
         )?;
-        let (r, _) = preset.apply_lenient(&Recipe::default(), &landscape, &[], None)?;
+        let (r, _) = preset.apply_lenient(
+            &Recipe::default(),
+            &landscape,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(r.red_eye[0].kind, EyeKind::Pet { catchlight: None });
     }
     // The switch turned off keeps the corrections but renders without them.
@@ -1713,7 +2119,13 @@ fn red_eye_corrections_import_from_camera_raw_and_catalogs() -> Result<()> {
         Path::new("photo.xmp"),
         &xml(r#"c:EnableRedEye="False""#, &body),
     )?;
-    let (r, _) = off.apply_lenient(&Recipe::default(), &landscape, &[], None)?;
+    let (r, _) = off.apply_lenient(
+        &Recipe::default(),
+        &landscape,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.red_eye.len(), 2);
     assert!(r.as_rendered().red_eye.is_empty());
     Ok(())
@@ -1784,7 +2196,13 @@ fn lens_profile_identity_round_trips() -> Result<()> {
     m.daylight_wb = [1.; 3];
     m.matrix = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
     let apply = |attrs: &str, r: &Recipe| {
-        parse(Path::new("lens.xmp"), &xml(attrs, ""))?.apply(r, &m, &[], None)
+        parse(Path::new("lens.xmp"), &xml(attrs, ""))?.apply(
+            r,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
     };
     let named = r#"c:LensProfileEnable="1" c:LensProfileSetup="Custom" c:LensProfileName="Adobe (Gone 24mm)" c:LensProfileFilename="Gone (24mm) - RAW.lcp" c:LensProfileDigest="0123456789ABCDEF0123456789ABCDEF" c:LensProfileIsEmbedded="False""#;
     let r = apply(named, &Recipe::default())?;
@@ -1822,7 +2240,13 @@ fn lens_profile_identity_round_trips() -> Result<()> {
     ] {
         assert!(packet.contains(key), "{key} {packet}");
     }
-    let back = parse(Path::new("export.xmp"), &packet)?.apply(&Recipe::default(), &m, &[], None)?;
+    let back = parse(Path::new("export.xmp"), &packet)?.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(back.lens_profile_choice, r.lens_profile_choice);
     // Lightroom's names for the setups.
     let auto = apply(r#"c:LensProfileSetup="Auto""#, &r)?;
@@ -1974,12 +2398,24 @@ fn the_files_own_lens_correction_travels_as_rawmakases_setting() -> Result<()> {
     assert!(packet.contains(r#"xmlns:rawmakase=""#), "{packet}");
     // The `crs:` lens keys say what they said before.
     assert!(packet.contains(r#"crs:LensProfileEnable="0""#), "{packet}");
-    let read = parse(Path::new("IMG.xmp"), &packet)?.apply(&on, &m, &[], None)?;
+    let read = parse(Path::new("IMG.xmp"), &packet)?.apply(
+        &on,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(!read.lens_file_correction);
     assert!(read.lens_correction(&m).is_none());
     // Settings without the key leave the photo's as it was.
     let plain = write::packet(&on, &m, &photo);
-    let kept = parse(Path::new("IMG.xmp"), &plain)?.apply(&off, &m, &[], None)?;
+    let kept = parse(Path::new("IMG.xmp"), &plain)?.apply(
+        &off,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(!kept.lens_file_correction);
     // Presets of the group carry it on and off; of other groups, not at all.
     let info = crate::xmp::preset_write::PresetInfo::new("Lens", "Mine");
@@ -1996,10 +2432,22 @@ fn the_files_own_lens_correction_travels_as_rawmakases_setting() -> Result<()> {
         preset_on.contains(r#"rawmakase:FileLensCorrection="1""#),
         "{preset_on}"
     );
-    let back = parse(Path::new("lens.xmp"), &preset_on)?.apply(&off, &m, &[], None)?;
+    let back = parse(Path::new("lens.xmp"), &preset_on)?.apply(
+        &off,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(back.lens_file_correction);
     let preset_off = crate::xmp::preset_write::preset(&off, &m, &info, &lens_group);
-    let back = parse(Path::new("lens.xmp"), &preset_off)?.apply(&on, &m, &[], None)?;
+    let back = parse(Path::new("lens.xmp"), &preset_off)?.apply(
+        &on,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(!back.lens_file_correction);
     let mut others = GroupSelection::all();
     others.set(
@@ -2015,7 +2463,13 @@ fn the_files_own_lens_correction_travels_as_rawmakases_setting() -> Result<()> {
     );
     assert!(
         parse(Path::new("IMG.xmp"), &bad)?
-            .apply(&on, &m, &[], None)
+            .apply(
+                &on,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     Ok(())
@@ -2077,13 +2531,7 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
     m.lens_profiles =
         crate::lens::lcp::Library::from_texts([("a.lcp", adobe.as_str())]).for_photo(&m);
     let read = |m: &Metadata, lensfun: &Handle| {
-        parse(Path::new("IMG.xmp"), &packet)?.apply_with_lensfun(
-            &Recipe::default(),
-            m,
-            &[],
-            None,
-            lensfun,
-        )
+        parse(Path::new("IMG.xmp"), &packet)?.apply(&Recipe::default(), m, &[], None, lensfun)
     };
     let unresolved = read(&m, &fixture::none())?;
     let choice = unresolved.lens_profile_choice.lensfun().unwrap();
@@ -2128,7 +2576,7 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
         crate::xml::ns::RDF,
         crate::xml::ns::CRS
     );
-    let from_elements = parse(Path::new("e.xmp"), &elements)?.apply_with_lensfun(
+    let from_elements = parse(Path::new("e.xmp"), &elements)?.apply(
         &Recipe::default(),
         &m,
         &[],
@@ -2149,13 +2597,8 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
         crate::xml::ns::RDF,
         crate::xml::ns::CRS
     );
-    let from_split = parse(Path::new("s.xmp"), &split)?.apply_with_lensfun(
-        &Recipe::default(),
-        &m,
-        &[],
-        None,
-        &installed,
-    )?;
+    let from_split =
+        parse(Path::new("s.xmp"), &split)?.apply(&Recipe::default(), &m, &[], None, &installed)?;
     assert!(
         from_split
             .lens_profile_choice
@@ -2190,7 +2633,7 @@ fn lensfun_lenses_travel_by_identity() -> Result<()> {
         "{preset}"
     );
     assert!(preset.contains("rawmakase:LensfunModel="), "{preset}");
-    let applied = parse(Path::new("Lens.xmp"), &preset)?.apply_with_lensfun(
+    let applied = parse(Path::new("Lens.xmp"), &preset)?.apply(
         &Recipe::default(),
         &m,
         &[],
@@ -2221,6 +2664,7 @@ fn lightroom_manual_vignetting_imports() -> Result<()> {
             &Metadata::default(),
             &[],
             None,
+            &crate::lens::lensfun::installed::Handle::none(),
         )
     };
     let r = apply(r#"c:VignetteAmount="-50" c:VignetteMidpoint="20""#)?;
@@ -2273,7 +2717,13 @@ fn adobe_standard_resolves_to_the_phone_module_that_took_the_photo() -> Result<(
         Path::new("p.xmp"),
         &xml(r#"c:CameraProfile="Adobe Standard""#, ""),
     )?;
-    let recipe = p.apply(&Recipe::default(), &m, &profiles, None)?;
+    let recipe = p.apply(
+        &Recipe::default(),
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(
         recipe.profile.unwrap().camera,
         "Google Pixel 7 Pro Telephoto Camera"
@@ -2284,7 +2734,13 @@ fn adobe_standard_resolves_to_the_phone_module_that_took_the_photo() -> Result<(
         ..m
     };
     let e = p
-        .apply(&Recipe::default(), &unknown, &profiles, None)
+        .apply(
+            &Recipe::default(),
+            &unknown,
+            &profiles,
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap_err();
     assert!(format!("{e:#}").contains("Missing camera profile ‘Adobe Standard’"));
     assert!(e.chain().any(|c| c.is::<rawmakase_model::error::Missing>()));
@@ -2306,7 +2762,13 @@ fn xmp_reads_and_writes_relative_white_balance_for_a_jpeg() -> Result<()> {
         .0;
     let attrs = r#"c:IncrementalTemperature="+25" c:IncrementalTint="-10" c:WhiteBalance="Custom" c:CameraProfile="Embedded""#;
     let sidecar = parse(Path::new("photo.xmp"), &xml(attrs, ""))?;
-    let r = sidecar.apply(&Recipe::for_rendered(&m), &m, &profiles, None)?;
+    let r = sidecar.apply(
+        &Recipe::for_rendered(&m),
+        &m,
+        &profiles,
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!((r.incremental_temperature, r.incremental_tint), (25., -10.));
     assert_eq!(r.wb, [1.; 3]);
     assert!(r.profile.as_ref().is_some_and(|p| p.is_embedded()));
@@ -2349,13 +2811,27 @@ fn a_raw_xmp_with_relative_white_balance_is_still_refused() -> Result<()> {
         Path::new("photo.xmp"),
         &xml(r#"c:IncrementalTemperature="+25" c:Exposure2012="0.5""#, ""),
     )?;
-    let error = preset.apply(&Recipe::default(), &m, &[], None).unwrap_err();
+    let error = preset
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
+        .unwrap_err();
     assert!(
         format!("{error:#}").contains("Active IncrementalTemperature"),
         "{error:#}"
     );
     // Lenient application keeps the RAW's white balance and the rest of the edit.
-    let (r, warnings) = preset.apply_lenient(&Recipe::default(), &m, &[], None)?;
+    let (r, warnings) = preset.apply_lenient(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.5);
     assert_eq!(
         (r.incremental_temperature, r.wb),
@@ -2372,7 +2848,13 @@ fn a_raw_xmp_with_relative_white_balance_is_still_refused() -> Result<()> {
         Path::new("photo.xmp"),
         &xml(r#"c:IncrementalTemperature="0" c:IncrementalTint="0""#, ""),
     )?;
-    zero.apply(&Recipe::default(), &m, &[], None)?;
+    zero.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     Ok(())
 }
 
@@ -2389,13 +2871,25 @@ fn kelvin_white_balance_is_ignored_on_a_rendered_photo() -> Result<()> {
             "",
         ),
     )?;
-    let r = preset.apply(&base, &m, &[], None)?;
+    let r = preset.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.5);
     assert_eq!(
         (r.temperature, r.tint, r.incremental_temperature, r.wb),
         (base.temperature, base.tint, 12., base.wb)
     );
-    let (r, warnings) = preset.apply_lenient(&base, &m, &[], None)?;
+    let (r, warnings) = preset.apply_lenient(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!((r.exposure, r.wb), (0.5, base.wb));
     assert_eq!(
         warnings,
@@ -2420,14 +2914,26 @@ fn an_auto_tone_preset_sets_what_auto_settings_sets() -> Result<()> {
         &xml(r#"c:AutoTone="True" c:Sharpness="50""#, ""),
     )?;
     let photo = FakeMeasures::default();
-    let r = preset.apply(&base, &m, &[], Some(&photo))?;
+    let r = preset.apply(
+        &base,
+        &m,
+        &[],
+        Some(&photo),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(FakeMeasures::tone(&r), FakeMeasures::TONE);
     assert_eq!((r.effects.clarity, r.temperature), (0.3, 5200.));
     // Measured on the photo as the preset's other settings leave it.
     let sharpening = photo.tone_bases.borrow()[0].sharpening;
     assert!((sharpening - 50. / 150.).abs() < 1e-6);
     // Lenient application measures the same way.
-    let (lenient, warnings) = preset.apply_lenient(&base, &m, &[], Some(&photo))?;
+    let (lenient, warnings) = preset.apply_lenient(
+        &base,
+        &m,
+        &[],
+        Some(&photo),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(FakeMeasures::tone(&lenient), FakeMeasures::TONE);
     Ok(())
@@ -2444,7 +2950,13 @@ fn auto_tone_wins_over_tone_values_saved_with_it() -> Result<()> {
             "",
         ),
     )?;
-    let r = preset.apply(&Recipe::default(), &m, &[], Some(&FakeMeasures::default()))?;
+    let r = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        Some(&FakeMeasures::default()),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(FakeMeasures::tone(&r), FakeMeasures::TONE);
     Ok(())
 }
@@ -2463,7 +2975,13 @@ fn a_resolved_auto_tone_keeps_its_values() -> Result<()> {
         ),
     )?;
     let photo = FakeMeasures::default();
-    let r = preset.apply(&Recipe::default(), &m, &[], Some(&photo))?;
+    let r = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        Some(&photo),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(photo.asked(), 0);
     assert_eq!((r.exposure, r.contrast, r.highlights), (0.4, 0.06, -0.55));
     Ok(())
@@ -2491,7 +3009,13 @@ fn lightroom_unresolved_auto_placeholders_are_measured() -> Result<()> {
         Path::new("unresolved.xmp"),
         &xml(&format!(r#"c:AutoTone="True" {unresolved}"#), ""),
     )?;
-    let r = preset.apply(&Recipe::default(), &m, &[], Some(&FakeMeasures::default()))?;
+    let r = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        Some(&FakeMeasures::default()),
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(FakeMeasures::tone(&r), FakeMeasures::TONE);
     // Without the photo to measure (raw defaults, a catalog record read before it
     // opens) the sliders stay as they were.
@@ -2499,13 +3023,34 @@ fn lightroom_unresolved_auto_placeholders_are_measured() -> Result<()> {
         exposure: 0.3,
         ..Recipe::default()
     };
-    assert_eq!(preset.apply(&base, &m, &[], None)?.exposure, 0.3);
+    assert_eq!(
+        preset
+            .apply(
+                &base,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )?
+            .exposure,
+        0.3
+    );
     // Without AutoTone, the placeholder is just a value out of range.
     let plain = parse(
         Path::new("plain.xmp"),
         &xml(r#"c:Exposure2012="-999999""#, ""),
     )?;
-    assert!(plain.apply(&base, &m, &[], None).is_err());
+    assert!(
+        plain
+            .apply(
+                &base,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
+            .is_err()
+    );
     // And with it, other values out of range are not taken for Auto.
     let wrong = parse(
         Path::new("wrong.xmp"),
@@ -2513,7 +3058,13 @@ fn lightroom_unresolved_auto_placeholders_are_measured() -> Result<()> {
     )?;
     assert!(
         wrong
-            .apply(&base, &m, &[], Some(&FakeMeasures::default()))
+            .apply(
+                &base,
+                &m,
+                &[],
+                Some(&FakeMeasures::default()),
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     // A Lightroom catalog record converts the same way.
@@ -2684,7 +3235,13 @@ fn legacy_sidecars_keep_their_tone_curve_over_the_2012_one() -> Result<()> {
         let attrs = format!(r#"c:ProcessVersion="{version}""#);
         let preset = parse(Path::new("legacy.xmp"), &xml(&attrs, &body))?;
         Ok(preset
-            .apply(&Recipe::default(), &Metadata::default(), &[], None)?
+            .apply(
+                &Recipe::default(),
+                &Metadata::default(),
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )?
             .curve)
     };
     assert_eq!(curve("5.7")?.points[1], [128. / 255., 100. / 255.]);
@@ -2706,7 +3263,13 @@ fn auto_tone_without_the_photo_leaves_the_sliders() -> Result<()> {
         exposure: 0.25,
         ..Recipe::default()
     };
-    let r = preset.apply(&base, &m, &[], None)?;
+    let r = preset.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.25);
     assert!((r.contrast - 0.3).abs() < 1e-6);
     Ok(())
@@ -2730,7 +3293,13 @@ fn a_preset_says_whether_it_measures_the_photo() -> Result<()> {
         let preset = parse(Path::new("p.xmp"), &xml(attrs, ""))?;
         assert_eq!(preset.measures_photo(), measures, "{attrs}");
         let photo = FakeMeasures::default();
-        preset.apply_lenient(&Recipe::default(), &m, &[], Some(&photo))?;
+        preset.apply_lenient(
+            &Recipe::default(),
+            &m,
+            &[],
+            Some(&photo),
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         if !measures {
             assert_eq!(photo.asked(), 0, "{attrs}");
         }
@@ -2776,7 +3345,13 @@ fn a_fitted_look_round_trips_whole() -> Result<()> {
         crate::camera_profiles::open::STANDARD
     )));
     let base = Recipe::with_profiles(&m, &[]);
-    let back = parse(Path::new("photo.xmp"), &packet)?.apply(&base, &m, &[], None)?;
+    let back = parse(Path::new("photo.xmp"), &packet)?.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(back.profile.as_deref(), Some(&profile));
     assert_eq!(back.profile_amount, 1.5);
     // A preset of Treatment & Profile carries it too.
@@ -2785,7 +3360,13 @@ fn a_fitted_look_round_trips_whole() -> Result<()> {
     groups.set(SettingGroup::TreatmentAndProfile, GroupInclusion::Included);
     let info = crate::xmp::preset_write::PresetInfo::new("Fitted", "User Presets");
     let preset = crate::xmp::preset_write::preset(&r, &m, &info, &groups);
-    let back = parse(Path::new("fitted.xmp"), &preset)?.apply(&base, &m, &[], None)?;
+    let back = parse(Path::new("fitted.xmp"), &preset)?.apply(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(back.profile.as_deref(), Some(&profile));
     // Another camera, a damaged profile, or none: refused.
     let other = Metadata {
@@ -2794,7 +3375,13 @@ fn a_fitted_look_round_trips_whole() -> Result<()> {
     };
     assert!(
         parse(Path::new("p.xmp"), &packet)?
-            .apply(&base, &other, &[], None)
+            .apply(
+                &base,
+                &other,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     let start = packet.find("rawmakase:FittedProfile=\"v1:").unwrap() + 30;
@@ -2802,7 +3389,13 @@ fn a_fitted_look_round_trips_whole() -> Result<()> {
     damaged.replace_range(start..start + 20, "00000000000000000000");
     assert!(
         parse(Path::new("p.xmp"), &damaged)?
-            .apply(&base, &m, &[], None)
+            .apply(
+                &base,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
     let end = packet[start..].find('"').unwrap() + start;
@@ -2810,11 +3403,22 @@ fn a_fitted_look_round_trips_whole() -> Result<()> {
     missing.replace_range(packet.find("rawmakase:FittedProfile").unwrap()..end + 1, "");
     assert!(
         parse(Path::new("p.xmp"), &missing)?
-            .apply(&base, &m, &[], None)
+            .apply(
+                &base,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
             .is_err()
     );
-    let (lenient, warnings) =
-        parse(Path::new("p.xmp"), &missing)?.apply_lenient(&base, &m, &[], None)?;
+    let (lenient, warnings) = parse(Path::new("p.xmp"), &missing)?.apply_lenient(
+        &base,
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(lenient.profile, base.profile, "the photo keeps its profile");
     assert!(
         warnings.iter().any(|w| w.contains("fitted")),
@@ -2871,6 +3475,7 @@ fn white_balance_round_trips_under_a_fitted_matrix_base() -> Result<()> {
         &m,
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     for (a, b) in back.wb.iter().zip(r.wb) {
         assert!((a - b).abs() < 2e-3, "{:?} {:?}", back.wb, r.wb);
@@ -2907,13 +3512,25 @@ fn inactive_enhance_filter_is_neutral() -> Result<()> {
     let text = filter_preset(Some(ENHANCE_OFF), ENHANCE_OFF.0);
     let preset = parse(Path::new("filterlist-enhance-off.xmp"), &text)?;
     assert!(preset.blockers.is_empty(), "{:?}", preset.blockers);
-    let r = preset.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = preset.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!((r.effects.grain - 0.45).abs() < 1e-6, "{}", r.effects.grain);
     // Lightroom keeps a photo's Enhance filter in its sidecar the same way.
     let sidecar = text.replace("<r:Description ", r#"<r:Description xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/" photoshop:SidecarForExtension="CR3" "#);
     let photo = parse(Path::new("IMG.xmp"), &sidecar)?;
     assert!(photo.photo_settings);
-    photo.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    photo.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     // An empty filter list is neutral too.
     let empty = xml(
         r#"c:GrainAmount="45" c:AllowFilters="1""#,
@@ -2924,6 +3541,7 @@ fn inactive_enhance_filter_is_neutral() -> Result<()> {
         &Metadata::default(),
         &[],
         None,
+        &crate::lens::lensfun::installed::Handle::none(),
     )?;
     Ok(())
 }
@@ -2936,8 +3554,24 @@ fn active_enhance_filter_is_named() -> Result<()> {
     let preset = parse(Path::new("filterlist-denoise-on.xmp"), &text)?;
     assert_eq!(preset.blockers, [NOT_IN_PRESETS]);
     let m = Metadata::default();
-    assert!(preset.apply(&Recipe::default(), &m, &[], None).is_err());
-    let (r, skipped) = preset.apply_lenient(&Recipe::default(), &m, &[], None)?;
+    assert!(
+        preset
+            .apply(
+                &Recipe::default(),
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none()
+            )
+            .is_err()
+    );
+    let (r, skipped) = preset.apply_lenient(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!((r.effects.grain - 0.45).abs() < 1e-6, "{}", r.effects.grain);
     assert!(!r.ai_denoise.enabled);
     assert_eq!(skipped, [NOT_IN_PRESETS]);
@@ -2990,7 +3624,13 @@ fn camera_raws_own_denoise_sidecar_imports_as_ai_denoise() -> Result<()> {
     let photo = parse(Path::new("DSC00001.xmp"), &text)?;
     assert!(photo.photo_settings);
     assert!(photo.blockers.is_empty(), "{:?}", photo.blockers);
-    let r = photo.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = photo.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(r.ai_denoise.enabled);
     assert_eq!(r.ai_denoise.amount, 0.5);
     assert_eq!((r.noise_luma, r.noise_chroma), (0., 0.));
@@ -3004,7 +3644,13 @@ fn a_photos_lightroom_denoise_imports_as_ai_denoise() -> Result<()> {
     let photo = parse(Path::new("IMG.xmp"), &sidecar)?;
     assert!(photo.photo_settings);
     assert!(photo.blockers.is_empty(), "{:?}", photo.blockers);
-    let r = photo.apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    let r = photo.apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert!(r.ai_denoise.enabled);
     assert!(
         (0. ..=1.).contains(&r.ai_denoise.amount),
@@ -3051,7 +3697,15 @@ fn hdr_settings_are_kept_while_off_and_applied_on() {
     let m = Metadata::default();
     let attrs = "c:Exposure2012=\"0.5\" c:HDREditMode=\"0\" c:HDRMaxValue=\"+5.00\" c:SDRBrightness=\"+30\" c:SDRBlend=\"-50\" c:SDRClarity=\"150\"";
     let p = parse(Path::new("photo.xmp"), &xml(attrs, "")).unwrap();
-    let r = p.apply(&Recipe::default(), &m, &[], None).unwrap();
+    let r = p
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
+        .unwrap();
     assert!(!r.hdr.enabled);
     assert_eq!(r.hdr.limit, 5.);
     // Read as every slider is: Camera Raw's value times the key table's scale.
@@ -3062,7 +3716,13 @@ fn hdr_settings_are_kept_while_off_and_applied_on() {
     let out_of_range = xml("c:HDRMaxValue=\"10\"", "");
     let limit = parse(Path::new("limit.xmp"), &out_of_range)
         .unwrap()
-        .apply(&r, &m, &[], None)
+        .apply(
+            &r,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap()
         .hdr
         .limit;
@@ -3085,14 +3745,26 @@ fn hdr_settings_are_kept_while_off_and_applied_on() {
     assert!(!text.contains("Exposure2012"));
     let back = parse(Path::new("hdr.xmp"), &text)
         .unwrap()
-        .apply(&Recipe::default(), &m, &[], None)
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert_eq!(back.hdr, r.hdr);
     // The group at its defaults writes them too, so applying it resets HDR.
     let defaults = crate::xmp::preset_write::preset(&Recipe::default(), &m, &info, &groups);
     let reset = parse(Path::new("reset.xmp"), &defaults)
         .unwrap()
-        .apply(&r, &m, &[], None)
+        .apply(
+            &r,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert!(reset.hdr.is_default());
 
@@ -3100,16 +3772,38 @@ fn hdr_settings_are_kept_while_off_and_applied_on() {
     // renders with the SDR rendition sliders set here, which never change it.
     let on = xml(&attrs.replace("HDREditMode=\"0\"", "HDREditMode=\"1\""), "");
     let p = parse(Path::new("on.xmp"), &on).unwrap();
-    let strict = p.apply(&Recipe::default(), &m, &[], None).unwrap();
+    let strict = p
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
+        .unwrap();
     assert!(strict.hdr.is_active());
-    let (lenient, _) = p.apply_lenient(&Recipe::default(), &m, &[], None).unwrap();
+    let (lenient, _) = p
+        .apply_lenient(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
+        .unwrap();
     assert_eq!(lenient.hdr, strict.hdr);
     crate::model::hdr::check_recipe(&strict).unwrap();
     let text = crate::xmp::preset_write::preset(&strict, &m, &info, &groups);
     assert!(text.contains("crs:HDREditMode=\"1\""), "{text}");
     let back = parse(Path::new("on-preset.xmp"), &text)
         .unwrap()
-        .apply(&Recipe::default(), &m, &[], None)
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert_eq!(back.hdr, strict.hdr);
 }
@@ -3170,8 +3864,13 @@ fn looks_are_written_with_their_lightroom_settings() -> Result<()> {
         }
         // Read back by RAWmakase: the look, its Amount and the Treatment.
         let base_recipe = Recipe::with_profiles(&m, &profiles);
-        let read =
-            parse(Path::new("look.xmp"), &preset)?.apply(&base_recipe, &m, &profiles, None)?;
+        let read = parse(Path::new("look.xmp"), &preset)?.apply(
+            &base_recipe,
+            &m,
+            &profiles,
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert!(std::sync::Arc::ptr_eq(
             read.profile.as_ref().unwrap(),
             &look
@@ -3226,7 +3925,13 @@ fn a_user_looks_table_beside_the_settings_is_accepted() -> Result<()> {
             "",
         ),
     )?
-    .apply(&Recipe::default(), &Metadata::default(), &[], None)?;
+    .apply(
+        &Recipe::default(),
+        &Metadata::default(),
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!(r.exposure, 0.5);
     Ok(())
 }
@@ -3299,7 +4004,13 @@ fn a_merged_dngs_packet_is_its_starting_settings() -> Result<()> {
         assert!(packet.contains(attribute), "{attribute} in {packet}");
     }
     assert!(!packet.contains("HDRMaxValue"), "{packet}");
-    let back = parse(Path::new("merged.xmp"), &packet)?.apply(&Recipe::default(), &m, &[], None)?;
+    let back = parse(Path::new("merged.xmp"), &packet)?.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_eq!((back.temperature, back.tint), (4000., 10.));
     assert!(back.lens_profile);
     assert!(!back.hdr.enabled);

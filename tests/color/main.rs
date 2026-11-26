@@ -240,6 +240,7 @@ pub fn render(
         &im.metadata,
         profiles,
         Some(&rawmakase::develop::Measures(im)),
+        &rawmakase::lens::lensfun::installed::Handle::none(),
     )?;
     rawmakase::develop::render(im, &recipe.checked()?, max_edge, Cancel::NEVER)
 }

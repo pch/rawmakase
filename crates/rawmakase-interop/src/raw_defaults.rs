@@ -198,11 +198,15 @@ pub fn same_camera(name: &str, m: &Metadata) -> bool {
 
 /// The raw defaults ready to apply: the choices, with the presets they name read.
 /// Cheap to share between threads behind an `Arc`. Equal when the choices and the
-/// presets as read are: a preset file can change under the same id.
-#[derive(Clone, Debug, Default, PartialEq)]
+/// presets as read are: a preset file can change under the same id. (The
+/// Lensfun database is the context's, the same for every defaults it makes.)
+#[derive(Clone, Debug)]
 pub struct DevelopDefaults {
     settings: RawDefaults,
     presets: Vec<Preset>,
+    /// The Lensfun database a default preset's Lensfun lens resolves against;
+    /// none unless given ([`Self::with_lensfun`]).
+    lensfun: crate::lens::lensfun::installed::Handle,
 }
 /// A photo's starting settings, which choice they came from, and why they are
 /// Adobe Default instead of the preset asked for, if they are.
@@ -211,6 +215,16 @@ pub struct Resolved {
     pub recipe: Recipe,
     pub name: String,
     pub note: Option<String>,
+}
+impl Default for DevelopDefaults {
+    fn default() -> Self {
+        Self::with_presets(RawDefaults::default(), |_| None)
+    }
+}
+impl PartialEq for DevelopDefaults {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.settings, &self.presets) == (&other.settings, &other.presets)
+    }
 }
 impl DevelopDefaults {
     /// Reads the presets `settings` names from the preset library.
@@ -228,7 +242,17 @@ impl DevelopDefaults {
                 presets.push(p);
             }
         }
-        Self { settings, presets }
+        Self {
+            settings,
+            presets,
+            lensfun: crate::lens::lensfun::installed::Handle::none(),
+        }
+    }
+    /// These defaults, resolving a default preset's Lensfun lens against
+    /// `lensfun`, the database installed now.
+    pub fn with_lensfun(mut self, lensfun: crate::lens::lensfun::installed::Handle) -> Self {
+        self.lensfun = lensfun;
+        self
     }
     pub fn settings(&self) -> &RawDefaults {
         &self.settings
@@ -287,7 +311,7 @@ impl DevelopDefaults {
                 };
                 // No photo: Auto settings in a default are not measured, so the
                 // photo opens, resets and previews the same everywhere.
-                match preset.apply(&adobe(), m, profiles, None) {
+                match preset.apply(&adobe(), m, profiles, None, &self.lensfun) {
                     Ok(mut recipe) => {
                         // Upright is worked out for one photo: analysed on each
                         // (which every view would have to wait for) or stored from
@@ -694,7 +718,13 @@ mod tests {
             .insert("PerspectiveUpright".into(), "1".into());
         // The preset itself sets Auto Upright, to be analysed on the photo.
         let applied = upright
-            .apply(&Recipe::with_profiles(&m, &profiles), &m, &profiles, None)
+            .apply(
+                &Recipe::with_profiles(&m, &profiles),
+                &m,
+                &profiles,
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )
             .unwrap();
         assert_ne!(
             applied.upright.mode,

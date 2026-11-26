@@ -24,7 +24,13 @@ fn supplied_library_audit() -> anyhow::Result<()> {
         let mut okay = 0;
         let mut errors = std::collections::BTreeMap::<String, usize>::new();
         for p in &library.presets {
-            match p.apply(&base, &m, &profiles, None) {
+            match p.apply(
+                &base,
+                &m,
+                &profiles,
+                None,
+                &rawmakase::lens::lensfun::installed::Handle::none(),
+            ) {
                 Ok(r) => {
                     r.validate()?;
                     okay += 1;

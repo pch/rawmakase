@@ -86,16 +86,7 @@ pub fn load_preset(path: &Path) -> Result<LoadedPreset> {
 /// or red eye, so the photo keeps its own and their panel switches; the preset's masks
 /// replace the photo's only when it has any, as in Lightroom. Between a RAW and a
 /// rendered file the photo keeps its white balance and profile, as with Copy and Sync.
-pub fn applied_to(preset: LoadedPreset, photo: &Recipe, m: &Metadata) -> Recipe {
-    applied_to_with_lensfun(
-        preset,
-        photo,
-        m,
-        &crate::lens::lensfun::installed::Handle::Installed,
-    )
-}
-/// [`applied_to`], with a Lensfun lens taken to this photo's camera against `lensfun`.
-pub(crate) fn applied_to_with_lensfun(
+pub fn applied_to(
     preset: LoadedPreset,
     photo: &Recipe,
     m: &Metadata,
@@ -132,7 +123,7 @@ mod tests {
         let mut r = Recipe::default();
         r.lens_profile_choice.choose_lensfun(fixture::choice());
         let m = fixture::other_camera();
-        let applied = applied_to_with_lensfun(
+        let applied = applied_to(
             LoadedPreset {
                 recipe: r,
                 rendered: false,
@@ -176,6 +167,7 @@ mod tests {
             },
             &photo,
             &Metadata::default(),
+            &crate::lens::lensfun::installed::Handle::none(),
         );
         assert_eq!(applied.exposure, 0.5);
         assert_eq!(applied.red_eye, photo.red_eye);
@@ -209,7 +201,12 @@ mod tests {
         let m = rendered();
         let mut photo = Recipe::for_rendered(&m);
         photo.incremental_temperature = 20.;
-        let applied = applied_to(load_preset(&path).unwrap(), &photo, &m);
+        let applied = applied_to(
+            load_preset(&path).unwrap(),
+            &photo,
+            &m,
+            &crate::lens::lensfun::installed::Handle::none(),
+        );
         assert_eq!(applied.exposure, 0.5);
         assert_eq!(applied.wb, [1.; 3]);
         assert_eq!(applied.incremental_temperature, 20.);
@@ -230,7 +227,12 @@ mod tests {
         r.exposure = 0.5;
         save_preset(&path, &r, &m).unwrap();
         let other = Recipe::for_rendered(&m);
-        let applied = applied_to(load_preset(&path).unwrap(), &other, &m);
+        let applied = applied_to(
+            load_preset(&path).unwrap(),
+            &other,
+            &m,
+            &crate::lens::lensfun::installed::Handle::none(),
+        );
         assert_eq!(applied.incremental_temperature, 30.);
         let raw = Recipe {
             wb: [2., 1., 1.5],
@@ -238,7 +240,12 @@ mod tests {
             camera_exposure: 0.35,
             ..Default::default()
         };
-        let applied = applied_to(load_preset(&path).unwrap(), &raw, &Metadata::default());
+        let applied = applied_to(
+            load_preset(&path).unwrap(),
+            &raw,
+            &Metadata::default(),
+            &crate::lens::lensfun::installed::Handle::none(),
+        );
         assert_eq!(applied.exposure, 0.5);
         assert_eq!(applied.incremental_temperature, 0.);
         assert_eq!((applied.wb, applied.temperature), (raw.wb, raw.temperature));

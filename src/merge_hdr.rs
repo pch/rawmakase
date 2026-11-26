@@ -74,6 +74,7 @@ pub fn starting_edit(
     m: &Metadata,
     profiles: &[Arc<CameraProfile>],
     crop: Option<[f32; 4]>,
+    lensfun: &crate::lens::lensfun::installed::Handle,
 ) -> (Recipe, Vec<String>) {
     let transferred = settings_groups::transfer(
         Source {
@@ -86,6 +87,7 @@ pub fn starting_edit(
             metadata: m,
             profiles,
         },
+        lensfun,
     );
     let mut recipe = transferred.recipe;
     if let Some(crop) = crop {
@@ -137,7 +139,14 @@ pub fn publish(
     let profiles = crate::camera_look::with_default(path, &libraries.lenses, &m, installed, cancel);
     let defaults =
         crate::edits::resolve(&EditRecord::default(), path, &m, &profiles, raw_defaults)?.recipe;
-    let (recipe, notes) = starting_edit(&defaults, active, &m, &profiles, merged.crop);
+    let (recipe, notes) = starting_edit(
+        &defaults,
+        active,
+        &m,
+        &profiles,
+        merged.crop,
+        &libraries.lensfun,
+    );
     recipe.validate()?;
     let captured = crate::photo::camera_exif(path).and_then(|e| e.captured());
     let preview = preview(raw, &recipe, cancel)?;

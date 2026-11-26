@@ -928,6 +928,18 @@ so the design is proved on one path before it is spread.
    panel's scan, Manage Presets and the preset import's duplicate check take
    it from the context. Favorites stay where they are until step 16, which
    gives them their folder.
+
+   The Lensfun database: `installed::Handle::Installed` now carries the
+   folder it follows (the context's first data folder's `lensfun`) and the
+   cache of what was read there; the process-wide cache, `installed::dir`
+   and `installed::current` are gone. XMP presets, Copy and Sync's transfer
+   and presets applied to a photo take a handle (the wrappers that took the
+   ambient one are folded into the functions they wrapped). The raw
+   defaults carry one (`DevelopDefaults::with_lensfun`), since a default
+   preset may name a Lensfun lens; a Lightroom edit can't, being Lightroom's
+   own settings, so it converts against none. In the app the Lensfun panel,
+   the presets' thumbnails, Sync and Merge to HDR take the context's, and
+   `rawmakase lensfun` installs into its folder.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

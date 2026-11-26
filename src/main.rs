@@ -446,7 +446,7 @@ fn main() -> Result<()> {
             }
             anyhow::ensure!(!done.imported.is_empty(), "No lens profiles imported");
         }
-        Some(Command::Lensfun(command)) => lensfun(command)?,
+        Some(Command::Lensfun(command)) => lensfun(command, &libraries.lensfun)?,
         Some(Command::Extensions(command)) => extensions(command)?,
         Some(Command::ImportProfiles { lut_space, files }) => {
             // Files and folders, imported as the app's Import does: a file that
@@ -929,10 +929,16 @@ fn find_photo(
 }
 
 /// `rawmakase lensfun`.
-fn lensfun(command: LensfunCommand) -> Result<()> {
-    use rawmakase::lens::lensfun::{choice, installed};
+fn lensfun(
+    command: LensfunCommand,
+    installed: &rawmakase::lens::lensfun::installed::Handle,
+) -> Result<()> {
+    use rawmakase::lens::lensfun::choice;
     use rawmakase::lensfun_install::{self as install, Installed, Progress, Source};
-    let dir = installed::dir();
+    let dir = installed
+        .dir()
+        .context("There is no data folder to install Lensfun's profiles in")?
+        .to_path_buf();
     let terms = || {
         println!(
             "Lensfun lens database by {}, {} ({}), from {}",

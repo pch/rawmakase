@@ -733,7 +733,7 @@ fn lensfun_recipes_save_in_a_format_earlier_releases_refuse() {
 fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
     use crate::lens::lensfun::fixture;
     use crate::model::recipe::Recipe;
-    use crate::model::settings_groups::{GroupSelection, Source, Target, transfer_with_lensfun};
+    use crate::model::settings_groups::{GroupSelection, Source, Target, transfer};
     let source_photo = fixture::photo();
     let target_photo = fixture::other_camera();
     let installed = fixture::installed(-0.02, 1_793_180_205);
@@ -742,7 +742,7 @@ fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
         ..Default::default()
     };
     source.lens_profile_choice.choose_lensfun(fixture::choice());
-    let out = transfer_with_lensfun(
+    let out = transfer(
         Source {
             recipe: &source,
             metadata: &source_photo,
@@ -768,7 +768,7 @@ fn a_transferred_lensfun_choice_takes_the_target_s_camera() {
     );
     // Without a database, the copy keeps what the photo itself says: nothing here.
     let alone = fixture::other_camera();
-    let out = transfer_with_lensfun(
+    let out = transfer(
         Source {
             recipe: &source,
             metadata: &source_photo,

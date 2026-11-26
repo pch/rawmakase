@@ -105,6 +105,7 @@ impl Editor {
                             preset,
                             self.document.edit.recipe(),
                             m,
+                            self.lensfun_db(),
                         ))
                     });
                     match loaded {

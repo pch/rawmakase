@@ -215,7 +215,7 @@ impl BatchChange {
 /// How a batch decodes a photo it measures: in full, with the demosaic Develop
 /// uses, from the decode cache when it has the photo (which a batch never fills),
 /// so each photo is measured on the image Develop measures.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(in crate::app) struct Decoding {
     pub demosaic: crate::camera_data::Demosaic,
     pub cache: Option<crate::decode_cache::DecodeCache>,
@@ -223,6 +223,21 @@ pub(in crate::app) struct Decoding {
     pub lenses: crate::photo::LensProfiles,
     /// The camera profiles each photo's edit resolves among.
     pub profiles: crate::camera_profiles::ProfileLibrary,
+    /// Lensfun's database, which a Lensfun lens resolves against.
+    pub lensfun: crate::lens::lensfun::installed::Handle,
+}
+#[cfg(test)]
+impl Default for Decoding {
+    /// No cache and no installed library: what the tests decode with.
+    fn default() -> Self {
+        Self {
+            demosaic: Default::default(),
+            cache: None,
+            lenses: Default::default(),
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            lensfun: crate::lens::lensfun::installed::Handle::none(),
+        }
+    }
 }
 
 /// How far a batch has got, shared by its worker and the window that shows it, and
@@ -796,6 +811,7 @@ fn prepare(
                     metadata: &metadata,
                     profiles: &profiles,
                 },
+                &decoding.lensfun,
             )
         }
         BatchChange::MatchTotalExposures => settings_groups::Transferred {
@@ -828,6 +844,7 @@ fn prepare(
                             metadata: &metadata,
                             profiles: &profiles,
                         },
+                        &decoding.lensfun,
                     );
                     for panel in &c.switches {
                         t.recipe
@@ -873,6 +890,7 @@ fn prepare(
                 measures
                     .as_ref()
                     .map(|m| m as &dyn crate::xmp::PhotoMeasures),
+                &decoding.lensfun,
             )?;
             let mut notes: Vec<String> = applied
                 .substitute
@@ -1350,6 +1368,7 @@ impl Editor {
             cache: Some(self.decode_cache().clone()),
             lenses: self.lens_profiles().clone(),
             profiles: self.camera_profiles().clone(),
+            lensfun: self.lensfun_db().clone(),
         };
         let progress = Arc::new(BatchProgress::new(change.name(), targets.len()));
         // Moving to another photo or catalog waits, so neither can see an edit change
@@ -2382,6 +2401,7 @@ mod tests {
                 metadata: &metadata,
                 profiles: &profiles,
             },
+            &crate::lens::lensfun::installed::Handle::none(),
         )
         .recipe;
         let mut develop = crate::edit_session::EditSession::default();

@@ -1012,7 +1012,9 @@ impl Editor {
                 if ui.button("Remove…").clicked() {
                     self.preferences.lensfun_remove = true;
                 }
-                reveal_button(ui, &self.lensfun.dir());
+                if let Some(dir) = self.lensfun.dir() {
+                    reveal_button(ui, &dir);
+                }
             });
             if self.lensfun.up_to_date() {
                 form_row(ui, "", |ui| hint(ui, "Up to date"));

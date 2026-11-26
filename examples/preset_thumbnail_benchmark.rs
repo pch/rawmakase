@@ -145,6 +145,7 @@ fn main() -> Result<()> {
             &image.metadata,
             &profiles,
             Some(&measures),
+            &rawmakase::lens::lensfun::installed::Handle::none(),
         ) else {
             failed += 1;
             continue;

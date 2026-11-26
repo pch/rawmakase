@@ -267,6 +267,7 @@ impl Editor {
                 metadata: &metadata,
                 profiles: &self.document.profiles,
             },
+            self.lensfun_db(),
         );
         self.document
             .edit

@@ -46,5 +46,4 @@ crates/rawmakase-model-install/src/lib.rs folder 2
 crates/rawmakase-model/src/camera_profiles/catalogue.rs temp 1
 crates/rawmakase-model/src/camera_profiles/library.rs folder 2
 crates/rawmakase-model/src/lens/lcp.rs folder 2
-crates/rawmakase-model/src/lens/lensfun/installed.rs folder 1
 crates/rawmakase-model/src/storage/files.rs folder 5

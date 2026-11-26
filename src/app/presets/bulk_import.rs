@@ -1234,7 +1234,13 @@ mod tests {
         let listed = crate::camera_profiles::listed_from(&[profiles.to_path_buf()], &photo);
         let base = crate::model::recipe::Recipe::with_profiles(&photo, &listed.profiles);
         preset
-            .apply(&base, &photo, &listed.profiles, None)
+            .apply(
+                &base,
+                &photo,
+                &listed.profiles,
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )
             .map(|_| ())
     }
 

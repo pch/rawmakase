@@ -29,8 +29,9 @@ pub fn apply_to_photo(
     m: &Metadata,
     profiles: &[Arc<CameraProfile>],
     measures: Option<&dyn PhotoMeasures>,
+    lensfun: &crate::lens::lensfun::installed::Handle,
 ) -> Result<Applied> {
-    let (mut recipe, skipped) = preset.apply_lenient(current, m, profiles, measures)?;
+    let (mut recipe, skipped) = preset.apply_lenient(current, m, profiles, measures, lensfun)?;
     let substitute = preset.profile_substitute(m, profiles).map(|(_, used)| used);
     this_photos_upright(&mut recipe, current);
     Ok(Applied {

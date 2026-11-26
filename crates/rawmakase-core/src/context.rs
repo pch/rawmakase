@@ -6,6 +6,7 @@ use rawmakase_decode::decode_cache::{self, DecodeCache};
 use rawmakase_decode::photo::LensProfiles;
 use rawmakase_interop::presets::PresetLibrary;
 use rawmakase_model::camera_profiles::ProfileLibrary;
+use rawmakase_model::lens::lensfun::installed::{self, Handle as LensfunHandle};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -55,6 +56,8 @@ struct Inner {
     profiles: ProfileLibrary,
     #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     presets: PresetLibrary,
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
+    lensfun: LensfunHandle,
     cache: Option<Cache>,
 }
 
@@ -83,8 +86,8 @@ impl ContextBuilder {
     /// what an app imports; all are searched for what has been imported: the
     /// camera profiles in each folder's `camera-profiles`, the lens profiles in
     /// its `lens-profiles` and the XMP presets in its `xmp-presets`; the
-    /// presets' order is kept in the first. Without any, no installed profile
-    /// or preset is found.
+    /// presets' order and Lensfun's database are kept in the first. Without any,
+    /// no installed profile, preset or Lensfun lens is found.
     pub fn data_dirs<P: Into<PathBuf>>(mut self, dirs: impl IntoIterator<Item = P>) -> Self {
         self.data_dirs = dirs.into_iter().map(Into::into).collect();
         self
@@ -129,6 +132,12 @@ impl ContextBuilder {
                 lenses: LensProfiles::in_data_dirs(&self.data_dirs),
                 profiles: ProfileLibrary::in_data_dirs(&self.data_dirs),
                 presets: PresetLibrary::in_data_dirs(&self.data_dirs),
+                lensfun: self
+                    .data_dirs
+                    .first()
+                    .map_or_else(LensfunHandle::none, |data| {
+                        LensfunHandle::installed_in(installed::dir_in(data))
+                    }),
                 data_dirs: self.data_dirs,
                 cache,
             }),
@@ -200,6 +209,12 @@ pub mod workspace {
     /// layout file in the first.
     pub fn presets(ctx: &Context) -> &rawmakase_interop::presets::PresetLibrary {
         &ctx.inner.presets
+    }
+
+    /// Lensfun's database installed in the context's first data folder, as it
+    /// is when asked: an install while the context lives is seen.
+    pub fn lensfun(ctx: &Context) -> &rawmakase_model::lens::lensfun::installed::Handle {
+        &ctx.inner.lensfun
     }
 }
 

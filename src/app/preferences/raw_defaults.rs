@@ -14,7 +14,9 @@ use crate::xmp::Preset;
 /// The raw defaults chosen in Preferences, as the app opens a photo with no edit,
 /// for the command line.
 pub fn user_raw_defaults() -> DevelopDefaults {
+    let lensfun = crate::environment::lensfun(&crate::environment::context()).clone();
     DevelopDefaults::load(crate::app::preferences::session::load_session().raw_defaults)
+        .with_lensfun(lensfun)
 }
 use eframe::egui;
 use std::sync::Arc;
@@ -92,7 +94,7 @@ impl Editor {
     /// photos without an edit with them. They apply even when the session
     /// cannot be saved, which is returned.
     pub(in crate::app) fn set_raw_defaults(&mut self, settings: RawDefaults) -> anyhow::Result<()> {
-        let defaults = DevelopDefaults::load(settings);
+        let defaults = DevelopDefaults::load(settings).with_lensfun(self.lensfun_db().clone());
         if defaults == *self.raw_defaults {
             return Ok(());
         }

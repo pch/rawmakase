@@ -3,6 +3,10 @@
 use crate::app::*;
 use std::sync::Arc;
 
+/// No Lensfun database, as the tests have none installed.
+static NO_LENSFUN: crate::lens::lensfun::installed::Handle =
+    crate::lens::lensfun::installed::Handle::Given(None);
+
 fn preset(id: &str, group: &str) -> crate::xmp::Preset {
     crate::xmp::Preset {
         id: id.into(),
@@ -250,6 +254,7 @@ fn rendered(
         recipe: e.document.edit.recipe(),
         metadata: e.document.metadata.as_ref().unwrap(),
         profiles: &e.document.profiles,
+        lensfun: &NO_LENSFUN,
         monitor: None,
         edge,
     };
@@ -267,7 +272,8 @@ fn rendered(
         })
         .collect();
     let monitor = e.view.display_profile();
-    let inputs = crate::app::presets::thumbnail_inputs(&e.document, &library, monitor);
+    let none = crate::lens::lensfun::installed::Handle::none();
+    let inputs = crate::app::presets::thumbnail_inputs(&e.document, &library, &none, monitor);
     e.preset_thumbnails
         .show_for_test(ctx, &inputs.unwrap(), edge, tiles);
 }

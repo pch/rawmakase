@@ -665,6 +665,7 @@ fn scene_output(im: &CameraImage, profiles: &[Arc<CameraProfile>], xmp: &str) ->
             &im.metadata,
             profiles,
             Some(&rawmakase::develop::Measures(im)),
+            &rawmakase::lens::lensfun::installed::Handle::none(),
         )
         .unwrap();
     quality::render_stage(im, &recipe, quality::Stage::SceneOutput, Cancel::NEVER).unwrap()

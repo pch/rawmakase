@@ -223,7 +223,14 @@ fn each_group_transfers_exactly_its_settings() {
         let to = Recipe::default();
         let moved = changed(
             &to,
-            &transfer(from(&source, &m), &to, &selection, target).recipe,
+            &transfer(
+                from(&source, &m),
+                &to,
+                &selection,
+                target,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )
+            .recipe,
         );
         let mut expected: BTreeSet<String> = kinds
             .iter()
@@ -286,10 +293,24 @@ fn nothing_selected_changes_nothing_and_the_photos_own_settings_never_move() {
     };
     let to = Recipe::default();
     assert_eq!(
-        transfer(from(&source, &m), &to, &GroupSelection::none(), target).recipe,
+        transfer(
+            from(&source, &m),
+            &to,
+            &GroupSelection::none(),
+            target,
+            &crate::lens::lensfun::installed::Handle::none()
+        )
+        .recipe,
         to
     );
-    let all = transfer(from(&source, &m), &to, &GroupSelection::all(), target).recipe;
+    let all = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::all(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     for key in [
         "rotation",
         "flip_x",
@@ -302,7 +323,14 @@ fn nothing_selected_changes_nothing_and_the_photos_own_settings_never_move() {
     }
     assert!(all.unknown.is_empty());
     // Paste's default leaves spots and masks where they were made.
-    let pasted = transfer(from(&source, &m), &to, &GroupSelection::default(), target).recipe;
+    let pasted = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::default(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert!(pasted.retouch.is_empty() && pasted.masks.is_empty());
     assert_eq!(pasted.exposure, source.exposure);
 }
@@ -333,6 +361,7 @@ fn profile_and_white_balance_are_resolved_for_the_target_camera() {
             metadata: &sony,
             profiles: &sony_profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     let profile = out.recipe.profile.as_ref().unwrap();
     assert_eq!(profile.name, open::COLOR);
@@ -352,6 +381,7 @@ fn profile_and_white_balance_are_resolved_for_the_target_camera() {
             metadata: &sony,
             profiles: &[],
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     // Its own profile keeps its own Amount.
     assert_eq!(
@@ -379,6 +409,7 @@ fn upright_moves_its_mode_and_guided_needs_this_photos_guides() {
         &Recipe::default(),
         &GroupSelection::default(),
         target,
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.upright.mode, UprightMode::Off);
     assert!(!out.notes.is_empty());
@@ -386,7 +417,13 @@ fn upright_moves_its_mode_and_guided_needs_this_photos_guides() {
     source.upright.mode = UprightMode::Level;
     let mut to = Recipe::default();
     to.upright.corrections = vec![[1., 0., 0., 0., 1., 0., 0., 0., 1.]; 4];
-    let out = transfer(from(&source, &m), &to, &GroupSelection::default(), target);
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::default(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert_eq!(out.recipe.upright.mode, UprightMode::Level);
     assert_eq!(out.recipe.upright.corrections, to.upright.corrections);
 }
@@ -411,23 +448,58 @@ fn an_auto_straighten_is_measured_again_on_each_photo() {
         straighten: -1.,
         ..Default::default()
     };
-    let out = transfer(from(&source, &m), &to, &crop, target).recipe;
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &crop,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert_eq!(out.straighten, -1.);
     assert_eq!(out.straighten_auto, Some(AutoStraighten::Pending(-1.)));
     assert!(out.straighten_pending());
     // Paste's default groups include the Crop.
-    let pasted = transfer(from(&source, &m), &to, &GroupSelection::default(), target).recipe;
+    let pasted = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::default(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert!(pasted.straighten_pending());
     // A photo pasted to and not yet measured passes it on.
-    let again = transfer(from(&out, &m), &Recipe::default(), &crop, target).recipe;
+    let again = transfer(
+        from(&out, &m),
+        &Recipe::default(),
+        &crop,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert_eq!(again.straighten_auto, Some(AutoStraighten::Pending(0.)));
     // Without the Crop, nothing moves.
-    let out = transfer(from(&source, &m), &to, &GroupSelection::none(), target).recipe;
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::none(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert_eq!(out, to);
     // Moved since Auto: an angle like any other, copied as Lightroom does.
     source.straighten = 3.;
     assert_eq!(source.auto_straighten(), None);
-    let out = transfer(from(&source, &m), &to, &crop, target).recipe;
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &crop,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert_eq!((out.straighten, out.straighten_auto), (3., None));
     // A waiting photo's angle changed by hand is no longer waiting.
     let mut moved = again;
@@ -459,7 +531,14 @@ fn transform_keeps_what_it_shows_on_photos_turned_differently() {
         metadata: &m,
         profiles: &[],
     };
-    let out = transfer(from(&source, &m), &Recipe::default(), &selection, target).recipe;
+    let out = transfer(
+        from(&source, &m),
+        &Recipe::default(),
+        &selection,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     let pasted = out.transform.displayed(turned(&out));
     assert_eq!((pasted.vertical, pasted.horizontal), (0.5, 0.));
 }
@@ -478,6 +557,7 @@ fn unselected_groups_and_unchanged_lenses_leave_upright_alone() {
         &to,
         &GroupSelection::none(),
         target,
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe, to);
     // New lens corrections call for a new analysis.
@@ -490,7 +570,13 @@ fn unselected_groups_and_unchanged_lenses_leave_upright_alone() {
         ..Default::default()
     };
     source.upright.mode = UprightMode::Level;
-    let out = transfer(from(&source, &m), &to, &GroupSelection::default(), target);
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::default(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert_eq!(out.recipe.upright.mode, UprightMode::Level);
     assert!(out.recipe.upright.corrections.is_empty());
     // Lightroom's analysis details went with its corrections.
@@ -516,6 +602,7 @@ fn a_profile_resolves_to_the_targets_own_file_of_that_name() {
             metadata: &m,
             profiles: &profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert!(Arc::ptr_eq(out.recipe.profile.as_ref().unwrap(), &own));
 }
@@ -538,7 +625,13 @@ fn a_lens_panel_switched_off_or_another_process_version_needs_a_new_analysis() {
     let mut source = to.clone();
     source.upright.corrections.clear();
     source.panels.set(Panel::LensCorrections, PanelState::Off);
-    let out = transfer(from(&source, &m), &to, &GroupSelection::default(), target);
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &GroupSelection::default(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert!(out.recipe.upright.corrections.is_empty());
 }
 
@@ -575,6 +668,7 @@ fn guides_stay_with_their_photo_unless_upright_transforms_copies_the_correction(
         &Recipe::default(),
         &GroupSelection::default(),
         target,
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.upright.mode, UprightMode::Off);
     assert!(out.recipe.upright.guides.is_empty());
@@ -588,7 +682,13 @@ fn guides_stay_with_their_photo_unless_upright_transforms_copies_the_correction(
         lens_profile: true,
         ..source.clone()
     };
-    let out = transfer(from(&lens, &m), &to, &GroupSelection::default(), target);
+    let out = transfer(
+        from(&lens, &m),
+        &to,
+        &GroupSelection::default(),
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert_eq!(out.recipe.upright.mode, UprightMode::Guided);
     assert_eq!(out.recipe.upright.guides, guides);
     assert!(out.recipe.upright.corrections.is_empty());
@@ -602,7 +702,13 @@ fn guides_stay_with_their_photo_unless_upright_transforms_copies_the_correction(
             lens_profile,
             ..Default::default()
         };
-        let out = transfer(from(&source, &m), &to, &exact, target);
+        let out = transfer(
+            from(&source, &m),
+            &to,
+            &exact,
+            target,
+            &crate::lens::lensfun::installed::Handle::none(),
+        );
         assert_eq!(out.recipe.upright, source.upright, "{lens_profile}");
     }
     // Paste leaves it out unless asked, as Lightroom does.
@@ -633,6 +739,7 @@ fn a_black_and_white_profile_carries_its_treatment_to_another_camera() {
             metadata: &sony,
             profiles: &[],
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(
         out.recipe.treatment(),
@@ -665,6 +772,7 @@ fn a_lens_profile_the_target_cannot_use_is_reported() {
         &Recipe::default(),
         &GroupSelection::default(),
         target(&m),
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert!(out.notes.is_empty(), "{:?}", out.notes);
     // A photo without that profile keeps the choice and says so.
@@ -675,6 +783,7 @@ fn a_lens_profile_the_target_cannot_use_is_reported() {
         &Recipe::default(),
         &GroupSelection::default(),
         target(&bare),
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(
         out.recipe.lens_profile_choice.setup,
@@ -701,6 +810,7 @@ fn a_lens_profile_the_target_cannot_use_is_reported() {
         &Recipe::default(),
         &GroupSelection::default(),
         target(&m),
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert!(
         out.notes.iter().any(|n| n.contains("Camera Settings")),
@@ -741,7 +851,13 @@ fn masks_made_from_a_selection_stay_on_their_photo() {
         metadata: &m,
         profiles: &[],
     };
-    let out = transfer(from(&source, &m), &Recipe::default(), &selection, target);
+    let out = transfer(
+        from(&source, &m),
+        &Recipe::default(),
+        &selection,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert_eq!(out.recipe.masks, vec![gradient.clone()]);
     assert_eq!(out.notes.len(), 1);
     // A target that has its own selection keeps it, under the source's other masks.
@@ -751,14 +867,26 @@ fn masks_made_from_a_selection_stay_on_their_photo() {
         masks: vec![own.clone()],
         ..Default::default()
     };
-    let out = transfer(from(&source, &m), &to, &selection, target);
+    let out = transfer(
+        from(&source, &m),
+        &to,
+        &selection,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert_eq!(out.recipe.masks, vec![gradient.clone(), own.clone()]);
     // Even when the source fills every slot, the target's own selection survives.
     let full = Recipe {
         masks: vec![gradient; crate::model::masks::MAX_GROUPS],
         ..Default::default()
     };
-    let out = transfer(from(&full, &m), &to, &selection, target);
+    let out = transfer(
+        from(&full, &m),
+        &to,
+        &selection,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    );
     assert_eq!(out.recipe.masks.len(), crate::model::masks::MAX_GROUPS);
     assert_eq!(out.recipe.masks.last(), Some(&own));
 }
@@ -800,6 +928,7 @@ fn syncing_from_a_raw_to_a_jpeg_keeps_the_jpegs_white_balance_and_profile() {
             metadata: &jpeg,
             profiles: &profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     let r = &out.recipe;
     assert_eq!(r.exposure, 0.5);
@@ -845,6 +974,7 @@ fn ai_denoise_is_not_synced_onto_a_rendered_file() {
             metadata: &jpeg,
             profiles: &[],
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.ai_denoise, to.ai_denoise);
     assert_eq!(out.recipe.exposure, 0.5);
@@ -868,6 +998,7 @@ fn ai_denoise_is_not_synced_onto_a_rendered_file() {
             metadata: &jpeg,
             profiles: &[],
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe, to);
     let other = camera("Canon", "EOS R10");
@@ -879,6 +1010,7 @@ fn ai_denoise_is_not_synced_onto_a_rendered_file() {
             metadata: &other,
             profiles: &[],
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.ai_denoise, source.ai_denoise);
     assert!(out.notes.is_empty());
@@ -910,6 +1042,7 @@ fn syncing_from_a_jpeg_to_a_raw_keeps_the_raws_white_balance_and_profile() {
             metadata: &raw,
             profiles: &profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     let r = &out.recipe;
     assert_eq!(r.exposure, 0.5);
@@ -940,6 +1073,7 @@ fn syncing_from_a_jpeg_to_a_raw_keeps_the_raws_white_balance_and_profile() {
             metadata: &raw,
             profiles: &profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.exposure, 0.5);
     assert!(out.notes.is_empty(), "{:?}", out.notes);
@@ -970,6 +1104,7 @@ fn a_fitted_look_moves_as_the_sources_own() {
             metadata: &m,
             profiles: &profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.profile.as_deref(), Some(&*source_fit));
     // Another camera keeps its own profile, with a note.
@@ -983,6 +1118,7 @@ fn a_fitted_look_moves_as_the_sources_own() {
             metadata: &other,
             profiles: &profiles,
         },
+        &crate::lens::lensfun::installed::Handle::none(),
     );
     assert_eq!(out.recipe.profile, kept.profile);
     assert!(!out.notes.is_empty());
@@ -1025,7 +1161,14 @@ fn spot_removal_leaves_ai_remove_spots_on_their_photo() {
     };
     let mut spots = GroupSelection::none();
     spots.set(SettingGroup::SpotRemoval, GroupInclusion::Included);
-    let copied = transfer(from(&source, &m), &to, &spots, target).recipe;
+    let copied = transfer(
+        from(&source, &m),
+        &to,
+        &spots,
+        target,
+        &crate::lens::lensfun::installed::Handle::none(),
+    )
+    .recipe;
     assert_eq!(copied.retouch, [heal, generated('b')]);
 }
 

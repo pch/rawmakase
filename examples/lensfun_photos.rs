@@ -18,7 +18,10 @@ fn main() -> anyhow::Result<()> {
         args.remove(0);
         installed::read_folder(std::path::Path::new(&dir))?
     } else {
-        let i = installed::current().ok_or_else(|| anyhow::anyhow!("Lensfun isn't installed"))?;
+        let lensfun = rawmakase::environment::lensfun(&rawmakase::environment::context()).clone();
+        let i = lensfun
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("Lensfun isn't installed"))?;
         i.db.clone()
     };
     for path in &args {

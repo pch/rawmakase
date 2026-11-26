@@ -133,18 +133,8 @@ const METADATA: &[&str] = &[
 ];
 impl Preset {
     /// Apply to a private recipe, publishing only after every stage validates. A
-    /// Lensfun lens the settings name resolves against the database installed now.
+    /// Lensfun lens the settings name resolves against `lensfun`.
     pub fn apply(
-        &self,
-        base: &Recipe,
-        m: &Metadata,
-        profiles: &[Arc<CameraProfile>],
-        image: Option<&dyn PhotoMeasures>,
-    ) -> Result<Recipe> {
-        self.apply_with_lensfun(base, m, profiles, image, &Handle::Installed)
-    }
-    /// [`apply`](Self::apply), resolving a Lensfun lens against `lensfun`.
-    pub(crate) fn apply_with_lensfun(
         &self,
         base: &Recipe,
         m: &Metadata,
@@ -185,19 +175,9 @@ impl Preset {
     /// Lightroom-style best effort: when `apply` rejects the preset (missing
     /// profile, camera restriction, unsupported settings), apply every stage
     /// that validates, keep the base values for stages that don't, and return
-    /// what was skipped. Fails if the combined recipe is invalid.
+    /// what was skipped. Fails if the combined recipe is invalid. A Lensfun lens
+    /// resolves against `lensfun`.
     pub fn apply_lenient(
-        &self,
-        base: &Recipe,
-        m: &Metadata,
-        profiles: &[Arc<CameraProfile>],
-        image: Option<&dyn PhotoMeasures>,
-    ) -> Result<(Recipe, Vec<String>)> {
-        self.apply_lenient_with_lensfun(base, m, profiles, image, &Handle::Installed)
-    }
-    /// [`apply_lenient`](Self::apply_lenient), resolving a Lensfun lens against
-    /// `lensfun`.
-    pub(crate) fn apply_lenient_with_lensfun(
         &self,
         base: &Recipe,
         m: &Metadata,
@@ -205,7 +185,7 @@ impl Preset {
         image: Option<&dyn PhotoMeasures>,
         lensfun: &Handle,
     ) -> Result<(Recipe, Vec<String>)> {
-        if let Ok(recipe) = self.apply_with_lensfun(base, m, profiles, image, lensfun) {
+        if let Ok(recipe) = self.apply(base, m, profiles, image, lensfun) {
             return Ok((recipe, self.ignored_white_balance(m).into_iter().collect()));
         }
         let mut warnings = self.blockers.clone();

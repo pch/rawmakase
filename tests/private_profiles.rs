@@ -93,7 +93,13 @@ fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<(
             look.uuid
         );
         let preset = rawmakase::xmp::parse(std::path::Path::new("reference.xmp"), &xml)?;
-        let recipe = preset.apply(&Recipe::default(), &raw.metadata, &profiles, None)?;
+        let recipe = preset.apply(
+            &Recipe::default(),
+            &raw.metadata,
+            &profiles,
+            None,
+            &rawmakase::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(recipe.profile.as_ref().unwrap().name, name);
         let saved = serde_json::to_vec(&recipe)?;
         let loaded: Recipe = serde_json::from_slice(&saved)?;

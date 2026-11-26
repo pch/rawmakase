@@ -999,7 +999,13 @@ mod tests {
         // Measured on the preset's crop: the warm half.
         let attrs = r#"c:WhiteBalance="Auto" c:CropLeft="0" c:CropTop="0" c:CropRight="0.45" c:CropBottom="1""#;
         let preset = crate::xmp::parse(std::path::Path::new("preset.xmp"), &packet(attrs))?;
-        let result = preset.apply(&Recipe::default(), &m, &[], Some(&Measures(&im)))?;
+        let result = preset.apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            Some(&Measures(&im)),
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         let cropped = Recipe {
             crop: result.crop,
             ..Default::default()
@@ -1045,7 +1051,13 @@ mod tests {
         let attrs = r#"c:ConvertToGrayscale="True" c:AutoGrayscaleMix="True""#;
         let preset = crate::xmp::parse(std::path::Path::new("auto.xmp"), &packet(attrs))?;
         let base = Recipe::default();
-        let r = preset.apply(&base, &m, &[], Some(&Measures(&im)))?;
+        let r = preset.apply(
+            &base,
+            &m,
+            &[],
+            Some(&Measures(&im)),
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         let spread = super::super::ColorSpread::measure(&im);
         let expected = super::super::AutoMix {
             spread: &spread,
