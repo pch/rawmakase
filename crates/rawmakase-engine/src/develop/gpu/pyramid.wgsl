@@ -37,8 +37,27 @@ fn partial_gain(gain: f32, share: f32) -> f32 {
     return select(1.0 - share * (1.0 - gain), gain, share >= 1.0);
 }
 
+// Match `color_noise::clip_at_black` so GPU NR, Texture and measurement box
+// reductions stay identical to CPU on signed below-black demosaiced pixels.
+fn clip_at_black(p: vec3<f32>) -> vec3<f32> {
+    let lowest = min(p.x, min(p.y, p.z));
+    if (lowest >= 0.0) {
+        return p;
+    }
+    let pos = max(p, vec3<f32>(0.0));
+    let target_luma = (pos.x + 2.0 * pos.y + pos.z) * 0.25;
+    let own = (p.x + 2.0 * p.y + p.z) * 0.25;
+    if (own <= 0.0) {
+        return vec3<f32>(target_luma);
+    }
+    let keep = own / (own - lowest);
+    let scale = target_luma / own;
+    return max((vec3<f32>(own) + (p - vec3<f32>(own)) * keep) * scale, vec3<f32>(0.0));
+}
+
 fn sqrt_luma(r: f32, g: f32, b: f32) -> f32 {
-    return (sqrt(max(r, 0.0)) + 2.0 * sqrt(max(g, 0.0)) + sqrt(max(b, 0.0))) * 0.25;
+    let c = clip_at_black(vec3<f32>(r, g, b));
+    return (sqrt(max(c.x, 0.0)) + 2.0 * sqrt(max(c.y, 0.0)) + sqrt(max(c.z, 0.0))) * 0.25;
 }
 
 fn read_vec2(buf_idx: u32) -> vec2<f32> {
@@ -99,9 +118,10 @@ fn chroma_extract(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (x >= u.dst_w || y >= u.dst_h) { return; }
     let i = y * u.dst_w + x;
     let p = i * 3u;
-    let r = sqrt(max(src_a[p], 0.0));
-    let g = sqrt(max(src_a[p + 1u], 0.0));
-    let b = sqrt(max(src_a[p + 2u], 0.0));
+    let c = clip_at_black(vec3<f32>(src_a[p], src_a[p + 1u], src_a[p + 2u]));
+    let r = sqrt(max(c.x, 0.0));
+    let g = sqrt(max(c.y, 0.0));
+    let b = sqrt(max(c.z, 0.0));
     let out = i * 2u;
     dst[out] = r - g;
     dst[out + 1u] = b - g;
@@ -196,7 +216,8 @@ fn chroma_block_stats_l0(@builtin(global_invocation_id) gid: vec3<u32>) {
                 dst[out_idx + 1u] = 0.0;
                 return;
             }
-            if (r <= 0.0 || g <= 0.0 || b <= 0.0) {
+            let c = clip_at_black(vec3<f32>(r, g, b));
+            if (c.x <= 0.0 || c.y <= 0.0 || c.z <= 0.0) {
                 black += 1.0;
             }
             let d = read_vec2(i);
@@ -258,7 +279,8 @@ fn mask_down_l0(@builtin(global_invocation_id) gid: vec3<u32>) {
             if (!(r / u.f0 < u.f3 && g / u.f1 < u.f3 && b / u.f2 < u.f3)) {
                 unclipped = false;
             }
-            if (r <= 0.0 || g <= 0.0 || b <= 0.0) {
+            let c = clip_at_black(vec3<f32>(r, g, b));
+            if (c.x <= 0.0 || c.y <= 0.0 || c.z <= 0.0) {
                 black += 1.0 / 25.0;
             }
         }
@@ -484,15 +506,13 @@ fn luma_writeback(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (x >= u.dst_w || y >= u.dst_h) { return; }
     let i = y * u.dst_w + x;
     let p = i * 3u;
-    let r = dst[p];
-    let g = dst[p + 1u];
-    let b = dst[p + 2u];
-    let orig = sqrt_luma(r, g, b);
+    let c = clip_at_black(vec3<f32>(dst[p], dst[p + 1u], dst[p + 2u]));
+    let orig = (sqrt(max(c.x, 0.0)) + 2.0 * sqrt(max(c.y, 0.0)) + sqrt(max(c.z, 0.0))) * 0.25;
     let delta = src_a[i] - orig;
     if (delta != 0.0) {
-        let sr = max(sqrt(max(r, 0.0)) + delta, 0.0);
-        let sg = max(sqrt(max(g, 0.0)) + delta, 0.0);
-        let sb = max(sqrt(max(b, 0.0)) + delta, 0.0);
+        let sr = max(sqrt(max(c.x, 0.0)) + delta, 0.0);
+        let sg = max(sqrt(max(c.y, 0.0)) + delta, 0.0);
+        let sb = max(sqrt(max(c.z, 0.0)) + delta, 0.0);
         dst[p] = sr * sr;
         dst[p + 1u] = sg * sg;
         dst[p + 2u] = sb * sb;
@@ -503,14 +523,17 @@ fn luma_writeback(@builtin(global_invocation_id) gid: vec3<u32>) {
 // Texture (per-channel log2 Laplacian pyramid)
 // ============================================================================
 
-// Extract `log2(max(photo[c], 1e-6))` for channel `u.aux0` into `dst`.
+// Extract `log2(max(clip_at_black(photo)[c], 1e-6))` for channel `u.aux0` into `dst`.
 @compute @workgroup_size(16, 16)
 fn texture_extract(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = gid.x;
     let y = gid.y;
     if (x >= u.dst_w || y >= u.dst_h) { return; }
     let i = y * u.dst_w + x;
-    dst[i] = log2(max(src_a[i * 3u + u.aux0], 1e-6));
+    let p = i * 3u;
+    let c = clip_at_black(vec3<f32>(src_a[p], src_a[p + 1u], src_a[p + 2u]));
+    let ch = select(select(c.x, c.y, u.aux0 == 1u), c.z, u.aux0 == 2u);
+    dst[i] = log2(max(ch, 1e-6));
 }
 
 // Overwrite `dst` (Gaussian level) in-place with compressed weighted detail:
@@ -547,7 +570,9 @@ fn texture_apply_channel(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = y * u.dst_w + x;
     let q = clamp(round(src_a[i] / u.f1), -32767.0, 32767.0);
     let idx = i * 3u + u.aux0;
-    dst[idx] = dst[idx] * exp2(u.f0 * u.f1 * q);
+    if (dst[idx] > 0.0) {
+        dst[idx] = dst[idx] * exp2(u.f0 * u.f1 * q);
+    }
 }
 
 // ============================================================================
@@ -576,7 +601,7 @@ fn box_reduce(@builtin(global_invocation_id) gid: vec3<u32>) {
         for (var xx = x0; xx < x1; xx++) {
             let cx = clamp(xx, cx_min, cx_max);
             let p = (row + cx) * 3u;
-            acc += vec3<f32>(src_a[p], src_a[p + 1u], src_a[p + 2u]);
+            acc += clip_at_black(vec3<f32>(src_a[p], src_a[p + 1u], src_a[p + 2u]));
         }
     }
     let n = f32((x1 - x0) * (y1 - y0));

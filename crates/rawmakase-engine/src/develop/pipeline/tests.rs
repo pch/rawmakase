@@ -2935,3 +2935,54 @@ fn a_render_fits_in_an_eighth_of_a_worker_stack() -> anyhow::Result<()> {
     })?;
     Ok(())
 }
+
+/// Masked Texture applies the same positive-channel guard as global `TextureDetail::apply`
+/// so a whole-photo Texture mask renders signed below-black pixels identically to the
+/// global Texture slider without amplifying negative noise.
+#[test]
+fn masked_texture_matches_global_texture_on_signed_pixels() -> anyhow::Result<()> {
+    use crate::model::masks::{LocalAdjust, MaskComponent, MaskGroup, MaskShape};
+
+    let (w, h) = (32u32, 32u32);
+    let mut im = fixture();
+    im.width = w;
+    im.height = h;
+    im.metadata.width = w;
+    im.metadata.height = h;
+    im.pixels = (0..(w * h) as usize)
+        .map(|i| {
+            let (x, y) = (i % w as usize, i / w as usize);
+            let checker = if (x + y) % 2 == 0 { 0.04 } else { 0.002 };
+            if y < 12 {
+                [-0.015 * ((x % 3) as f32 + 1.), checker - 0.01, -0.008]
+            } else {
+                [checker, checker * 0.8, checker * 1.1]
+            }
+        })
+        .collect::<Vec<_>>()
+        .into();
+
+    let plain = crate::develop::render(&im, &Recipe::default().checked()?, 0, Cancel::NEVER)?;
+
+    let mut global_recipe = Recipe::default();
+    global_recipe.effects.texture = 0.8;
+    let global = crate::develop::render(&im, &global_recipe.checked()?, 0, Cancel::NEVER)?;
+    assert_ne!(global.pixels, plain.pixels);
+
+    let mut masked_recipe = Recipe::default();
+    masked_recipe.masks.push(MaskGroup {
+        components: vec![MaskComponent::new(MaskShape::Linear {
+            from: [0.5, 2.0],
+            to: [0.5, 3.0],
+        })],
+        adjust: LocalAdjust {
+            texture: 0.8,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let masked = crate::develop::render(&im, &masked_recipe.checked()?, 0, Cancel::NEVER)?;
+
+    assert_eq!(global.pixels, masked.pixels);
+    Ok(())
+}
