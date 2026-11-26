@@ -88,8 +88,11 @@ fn frame(library: &mut Library, ctx: &egui::Context) {
     });
     output.textures_delta.clear();
 }
-/// A plain HTTP tile server counting what it is asked for.
-fn tile_server() -> (u16, Arc<std::sync::Mutex<Vec<String>>>) {
+/// A plain HTTP tile server counting what it is asked for. It answers no request
+/// until `hold` have arrived (or 5 s have passed), so the first `hold` it records
+/// are the first tiles taken: a worker can't finish one and ask for another while
+/// a slower worker's first request is still on its way.
+fn tile_server(hold: usize) -> (u16, Arc<std::sync::Mutex<Vec<String>>>) {
     use std::io::{BufRead, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -121,6 +124,10 @@ fn tile_server() -> (u16, Arc<std::sync::Mutex<Vec<String>>>) {
                     a.lock()
                         .unwrap()
                         .push(first.split_whitespace().nth(1).unwrap_or("").into());
+                    let held = Instant::now() + Duration::from_secs(5);
+                    while a.lock().unwrap().len() < hold && Instant::now() < held {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
                     let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", png.len());
                     if out.write_all(head.as_bytes()).is_err() || out.write_all(&png).is_err() {
                         return;
@@ -152,7 +159,8 @@ fn nothing_is_asked_for_while_the_map_is_off_and_the_place_s_tile_first_once_on(
     let tiles = tempfile::tempdir().unwrap();
     let (_d, mut library) = library_at_the_gate(tiles.path());
     let ctx = egui::Context::default();
-    let (port, asked) = tile_server();
+    // Both workers' first tiles reach the server before either is answered.
+    let (port, asked) = tile_server(2);
     for _ in 0..3 {
         frame(&mut library, &ctx);
     }
@@ -162,19 +170,21 @@ fn nothing_is_asked_for_while_the_map_is_off_and_the_place_s_tile_first_once_on(
     );
     library.set_map(Some(source(port)));
     frame(&mut library, &ctx);
-    settle(&mut library, &ctx, |l| !l.map.textures.is_empty());
-    // The gate is on tile 15/17601/10746 of OpenStreetMap.
+    // The gate is on tile 15/17601/10746 of OpenStreetMap. Its neighbour, the
+    // other worker's, may arrive first: wait for the gate's own.
+    let gate = TileId {
+        z: 15,
+        x: 17601,
+        y: 10746,
+    };
+    settle(&mut library, &ctx, |l| l.map.textures.contains_key(&gate));
     // The two workers take the first two asked for; the place's own tile is one.
     let first: Vec<String> = asked.lock().unwrap().iter().take(2).cloned().collect();
     assert!(
         first.iter().any(|p| p == "/15/17601/10746.png"),
         "{first:?}"
     );
-    assert!(library.map.textures.contains_key(&TileId {
-        z: 15,
-        x: 17601,
-        y: 10746
-    }));
+    assert!(library.map.textures.contains_key(&gate));
     // A photo without a place shows no map, and asks for nothing more.
     library.set_map(None);
     frame(&mut library, &ctx);
@@ -189,8 +199,8 @@ fn tiles_of_a_server_no_longer_chosen_are_dropped_when_they_arrive() {
     let tiles = tempfile::tempdir().unwrap();
     let (_d, mut library) = library_at_the_gate(tiles.path());
     let ctx = egui::Context::default();
-    let (old, asked_old) = tile_server();
-    let (new, asked_new) = tile_server();
+    let (old, asked_old) = tile_server(0);
+    let (new, asked_new) = tile_server(0);
     library.set_map(Some(source(old)));
     frame(&mut library, &ctx);
     // The old server answers; its tiles are on their way back, undrawn.
@@ -387,7 +397,7 @@ fn a_tile_the_map_shows_twice_is_asked_for_once() {
     locate(&mut library, ids[1], -40., 170.);
     library.select_all();
     library.map = Map::for_tests(tiles.path().to_path_buf());
-    let (port, asked) = tile_server();
+    let (port, asked) = tile_server(0);
     library.map.set_source(Some(source(port)));
     let ctx = egui::Context::default();
     frame(&mut library, &ctx);
