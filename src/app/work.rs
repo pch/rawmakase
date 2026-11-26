@@ -53,6 +53,7 @@ pub(in crate::app) enum Kind {
     FolderSync,
     EditInWatch,
     LibraryPreviews,
+    MapTiles,
 }
 
 /// What the close guard calls work that closing waits for.
@@ -524,6 +525,21 @@ const WORK: &[Row] = &[
             e.library
                 .as_mut()
                 .map(|library| library.close_previews())
+                .unwrap_or_default()
+        }),
+    },
+    // Map tiles are fetched only while the map shows; no status or spinner.
+    Row {
+        kind: Kind::MapTiles,
+        running: None,
+        closing: None,
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: Some(|e, _| {
+            e.library
+                .as_mut()
+                .map(|library| library.close_map())
                 .unwrap_or_default()
         }),
     },

@@ -123,6 +123,8 @@ pub(crate) struct Editor {
     close_confirm: bool,
     /// Preferences > General's Ask before quitting.
     confirm_quit: bool,
+    /// Preferences > General's Map, as typed.
+    map: crate::app::library::map::Settings,
     /// The Quit RAWmakase? question is showing; `quit_confirmed` once answered Quit.
     quit_asked: bool,
     quit_confirmed: bool,
@@ -477,6 +479,11 @@ impl Editor {
             ),
             close_confirm: false,
             confirm_quit: session.confirm_quit,
+            map: crate::app::library::map::Settings::of(
+                session.map,
+                session.map_tiles.as_deref(),
+                session.map_credit.as_deref(),
+            ),
             quit_asked: false,
             quit_confirmed: false,
             close_after_work: false,
@@ -542,6 +549,9 @@ impl Editor {
                 panels: self.panels,
                 no_update_checks: !self.updates.automatic,
                 confirm_quit: self.confirm_quit,
+                map: self.map.to_session().0,
+                map_tiles: self.map.to_session().1,
+                map_credit: self.map.to_session().2,
                 skipped_version: self.updates.skipped.clone(),
                 theme: self.themes.chosen().flatten(),
                 theme_chosen: self.themes.chosen().is_some(),
