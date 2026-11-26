@@ -236,7 +236,7 @@ The rule was measured with Camera Raw 18.7 on the synthetic chart and seven synt
 |---|---|---|
 | Look table | Hue shifts and saturation/value scales grow in proportion to the Amount, also above 100%, within the amount bounds a version 2 table stores. A version 1 table stays at 100% at any Amount. | Same; the table is scaled when the recipe is resolved, so the CPU and GPU paths read one table. |
 | Look curve | Up to 100% a blend of no change and the curve; above, the curve is applied a second time at the excess (200% is the curve applied twice). | Same, and the same for the look's channel curves. |
-| Internal settings (Shadows, Highlights, Contrast, Blacks, Clarity) | Linear up to 100%; above 100%, every normalized slider `v ∈ [−1, 1]` follows the odds curve `a·v / (1 + (a − 1)·|v|)` (+40 Shadows is +57 at 200%, +20 is +33, +60 is +75, matching Camera Raw's rounded direct sliders within 0.004/255 in gamma-1.8 ProPhoto RGB). | Same, added to the user's sliders without moving them. |
+| Internal settings (Shadows, Highlights, Contrast, Blacks, Clarity) | Linear up to 100%; above 100%, every normalized slider `v ∈ [−1, 1]` follows the odds curve `a·v / (1 + (a − 1)·\|v\|)` (+40 Shadows is +57 at 200%, +20 is +33, +60 is +75, matching Camera Raw's rounded direct sliders within 0.004/255 in gamma-1.8 ProPhoto RGB). | Same, added to the user's sliders without moving them. |
 | Black & white | A B&W look stays black and white at 0%. | Same. |
 
 The look goes in the same place as at 100%: the table after the camera profile's tables, the curve after its tone curve, the internal settings with the user's. On the synthetic chart (`synthetic-d65`, default render 0.25 mean ΔE00), the `amount-*` cases sit at mean ΔE00 0.18–0.81 at 50% and 0.15–2.35 at 200%: Contrast with Blacks (`amount-contrast-*`) is 0.30 at 50% and 0.46 at 200%, the combined table + curve + Shadows/Clarity look (`amount-look-*`) is 0.57 at 100%, 0.80 at 150% and 0.96 at 200%, and `amount-tones-200` (Shadows +40, Highlights −40 on flat patches) is 2.35.
@@ -351,7 +351,7 @@ Vintage 07 and Modern 03 and 04 carry develop settings besides their tables: Exp
 
 | Setting | With the user's | Amount | `look-*` cases, mean ΔE00 (50 / 100 / 200%) |
 |---|---|---|---|
-| Exposure, Saturation, color mixer, parametric curve | Exposure, Saturation and color mixer add to the user's sliders; the parametric curve runs as a second pass after the user's | Linear up to 100%; above 100%, `a·v / (1 + (a − 1)·|v|)` (Exposure normalized by 5 EV, so +0.50 EV at 200% is +0.91 EV) | color 0.56 / 0.81 / 1.02, exposure 0.27 / 0.28 / 0.32, parametric 0.23 / 0.24 / 0.25 |
+| Exposure, Saturation, color mixer, parametric curve | Exposure, Saturation and color mixer add to the user's sliders; the parametric curve runs as a second pass after the user's | Linear up to 100%; above 100%, `a·v / (1 + (a − 1)·\|v\|)` (Exposure normalized by 5 EV, so +0.50 EV at 200% is +0.91 EV) | color 0.56 / 0.81 / 1.02, exposure 0.27 / 0.28 / 0.32, parametric 0.23 / 0.24 / 0.25 |
 | Split toning | Second grading pass after the user's at Blending 100 (`look-split-grading-shadows-h30` 1.50) | Saturations scale by the same curve; hues and balance stay fixed | 0.33 / 0.39 / 0.78 |
 | Post-crop vignette | Replaces the user's: Camera Raw renders a look vignette with the user's −20 exactly as without it | Amount scales by the same curve; midpoint, feather, roundness, highlights and style stay fixed | 0.36 / 0.53 / 0.72 |
 
@@ -359,7 +359,7 @@ Third-party looks such as Really Nice Images' film profiles ([#949](https://gith
 
 | Setting | With the user's | Amount | Look against the user's slider |
 |---|---|---|---|
-| Whites, Vibrance, Texture, Calibration's red, green and blue Hue and Saturation, Shadows Tint | Added to the user's sliders | As the tone adjustments (`a·v / (1 + (a − 1)·|v|)` above 100%) | 0.00 ΔE00 at 50% and 100%; at 150% and 200% matches Camera Raw's odds curve across all tested sliders (see [parity gaps](records/parity-gaps.md#look-profile-amount--100-odds-scaling-2026-11-26)) |
+| Whites, Vibrance, Texture, Calibration's red, green and blue Hue and Saturation, Shadows Tint | Added to the user's sliders | As the tone adjustments (`a·v / (1 + (a − 1)·\|v\|)` above 100%) | 0.00 ΔE00 at 50% and 100%; at 150% and 200% matches Camera Raw's odds curve across all tested sliders (see [parity gaps](records/parity-gaps.md#look-profile-amount--100-odds-scaling-2026-11-26)) |
 | Sharpening (Amount, Radius, Detail, Masking) and Grain | Ignored: the render is the same as without them (0.00), with or without the user's own sharpening | — | — |
 | `OverrideLookVignette` | Ignored, true or false: the look's vignette still replaces the user's | — | — |
 
