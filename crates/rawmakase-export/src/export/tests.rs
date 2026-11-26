@@ -762,6 +762,11 @@ fn export_refuses_to_destroy_a_raw_the_source_or_an_existing_file() -> Result<()
         )),
         "Destination already exists"
     );
+    assert!(
+        export(&target, &source, &image, &m, &options, Replace::NoClobber)
+            .unwrap_err()
+            .is::<rawmakase_model::error::Exists>()
+    );
     assert_eq!(fs::read(&target)?, b"previous");
 
     // With it, the file is replaced and no temporary is left behind.

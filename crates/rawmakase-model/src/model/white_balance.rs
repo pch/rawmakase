@@ -757,6 +757,8 @@ mod rendered_tests {
             incremental_tint: 101.,
             ..Recipe::default()
         };
-        assert!(r.validate().is_err());
+        let e = r.validate().unwrap_err();
+        assert!(e.is::<crate::error::Invalid>());
+        assert_eq!(format!("{e:#}"), "Relative white balance out of bounds");
     }
 }

@@ -8,7 +8,7 @@
 //! where the photo stops.
 use super::laplacian::{Plane, filtered_share, mirror, partial_gain, photo_level_offset};
 use crate::camera_data::CameraImage;
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 
@@ -160,7 +160,7 @@ fn luma(p: [f32; 3]) -> f32 {
     (r + 2. * g + b) * 0.25
 }
 fn check(cancel: Cancel<'_>) -> Result<()> {
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     Ok(())
 }
 /// `plane` blurred and halved; an error once `cancel` is set.

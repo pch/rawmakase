@@ -462,10 +462,12 @@ impl Preset {
             r.profile = Some(Arc::new(fitted));
         } else {
             if let Some(name) = self.requested_profile() {
-                r.profile =
-                    Some(self.resolve_profile(name, m, profiles).with_context(|| {
-                        format!("Missing camera profile ‘{name}’ for {}", m.model)
-                    })?);
+                r.profile = Some(self.resolve_profile(name, m, profiles).ok_or_else(|| {
+                    rawmakase_model::error::Missing::new(format!(
+                        "Missing camera profile ‘{name}’ for {}",
+                        m.model
+                    ))
+                })?);
             }
             if !self.look.is_empty() {
                 r.profile = Some(self.resolve_look(m, profiles).with_context(|| {

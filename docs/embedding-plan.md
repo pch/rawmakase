@@ -816,6 +816,24 @@ so the design is proved on one path before it is spread.
 2. Typed causes: `Cancelled` in `rawmakase-cancel`, an invalid recipe or
    setting, a file's identity changed, a missing profile or preset. Each
    has today's text as its message.
+
+   Built. `rawmakase_cancel::Cancelled`, made by `Cancel::check` with the
+   work's own wording, at every point decoding, the engine, export and AI
+   Denoise's service stopped with a text; the RAW adapter turns the
+   decoders' own `Error::Cancelled` into it, since nothing above
+   `rawmakase-decode` may name `rawmakase-raw`. `rawmakase_model::error`
+   holds `Invalid`, `Missing`, `Changed` and `Exists`, each printing what
+   the error it replaces printed (its message, or the error it was made
+   from with that error's causes), so a chain reads the same: an invalid
+   recipe (`Recipe::validate`) or export output
+   (`ExportSettings::check_output`); a missing camera profile named by
+   settings and a missing saved naming preset; a photo's file changed since
+   it was shown (export) or since its edit was saved (the catalog, and
+   reading a stored edit); an export's destination and a new catalog that
+   already exist. Merge to HDR, inference and the installer keep the
+   cancelled and exists variants of their own error types, which the
+   library maps where it shows them. An enhanced profile that is "missing
+   or unsupported" stays untyped, since it may be either.
 3. `rawmakase-core` with the context and its error type. The context holds
    the configuration's values and the two things that can be made from
    values today, the decode and AI Denoise caches from a folder and a

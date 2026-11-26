@@ -2287,6 +2287,7 @@ fn adobe_standard_resolves_to_the_phone_module_that_took_the_photo() -> Result<(
         .apply(&Recipe::default(), &unknown, &profiles, None)
         .unwrap_err();
     assert!(format!("{e:#}").contains("Missing camera profile ‘Adobe Standard’"));
+    assert!(e.chain().any(|c| c.is::<rawmakase_model::error::Missing>()));
     Ok(())
 }
 

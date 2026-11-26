@@ -105,7 +105,13 @@ pub use stacks::{
 };
 impl Catalog {
     pub fn create(path: &Path) -> Result<Self> {
-        ensure!(!path.exists(), "Catalog already exists: {}", path.display());
+        if path.exists() {
+            return Err(rawmakase_model::error::Exists::new(format!(
+                "Catalog already exists: {}",
+                path.display()
+            ))
+            .into());
+        }
         let parent = crate::storage::parent_dir(path);
         std::fs::create_dir_all(parent)?;
         let file = crate::storage::staging_file(parent)?;

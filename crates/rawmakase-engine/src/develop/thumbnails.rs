@@ -67,7 +67,7 @@ impl ThumbnailRenderer {
         cover: u32,
         cancel: Cancel<'_>,
     ) -> Result<Rendered> {
-        anyhow::ensure!(!cancel.is_cancelled(), "Cancelled");
+        cancel.check("Cancelled")?;
         Self::prime(photo, recipe);
         let copy = self.copy_of(photo, cancel)?;
         let shown = recipe.as_rendered();

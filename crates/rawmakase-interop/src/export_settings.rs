@@ -1045,11 +1045,16 @@ impl ExportSettings {
     /// What every export checks before anything renders: an HDR export's encoding in
     /// its format, else the SDR color space in its format ([`Self::output_space`]).
     /// An HDR export never uses the SDR color space, so that is not checked then.
+    /// Whether the output these settings ask for can be written. A failure is
+    /// [`rawmakase_model::error::Invalid`].
     pub fn check_output(&self) -> Result<()> {
-        if self.hdr_output()?.is_none() {
-            self.output_space()?;
-        }
-        Ok(())
+        let check = || -> Result<()> {
+            if self.hdr_output()?.is_none() {
+                self.output_space()?;
+            }
+            Ok(())
+        };
+        check().map_err(|e| rawmakase_model::error::Invalid::from_error(e).into())
     }
     pub fn options(&self) -> ExportOptions {
         ExportOptions {

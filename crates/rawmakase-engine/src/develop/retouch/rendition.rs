@@ -300,7 +300,7 @@ pub fn render(
     let taps = (1. / region.scale).ceil().clamp(1., 16.) as usize;
     let mut samples = vec![[0f32; 3]; w * h];
     for (j, row) in samples.chunks_mut(w).enumerate() {
-        ensure!(!cancel.is_cancelled(), "Cancelled");
+        cancel.check("Cancelled")?;
         for (i, out) in row.iter_mut().enumerate() {
             let mut sum = [0f32; 3];
             for ty in 0..taps {

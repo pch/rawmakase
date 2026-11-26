@@ -18,7 +18,7 @@ use rayon::prelude::*;
 use std::sync::Arc;
 
 fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     Ok(())
 }
 
@@ -141,7 +141,10 @@ pub(super) mod tests {
     fn cancelled_highlight_recovery_keeps_nothing() {
         let cancel = AtomicBool::new(true);
         let image = fixture();
-        assert!(recover_highlights(&image, Cancel::new(&cancel)).is_err());
+        let Err(e) = recover_highlights(&image, Cancel::new(&cancel)) else {
+            panic!("a cancelled recovery returned an image");
+        };
+        assert!(e.is::<rawmakase_cancel::Cancelled>(), "{e:#}");
         assert!(image.recovered.get().is_none());
     }
     pub(super) fn fixture() -> CameraImage {

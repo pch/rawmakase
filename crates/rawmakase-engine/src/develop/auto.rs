@@ -9,7 +9,7 @@ use crate::{
     camera_data::{CameraImage, Metadata},
     color::srgb_decode,
 };
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 
 /// Long edge of the crop white balance is sampled on.
@@ -120,10 +120,7 @@ pub fn auto_tone_basis(r: &Recipe) -> Recipe {
 }
 
 fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
-    if cancel.is_cancelled() {
-        bail!("Cancelled");
-    }
-    Ok(())
+    Ok(cancel.check("Cancelled")?)
 }
 
 /// Long edge of a reduced copy of `im` whose crop under `r` has a long edge of about

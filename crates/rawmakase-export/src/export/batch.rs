@@ -14,7 +14,7 @@ use crate::{
     photo::Opened,
     raw_defaults::DevelopDefaults,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, bail};
 use rawmakase_cancel::Cancel;
 use std::{
     collections::{HashMap, HashSet},
@@ -801,11 +801,13 @@ fn render<'a>(
             unsaved,
             file,
         } => {
-            if let Some(file) = file {
-                ensure!(
-                    crate::storage::Identity::read(&photo.source)?.same_photo(file),
-                    "the photo's file changed since it was shown; open it again to export it"
-                );
+            if let Some(file) = file
+                && !crate::storage::Identity::read(&photo.source)?.same_photo(file)
+            {
+                return Err(rawmakase_model::error::Changed::new(
+                    "the photo's file changed since it was shown; open it again to export it",
+                )
+                .into());
             }
             (
                 (**recipe).clone(),
@@ -816,9 +818,9 @@ fn render<'a>(
             )
         }
     };
-    ensure!(!cancel.is_cancelled(), "Cancelled");
+    cancel.check("Cancelled")?;
     let Some(admitted) = shared.gate.admit(memory(&opened), cancel) else {
-        bail!("Cancelled");
+        return Err(rawmakase_cancel::Cancelled::new("Cancelled").into());
     };
     let image = Arc::new(match opened {
         Opened::Raw(raw) => {

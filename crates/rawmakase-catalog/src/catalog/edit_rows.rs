@@ -105,11 +105,13 @@ impl Catalog {
         done: &str,
     ) -> Result<Identity> {
         let now = original.identity()?;
-        ensure!(
-            now.same_photo(source),
-            "{} changed since its edit was made; edit not {done}",
-            original.path.display()
-        );
+        if !now.same_photo(source) {
+            return Err(rawmakase_model::error::Changed::new(format!(
+                "{} changed since its edit was made; edit not {done}",
+                original.path.display()
+            ))
+            .into());
+        }
         // Refuse replacing or clearing an edit after the underlying source changed.
         let _ = self.load_edit(id, original)?;
         Ok(now)

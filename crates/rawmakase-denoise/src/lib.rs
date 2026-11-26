@@ -1128,7 +1128,7 @@ impl Service {
         loop {
             ensure_running(&queue)?;
             if cancel.is_cancelled() {
-                bail!("Export cancelled");
+                return Err(rawmakase_cancel::Cancelled::new("Export cancelled").into());
             }
             match queue.outcomes.get(&key).cloned() {
                 Some(Outcome::Done(entry)) => {

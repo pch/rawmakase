@@ -227,7 +227,7 @@ pub(super) fn file(
         .par_iter()
         .map(|b| {
             // Checked before each tile, so a cancelled build stops within one.
-            ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
+            cancel.check("Editable preview cancelled")?;
             Ok(tile(&codes, w, *b))
         })
         .collect::<Result<_>>()?;

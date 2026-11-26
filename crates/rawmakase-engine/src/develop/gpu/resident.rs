@@ -323,7 +323,7 @@ impl Processor {
             ],
         );
         dispatch(&mut encoder, pipeline, &[&group], (gx, gy));
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         super::submit(&self.queue, encoder);
         let samples = Arc::new(samples);
         let resident = self.resident();

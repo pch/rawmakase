@@ -2,7 +2,7 @@
 //! through [`own`]), reading their metadata, development into linear
 //! camera-space pixels and the embedded preview. The values they produce are
 //! [`crate::camera_data`]'s.
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 use std::path::Path;
@@ -445,7 +445,7 @@ impl Raw {
             .own
             .cfa(cancel)?
             .ok_or_else(|| anyhow::anyhow!("Sensor data RAWmakase cannot develop"))?;
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(crate::ai::denoise::PackedBayer::pack(
             cfa.width as usize,
             cfa.height as usize,
@@ -472,13 +472,13 @@ impl Raw {
                 p[c] / wb[c].max(f32::MIN_POSITIVE)
             })
             .collect();
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(crate::ai::denoise::PackedBayer::pack(w, h, &data, [0, 0]))
     }
     pub fn develop(mut self, decode: Decode, cancel: Cancel<'_>) -> Result<CameraImage> {
         // Small RAWs develop at full size in either mode, as they always have.
         if let Some((width, height, pixels)) = self.own.rgb(self.metadata.wb, cancel)? {
-            ensure!(!cancel.is_cancelled(), "Development cancelled");
+            cancel.check("Development cancelled")?;
             return Ok(CameraImage {
                 recovered: Default::default(),
                 width,
@@ -517,7 +517,7 @@ impl Raw {
         else {
             return Ok(None);
         };
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         let wb = self.metadata.wb;
         let (width, height) = (w as usize, h as usize);
         let clipped = data
@@ -546,7 +546,7 @@ impl Raw {
         } else {
             (w, h, crate::demosaic::demosaic(&cfa))
         };
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(Some(CameraImage {
             recovered: Default::default(),
             width: w,

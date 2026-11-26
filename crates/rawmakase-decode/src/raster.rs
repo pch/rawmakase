@@ -245,11 +245,11 @@ impl HdrDecoding {
             .par_chunks(width * 3)
             .zip(out.par_chunks_mut(width))
             .try_for_each(|(from, to)| {
-                anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
+                cancel.check("Opening cancelled")?;
                 for (to, px) in to.iter_mut().zip(from.as_chunks::<3>().0) {
                     *to = self.light(*px);
                 }
-                Ok(())
+                anyhow::Ok(())
             })?;
         Ok(out)
     }
@@ -992,7 +992,7 @@ fn in_own_primaries(
         .par_chunks(width * 3)
         .zip(out.par_chunks_mut(width))
         .try_for_each(|(from, to)| {
-            anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
+            cancel.check("Opening cancelled")?;
             transform
                 .transform(from, bytemuck::cast_slice_mut(to))
                 .map_err(|e| anyhow!("Could not convert the gain map's base: {e}"))
@@ -1247,7 +1247,7 @@ impl ToLinear {
             .par_chunks(width * per_pixel)
             .zip(out.par_chunks_mut(width))
             .try_for_each(|(from, to)| {
-                anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
+                cancel.check("Opening cancelled")?;
                 self.transform
                     .transform(from, bytemuck::cast_slice_mut(to))
                     .map_err(|e| anyhow!("Could not convert the image to ProPhoto: {e}"))
@@ -1859,7 +1859,13 @@ mod tests {
         let path = dir.path().join("a.png");
         image::RgbImage::new(4, 4).save(&path)?;
         let cancel = std::sync::atomic::AtomicBool::new(true);
-        assert!(super::open(&path, Cancel::new(&cancel)).is_err());
+        let Err(e) = super::open(&path, Cancel::new(&cancel)) else {
+            panic!("a cancelled open returned an image");
+        };
+        assert_eq!(
+            e.downcast_ref::<rawmakase_cancel::Cancelled>(),
+            Some(&rawmakase_cancel::Cancelled::new("Opening cancelled"))
+        );
         Ok(())
     }
 

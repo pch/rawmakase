@@ -16,7 +16,7 @@ use crate::{
     develop::{recipe::Denoise, red_eye},
     model::red_eye::RedEyeOp,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use std::{
     collections::BTreeSet,
@@ -274,7 +274,7 @@ impl RetouchCache {
                 }
             }
             for step in steps {
-                ensure!(!cancel.is_cancelled(), "Render superseded");
+                cancel.check("Render superseded")?;
                 if step.reads().iter().any(|r| touches(&dirty, r)) {
                     step.apply(&mut out);
                 }

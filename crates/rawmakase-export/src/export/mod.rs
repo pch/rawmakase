@@ -218,7 +218,9 @@ fn check_destination(path: &Path, source: &Path, replace: Replace) -> Result<()>
             fs::canonicalize(path)? != fs::canonicalize(source)?,
             "Cannot overwrite source"
         );
-        ensure!(replace == Replace::Overwrite, "Destination already exists");
+        if replace != Replace::Overwrite {
+            return Err(rawmakase_model::error::Exists::new("Destination already exists").into());
+        }
     }
     Ok(())
 }

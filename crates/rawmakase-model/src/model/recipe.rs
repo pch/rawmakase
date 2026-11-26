@@ -498,7 +498,13 @@ impl Recipe {
         recipe.reset_white_balance(m);
         recipe
     }
+    /// Whether every setting is in its range and every part is whole. A
+    /// failure is [`crate::error::Invalid`], printed as the check that failed.
     pub fn validate(&self) -> Result<()> {
+        self.check()
+            .map_err(|e| crate::error::Invalid::from_error(e).into())
+    }
+    fn check(&self) -> Result<()> {
         self.effects.validate()?;
         ensure!(
             self.lens_profile_choice

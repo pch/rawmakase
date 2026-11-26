@@ -359,7 +359,7 @@ pub(crate) fn render_preview(
         space == crate::color::OutputSpace::Srgb || stages.is_none(),
         "Only sRGB renders run on the GPU"
     );
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     let source = match stages.as_deref_mut() {
         Some(s) => resolved.source_with_backend(
             im,
@@ -393,7 +393,7 @@ pub(crate) fn render_preview(
     let right = (x + w + halo).min(g.width);
     let bottom = (y + h + halo).min(g.height);
     // Highlight recovery is prepared once per decoded image by the caller; see CameraImage.
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     let base = [left, top, right - left, bottom - top];
     // A display shows the render unresized; a Fit smaller than the photo comes from
     // the pyramid instead (`PreviewRenderer::render_fit`).
@@ -488,7 +488,7 @@ pub(crate) fn render_preview(
         out = finished;
         gpu_sharpened = true;
     }
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     if !gpu_sharpened {
         sharpen_with_radius(&mut out, r, sigma, weights.as_deref(), space, cancel)?;
         local_noise(&mut out, weights.as_deref(), space);
@@ -501,7 +501,7 @@ pub(crate) fn render_preview(
         scale,
         space,
     );
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     if region.is_some() {
         Ok(Output::Pixels(crop(out, [x - left, y - top, w, h])))
     } else {
@@ -517,7 +517,7 @@ pub(crate) fn render_preview(
             if let Some(finished) = finished {
                 return Ok(Output::Pixels(finished));
             }
-            ensure!(!cancel.is_cancelled(), "Render superseded");
+            cancel.check("Render superseded")?;
         }
         Ok(Output::Pixels(resize(out, max_edge)))
     }

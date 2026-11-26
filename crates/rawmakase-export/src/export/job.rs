@@ -192,7 +192,7 @@ pub fn prepare_with_backend(
         );
     }
     let cancelled = || -> Result<()> {
-        ensure!(!cancel.is_cancelled(), "Cancelled");
+        cancel.check("Cancelled")?;
         Ok(())
     };
     progress(0.05);

@@ -290,7 +290,7 @@ pub(crate) fn mask_weights(
     } else {
         None
     };
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     let weights = Arc::new(weigher.weights(&toned.image, r, g, region, global.as_ref()));
     if let Some(s) = stages {
         s.cache.masks.insert(key, weights.clone(), weights.bytes());
@@ -399,7 +399,7 @@ pub(crate) fn sample_region(
             (p, pos)
         })
         .unzip();
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     Ok(Samples {
         width: w,
         height: h,
@@ -521,7 +521,7 @@ fn develop_samples_to(
             process_pixel(samples.pixels[i], r, &lut, camera, pos, local)
         };
     });
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     Ok(Rendered {
         width: samples.width,
         height: samples.height,
@@ -595,7 +595,7 @@ pub(super) fn render_region_inner(
             }
         }
     });
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     Ok(Rendered {
         width: w,
         height: h,

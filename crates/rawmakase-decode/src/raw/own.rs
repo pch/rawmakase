@@ -106,7 +106,14 @@ impl Own {
         Ok(rawmakase_raw::preview_reaching(&self.info, &self.bytes, edge)?.to_vec())
     }
     fn decode(&self, cancel: Cancel<'_>) -> Result<rawmakase_raw::Sensor> {
-        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel)?;
+        // A cancelled decode is the typed [`rawmakase_cancel::Cancelled`] above this
+        // adapter, with the decoders' own wording.
+        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel).map_err(|e| match e {
+            rawmakase_raw::Error::Cancelled => {
+                anyhow::Error::new(rawmakase_cancel::Cancelled::new("Decoding cancelled"))
+            }
+            e => e.into(),
+        })?;
         let [left, top, w, h] = s.area;
         ensure!(
             s.channels > 0
@@ -345,7 +352,7 @@ fn turned(
     [w, h]: [usize; 2],
     cancel: Cancel<'_>,
 ) -> Result<Cfa> {
-    ensure!(!cancel.is_cancelled(), "Development cancelled");
+    cancel.check("Development cancelled")?;
     // Super CCD sensors are near square: the longer stored side at most
     // four times the shorter (the dataset's widest is three), so the turned
     // image is at most 2.25 times the stored area. Anything else is not a
@@ -368,7 +375,7 @@ fn turned(
     let mut period = [None; 4];
     for y in 0..h {
         if y % 256 == 0 {
-            ensure!(!cancel.is_cancelled(), "Development cancelled");
+            cancel.check("Development cancelled")?;
         }
         for x in 0..w {
             if let Some([tx, ty]) = turn.position(y as u32, x as u32) {

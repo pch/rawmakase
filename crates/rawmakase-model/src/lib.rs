@@ -11,6 +11,7 @@ pub mod cameras;
 pub mod collection_rules;
 pub mod color;
 pub mod dng;
+pub mod error;
 pub mod ids;
 pub mod lens;
 pub mod metadata;
