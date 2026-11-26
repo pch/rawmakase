@@ -321,7 +321,7 @@ pub fn convert_develop(
     // Spots and masks convert on their own and report what they skip.
     let local_settings = std::mem::take(&mut preset.local);
     let base = Recipe::with_profiles(m, profiles);
-    let (mut recipe, substitute) = match can_try_whole_preset_fast_path(&preset, image)
+    let (mut recipe, substitute) = match can_try_whole_preset_fast_path(&preset, &base, image)
         .then(|| preset.apply(&base, m, profiles, image))
         .and_then(Result::ok)
     {
@@ -437,16 +437,28 @@ pub fn convert_develop(
 }
 
 /// Whether `preset` can take the single-pass [`crate::xmp::Preset::apply`] fast path
-/// without diverging from the per-group/per-key validator. Returns `false` whenever an
-/// ungrouped setting could alter another group's validation outcome compared to testing
-/// each group on its own (photo measurements under a preset crop/edit, legacy
+/// without diverging from the per-group/per-key validator. Returns `false` when `base`
+/// itself is not valid, or whenever an ungrouped setting could alter another group's
+/// validation outcome compared to testing each group on its own (photo measurements
+/// under a preset crop/edit, `CameraProfile` paired with white balance, legacy
 /// `RAWmakasePreset` crop interpretation, carried fitted profiles or look UUIDs, or
 /// multi-key Lensfun choices).
 pub(crate) fn can_try_whole_preset_fast_path(
     preset: &crate::xmp::Preset,
+    base: &Recipe,
     image: Option<&dyn crate::xmp::PhotoMeasures>,
 ) -> bool {
+    if base.validate().is_err() {
+        return false;
+    }
     if image.is_some() && (preset.measures_photo() || preset.settings.contains_key("AutoTone")) {
+        return false;
+    }
+    if preset.settings.contains_key("CameraProfile")
+        && ["WhiteBalance", "Temperature", "Tint"]
+            .iter()
+            .any(|k| preset.settings.contains_key(*k))
+    {
         return false;
     }
     if preset.settings.contains_key("RAWmakasePreset")

@@ -3451,12 +3451,14 @@ fn lr_develop_fast_path_guard_preserves_cross_group_validation() -> Result<()> {
     );
 
     // 3. Guard predicate accepts normal records and rejects cross-group cases.
+    let valid_base = Recipe::default();
     let normal = parse(
         Path::new("normal.xmp"),
         &xml(r#"c:HasCrop="False" c:Exposure2012="0.5""#, ""),
     )?;
     assert!(crate::lr_develop::can_try_whole_preset_fast_path(
         &normal,
+        &valid_base,
         Some(&patch)
     ));
     let mut with_auto_wb = normal.clone();
@@ -3465,12 +3467,32 @@ fn lr_develop_fast_path_guard_preserves_cross_group_validation() -> Result<()> {
         .insert("WhiteBalance".into(), "Auto".into());
     assert!(crate::lr_develop::can_try_whole_preset_fast_path(
         &with_auto_wb,
+        &valid_base,
         None
     ));
     assert!(!crate::lr_develop::can_try_whole_preset_fast_path(
         &with_auto_wb,
+        &valid_base,
         Some(&patch)
     ));
+    // CameraProfile alone or WB alone still uses the fast path; combining both does not.
+    let mut with_profile = normal.clone();
+    with_profile
+        .settings
+        .insert("CameraProfile".into(), "Camera Matrix".into());
+    assert!(crate::lr_develop::can_try_whole_preset_fast_path(
+        &with_profile,
+        &valid_base,
+        None
+    ));
+    for wb_key in ["WhiteBalance", "Temperature", "Tint"] {
+        let mut both = with_profile.clone();
+        both.settings.insert(wb_key.into(), "2000".into());
+        assert!(
+            !crate::lr_develop::can_try_whole_preset_fast_path(&both, &valid_base, None),
+            "expected fast path guard to reject CameraProfile + {wb_key}"
+        );
+    }
     for key in [
         "RAWmakasePreset",
         crate::xmp::FITTED_PROFILE_KEY,
@@ -3480,9 +3502,90 @@ fn lr_develop_fast_path_guard_preserves_cross_group_validation() -> Result<()> {
         let mut p = normal.clone();
         p.settings.insert(key.into(), "1".into());
         assert!(
-            !crate::lr_develop::can_try_whole_preset_fast_path(&p, None),
+            !crate::lr_develop::can_try_whole_preset_fast_path(&p, &valid_base, None),
             "expected fast path guard to reject {key}"
         );
     }
+
+    // 4. CameraProfile + white balance: a profile whose WB gains for 2000 K / +20 fail
+    // on the starting profile while "Camera Matrix" succeeds must still match grouped
+    // validation (keep starting WB, apply "Camera Matrix", report "Invalid white balance").
+    let wb_meta = Metadata {
+        make: "Test".into(),
+        model: "Synth".into(),
+        wb: [1., 1., 1.],
+        daylight_wb: [1., 1., 1.],
+        matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0.03, 1.]],
+        cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        ..Default::default()
+    };
+    let camera_matrix =
+        crate::camera_profiles::CameraProfile::camera_matrix_default(&wb_meta).unwrap();
+    let mut adobe_start = crate::camera_profiles::CameraProfile::camera_matrix_default(&Metadata {
+        cam_xyz: [[1., 0., 0.], [0., 1., 0.], [-0.5, 0., 1.]],
+        ..wb_meta.clone()
+    })
+    .unwrap();
+    adobe_start.name = "Adobe Color".into();
+    adobe_start.camera = "Synth".into();
+    let profiles = vec![
+        std::sync::Arc::new(adobe_start),
+        std::sync::Arc::new(camera_matrix),
+    ];
+    let wb_base = Recipe::with_profiles(&wb_meta, &profiles);
+    assert_eq!(wb_base.profile.as_ref().unwrap().name, "Adobe Color");
+    assert!(wb_base.validate().is_ok());
+    // Confirm the whole preset would succeed if not guarded (so this test genuinely
+    // exercises the CameraProfile + WB fast-path guard).
+    let whole_wb = parse(
+        Path::new("wb-profile.xmp"),
+        &xml(
+            r#"c:CameraProfile="Camera Matrix" c:WhiteBalance="Custom" c:Temperature="2000" c:Tint="20""#,
+            "",
+        ),
+    )?;
+    assert!(whole_wb.apply(&wb_base, &wb_meta, &profiles, None).is_ok());
+    let text = r#"s = { CameraProfile = "Camera Matrix", WhiteBalance = "Custom", Temperature = 2000, Tint = 20 }"#;
+    let (r, warnings) = crate::lr_develop::convert_develop(text, &wb_meta, &profiles, None)?;
+    assert_eq!(r.profile.as_ref().unwrap().name, "Camera Matrix");
+    assert_eq!(
+        (r.temperature, r.tint, r.wb),
+        (wb_base.temperature, wb_base.tint, wb_base.wb)
+    );
+    assert!(
+        warnings.iter().any(|w| w.contains("Invalid white balance")),
+        "expected Invalid white balance warning, got {warnings:?}"
+    );
+
+    // 5. Invalid starting base (1%-wide DNG camera crop turned 180° rounds just under
+    // 0.01): fast path must not bypass base.validate(), so Exposure2012 fails "Invalid
+    // crop" on base while HasCrop = false still clears the crop.
+    let rotated_dng = Metadata {
+        width: 1000,
+        height: 1000,
+        flip: 3,
+        camera_crop: Some([0., 0., 0.01, 1.]),
+        ..Default::default()
+    };
+    let invalid_base = Recipe::with_profiles(&rotated_dng, &[]);
+    assert!(invalid_base.validate().is_err());
+    assert!(normal.apply(&invalid_base, &rotated_dng, &[], None).is_ok());
+    assert!(!crate::lr_develop::can_try_whole_preset_fast_path(
+        &normal,
+        &invalid_base,
+        None
+    ));
+    let (r, warnings) = crate::lr_develop::convert_develop(
+        "s = { HasCrop = false, Exposure2012 = 0.5 }",
+        &rotated_dng,
+        &[],
+        None,
+    )?;
+    assert_eq!(r.crop, [0., 0., 1., 1.]);
+    assert_eq!(r.exposure, 0.);
+    assert!(
+        warnings.iter().any(|w| w.contains("Invalid crop")),
+        "expected Invalid crop warning, got {warnings:?}"
+    );
     Ok(())
 }
