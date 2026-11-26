@@ -16,8 +16,12 @@ pub(crate) struct PhotoMeasures {
     /// Its luminance's 0.1th percentile: a darkest level a few dark pixels do not move,
     /// which Camera Raw's default black follows.
     pub(crate) dark: f32,
-    /// Its luminance's 99th percentile: a stop below the level Whites stretches toward.
+    /// Its luminance's 99th percentile (plain, used by HDR positive Whites).
     pub(crate) p99: f32,
+    /// Its luminance's 99th percentile excluding flat sensor-clipped highlight regions
+    /// (tested at as-shot white balance): a stop below the level SDR positive Whites
+    /// stretches toward.
+    pub(crate) whites_p99: f32,
 }
 /// What the stage cache keeps of a photo's measurement copy for the settings the
 /// measures read: the measures, and the haze Dehaze uses, measured on the
@@ -141,6 +145,7 @@ impl Default for PhotoMeasures {
             min: -12.,
             dark: -12.,
             p99: -1.,
+            whites_p99: -1.,
         }
     }
 }
@@ -165,11 +170,11 @@ impl PhotoMeasures {
             sensor.min((self.max + exposure + 1.).max(0.))
         }
     }
-    /// The level Whites stretches toward (log2) at `exposure` stops: twice the 99th
-    /// percentile of luminance, at most the sensor's white (fitted on training photos;
-    /// docs/scene-tone-stage.md#whites-and-blacks).
+    /// The level SDR positive Whites stretches toward (log2) at `exposure` stops: twice
+    /// the 99th percentile of non-flat-clipped luminance, at most the sensor's white
+    /// (fitted on training photos; docs/scene-tone-stage.md#whites-and-blacks).
     pub(crate) fn whites_top(&self, exposure: f32) -> f32 {
-        (self.p99 + 1.).min(self.sensor_white) + exposure
+        (self.whites_p99 + 1.).min(self.sensor_white) + exposure
     }
     /// The black key (log2 of the photo's darkest level) at `exposure` stops.
     pub(crate) fn black_key(&self, exposure: f32) -> f32 {
@@ -193,6 +198,7 @@ mod tests {
             min: -12.,
             dark: -12.,
             p99: -1.,
+            whites_p99: -1.,
         }
         .white_point(exposure)
         .exp2()
@@ -209,6 +215,7 @@ mod tests {
             min: -12.,
             dark: -12.,
             p99,
+            whites_p99: p99,
         };
         // A specular highlight at the sensor's white does not hold Whites back.
         assert_eq!(measures(1., -3.).whites_top(0.), -2.);

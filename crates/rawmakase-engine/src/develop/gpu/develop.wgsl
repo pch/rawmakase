@@ -796,10 +796,40 @@ fn default_black(base: i32, y: f32) -> f32 {
     }
     return log_curve(base, SCENE_Y, y);
 }
-// GlobalTone::apply: the white curve (RGBTone), then the default black and Blacks per
-// channel.
+// `scene_tone::global::apply_luma_curve`: SDR scalar gain on L255 = 0.25 R + 0.50 G + 0.25 B.
+// At or above white (`l >= 1.0`), gain stays 1.0 so SDR positive-Whites overshoot does
+// not darken unclipped channels by `1 / l`.
+fn apply_luma_curve(q: vec3<f32>, base: i32) -> vec3<f32> {
+    let l = dot(q, vec3(0.25, 0.50, 0.25));
+    let gain = select(
+        select(
+            table(base) / exp2(SCENE_Y.x),
+            log_curve(base, SCENE_Y, l) / l,
+            l > 1e-12,
+        ),
+        1.0,
+        l >= 1.0,
+    );
+    return min(q * gain, vec3(1.0));
+}
+// `scene_tone::global::apply_luma_linear_curve`: scalar gain on L255 over a uniform [0, 1]
+// LUT of 129 samples (`Y_SAMPLES`), used by SDR negative Whites.
+fn apply_luma_linear_curve(q: vec3<f32>, base: i32) -> vec3<f32> {
+    let l = dot(q, vec3(0.25, 0.50, 0.25));
+    let gain = select(
+        table(base + 1) * 128.0,
+        lut(base, 128u, l) / l,
+        l > 1e-12,
+    );
+    return min(q * gain, vec3(1.0));
+}
+// GlobalTone::apply: the white curve (RGBTone, with SDR negative Whites as an L255
+// scalar gain after the default curve), then the default black (per channel) and Blacks
+// (L255 scalar gain for SDR positive Blacks above +25 with Auto default black, else per
+// channel).
 fn scene_global(q: vec3<f32>) -> vec3<f32> {
     let whites = p(P_SCENE_KEYS + 3u);
+    let neg_whites = offset(P_SCENE_NEG_WHITES);
     let lo = min(min(q.x, q.y), q.z);
     let hi = max(max(q.x, q.y), q.z);
     var ya: f32;
@@ -812,6 +842,9 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     } else if V_HDR {
         ya = hdr_white(lo);
         yb = hdr_white(hi);
+    } else if neg_whites >= 0 {
+        ya = white_curve(0.0, lo);
+        yb = white_curve(0.0, hi);
     } else {
         ya = white_curve(whites, lo);
         yb = white_curve(whites, hi);
@@ -822,6 +855,8 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     }
     if lum_gain {
         out = out * exp2(hdr_gain(dot(q, vec3(0.2880402, 0.7118741, 0.0000857))));
+    } else if !V_HDR && neg_whites >= 0 {
+        out = apply_luma_linear_curve(out, neg_whites);
     }
     let black = offset(P_SCENE_DEFAULT_BLACK);
     let shadow_black = offset(P_SCENE_SHADOW_BLACK);
@@ -838,12 +873,21 @@ fn scene_global(q: vec3<f32>) -> vec3<f32> {
     }
     let blacks = offset(P_SCENE_BLACKS);
     if blacks >= 0 {
-        let curved = vec3(log_curve(blacks, SCENE_Y, out.x), log_curve(blacks, SCENE_Y, out.y), log_curve(blacks, SCENE_Y, out.z));
-        // In HDR, Blacks leaves values above white alone (`GlobalTone::apply`).
-        if V_HDR {
-            out = select(curved, out, out >= vec3(1.0));
+        let black_point = p(P_SCENE_KEYS + 2u) != 0.0;
+        let blacks_s = p(P_SCENE_KEYS + 4u);
+        // 0.25 matches `scene_tone::global::BLACK_REMOVED` (+25 Blacks, where Auto
+        // default black finishes fading out and `blacks_none.bin` starts as L255 gain).
+        let blacks_luma = !V_HDR && black_point && blacks_s > 0.25;
+        if blacks_luma {
+            out = apply_luma_curve(out, blacks);
         } else {
-            out = curved;
+            let curved = vec3(log_curve(blacks, SCENE_Y, out.x), log_curve(blacks, SCENE_Y, out.y), log_curve(blacks, SCENE_Y, out.z));
+            // In HDR, Blacks leaves values above white alone (`GlobalTone::apply`).
+            if V_HDR {
+                out = select(curved, out, out >= vec3(1.0));
+            } else {
+                out = curved;
+            }
         }
     }
     return out;

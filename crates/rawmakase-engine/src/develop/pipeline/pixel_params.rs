@@ -23,9 +23,11 @@ pub(crate) mod slot {
         CALIBRATION: 9,
         SHADOW_TINT: 1,
         EXPOSURE: 1,
-        // The scene tone stage's white curves (`GlobalTone::gpu_curves`), its default
-        // black and its blacks curve, or -1 each.
+        // The scene tone stage's white curves (`GlobalTone::gpu_curves`), its SDR
+        // negative-Whites L255 transfer, its default black and its blacks curve, or -1
+        // each.
         SCENE_WHITE: 1,
+        SCENE_NEG_WHITES: 1,
         SCENE_DEFAULT_BLACK: 1,
         SCENE_SHADOW_BLACK: 2,
         SCENE_BLACKS: 1,
@@ -571,6 +573,10 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     p.set(slot::EXPOSURE, &[lut.exposure_gain]);
     let global = &lut.scene.global;
     let white = p.push(global.gpu_curves());
+    let neg_whites = match global.neg_whites_samples() {
+        Some(n) => p.push(n.iter().copied()),
+        None => -1.,
+    };
     let default_black = match global.default_black_samples() {
         Some(b) => p.push(b.iter().copied()),
         None => -1.,
@@ -580,6 +586,7 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         None => -1.,
     };
     p.set(slot::SCENE_WHITE, &[white]);
+    p.set(slot::SCENE_NEG_WHITES, &[neg_whites]);
     p.set(slot::SCENE_DEFAULT_BLACK, &[default_black]);
     let shadow_black = match global.shadow_black_samples() {
         Some((s, rows)) => [p.push(rows.iter().copied()), s],

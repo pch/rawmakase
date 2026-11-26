@@ -738,6 +738,18 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.effects.monochrome = true;
     r.effects.gray_mix = [0.2, -0.3, 0.1, 0.4, -0.2, 0.3, 0., -0.1];
     recipes.push(r);
+    // SDR RAW (Auto default black) L255 scalar gain paths: negative Whites + positive
+    // Blacks above +25, and positive Whites overshoot + positive Blacks above +25.
+    recipes.push(Recipe {
+        whites: -0.6,
+        blacks: 0.6,
+        ..base(&plain)
+    });
+    recipes.push(Recipe {
+        whites: 0.8,
+        blacks: 0.8,
+        ..base(&plain)
+    });
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);
     // The swatches select part of the test image (the same source for both).
