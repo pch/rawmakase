@@ -64,16 +64,25 @@ impl<'a> Records<'a> {
     /// its length and its bytes.
     pub(crate) fn parse(dir: impl Into<Source<'a>>) -> Self {
         let b = dir.into();
+        if b.has_gap(0, 4) {
+            return Self(Vec::new());
+        }
         let count = b.u32(Order::Big, 0).unwrap_or(0).min(4096);
         let mut at = 4u64;
         let mut out = Vec::new();
         for _ in 0..count {
+            if b.has_gap(at, 4) {
+                break;
+            }
             let (Some(tag), Some(len)) = (b.u16(Order::Big, at), b.u16(Order::Big, at + 2)) else {
                 break;
             };
             let Some(value) = b.slice_exact(at + 4, u64::from(len)) else {
                 break;
             };
+            if value.has_gap(0, u64::from(len)) {
+                break;
+            }
             out.push((tag, value));
             at += 4 + u64::from(len);
         }
@@ -81,12 +90,15 @@ impl<'a> Records<'a> {
     }
     pub(crate) fn get(&self, tag: u16) -> Option<Cow<'a, [u8]>> {
         let s = self.0.iter().find(|r| r.0 == tag).map(|r| r.1)?;
+        if s.has_gap(0, s.len()) {
+            return None;
+        }
         s.get(0, s.len())
     }
     /// A record of two 16-bit values.
     pub(crate) fn pair(&self, tag: u16) -> Option<[u32; 2]> {
         let s = self.0.iter().find(|r| r.0 == tag).map(|r| r.1)?;
-        if s.len() != 4 {
+        if s.len() != 4 || s.has_gap(0, 4) {
             return None;
         }
         let v = s.array::<4>(0)?;
@@ -352,11 +364,14 @@ fn raf_data_list(data: &[u8]) -> Option<Vec<(u32, [u32; 3])>> {
 /// length and the directory (our own reading of the dataset's DNGs).
 pub(crate) fn dng_directory<'a>(raf: impl Into<Source<'a>>) -> Option<Source<'a>> {
     let b = raf.into();
-    if !b.starts_with(b"MM") {
+    if b.has_gap(0, 6) || !b.starts_with(b"MM") {
         return None;
     }
     let header = u64::from(b.u32(Order::Big, 2)?);
     let at = 6u64.checked_add(header)?;
+    if b.has_gap(at, 4) {
+        return None;
+    }
     let len = u64::from(b.u32(Order::Big, at)?);
     b.slice_exact(at + 4, len)
 }
@@ -371,19 +386,26 @@ pub(crate) fn dynamic_range<'a>(notes: impl Into<Source<'a>>) -> Option<u32> {
 /// The short `tag` of the maker notes.
 fn note_short<'a>(notes: impl Into<Source<'a>>, tag: u16) -> Option<u16> {
     let b = notes.into();
-    if !b.starts_with(b"FUJIFILM") {
+    if b.has_gap(0, 12) || !b.starts_with(b"FUJIFILM") {
         return None;
     }
     let at = u64::from(b.u32(Order::Little, 8)?);
+    if b.has_gap(at, 2) {
+        return None;
+    }
     let count = b.u16(Order::Little, at)?;
-    (0..u64::from(count)).find_map(|i| {
-        let e = at + 2 + 12 * i;
+    for i in 0..u64::from(count) {
+        let e = at.checked_add(2 + 12 * i)?;
+        if b.has_gap(e, 12) {
+            return None;
+        }
         let found = b.u16(Order::Little, e)?;
         let kind = b.u16(Order::Little, e + 2)?;
-        (found == tag && kind == rawmakase_tiff::kind::SHORT)
-            .then(|| b.u16(Order::Little, e + 8))
-            .flatten()
-    })
+        if found == tag && kind == rawmakase_tiff::kind::SHORT {
+            return b.u16(Order::Little, e + 8);
+        }
+    }
+    None
 }
 
 /// The film simulation of the maker notes: a black and white one is in Saturation

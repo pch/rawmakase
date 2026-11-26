@@ -302,7 +302,7 @@ const SHORT_VALUE: u64 = 64 << 10;
 /// ORF's reader names besides. `None` when the container can't be read in
 /// pieces.
 pub(crate) fn header_parts<'a>(bytes: impl Into<crate::io::Source<'a>>) -> Option<Vec<(u64, u64)>> {
-    use crate::container::{cr2, cr3, nef, orf, raf, tiff};
+    use crate::container::{cr2, cr3, dng, nef, orf, raf, tiff};
     let bytes = bytes.into();
     if raf::is_raf(bytes) {
         return Some(raf::header_parts(bytes));
@@ -314,12 +314,10 @@ pub(crate) fn header_parts<'a>(bytes: impl Into<crate::io::Source<'a>>) -> Optio
         return cr2::header_parts(bytes);
     }
     let mut parts = tiff::parts(bytes, 0, SHORT_VALUE);
-    // A DNG is none of these, whatever camera it is of. A file `probe` gives
-    // another reader at worst has a few bytes more read.
-    if let Some(t) = tiff::TiffFile::parse(bytes, 0)
-        && !t.ifds[0].has(50706)
-    {
-        if nef::is_nef(&t) {
+    if let Some(t) = tiff::TiffFile::parse(bytes, 0) {
+        if t.ifds[0].has(50706) {
+            parts.extend(dng::header_parts(&t)?);
+        } else if nef::is_nef(&t) {
             parts.extend(nef::header_parts(&t));
         } else if orf::is_orf(bytes, &t) {
             parts.extend(orf::header_parts(t));

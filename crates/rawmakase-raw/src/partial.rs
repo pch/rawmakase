@@ -24,7 +24,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 /// What is read first from the file's start: directories, maker notes and
 /// metadata boxes are within it in the files measured.
-const HEAD: u64 = 512 << 10;
+pub(crate) const HEAD: u64 = 512 << 10;
 /// What is read from the file's end, for containers that keep their
 /// directories there.
 const TAIL: u64 = 64 << 10;
