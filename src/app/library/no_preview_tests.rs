@@ -376,15 +376,18 @@ fn without_its_thumbnail(
 }
 
 /// Raw Defaults other than the default ones.
-fn other_defaults() -> std::sync::Arc<crate::raw_defaults::DevelopDefaults> {
+fn other_defaults() -> PreviewDefaults {
     let settings = crate::raw_defaults::RawDefaults {
         camera_overrides: true,
         ..Default::default()
     };
-    std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
-        settings,
-        |_| None,
-    ))
+    PreviewDefaults {
+        develop: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::with_presets(
+            settings,
+            |_| None,
+        )),
+        profiles: "".into(),
+    }
 }
 
 /// Raw Defaults changed while a developed thumbnail is still rendering: what
@@ -481,5 +484,48 @@ fn the_status_line_tells_a_developed_thumbnail_from_an_unavailable_one() -> Resu
             assert_eq!(shown, ["1 preview unavailable"]);
         }
     }
+    Ok(())
+}
+
+/// A developed thumbnail is kept under what its defaults resolve with, the
+/// profile library included: once profiles are imported (or the app starts with
+/// others), the photo is developed again rather than the thumbnail made with the
+/// old profiles found in the cache, so the Library agrees with Develop.
+#[test]
+fn a_developed_thumbnail_follows_the_profile_library() -> Result<()> {
+    let (_directory, mut library) = library_with(scanner_dng)?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let (sent, renders) = without_its_thumbnail(&mut library)?;
+    let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);
+    editor.library = Some(Box::new(library));
+    editor.profile_library = "before the import".into();
+    editor.refresh_library_defaults();
+    let library = editor.library.as_mut().unwrap();
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render {
+        ticket,
+        source: before,
+        ..
+    }) = sent.try_recv()
+    else {
+        panic!("no render asked for");
+    };
+    renders.send(previews::EditResult::Ready(
+        photo.id,
+        ticket,
+        image::RgbImage::new(4, 3),
+    ))?;
+    library.cache.poll(&ctx);
+    assert!(library.texture(&photo).is_some());
+    // Profiles imported: the editor reads the library again and tells the Library.
+    editor.profile_library = "after the import".into();
+    editor.refresh_library_defaults();
+    let library = editor.library.as_mut().unwrap();
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { source: after, .. }) = sent.try_recv() else {
+        panic!("not developed again");
+    };
+    assert_ne!(before.tag(), after.tag(), "the old thumbnail is found");
     Ok(())
 }

@@ -12,7 +12,7 @@ pub(in crate::app) use edits::Sent;
 pub(in crate::app::library) use edits::{EditJob, EditQueue, EditResult, Wanted, spawn_edited};
 pub(in crate::app::library) use progress::Progress;
 pub(in crate::app::library) use render::{develop_for_preview, develop_quickly};
-pub(in crate::app) use source::{EditSource, PreviewAi};
+pub(in crate::app) use source::{EditSource, PreviewAi, PreviewDefaults};
 pub(in crate::app::library) use thumbnails::{PreviewResult, ShownFiles, ThumbJob, spawn};
 
 #[cfg(test)]

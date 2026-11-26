@@ -80,7 +80,7 @@ pub(in crate::app) use descriptive::parse_keywords;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use keyword_list::KeywordCommand;
 pub(crate) use metadata::{Metadata, MetadataCommand};
-pub(in crate::app) use previews::{EditSource, Pace, PreviewAi};
+pub(in crate::app) use previews::{EditSource, Pace, PreviewAi, PreviewDefaults};
 pub(crate) use quick::CollectionCommand;
 pub(in crate::app) use stacks::StackAction;
 pub(crate) use stacks::StackCommand;
@@ -353,7 +353,7 @@ pub(crate) struct Library {
     /// Read Metadata from Files finished since the editor last asked.
     reread_finished: bool,
     /// What photos without an edit are previewed with (see `set_defaults`).
-    defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
+    defaults: PreviewDefaults,
 }
 impl Library {
     /// Ends the preview workers at exit: the renders under way are cancelled and the
@@ -1770,10 +1770,7 @@ impl Library {
     }
     /// Previews photos without an edit with `defaults` from now on; the ones
     /// shown with the previous defaults are made again.
-    pub(in crate::app) fn set_defaults(
-        &mut self,
-        defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
-    ) {
+    pub(in crate::app) fn set_defaults(&mut self, defaults: PreviewDefaults) {
         self.set_defaults_preserving(defaults, None);
     }
 
@@ -1781,7 +1778,7 @@ impl Library {
     /// existing render remains valid; other unedited photos still invalidate.
     pub(in crate::app) fn set_defaults_preserving(
         &mut self,
-        defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
+        defaults: PreviewDefaults,
         current: Option<PhotoId>,
     ) {
         self.defaults = defaults;
