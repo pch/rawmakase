@@ -88,6 +88,21 @@ impl Photo {
         .map_err(Error::of)
     }
 
+    /// Saves `recipe`, this photo's edit, as a RAWmakase preset at `path`,
+    /// which [`Context::load_recipe`](crate::Context::load_recipe) and
+    /// `rawmakase render --recipe` read.
+    ///
+    /// A preset is not the whole edit: spot removal stays with its photo, and
+    /// a mask made from a selection is refused.
+    /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a recipe that does
+    /// not validate.
+    pub fn save_recipe(&self, recipe: &Recipe, path: impl AsRef<std::path::Path>) -> Result<()> {
+        recipe
+            .validate()
+            .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
+        presets::save_preset(path.as_ref(), recipe, self.metadata()).map_err(Error::of)
+    }
+
     /// `recipe` with Exposure, Contrast, Highlights, Shadows, Whites, Blacks
     /// and Vibrance estimated from `image`, this photo's decode, as the Basic
     /// panel's Auto applies them; white balance and the rest are kept.
@@ -114,6 +129,17 @@ impl crate::Context {
     pub fn presets(&self) -> (Vec<Preset>, Vec<String>) {
         let library = self.preset_library().load();
         (library.presets, library.errors)
+    }
+
+    /// Reads a recipe from the file [`Photo::save_recipe`] writes: a
+    /// RAWmakase preset, as `rawmakase render --recipe` takes.
+    ///
+    /// [`ErrorKind::Missing`](crate::ErrorKind::Missing) when there is no
+    /// file.
+    pub fn load_recipe(&self, path: impl AsRef<std::path::Path>) -> Result<Recipe> {
+        presets::load_preset(path.as_ref())
+            .map(|preset| preset.recipe)
+            .map_err(Error::of)
     }
 
     /// Reads the preset at `path`: an XMP preset, Lightroom's or Camera

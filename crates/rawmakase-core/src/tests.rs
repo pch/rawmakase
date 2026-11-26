@@ -413,6 +413,25 @@ mod export {
         )
         .unwrap();
         assert_eq!(::image::image_dimensions(&tiff).unwrap(), (width, height));
+        // A saved recipe read back exports the same pixels.
+        let saved = dir.path().join("recipe.json");
+        photo.save_recipe(&recipe, &saved).unwrap();
+        let loaded = ctx.load_recipe(&saved).unwrap();
+        let reread = dir.path().join("reread.tif");
+        ctx.export(
+            &photo,
+            &loaded,
+            &settings,
+            &reread,
+            false,
+            Cancel::NEVER,
+            |_| {},
+        )
+        .unwrap();
+        let pixels = |path: &Path| ::image::open(path).unwrap().into_rgb16().into_raw();
+        assert_eq!(pixels(&tiff), pixels(&reread));
+        let e = ctx.load_recipe(dir.path().join("none.json")).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::Missing, "{e:#}");
     }
 
     #[test]

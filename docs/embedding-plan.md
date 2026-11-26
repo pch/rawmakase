@@ -1079,6 +1079,17 @@ so the design is proved on one path before it is spread.
    data folder (counted by the ambient check) until step 15 gives them a
    path.
 
+   `Photo::save_recipe` and `Context::load_recipe`, a RAWmakase preset as
+   `rawmakase render --recipe` reads it, which the fourth measure needs and
+   the plan's list didn't name. `examples/embed`, a workspace of its own
+   with its own lock file, opens, renders and exports every chart DNG, and
+   its ignored test (run by CI's "Reference apps" job and `make check`,
+   once the desktop's binary is built) compares its export with
+   `rawmakase render`'s. `scripts/crate-closures.sh` searches the files Git
+   keeps or would keep, and checks each example's tree from its own lock
+   file: one RAWmakase crate, and no app, GUI, C imaging library, SQLite,
+   HTTP client or ONNX Runtime binding.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in

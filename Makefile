@@ -15,7 +15,7 @@ else
 PROGRAM_DIR = $(PREFIX)/lib/rawmakase
 endif
 
-.PHONY: all build check check-python check-msrv check-tools install uninstall
+.PHONY: all build check check-examples check-python check-msrv check-tools install uninstall
 all: build
 
 build:
@@ -58,7 +58,7 @@ TEST_ENV = RAWMAKASE_DATA_DIR="$(TEST_DATA)" XDG_DATA_HOME="$(TEST_DATA)"
 # (clippy --all-targets checks them), and the doctests run after them, as in CI.
 TEST_TARGETS = --lib --bins --tests
 
-check: check-python check-tools check-msrv
+check: check-python check-tools check-msrv check-examples
 	rm -rf -- "$(TEST_DATA)" && mkdir -p -- "$(TEST_DATA)"
 	python3 scripts/deps.py check
 	scripts/crate-closures.sh
@@ -77,6 +77,18 @@ check: check-python check-tools check-msrv
 	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
 	$(TEST_ENV) cargo test --locked --doc -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
 	RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --all-features --no-deps --locked --document-private-items
+
+# The reference apps on the library (examples/*/), each a workspace of its own
+# with its own lock file, as CI's "Reference apps" job checks them: formatted,
+# linted and tested, the tests the desktop's binary is needed for included.
+EXAMPLES = $(patsubst %/Cargo.toml,%,$(shell git ls-files 'examples/*/Cargo.toml'))
+check-examples:
+	cargo build --locked --bin rawmakase
+	set -e; for example in $(EXAMPLES); do \
+		(cd "$$example" && cargo fmt --check \
+			&& cargo clippy --locked --all-targets -- -D warnings \
+			&& cargo test --locked -- --include-ignored); \
+	done
 
 check-msrv:
 	@test -n "$(MSRV)" || { echo "Cargo.toml declares no rust-version"; exit 1; }

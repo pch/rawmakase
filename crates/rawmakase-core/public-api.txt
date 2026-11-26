@@ -214,6 +214,7 @@ pub fn rawmakase_core::Context::cache_dir(&self) -> core::option::Option<&std::p
 pub fn rawmakase_core::Context::data_dirs(&self) -> &[std::path::PathBuf]
 pub fn rawmakase_core::Context::export(&self, photo: &rawmakase_core::Photo, recipe: &rawmakase_core::Recipe, settings: &rawmakase_core::ExportSettings, target: impl core::convert::AsRef<std::path::Path>, replace: bool, cancel: rawmakase_core::Cancel<'_>, progress: impl core::ops::function::Fn(f32)) -> rawmakase_core::Result<core::option::Option<alloc::string::String>>
 pub fn rawmakase_core::Context::load_preset(&self, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<rawmakase_core::Preset>
+pub fn rawmakase_core::Context::load_recipe(&self, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<rawmakase_core::Recipe>
 pub fn rawmakase_core::Context::open(&self, path: impl core::convert::AsRef<std::path::Path>, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Photo>
 pub fn rawmakase_core::Context::presets(&self) -> (alloc::vec::Vec<rawmakase_core::Preset>, alloc::vec::Vec<alloc::string::String>)
 pub fn rawmakase_core::Context::render(&self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
@@ -287,6 +288,7 @@ pub fn rawmakase_core::Photo::metadata(&self) -> &rawmakase_core::Metadata
 pub fn rawmakase_core::Photo::path(&self) -> &std::path::Path
 pub fn rawmakase_core::Photo::profile_errors(&self) -> &[alloc::string::String]
 pub fn rawmakase_core::Photo::profiles(&self) -> &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>]
+pub fn rawmakase_core::Photo::save_recipe(&self, recipe: &rawmakase_core::Recipe, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::Photo::set(&self, recipe: &mut rawmakase_core::Recipe, parameter: rawmakase_core::Parameter, value: f32) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::Photo::starting_recipe(&self) -> rawmakase_core::Result<rawmakase_core::Recipe>
 pub fn rawmakase_core::Photo::value(&self, recipe: &rawmakase_core::Recipe, parameter: rawmakase_core::Parameter) -> f32

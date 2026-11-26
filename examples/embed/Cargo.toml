@@ -1,0 +1,27 @@
+[package]
+name = "rawmakase-embed"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+description = "RAWmakase's library used from Rust with no interface: a photo opened, edited, rendered and exported"
+license = "MIT"
+publish = false
+
+# A workspace of its own, outside RAWmakase's: an app built on the library as
+# a stranger's would be, with its own lock file.
+[workspace]
+
+[dependencies]
+# The one RAWmakase crate this app depends on.
+rawmakase-core = { path = "../../crates/rawmakase-core" }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["tiff", "png"] }
+tempfile = "3"
+
+# Decoding and rendering are unusable unoptimized.
+[profile.dev]
+opt-level = 3
+
+[lints.rust]
+unsafe_code = "forbid"
