@@ -160,25 +160,45 @@ pub enum Scale {
 
 impl Scale {
     /// Where `value` sits along a slider covering `range`, from 0 at its
-    /// start to 1 at its end, clamped.
+    /// start to 1 at its end, clamped. A range of one value puts every value
+    /// at or before it at the start, as the sliders have always drawn it.
     pub fn position(self, value: f32, range: &RangeInclusive<f32>) -> f32 {
         let (start, end, value) = match self {
             Self::Linear => (*range.start(), *range.end(), value),
             Self::Reciprocal => (1. / range.start(), 1. / range.end(), 1. / value),
         };
-        ((value - start) / (end - start)).clamp(0., 1.)
+        unit_of(value, start, end)
     }
     /// The value at `position` (0 to 1, clamped) along a slider covering
-    /// `range`: the inverse of [`Scale::position`].
+    /// `range`: the inverse of [`Scale::position`], its ends exactly the
+    /// range's.
     pub fn value_at(self, position: f32, range: &RangeInclusive<f32>) -> f32 {
         let t = position.clamp(0., 1.);
-        match self {
-            Self::Linear => range.start() + (range.end() - range.start()) * t,
-            Self::Reciprocal => {
-                let (start, end) = (1. / range.start(), 1. / range.end());
-                1. / (start + (end - start) * t)
-            }
+        if t == 0. {
+            return *range.start();
+        } else if t == 1. {
+            return *range.end();
         }
+        let lerp = |a: f32, b: f32| (1. - t) * a + t * b;
+        match self {
+            Self::Linear => lerp(*range.start(), *range.end()),
+            Self::Reciprocal => 1. / lerp(1. / range.start(), 1. / range.end()),
+        }
+    }
+}
+
+/// `x` from `start..end` (either way round) to 0..1, clamped, without
+/// dividing by an empty range: egui's `remap_clamp`, which the sliders used.
+fn unit_of(x: f32, start: f32, end: f32) -> f32 {
+    if end < start {
+        return 1. - unit_of(x, end, start);
+    }
+    if x <= start {
+        0.
+    } else if end <= x {
+        1.
+    } else {
+        ((x - start) / (end - start)).min(1.)
     }
 }
 
@@ -885,6 +905,22 @@ mod tests {
             }
             assert_eq!(d.scale().position(f32::MAX, &d.interactive).round(), 1.);
         }
+    }
+
+    /// A range of one value (Levels' Black point once White is at its
+    /// lowest) and the ends of Temp's rail, as the sliders had them.
+    #[test]
+    fn a_slider_s_ends_and_an_empty_range_map_as_before() {
+        for scale in [Scale::Linear, Scale::Reciprocal] {
+            assert_eq!(scale.position(1., &(1.0..=1.0)), 0.);
+        }
+        assert_eq!(Scale::Linear.position(0.5, &(1.0..=1.0)), 0.);
+        assert_eq!(Scale::Linear.position(0., &(0.0..=0.0)), 0.);
+        let temp = TEMPERATURE_MIN..=TEMPERATURE_MAX;
+        assert_eq!(Scale::Reciprocal.value_at(1., &temp), TEMPERATURE_MAX);
+        assert_eq!(Scale::Reciprocal.value_at(0., &temp), TEMPERATURE_MIN);
+        assert_eq!(Scale::Reciprocal.position(TEMPERATURE_MAX, &temp), 1.);
+        assert_eq!(Scale::Reciprocal.position(TEMPERATURE_MIN, &temp), 0.);
     }
 
     #[test]
