@@ -1378,6 +1378,42 @@ fn default_band_out_height(full_w: u32, full_h: u32, out_h: u32, target_band_pix
     raw.clamp(min_h, u64::from(out_h.max(1))) as u32
 }
 
+/// Computes the [`Band`] covering output rows `[oy0 .. oy1)` with exact vertical Lanczos3
+/// and sharpening halo overlap.
+fn band_for_rows(
+    oy0: u32,
+    oy1: u32,
+    full_h: u32,
+    h_sharp: u32,
+    y_lanczos: Option<(u32, &[f32])>,
+) -> Band {
+    let (sy_min, sy_max) = match y_lanczos {
+        Some((stride, weights)) => {
+            let mut lo = full_h;
+            let mut hi = 0u32;
+            for oy in oy0..oy1 {
+                let off = (oy * stride) as usize;
+                let start = weights[off] as u32;
+                let count = weights[off + 1] as u32;
+                lo = lo.min(start);
+                hi = hi.max(start + count);
+            }
+            (lo.min(full_h.saturating_sub(1)), hi.min(full_h).max(1))
+        }
+        None => (oy0, oy1),
+    };
+    let y_comp0 = sy_min.saturating_sub(h_sharp);
+    let y_comp1 = sy_max.saturating_add(h_sharp).min(full_h);
+    Band {
+        oy0,
+        oy1,
+        sy_min,
+        sy_max,
+        y_comp0,
+        y_comp1,
+    }
+}
+
 /// Plans contiguous horizontal bands covering `0..out_h` with exact Lanczos3 and
 /// sharpening halo vertical overlap.
 pub(crate) fn plan_bands(
@@ -1397,31 +1433,7 @@ pub(crate) fn plan_bands(
     let mut oy0 = 0;
     while oy0 < out_h {
         let oy1 = (oy0 + band_out_h).min(out_h);
-        let (sy_min, sy_max) = match y_lanczos {
-            Some((stride, weights)) => {
-                let mut lo = full_h;
-                let mut hi = 0u32;
-                for oy in oy0..oy1 {
-                    let off = (oy * stride) as usize;
-                    let start = weights[off] as u32;
-                    let count = weights[off + 1] as u32;
-                    lo = lo.min(start);
-                    hi = hi.max(start + count);
-                }
-                (lo.min(full_h.saturating_sub(1)), hi.min(full_h).max(1))
-            }
-            None => (oy0, oy1),
-        };
-        let y_comp0 = sy_min.saturating_sub(h_sharp);
-        let y_comp1 = sy_max.saturating_add(h_sharp).min(full_h);
-        bands.push(Band {
-            oy0,
-            oy1,
-            sy_min,
-            sy_max,
-            y_comp0,
-            y_comp1,
-        });
+        bands.push(band_for_rows(oy0, oy1, full_h, h_sharp, y_lanczos));
         oy0 = oy1;
     }
     bands
@@ -1731,9 +1743,11 @@ impl GpuExportContext {
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         let size = needed.next_multiple_of(4).max(16);
-        let reuse = slot
-            .as_ref()
-            .is_some_and(|b| b.size() >= size && b.size() <= size.saturating_mul(2).max(65536));
+        let reuse = slot.as_ref().is_some_and(|b| {
+            b.usage().contains(usage)
+                && b.size() >= size
+                && b.size() <= size.saturating_mul(2).max(65536)
+        });
         if !reuse {
             *slot = None;
             *slot = Some(device.create_buffer(&wgpu::BufferDescriptor {
@@ -2138,7 +2152,9 @@ fn build_pass_plan<'a>(
     };
 
     // Plan horizontal bands, shrinking band height if any band's buffers (or source strip
-    // upload in strip mode) exceed adapter limits.
+    // upload in strip mode) exceed adapter limits. Strip bounds are evaluated lazily so a
+    // band that cannot fit even at 1 row (e.g. a 90-degree-rotated large sensor) bails out
+    // immediately without scanning all bands at every halving.
     let mut cap = band_cap;
     let (bands, strip_ranges) = loop {
         let y_slice = y_lanczos_vec.as_deref().map(|w| (y_stride, w));
@@ -2151,15 +2167,9 @@ fn build_pass_plan<'a>(
             DEFAULT_BAND_PIXELS,
             cap,
         );
-        let strips = strip_mode.then(|| {
-            candidate
-                .iter()
-                .map(|b| {
-                    source_strip_bounds(source_img, &base_no_tex, &geometry, b.y_comp0, b.y_comp1)
-                })
-                .collect::<Vec<_>>()
-        });
-        let fits = candidate.iter().enumerate().all(|(idx, b)| {
+        let mut strips = strip_mode.then(|| Vec::with_capacity(candidate.len()));
+        let mut fits = true;
+        for b in &candidate {
             let comp_n = u64::from(full_w) * u64::from(b.comp_h());
             let out_n = u64::from(out_w) * u64::from(b.out_h());
             let scratch_bytes = (comp_n * 4).max(if resize {
@@ -2172,18 +2182,46 @@ fn build_pass_plan<'a>(
                 ExportFormat::Rgb8 => (out_n * 3).next_multiple_of(4),
                 ExportFormat::Rgb16 => (out_n * 6).next_multiple_of(4),
             };
-            let strip_fits = strips.as_ref().is_none_or(|ranges| {
-                let (sy0, sy1) = ranges[idx];
-                u64::from(source_img.width) * u64::from(sy1 - sy0) * 12 <= effective_max_binding
-            });
-            strip_fits
-                && comp_n * 12 <= effective_max_binding
-                && scratch_bytes <= effective_max_binding
-                && out_n * 12 <= effective_max_binding
-                && readback_bytes <= effective_max_binding
-                && b.comp_h().div_ceil(16) <= max_wg
-                && b.out_h().div_ceil(16) <= max_wg
-        });
+            if comp_n * 12 > effective_max_binding
+                || scratch_bytes > effective_max_binding
+                || out_n * 12 > effective_max_binding
+                || readback_bytes > effective_max_binding
+                || b.comp_h().div_ceil(16) > max_wg
+                || b.out_h().div_ceil(16) > max_wg
+            {
+                fits = false;
+                break;
+            }
+            if let Some(ranges) = strips.as_mut() {
+                let (sy0, sy1) =
+                    source_strip_bounds(source_img, &base_no_tex, &geometry, b.y_comp0, b.y_comp1);
+                if u64::from(source_img.width) * u64::from(sy1 - sy0) * 12 > effective_max_binding {
+                    // Check whether even a single-row band at `b.oy0` exceeds limits; if so,
+                    // no smaller band height can fit, so bail out without further halving.
+                    if b.out_h() > 1 {
+                        let single = band_for_rows(b.oy0, b.oy0 + 1, full_h, radius, y_slice);
+                        let (r0, r1) = source_strip_bounds(
+                            source_img,
+                            &base_no_tex,
+                            &geometry,
+                            single.y_comp0,
+                            single.y_comp1,
+                        );
+                        if u64::from(source_img.width) * u64::from(r1 - r0) * 12
+                            > effective_max_binding
+                        {
+                            return Err(GpuFailure::PerPhoto(
+                                ExportFallbackKind::ExceedsLimits,
+                                "Single-row band exceeds GPU storage or dispatch limits".into(),
+                            ));
+                        }
+                    }
+                    fits = false;
+                    break;
+                }
+                ranges.push((sy0, sy1));
+            }
+        }
         if fits {
             break (candidate, strips);
         }

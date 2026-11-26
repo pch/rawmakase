@@ -2472,5 +2472,89 @@ fn gpu_export_source_strip_banding_under_simulated_storage_limit() -> Result<()>
     assert!(st.gpu_active, "Tier-1 ExceedsLimits must keep GPU active");
     assert_eq!(st.cpu_renders, 1);
     assert_eq!(st.fallback_count(ExportFallbackKind::ExceedsLimits), 1);
+
+    // Regression: after a strip-mode export creates `buffers.photo` without `COPY_SRC`,
+    // a subsequent smaller full-photo export whose size sits inside the cached buffer's
+    // reuse window and triggers `readback_photo` (NR + Clone retouch) must reallocate with
+    // `COPY_SRC` rather than hitting a validation error and disabling the GPU.
+    use crate::model::retouch::{RetouchMode, RetouchOp, RetouchShape};
+    let small = synthetic_photo(140, 140);
+    let mut nr_retouch = profiled_recipe(&small);
+    nr_retouch.noise_chroma = 0.35;
+    nr_retouch.noise_luma = 0.3;
+    nr_retouch.retouch.push(RetouchOp {
+        mode: RetouchMode::Clone,
+        shape: RetouchShape::Spot {
+            center: [0.45, 0.5],
+            radius: 0.06,
+        },
+        feather: 0.5,
+        opacity: 0.9,
+        offset: [0.15, 0.0],
+        patch: None,
+    });
+    let nr_retouch_valid = nr_retouch.checked()?;
+    backend.reset_stats();
+    let small_gpu = backend.render_export(
+        &small,
+        &nr_retouch_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        ExportFormat::Rgb8,
+        Cancel::NEVER,
+    )?;
+    let small_cpu = crate::develop::render_export(
+        &small,
+        &nr_retouch_valid,
+        None,
+        0,
+        OutputSpace::Srgb,
+        Cancel::NEVER,
+    )?;
+    let st = backend.status();
+    assert!(
+        st.gpu_active,
+        "GPU must remain active after strip -> full-photo readback transition: {:?}",
+        st.fallback_reason
+    );
+    assert_eq!(st.gpu_renders, 1);
+    assert_eq!(st.cpu_renders, 0);
+    let (max8, _) = max_u8_diff(small_gpu.as_rgb8().unwrap(), &small_cpu.rgb8());
+    assert!(max8 <= 1, "strip -> full-photo NR+retouch max8={max8}");
     Ok(())
+}
+
+/// Deterministic regression test: `build_pass_plan` bails out immediately when a
+/// 90-degree-rotated large sensor cannot fit even a single-row source strip within
+/// `effective_max_binding`, avoiding repeated full-photo band scans.
+#[test]
+fn build_pass_plan_bails_early_on_rotated_unfit_strip() {
+    let im = synthetic_photo(640, 480);
+    let mut r = profiled_recipe(&im);
+    r.rotation = 1;
+    let g = Geometry::new(&im, &r, 0);
+    let strip_limit = 500_000u64; // full source is 640 * 480 * 12 = 3,686,400 B
+    let res = build_pass_plan(
+        &im,
+        &r,
+        &r,
+        g,
+        im.photo_scale(),
+        g.width,
+        g.height,
+        ExportTarget::Sdr {
+            space: OutputSpace::Srgb,
+            format: ExportFormat::Rgb8,
+        },
+        true,
+        None,
+        strip_limit,
+        65535,
+    );
+    match res {
+        Err(GpuFailure::PerPhoto(ExportFallbackKind::ExceedsLimits, _)) => {}
+        Ok(_) => panic!("expected ExceedsLimits for rotated unfit strip"),
+        Err(_) => panic!("expected PerPhoto(ExceedsLimits)"),
+    }
 }
