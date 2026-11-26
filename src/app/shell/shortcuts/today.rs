@@ -105,7 +105,7 @@ pub(super) const GENERAL: [Shortcut; 16] = [
     ("Cmd+,", "Preferences"),
     ("Cmd+/", "These shortcuts"),
 ];
-pub(super) const DEVELOP: [Shortcut; 57] = [
+pub(super) const DEVELOP: [Shortcut; 71] = [
     ("R", "Crop & Straighten"),
     ("Return", "Finish the crop"),
     ("X", "Swap the crop's orientation"),
@@ -147,6 +147,20 @@ pub(super) const DEVELOP: [Shortcut; 57] = [
     ("Shift+R", "Reference View"),
     ("I", "Photo info overlay: Info 1, Info 2, off"),
     ("J", "Show shadow and highlight clipping"),
+    ("Shift+K", "Slider Keys on / off"),
+    ("E", "Slider Keys: hold for Exposure, press the arrows"),
+    ("C", "Slider Keys: hold for Contrast, press the arrows"),
+    ("H", "Slider Keys: hold for Highlights, press the arrows"),
+    ("S", "Slider Keys: hold for Shadows, press the arrows"),
+    ("W", "Slider Keys: hold for Whites, press the arrows"),
+    ("B", "Slider Keys: hold for Blacks, press the arrows"),
+    ("T", "Slider Keys: hold for Temp, press the arrows"),
+    ("G", "Slider Keys: hold for Tint, press the arrows"),
+    ("X", "Slider Keys: hold for Texture, press the arrows"),
+    ("L", "Slider Keys: hold for Clarity, press the arrows"),
+    ("D", "Slider Keys: hold for Dehaze, press the arrows"),
+    ("V", "Slider Keys: hold for Vibrance, press the arrows"),
+    ("A", "Slider Keys: hold for Saturation, press the arrows"),
     ("Z / Space", "Toggle zoom / fit"),
     (
         "Cmd+= / Cmd+- / Cmd+0 / Cmd+1",

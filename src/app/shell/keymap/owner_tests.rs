@@ -55,6 +55,10 @@ const FIXED: &[(&str, &str, usize)] = &[
     ("library/kinetic.rs", "Event::Key {", 1),
     ("develop/tools/brush_scroll.rs", "Event::Key {", 1),
     ("develop/panels/color_grading.rs", "Event::Key {", 2),
+    // Slider Keys reads the raw input in `raw_input_hook`, before egui: the
+    // keys down by their place, and a held key's release. The presses match
+    // the key map's chords (`FrameKeys::has_chord`).
+    ("develop/panels/slider_keys.rs", "Event::Key {", 2),
     // The raw-input hook that turns Copy and Paste with Shift or Option back
     // into keys, and the macOS menu handing its keys to a text field: both make
     // events rather than read them.

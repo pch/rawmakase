@@ -87,7 +87,7 @@ fn group_of(command: &Command, bindings: &[&Binding]) -> &'static str {
         Some(Context::Loupe | Context::LoupeZoom) => "Loupe",
         Some(Context::Compare) => "Compare",
         Some(Context::Survey) => "Survey",
-        Some(Context::Develop) => "Develop",
+        Some(Context::Develop | Context::SliderKeys) => "Develop",
         Some(Context::Tool(_)) => "Develop tools",
         Some(Context::Everywhere | Context::ShortcutSheet) | None => "Everywhere",
     }
@@ -104,6 +104,7 @@ fn place(context: Context) -> &'static str {
         Context::Survey => "Survey",
         Context::LoupeZoom => "the Loupe and Develop",
         Context::Develop => "Develop",
+        Context::SliderKeys => "Slider Keys",
         Context::Tool(Tool::Crop) => "Crop",
         Context::Tool(Tool::Remove) => "Spot Removal",
         Context::Tool(Tool::RedEye) => "Red Eye",

@@ -2309,3 +2309,60 @@ fn every_default_shortcut_changes_something_from_its_places_start() {
         "these change nothing from their start: {idle:#?}"
     );
 }
+
+/// Slider Keys: a step taken in the frame that moves on to the next photo edits
+/// neither photo, and the arrow after the letter is let go moves on.
+#[test]
+fn a_slider_key_step_in_the_frame_that_moves_on_edits_no_photo() {
+    let mut f = Fixture::new(Place::Develop);
+    f.e.view.slider_keys.on = true;
+    let left = f.e.document.catalog_photo;
+    let before = f.e.document.edit.recipe().exposure;
+    f.frame(vec![key_event(Key::E, Key::E, true, NONE)]);
+    f.frame(vec![
+        key_event(Key::ArrowUp, Key::ArrowUp, true, NONE),
+        key_event(Key::E, Key::E, false, NONE),
+        key_event(Key::ArrowRight, Key::ArrowRight, true, NONE),
+        key_event(Key::ArrowRight, Key::ArrowRight, false, NONE),
+    ]);
+    assert_ne!(f.e.document.catalog_photo, left, "moved on");
+    let photo = f.photo(3);
+    let saved = f
+        .library()
+        .session
+        .catalog()
+        .load_edit(photo.id, &photo.path)
+        .unwrap()
+        .map(|e| e.recipe);
+    assert!(saved.is_none_or(|r| r.exposure == before));
+    let (steps, applied) = f.e.document.edit.history().steps();
+    assert!(
+        steps[..applied].iter().all(|s| s.name != "Exposure"),
+        "{steps:?}"
+    );
+}
+
+/// Slider Keys: two repeats of a held arrow in one frame are both steps, and
+/// neither moves on to the next photo.
+#[test]
+fn every_arrow_repeat_of_a_frame_is_a_slider_keys_step() {
+    let mut f = Fixture::new(Place::Develop);
+    f.e.view.slider_keys.on = true;
+    let photo = f.e.document.catalog_photo;
+    let before = f.e.document.edit.recipe().exposure;
+    let repeat = egui::Event::Key {
+        key: Key::ArrowRight,
+        physical_key: Some(Key::ArrowRight),
+        pressed: true,
+        repeat: true,
+        modifiers: NONE,
+    };
+    f.frame(vec![key_event(Key::E, Key::E, true, NONE)]);
+    // Right held: its press, then the keyboard's repeats.
+    f.hold(Key::ArrowRight, NONE);
+    f.frame(vec![repeat.clone(), repeat]);
+    f.frame(vec![key_event(Key::E, Key::E, false, NONE)]);
+    assert_eq!(f.e.document.catalog_photo, photo, "stayed");
+    // Each is a step: the press and both repeats.
+    assert!((f.e.document.edit.recipe().exposure - before - 0.3).abs() < 1e-4);
+}

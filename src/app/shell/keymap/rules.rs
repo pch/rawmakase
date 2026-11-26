@@ -238,15 +238,17 @@ fn is_f_key(key: Key) -> bool {
 }
 
 /// How far a context's bindings take precedence over others on the same chord:
-/// a tool's over Develop's, a Library view's over the Library's, a module's
-/// over those that work everywhere. The reference card's window is modal.
+/// a tool's over Slider Keys', Slider Keys' over Develop's, a Library view's
+/// over the Library's, a module's over those that work everywhere. The
+/// reference card's window is modal.
 pub(in crate::app) fn level(context: Context) -> u8 {
     use Context::*;
     match context {
         Everywhere => 0,
         Library | Develop | LoupeZoom => 1,
-        Grid | Loupe | Compare | Survey | Tool(_) => 2,
-        ShortcutSheet => 3,
+        SliderKeys => 2,
+        Grid | Loupe | Compare | Survey | Tool(_) => 3,
+        ShortcutSheet => 4,
     }
 }
 
@@ -255,7 +257,7 @@ impl Context {
     pub(in crate::app) fn overlaps(self, other: Self) -> bool {
         use Context::*;
         let library_view = |c| matches!(c, Grid | Loupe | Compare | Survey);
-        let develop = |c| matches!(c, Develop | Tool(_));
+        let develop = |c| matches!(c, Develop | SliderKeys | Tool(_));
         let (a, b) = (self, other);
         // The reference card is a modal window: nothing else takes keys then.
         if a == ShortcutSheet || b == ShortcutSheet {
@@ -266,7 +268,9 @@ impl Context {
             || b == Everywhere
             || (a == Library && library_view(b))
             || (b == Library && library_view(a))
-            || (develop(a) && develop(b) && (a == Develop || b == Develop))
+            || (develop(a)
+                && develop(b)
+                && [a, b].iter().any(|c| matches!(c, Develop | SliderKeys)))
             || (a == LoupeZoom && (b == Loupe || b == Library || develop(b)))
             || (b == LoupeZoom && (a == Loupe || a == Library || develop(a)))
     }

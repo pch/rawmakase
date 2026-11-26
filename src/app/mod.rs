@@ -756,6 +756,7 @@ impl eframe::App for Editor {
     }
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         crate::app::shell::workspace::clipboard_shortcut_keys(ctx, raw_input);
+        self.slider_key_input(ctx, raw_input);
         #[cfg(target_os = "macos")]
         crate::platform::titlebar::refresh_window_state(ctx, raw_input);
     }

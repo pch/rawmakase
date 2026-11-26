@@ -515,6 +515,8 @@ pub(in crate::app) struct ViewState {
     /// The Basic slider the `.` and `,` keys selected for `+` and `-`, named as on
     /// a RAW file (see `basic_keys`); kept across photos and modules.
     pub(in crate::app) selected_setting: Option<crate::model::params::ParameterId>,
+    /// Slider Keys: whether it is on, and the letter held.
+    pub(in crate::app) slider_keys: crate::app::develop::panels::slider_keys::SliderKeys,
     pub(in crate::app) zoom_key: (bool, f32),
     /// The last level the photo fitted at, which the zoom slider keeps while the
     /// next photo's size is not yet known.
@@ -567,6 +569,7 @@ impl Default for ViewState {
             targeted: None,
             shortcuts: false,
             selected_setting: None,
+            slider_keys: Default::default(),
             zoom_key: (false, 1.),
             last_fit: None,
             zoom_anim: None,
