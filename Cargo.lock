@@ -3947,6 +3947,7 @@ dependencies = [
  "block2 0.6.2",
  "bzip2-rs",
  "clap",
+ "directories",
  "dispatch2",
  "eframe",
  "egui_extras",

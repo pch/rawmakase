@@ -176,7 +176,7 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
         let photos = vec![photo];
         let outcomes = batch::run(
             &batch::Batch {
-                plan: batch::plan(&photos, &settings, None).unwrap(),
+                plan: batch::plan(&photos, &settings, &Default::default(), None).unwrap(),
                 photos,
                 settings,
                 defaults: defaults.clone(),

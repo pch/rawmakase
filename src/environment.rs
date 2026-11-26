@@ -212,6 +212,28 @@ fn parse_fontconfig(text: &str) -> anyhow::Result<(std::path::PathBuf, u32)> {
     ))
 }
 
+/// The desktop's own Desktop and Pictures folders, which those export
+/// destinations go to: on Linux those named in user-dirs.dirs (in the
+/// desktop's language, or moved by the user), on Windows those the shell
+/// reports (OneDrive backup moves them), and on macOS those in the home
+/// folder. Without one, the folder of that name at home.
+pub fn user_folders() -> crate::export_settings::UserFolders {
+    use std::path::Path;
+    let dirs = directories::UserDirs::new();
+    let folder = |of: fn(&directories::UserDirs) -> Option<&Path>, name: &str| {
+        Some(match &dirs {
+            Some(dirs) => of(dirs).map_or_else(|| dirs.home_dir().join(name), Path::to_path_buf),
+            // UserDirs needs the profile folder from the shell on Windows; the
+            // environment may still name it.
+            None => std::env::home_dir()?.join(name),
+        })
+    };
+    crate::export_settings::UserFolders {
+        desktop: folder(directories::UserDirs::desktop_dir, "Desktop"),
+        pictures: folder(directories::UserDirs::picture_dir, "Pictures"),
+    }
+}
+
 /// Lensfun's database of a context [`context`] made, in the data folder.
 pub fn lensfun(ctx: &rawmakase_core::Context) -> &crate::lens::lensfun::installed::Handle {
     rawmakase_core::workspace::lensfun(ctx)
@@ -229,7 +251,59 @@ fn build_id() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    /// The Desktop and Pictures folders, printed for
+    /// [`desktop_and_pictures_are_the_xdg_user_folders`], which runs this
+    /// test in its own process with its own home and configuration.
+    #[test]
+    #[ignore = "run by desktop_and_pictures_are_the_xdg_user_folders"]
+    fn print_desktop_and_pictures() {
+        let places = super::user_folders();
+        let shown = |p: Option<PathBuf>| p.unwrap_or_default().display().to_string();
+        println!("desktop={}", shown(places.desktop));
+        println!("pictures={}", shown(places.pictures));
+    }
+
+    /// A desktop in another language, or one the user moved, names its
+    /// folders in user-dirs.dirs; without that file they are under home.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn desktop_and_pictures_are_the_xdg_user_folders() -> anyhow::Result<()> {
+        let home = tempfile::tempdir()?;
+        let config = home.path().join("config");
+        let folders = |config: &Path| -> anyhow::Result<(String, String)> {
+            let out = std::process::Command::new(std::env::current_exe()?)
+                .args(["--exact", "environment::tests::print_desktop_and_pictures"])
+                .args(["--ignored", "--nocapture", "--test-threads=1"])
+                .env("HOME", home.path())
+                .env("XDG_CONFIG_HOME", config)
+                .output()?;
+            let out = String::from_utf8(out.stdout)?;
+            let value = |key: &str| {
+                out.lines()
+                    .find_map(|line| line.split_once(key).map(|(_, value)| value))
+                    .map(str::to_owned)
+                    .unwrap_or_default()
+            };
+            Ok((value("desktop="), value("pictures=")))
+        };
+        let under_home = |name: &str| home.path().join(name).display().to_string();
+        assert_eq!(
+            folders(&config)?,
+            (under_home("Desktop"), under_home("Pictures"))
+        );
+        std::fs::create_dir_all(&config)?;
+        std::fs::write(
+            config.join("user-dirs.dirs"),
+            "XDG_DESKTOP_DIR=\"$HOME/Pulpit\"\nXDG_PICTURES_DIR=\"/srv/photos\"\n",
+        )?;
+        assert_eq!(
+            folders(&config)?,
+            (under_home("Pulpit"), "/srv/photos".into())
+        );
+        Ok(())
+    }
 
     #[test]
     fn fontconfig_system_family_is_escaped() {

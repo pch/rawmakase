@@ -257,6 +257,7 @@ impl Reservations {
 pub fn plan(
     photos: &[BatchPhoto],
     settings: &ExportSettings,
+    places: &crate::export_settings::UserFolders,
     answer: Option<Existing>,
 ) -> Result<Plan, Unplanned> {
     // Nothing is planned, asked or rendered for settings no photo could export with.
@@ -278,6 +279,7 @@ pub fn plan(
                     total,
                     fields: &p.naming,
                 },
+                places,
             )
         })
         .collect::<Option<Vec<_>>>()

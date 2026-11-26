@@ -98,6 +98,15 @@ pub enum Destination {
     Pictures,
     Folder,
 }
+/// The user's own Desktop and Pictures folders, which those destinations
+/// export to, as the caller finds them; without one, that destination has
+/// no folder, as a Folder destination has none until one is chosen.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UserFolders {
+    pub desktop: Option<PathBuf>,
+    pub pictures: Option<PathBuf>,
+}
+
 impl Destination {
     pub const ALL: [Self; 4] = [
         Self::SameFolder,
@@ -814,25 +823,6 @@ where
 fn path() -> PathBuf {
     crate::storage::data_dir().join("export.json")
 }
-/// The desktop's own Desktop and Pictures folders: on Linux those named in
-/// user-dirs.dirs (in the desktop's language, or moved by the user), on
-/// Windows those the shell reports (OneDrive backup moves them), and on macOS
-/// those in the home folder. Without one, the folder of that name at home.
-fn desktop() -> PathBuf {
-    user_folder(directories::UserDirs::desktop_dir, "Desktop")
-}
-fn pictures() -> PathBuf {
-    user_folder(directories::UserDirs::picture_dir, "Pictures")
-}
-fn user_folder(folder: fn(&directories::UserDirs) -> Option<&Path>, name: &str) -> PathBuf {
-    let dirs = directories::UserDirs::new();
-    match &dirs {
-        Some(dirs) => folder(dirs).map_or_else(|| dirs.home_dir().join(name), Path::to_path_buf),
-        // UserDirs needs the profile folder from the shell on Windows; the
-        // environment may still name it.
-        None => std::env::home_dir().unwrap_or_default().join(name),
-    }
-}
 
 impl ExportSettings {
     /// The last export's choices, if there was one.
@@ -969,12 +959,13 @@ impl ExportSettings {
         crate::storage::atomic_json(path, &saved)
     }
     /// The chosen folder, before any subfolder; `None` until a specific
-    /// folder is picked.
-    pub fn base_folder(&self, source: &Path) -> Option<PathBuf> {
+    /// folder is picked, or for the Desktop or Pictures without that folder
+    /// in `places`.
+    pub fn base_folder(&self, source: &Path, places: &UserFolders) -> Option<PathBuf> {
         match self.destination {
             Destination::SameFolder => source.parent().map(Path::to_path_buf),
-            Destination::Desktop => Some(desktop()),
-            Destination::Pictures => Some(pictures()),
+            Destination::Desktop => places.desktop.clone(),
+            Destination::Pictures => places.pictures.clone(),
             Destination::Folder => self.folder.clone(),
         }
     }
@@ -1013,15 +1004,20 @@ impl ExportSettings {
         };
         (name, note)
     }
-    /// Where `source` exports to.
-    pub fn target(&self, source: &Path) -> Option<PathBuf> {
-        self.target_for(source, &NameContext::ONE)
+    /// Where `source` exports to, with the user's folders `places`.
+    pub fn target(&self, source: &Path, places: &UserFolders) -> Option<PathBuf> {
+        self.target_for(source, &NameContext::ONE, places)
             .map(|(path, _)| path)
     }
     /// Where `source` exports to at its place in the export, and what its name
     /// has to say.
-    pub fn target_for(&self, source: &Path, at: &NameContext) -> Option<(PathBuf, Vec<String>)> {
-        let folder = self.folder_for(source)?;
+    pub fn target_for(
+        &self,
+        source: &Path,
+        at: &NameContext,
+        places: &UserFolders,
+    ) -> Option<(PathBuf, Vec<String>)> {
+        let folder = self.folder_for(source, places)?;
         let (file, note) = self.file_name_for(source, at);
         Some((folder.join(file), note))
     }
@@ -1032,14 +1028,15 @@ impl ExportSettings {
     pub fn export_folder<'a>(
         &self,
         sources: impl IntoIterator<Item = &'a Path>,
+        places: &UserFolders,
     ) -> Option<PathBuf> {
-        let mut folders = sources.into_iter().map(|s| self.folder_for(s));
+        let mut folders = sources.into_iter().map(|s| self.folder_for(s, places));
         let first = folders.next()??;
         folders.all(|f| f.as_ref() == Some(&first)).then_some(first)
     }
     /// Where `source` exports to, its subfolder included.
-    fn folder_for(&self, source: &Path) -> Option<PathBuf> {
-        let mut folder = self.base_folder(source)?;
+    fn folder_for(&self, source: &Path, places: &UserFolders) -> Option<PathBuf> {
+        let mut folder = self.base_folder(source, places)?;
         let name = self.subfolder_name.trim();
         if self.subfolder && !name.is_empty() {
             folder.push(name);
@@ -1150,56 +1147,27 @@ pub fn unique(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// The Desktop and Pictures destinations, printed for
-    /// [`desktop_and_pictures_are_the_xdg_user_folders`], which runs this
-    /// test in its own process with its own home and configuration.
     #[test]
-    #[ignore = "run by desktop_and_pictures_are_the_xdg_user_folders"]
-    fn print_desktop_and_pictures() {
-        println!("desktop={}", desktop().display());
-        println!("pictures={}", pictures().display());
-    }
-    /// A desktop in another language, or one the user moved, names its
-    /// folders in user-dirs.dirs; without that file they are under home.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn desktop_and_pictures_are_the_xdg_user_folders() -> anyhow::Result<()> {
-        let home = tempfile::tempdir()?;
-        let config = home.path().join("config");
-        let folders = |config: &Path| -> anyhow::Result<(String, String)> {
-            let out = std::process::Command::new(std::env::current_exe()?)
-                .args([
-                    "--exact",
-                    "export_settings::tests::print_desktop_and_pictures",
-                ])
-                .args(["--ignored", "--nocapture", "--test-threads=1"])
-                .env("HOME", home.path())
-                .env("XDG_CONFIG_HOME", config)
-                .output()?;
-            let out = String::from_utf8(out.stdout)?;
-            let value = |key: &str| {
-                out.lines()
-                    .find_map(|line| line.split_once(key).map(|(_, value)| value))
-                    .map(str::to_owned)
-                    .unwrap_or_default()
-            };
-            Ok((value("desktop="), value("pictures=")))
+    fn the_desktop_and_pictures_are_the_folders_given() {
+        let source = Path::new("/photos/DSC0001.ARW");
+        let places = UserFolders {
+            desktop: Some("/home/reader/Pulpit".into()),
+            pictures: Some("/srv/photos".into()),
         };
-        let under_home = |name: &str| home.path().join(name).display().to_string();
+        let mut s = ExportSettings::default();
         assert_eq!(
-            folders(&config)?,
-            (under_home("Desktop"), under_home("Pictures"))
+            s.target(source, &places),
+            Some(PathBuf::from("/home/reader/Pulpit/DSC0001.jpg"))
         );
-        std::fs::create_dir_all(&config)?;
-        std::fs::write(
-            config.join("user-dirs.dirs"),
-            "XDG_DESKTOP_DIR=\"$HOME/Pulpit\"\nXDG_PICTURES_DIR=\"/srv/photos\"\n",
-        )?;
+        s.destination = Destination::Pictures;
         assert_eq!(
-            folders(&config)?,
-            (under_home("Pulpit"), "/srv/photos".into())
+            s.base_folder(source, &places),
+            Some(PathBuf::from("/srv/photos"))
         );
-        Ok(())
+        // Without the folder, no folder: never the working one.
+        assert_eq!(s.target(source, &UserFolders::default()), None);
+        s.destination = Destination::Desktop;
+        assert_eq!(s.export_folder([source], &UserFolders::default()), None);
     }
     #[test]
     fn a_first_export_goes_to_the_desktop_and_a_saved_choice_stays() {
@@ -1210,13 +1178,14 @@ mod tests {
     }
     #[test]
     fn target_follows_destination_subfolder_and_naming() {
+        let none = UserFolders::default();
         let source = Path::new("/photos/2026/DSC0001.ARW");
         let mut s = ExportSettings {
             destination: Destination::SameFolder,
             ..Default::default()
         };
         assert_eq!(
-            s.target(source),
+            s.target(source, &none),
             Some(PathBuf::from("/photos/2026/DSC0001.jpg"))
         );
         s.subfolder = true;
@@ -1225,24 +1194,24 @@ mod tests {
         s.format = Format::Tiff;
         s.uppercase = true;
         assert_eq!(
-            s.target(source),
+            s.target(source, &none),
             Some(PathBuf::from("/photos/2026/Exported/DSC0001-web.TIF"))
         );
         // Beside originals in one folder, that folder's subfolder; in two,
         // no one folder.
         let other = Path::new("/photos/2025/DSC0002.ARW");
         assert_eq!(
-            s.export_folder([source, source]),
+            s.export_folder([source, source], &none),
             Some(PathBuf::from("/photos/2026/Exported"))
         );
-        assert_eq!(s.export_folder([source, other]), None);
-        assert_eq!(s.export_folder([]), None);
+        assert_eq!(s.export_folder([source, other], &none), None);
+        assert_eq!(s.export_folder([], &none), None);
         s.destination = Destination::Folder;
-        assert_eq!(s.target(source), None);
-        assert_eq!(s.export_folder([source]), None);
+        assert_eq!(s.target(source, &none), None);
+        assert_eq!(s.export_folder([source], &none), None);
         s.folder = Some("/exports".into());
         assert_eq!(
-            s.export_folder([source, other]),
+            s.export_folder([source, other], &none),
             Some(PathBuf::from("/exports/Exported"))
         );
     }

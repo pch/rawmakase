@@ -94,6 +94,11 @@ wgpu.workspace = true
 image.workspace = true
 tempfile.workspace = true
 clap.workspace = true
+# The user's Desktop and Pictures folders, which exports go to, and Lightroom's
+# keyword sets folder (environment::user_folders): user-dirs.dirs on Linux,
+# the shell's known folders on Windows. Already in the build through
+# fastframe.
+directories = "6"
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 # eframe's windowing, to run its event loop (see app::run). Where a Wayland
 # compositor leaves decorations to the app (GNOME), winit draws an

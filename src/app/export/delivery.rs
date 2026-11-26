@@ -79,7 +79,8 @@ impl Editor {
         let begin = ExportBegin {
             delivery: id.clone(),
             destination: String::new(),
-            folder: settings.export_folder(batch.iter().map(|p| p.source.as_path())),
+            folder: settings
+                .export_folder(batch.iter().map(|p| p.source.as_path()), &self.user_folders),
             count: u32::try_from(batch.len()).unwrap_or(u32::MAX),
             options: serde_json::Map::new(),
         };

@@ -509,7 +509,7 @@ fn names_come_from_the_catalog_as_it_was_when_export_was_chosen() -> anyhow::Res
         .0;
     assert_eq!(example, "Harbour Night.tif");
     let batch = e.batch_photos(&scope, false)?;
-    let plan = batch::plan(&batch, &s, None).unwrap();
+    let plan = batch::plan(&batch, &s, &Default::default(), None).unwrap();
     assert_eq!(
         plan.entries[0].target.file_name().unwrap(),
         "Harbour Night.tif"

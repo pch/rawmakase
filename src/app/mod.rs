@@ -49,6 +49,9 @@ pub(crate) struct Editor {
     /// The saved watermarks and the fonts they draw with, made from the
     /// context once, so the fonts are listed once.
     watermarks: crate::watermark::Watermarks,
+    /// The user's Desktop and Pictures folders, which exports can go to,
+    /// found once at startup.
+    user_folders: crate::export_settings::UserFolders,
     /// AI Denoise's queue, worker and cache, shared with exports.
     ai_denoise: crate::ai_denoise::Service,
     /// AI Denoise's model pack: installed, being installed or removed.
@@ -482,6 +485,7 @@ impl Editor {
             rx,
             loader,
             watermarks: crate::environment::watermarks(&core),
+            user_folders: crate::environment::user_folders(),
             core,
             ai_denoise,
             ai_denoise_model: crate::app::develop::model_installer::Installer::new(),

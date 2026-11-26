@@ -360,7 +360,12 @@ fn an_export_that_cant_hold_its_colour_space_is_refused_before_rendering() -> Re
     let error = refused(&later, &dir.path().join("later.tif"));
     assert!(error.contains("later version"), "{error}");
     // A batch with them plans nothing.
-    let plan = super::batch::plan(&[], &settings(Format::Png, OutputSpace::ProPhoto), None);
+    let plan = super::batch::plan(
+        &[],
+        &settings(Format::Png, OutputSpace::ProPhoto),
+        &Default::default(),
+        None,
+    );
     assert!(matches!(plan, Err(super::batch::Unplanned::Settings(_))));
     Ok(())
 }

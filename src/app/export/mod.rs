@@ -758,7 +758,12 @@ impl Editor {
     /// Plans where each file goes and queues the batch, or asks about the files
     /// that exist first.
     fn plan_export(&mut self, mut pending: Pending, answer: Option<Existing>) {
-        match batch::plan(&pending.batch, &pending.settings, answer) {
+        match batch::plan(
+            &pending.batch,
+            &pending.settings,
+            &self.user_folders,
+            answer,
+        ) {
             Ok(plan) => {
                 // Files a delivery still sends keep their bytes: an export
                 // into a folder it writes to names its own copies apart. Only
@@ -868,7 +873,12 @@ impl Editor {
             .iter()
             .map(|p| p.id.map(|id| (id, p.source.clone())))
             .collect();
-        match batch::plan(&batch, &settings, Some(Existing::Unique)) {
+        match batch::plan(
+            &batch,
+            &settings,
+            &self.user_folders,
+            Some(Existing::Unique),
+        ) {
             Ok(plan) => {
                 let pending = Pending {
                     batch,

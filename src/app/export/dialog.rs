@@ -184,7 +184,11 @@ impl Editor {
                 {
                     confirmed = Some(false);
                 }
-                if let Some((target, _)) = self.exports.draft.target_for(&source, &at) {
+                if let Some((target, _)) =
+                    self.exports
+                        .draft
+                        .target_for(&source, &at, &self.user_folders)
+                {
                     bar.add_space(space::L);
                     bar.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.add(
@@ -208,7 +212,13 @@ impl Editor {
         match confirmed.or(close.then_some(false)) {
             // Return too waits for the names' files.
             Some(true) if reading => {}
-            Some(true) if self.exports.draft.target(&source).is_none() => {
+            Some(true)
+                if self
+                    .exports
+                    .draft
+                    .target(&source, &self.user_folders)
+                    .is_none() =>
+            {
                 self.messages.warn("Choose a folder to export to");
             }
             Some(true) if let Err(e) = self.exports.draft.check_output() => {
@@ -260,7 +270,7 @@ impl Editor {
                 "Export To",
             );
         });
-        let folder = s.base_folder(source);
+        let folder = s.base_folder(source, &self.user_folders);
         form_row(ui, "Folder", |ui| {
             choose = ui
                 .add_enabled(!picking, egui::Button::new("Choose…"))

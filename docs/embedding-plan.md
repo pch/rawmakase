@@ -976,6 +976,15 @@ so the design is proved on one path before it is spread.
    A downloaded profile is staged in a hidden folder beside its
    destination, not in the system's temporary folder, and installed from
    there through the same import as a chosen one.
+
+   An export setting's Desktop and Pictures destinations resolve against
+   the user's folders as given (`export_settings::UserFolders`), passed
+   where a target, a base folder or a batch's plan is worked out; without
+   one, that destination has no folder, as a Folder destination has none
+   until chosen, where it used to be a folder of that name in the working
+   folder when even the home folder was unknown. The desktop finds them
+   once at startup in its `environment` module, as before (user-dirs.dirs
+   on Linux, the shell's known folders on Windows).
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

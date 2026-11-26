@@ -25,8 +25,6 @@ crates/rawmakase-engine/src/develop/gpu/mod.rs wgpu-env 9
 crates/rawmakase-engine/src/develop/local_tone_rule.rs env 2
 crates/rawmakase-engine/src/develop/pipeline/tone.rs env 1
 crates/rawmakase-inference/src/runtime.rs env 3
-crates/rawmakase-interop/src/export_settings.rs directories 4
-crates/rawmakase-interop/src/export_settings.rs env 1
 crates/rawmakase-interop/src/export_settings.rs folder 1
 crates/rawmakase-interop/src/export_settings/rename.rs folder 1
 crates/rawmakase-interop/src/export_settings/saved.rs folder 1
