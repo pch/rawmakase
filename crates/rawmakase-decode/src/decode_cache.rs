@@ -580,11 +580,8 @@ fn count_changes(pixels: &Pixels, recovered: &Pixels) -> usize {
         .map(|chunk_idx| {
             let start = chunk_idx * CHUNK;
             let end = (start + CHUNK).min(total);
-            let a = pixels.range(start..end);
-            let b = recovered.range(start..end);
-            a.iter()
-                .zip(b.iter())
-                .filter(|(pa, pb)| pa.map(f32::to_bits) != pb.map(f32::to_bits))
+            (start..end)
+                .filter(|&i| pixels[i].map(f32::to_bits) != recovered[i].map(f32::to_bits))
                 .count()
         })
         .sum()
@@ -634,14 +631,17 @@ fn collect_and_write_change_batches(
                 .map(|k| -> Result<Vec<Change>> {
                     let s_start = w_start + k * sub_chunk;
                     let s_end = (s_start + sub_chunk).min(w_end);
-                    let a = pixels.range(s_start..s_end);
-                    let b = recovered.range(s_start..s_end);
                     let mut local = Vec::new();
-                    for (offset, (pa, pb)) in a.iter().zip(b.iter()).enumerate() {
+                    for i in s_start..s_end {
+                        let pa = pixels[i];
+                        let pb = recovered[i];
                         if pa.map(f32::to_bits) != pb.map(f32::to_bits) {
-                            let index = u32::try_from(s_start + offset)
-                                .context("Decode cache pixel index exceeds u32")?;
-                            local.push(Change { index, value: *pb });
+                            let index =
+                                u32::try_from(i).context("Decode cache pixel index exceeds u32")?;
+                            local
+                                .try_reserve(1)
+                                .context("Decode cache recovery staging allocation failed")?;
+                            local.push(Change { index, value: pb });
                         }
                     }
                     Ok(local)
@@ -1904,6 +1904,79 @@ mod tests {
             .zip(loaded_sep.recovered.get().unwrap().pixels.iter())
         {
             assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn patch_with_separate_recovered_buffer_roundtrips_without_copying_patch() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let width = 300u32;
+        let height = 300u32;
+        let total = (width * height) as usize;
+
+        // Build a `Pixels::Patch` (`patch_base`) paired with `partner_rec` via `pair_masked`.
+        let partner_vec: Vec<[f32; 3]> = (0..total)
+            .map(|i| {
+                if i == 10 {
+                    [f32::NAN, 0.5, 0.25]
+                } else {
+                    [-0.0, (i as f32) * 0.001, 0.5]
+                }
+            })
+            .collect();
+        let mut differs = vec![0u64; total.div_ceil(64)];
+        let mut patch_values = Vec::new();
+        for i in (0..total).step_by(1800) {
+            differs[i / 64] |= 1u64 << (i % 64);
+            patch_values.push([-0.0, 0.25, i as f32]);
+        }
+        let (patch_base, partner_rec) =
+            Pixels::pair_masked(partner_vec, differs, patch_values).context("valid patch")?;
+        assert!(patch_base.shares_buffer(&partner_rec));
+
+        // Pair `patch_base` with an unrelated separate recovered buffer (> STRIPE_CHANGES diffs).
+        let mut separate_rec_vec: Vec<[f32; 3]> = (0..total).map(|i| patch_base[i]).collect();
+        for (i, px) in separate_rec_vec.iter_mut().take(70_000).enumerate() {
+            if i != 10 {
+                *px = [0.0, f32::from_bits((i as u32) | 1), 2.0 + i as f32 * 0.001];
+            }
+        }
+        let im = CameraImage {
+            recovered: Default::default(),
+            width,
+            height,
+            pixels: patch_base,
+            metadata: Metadata::default(),
+            fast: false,
+            scale_factor: 1.0,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let mut rec_im = im.clone();
+        rec_im.pixels = separate_rec_vec.clone().into();
+        assert!(!im.pixels.shares_buffer(&rec_im.pixels));
+        let _ = im.recovered.set(Arc::new(rec_im));
+
+        cache.store("patch_sep", &im)?;
+        // Storing must never materialize `Patch::whole()`, so `im.pixels` still shares `partner_rec`.
+        assert!(im.pixels.shares_buffer(&partner_rec));
+
+        let loaded = cache
+            .load("patch_sep", &Metadata::default())
+            .context("miss")?;
+        let load_rec = loaded.recovered.get().unwrap();
+        assert!(loaded.pixels.shares_buffer(&load_rec.pixels));
+        for i in 0..total {
+            assert_eq!(
+                loaded.pixels[i].map(f32::to_bits),
+                im.pixels[i].map(f32::to_bits)
+            );
+            assert_eq!(
+                load_rec.pixels[i].map(f32::to_bits),
+                separate_rec_vec[i].map(f32::to_bits)
+            );
         }
         Ok(())
     }

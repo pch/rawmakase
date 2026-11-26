@@ -557,7 +557,7 @@ They are small or short-lived; each could use `with_recovered` too.
 by it (the pyramid's source, the retouch cache, the stage cache and the device's
 image) is unchanged.
 
-Measured on an M1 Pro (32 GB, macOS 27.2), release builds: one photo open at Fit in
+Measured with the v1 uncompressed decode cache on an M1 Pro (32 GB, macOS 27.2), release builds: one photo open at Fit in
 Develop with default settings, the app launched for that photo alone, live heap from
 `heap` once work had gone quiet. Each photo went from three full-size buffers (the
 decode, its recovered image, its noise-reduced image) to two and its changed pixels.
@@ -579,7 +579,7 @@ Exports of the seven photos (16-bit ProPhoto TIFF, full size, with Highlights âˆ
 Shadows +60 and Exposure +0.7) hold the same samples from both builds, decoded and
 from the decode cache.
 
-Times, on the same machine while other work loaded it (load average about 150, so
+Times, measured with the v1 uncompressed decode cache on the same machine while other work loaded it (load average about 150, so
 steps this change does not touch moved by a third either way between builds):
 opening from the decode cache took 104 ms before and 63 ms after for the
 61-megapixel photo, 45 and 41 ms for the 24-megapixel CR2 (the best of 15 interleaved
