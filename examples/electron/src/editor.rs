@@ -8,8 +8,8 @@
 #![forbid(unsafe_code)]
 use crate::worker::{self, Job, Render, Worker};
 use rawmakase_core::{
-    CacheLimits, Cancel, Context, Decode, ExportSettings, Image, Inserted, Parameter, Photo,
-    Recipe, Renderer, ToneCurve, View,
+    CacheLimits, Cancel, Context, Decode, Defaults, ExportSettings, Image, Inserted, Parameter,
+    Photo, RawDefaults, Recipe, Renderer, ToneCurve, View,
 };
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -177,6 +177,8 @@ impl State {
 
 struct Shared {
     ctx: Context,
+    /// What a photo opened without an edit starts from: Adobe Default.
+    defaults: Defaults,
     state: Mutex<State>,
     worker: Worker<Work>,
 }
@@ -217,6 +219,7 @@ impl Editor {
         );
         Ok(Self {
             shared: Arc::new(Shared {
+                defaults: ctx.raw_defaults(&RawDefaults::default()),
                 ctx,
                 state: Mutex::new(State {
                     document: None,
@@ -248,7 +251,7 @@ impl Editor {
         let ctx = &self.shared.ctx;
         let photo = ctx.open(path, Cancel::NEVER)?;
         let image = photo.decode(Decode::Full, Cancel::NEVER)?;
-        let recipe = photo.starting_recipe()?;
+        let recipe = photo.starting_recipe(&self.shared.defaults)?;
         let mut state = self.state();
         if state.opening != opening {
             return Err(Error::Superseded);
@@ -333,11 +336,11 @@ impl Editor {
     /// added.
     pub fn curve_insert(&self, x: f32, y: f32, edit: u32) -> Result<String> {
         self.edit(edit, |document| {
-            let inserted = document.recipe.curve.insert([x, y]);
+            let inserted = document.recipe.curve_mut().insert([x, y]);
             Ok(json!({
                 "index": inserted.index(),
                 "added": matches!(inserted, Inserted::Added(_)),
-                "curve": curve(&document.recipe.curve),
+                "curve": curve(document.recipe.curve()),
             })
             .to_string())
         })
@@ -347,7 +350,7 @@ impl Editor {
     /// Returns the curve.
     pub fn curve_move(&self, index: u32, x: f32, y: f32, edit: u32) -> Result<String> {
         self.edit(edit, |document| {
-            let points = &mut document.recipe.curve;
+            let points = document.recipe.curve_mut();
             if !points.move_point(index as usize, [x, y]) {
                 return Err(Error::NoSuchPoint(index));
             }
@@ -358,8 +361,8 @@ impl Editor {
     /// Removes the curve's point `index`; its ends stay. Returns the curve.
     pub fn curve_remove(&self, index: u32, edit: u32) -> Result<String> {
         self.edit(edit, |document| {
-            document.recipe.curve.remove(index as usize);
-            Ok(curve(&document.recipe.curve).to_string())
+            document.recipe.curve_mut().remove(index as usize);
+            Ok(curve(document.recipe.curve()).to_string())
         })
     }
 
@@ -423,7 +426,7 @@ fn describe(state: &State) -> Value {
             "highestLevel": stats.highest_level,
         },
         "controls": controls,
-        "curve": curve(&document.recipe.curve),
+        "curve": curve(document.recipe.curve()),
         "edit": state.last_edit,
     })
 }

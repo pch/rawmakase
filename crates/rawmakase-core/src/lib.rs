@@ -9,17 +9,22 @@
 //!
 //! ```no_run
 //! # #[cfg(feature = "export")] {
-//! use rawmakase_core::{CacheLimits, Cancel, Context, Decode, ExportSettings, Parameter, View};
+//! use rawmakase_core::{
+//!     CacheLimits, Cancel, Context, Decode, ExportSettings, Parameter, RawDefaults, View,
+//! };
 //!
 //! let ctx = Context::builder()
 //!     .data_dirs(["/app/data"])
 //!     .cache("/app/cache", CacheLimits::default(), "my-app 1.0 (build 42)")
 //!     .build()?;
 //!
+//! // What a photo without an edit starts from: Adobe Default here.
+//! let defaults = ctx.raw_defaults(&RawDefaults::default());
+//!
 //! let photo = ctx.open("photo.dng", Cancel::NEVER)?;
-//! let mut recipe = photo.starting_recipe()?;
+//! let mut recipe = photo.starting_recipe(&defaults)?;
 //! photo.set(&mut recipe, Parameter::Temperature, 5200.)?; // white balance follows
-//! recipe.curve.insert([0.25, 0.2]); // the point curve, by its own methods
+//! recipe.curve_mut().insert([0.25, 0.2]); // the point curve, by its own methods
 //!
 //! let image = photo.decode(Decode::Full, Cancel::NEVER)?; // reads the file again
 //! let frame = ctx.render(&image, &recipe, View::Fit(2048), Cancel::NEVER)?;
@@ -35,13 +40,20 @@
 //! # The parts
 //!
 //! - **Handles of the library's own** for what an app does things with: a
-//!   [`Photo`], a decoded [`Image`], a [`Renderer`] and its [`Frame`]s. The
-//!   crates' own types are not shown through them.
-//! - **The edit's values, as they are.** A [`Recipe`] and a photo's
-//!   [`Metadata`] are the model's types, and an app reads them freely. It
-//!   changes a recipe through the model's rules where a setting has them: a
-//!   slider with [`Photo::set`], the point curve with [`ToneCurve`]'s
-//!   `insert`, `move_point` and `remove`.
+//!   [`Photo`], a decoded [`Image`], a [`Renderer`] and its [`Frame`]s, a
+//!   [`Preset`], a [`Profile`]. The crates' own types are not shown through
+//!   them.
+//! - **The edit, changed by the library's rules.** A [`Recipe`] is the
+//!   library's type over the model's: a slider is set with [`Photo::set`],
+//!   so what depends on it follows, and the point curve with
+//!   [`ToneCurve`]'s `insert`, `move_point` and `remove`. A photo's
+//!   [`Metadata`] and the export's `ExportSettings` are plain values.
+//!
+//! Every RAWmakase type the library's items name is one an app names from
+//! the library: `scripts/public-api.py` lists them and fails on a type of
+//! another RAWmakase crate. Third-party types show where the re-exported
+//! values carry them (`ToneCurve::validate`'s `anyhow::Result`, `serde`'s
+//! traits on the plain values).
 //! - **A [`Context`]**, which holds the configuration and is where
 //!   operations start.
 //!
@@ -76,6 +88,7 @@
 #![warn(missing_docs)]
 
 mod context;
+mod defaults;
 mod edit;
 mod error;
 #[cfg(feature = "export")]
@@ -84,11 +97,13 @@ mod image;
 mod info;
 mod mailbox;
 mod photo;
+mod recipe;
 mod render;
 
 #[cfg(feature = "workspace")]
 pub use context::workspace;
 pub use context::{CacheLimits, Context, ContextBuilder};
+pub use defaults::{CameraDefault, DefaultChoice, Defaults, RawDefaults};
 pub use edit::{Applied, Control, Parameter, Preset, Scale};
 pub use error::{Error, ErrorKind, Result};
 #[cfg(feature = "export")]
@@ -104,12 +119,11 @@ pub use rawmakase_interop::export_settings::Include;
 pub use rawmakase_model::color::OutputSpace;
 #[cfg(feature = "export")]
 pub use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
+pub use recipe::Recipe;
 pub use render::{Frame, Renderer, View};
 
-pub use rawmakase_cancel::Cancel;
-pub use rawmakase_interop::raw_defaults::{CameraDefault, DefaultChoice, RawDefaults};
+pub use rawmakase_cancel::{Cancel, Cancelled};
 pub use rawmakase_model::color::curve::{Inserted, ToneCurve};
-pub use rawmakase_model::model::recipe::Recipe;
 
 #[cfg(test)]
 mod tests;

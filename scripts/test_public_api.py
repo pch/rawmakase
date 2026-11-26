@@ -24,6 +24,17 @@ class Listing(unittest.TestCase):
         self.assertIn("pub fn rawmakase_fixture_core::Shown::kept(&self) -> u8", have)
         self.assertFalse([line for line in have if "hidden" in line or "rawmakase_fixture_sub" in line])
 
+    def test_a_type_only_another_crate_names_is_refused(self):
+        lines = [
+            "pub fn rawmakase_core::Photo::open(&self) -> rawmakase_core::Result<rawmakase_core::Photo>",
+            "pub rawmakase_core::Recipe::masks: alloc::vec::Vec<rawmakase_model::model::masks::MaskGroup>",
+            "pub use rawmakase_core::Hidden = rawmakase_interop::xmp::Node",
+            "pub fn rawmakase_core::Recipe::validate(&self) -> anyhow::Result<()>",
+        ]
+        self.assertEqual(public_api.foreign(lines), lines[1:3])
+        fixture = public_api.listing("rawmakase-fixture-core", FIXTURE)
+        self.assertEqual(public_api.foreign(fixture, "rawmakase-fixture-core"), [])
+
 
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "write":

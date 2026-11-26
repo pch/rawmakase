@@ -1,7 +1,9 @@
 //! `rawmakase-embed PHOTO OUT [EXPOSURE]`: opens PHOTO with RAWmakase's
 //! library, starts from its raw defaults, sets Exposure, and exports OUT in
 //! the format its extension names, printing what each step took.
-use rawmakase_core::{CacheLimits, Cancel, Context, Decode, ExportSettings, Parameter, View};
+use rawmakase_core::{
+    CacheLimits, Cancel, Context, Decode, ExportSettings, Parameter, RawDefaults, View,
+};
 use std::time::Instant;
 
 fn main() -> std::process::ExitCode {
@@ -39,7 +41,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let started = Instant::now();
     let photo = ctx.open(&photo, Cancel::NEVER)?;
-    let mut recipe = photo.starting_recipe()?;
+    // Adobe Default: an app with preferences gives its own raw defaults.
+    let defaults = ctx.raw_defaults(&RawDefaults::default());
+    let mut recipe = photo.starting_recipe(&defaults)?;
     if let Some(exposure) = exposure {
         photo.set(&mut recipe, Parameter::Exposure, exposure)?;
     }

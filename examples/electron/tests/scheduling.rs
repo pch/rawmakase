@@ -4,7 +4,7 @@
 //! comes before its frame when the renderer says one is due, and a render
 //! cancelled because its photo or view is gone is dropped without being
 //! reported.
-use rawmakase_core::{Cancel, Context, Decode, Error, ErrorKind, Renderer, View};
+use rawmakase_core::{Cancel, Context, Decode, Error, ErrorKind, RawDefaults, Renderer, View};
 use rawmakase_electron::editor::{self, Pixels, Work};
 use rawmakase_electron::worker::{Event, Job, Render, Worker};
 use std::path::Path;
@@ -305,7 +305,9 @@ fn a_cancelled_render_of_the_library_is_never_shown_as_an_error() {
         .unwrap();
     let photo = ctx.open(&chart, Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let recipe = photo.starting_recipe().unwrap();
+    let recipe = photo
+        .starting_recipe(&ctx.raw_defaults(&RawDefaults::default()))
+        .unwrap();
     let work = |edge| Work {
         image: image.clone(),
         recipe: recipe.clone(),

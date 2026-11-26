@@ -2,7 +2,8 @@
 //! DNGs (`tests/corpus/charts`): every one opens, decodes, renders and
 //! exports, and an export's pixels are the desktop's.
 use rawmakase_core::{
-    CacheLimits, Cancel, Context, Decode, ErrorKind, ExportSettings, Parameter, Recipe, View,
+    CacheLimits, Cancel, Context, Decode, ErrorKind, ExportSettings, Parameter, RawDefaults,
+    Recipe, View,
 };
 use std::path::{Path, PathBuf};
 
@@ -34,15 +35,22 @@ fn context(dir: &Path) -> Context {
         .unwrap()
 }
 
+/// Where a photo without an edit starts: Adobe Default.
+fn start(ctx: &Context, photo: &rawmakase_core::Photo) -> Recipe {
+    photo
+        .starting_recipe(&ctx.raw_defaults(&RawDefaults::default()))
+        .unwrap()
+}
+
 /// The edit the tests make: a slider, white balance and a curve point.
-fn edited(photo: &rawmakase_core::Photo) -> Recipe {
-    let mut recipe = photo.starting_recipe().unwrap();
+fn edited(ctx: &Context, photo: &rawmakase_core::Photo) -> Recipe {
+    let mut recipe = start(ctx, photo);
     photo.set(&mut recipe, Parameter::Exposure, 0.4).unwrap();
     photo.set(&mut recipe, Parameter::Contrast, 0.2).unwrap();
     photo
         .set(&mut recipe, Parameter::Temperature, 4800.)
         .unwrap();
-    recipe.curve.insert([0.3, 0.24]);
+    recipe.curve_mut().insert([0.3, 0.24]);
     recipe
 }
 
@@ -54,7 +62,7 @@ fn every_chart_opens_decodes_renders_and_exports() {
     for chart in charts() {
         let name = chart.file_name().unwrap().to_string_lossy().into_owned();
         let photo = ctx.open(&chart, Cancel::NEVER).unwrap();
-        let recipe = edited(&photo);
+        let recipe = edited(&ctx, &photo);
         let half = photo.decode(Decode::Half, Cancel::NEVER).unwrap();
         let fit = renderer
             .render(&half, &recipe, View::Fit(512), Cancel::NEVER)
@@ -92,7 +100,7 @@ fn what_an_app_acts_on_has_its_kind() {
     assert_eq!(e.kind(), ErrorKind::Missing, "{e:#}");
     let chart = &charts()[0];
     let photo = ctx.open(chart, Cancel::NEVER).unwrap();
-    let recipe = photo.starting_recipe().unwrap();
+    let recipe = start(&ctx, &photo);
     let out = dir.path().join("out.jpg");
     let export = |replace| {
         ctx.export(
@@ -136,7 +144,7 @@ fn an_export_has_the_desktop_s_pixels() {
         .unwrap();
     let ctx = context(&dir.path().join("library"));
     let photo = ctx.open(&chart, Cancel::NEVER).unwrap();
-    let recipe = edited(&photo);
+    let recipe = edited(&ctx, &photo);
     let saved = dir.path().join("recipe.json");
     photo.save_recipe(&recipe, &saved).unwrap();
     let ours = dir.path().join("library.tif");

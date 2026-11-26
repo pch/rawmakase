@@ -1,6 +1,6 @@
 //! A photo: a file opened for developing, what the library knows of it
 //! before its pixels are decoded, and its decode.
-use crate::{Context, Error, Image, Result};
+use crate::{Context, Error, Image, Recipe, Result};
 use rawmakase_cancel::Cancel;
 use rawmakase_decode::decode::FullSize;
 use rawmakase_decode::photo::Opened;
@@ -8,7 +8,6 @@ use rawmakase_engine::develop::quality;
 use rawmakase_interop::edits;
 use rawmakase_model::camera_data::{self, CameraImage, Demosaic, Metadata};
 use rawmakase_model::camera_profiles::CameraProfile;
-use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::storage::Identity;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
@@ -148,21 +147,20 @@ impl Photo {
         self.identity.as_ref()
     }
 
-    /// The settings this photo starts from when it has no edit: the context's
-    /// raw defaults ([`ContextBuilder::raw_defaults`](crate::ContextBuilder::raw_defaults)),
-    /// with the profiles that fit, as the desktop opens a new photo.
+    /// The settings this photo starts from when it has no edit: `defaults`,
+    /// with the profiles that fit, as the desktop opens a new photo. A
+    /// rendered file (a JPEG, say) starts from its own look whatever they
+    /// say.
     ///
     /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) when they don't make a
     /// valid recipe.
-    pub fn starting_recipe(&self) -> Result<Recipe> {
-        let resolved = edits::Start::Defaults(self.ctx.defaults().clone())
+    pub fn starting_recipe(&self, defaults: &crate::Defaults) -> Result<Recipe> {
+        let resolved = edits::Start::Defaults(defaults.0.clone())
             .resolve(&self.metadata, &self.profiles)
             .map_err(Error::of)?;
-        resolved
-            .recipe
-            .validate()
-            .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
-        Ok(resolved.recipe)
+        let recipe = Recipe(resolved.recipe);
+        recipe.validate()?;
+        Ok(recipe)
     }
 
     /// Decodes the photo's pixels. A long operation: seconds for a large RAW

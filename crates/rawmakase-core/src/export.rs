@@ -1,13 +1,12 @@
 //! Writing a developed photo to a file, as the desktop's Export does: JPEG,
 //! TIFF, PNG, JPEG XL, an HDR master or a gain map, in the color space and
 //! size the settings choose. With the `export` feature.
-use crate::{Context, Error, Photo, Result};
+use crate::{Context, Error, Photo, Recipe, Result};
 use rawmakase_cancel::Cancel;
 use rawmakase_export::export::{Replace, job};
 use rawmakase_interop::export_settings::{Format, Include};
 use rawmakase_model::color::OutputSpace;
 use rawmakase_model::color::hdr_output::HdrOutput;
-use rawmakase_model::model::recipe::Recipe;
 use std::path::Path;
 
 /// How a file is encoded: its color space or HDR encoding, quality, size and
@@ -186,7 +185,7 @@ impl Context {
         };
         rawmakase_export::export::check_destination(target, photo.path(), replace)
             .map_err(Error::of)?;
-        if recipe.as_rendered().ai_denoise.renders() {
+        if recipe.uses_ai_denoise() {
             return Err(Error::of(
                 rawmakase_decode::ai::denoise::Unsupported(
                     "The library doesn't run AI Denoise yet; switch it off in the recipe",
@@ -194,13 +193,13 @@ impl Context {
                 .into(),
             ));
         }
-        job::check(recipe, &settings, target).map_err(Error::of)?;
+        job::check(&recipe.0, &settings, target).map_err(Error::of)?;
         let image = photo.decode_in(self, crate::Decode::Full, false, cancel)?;
         let ctx = self;
         let job = job::Photo {
             image: image.camera().clone(),
             source: photo.path().to_path_buf(),
-            recipe: recipe.clone(),
+            recipe: recipe.0.clone(),
             values: Default::default(),
             watermark: None,
             watermarks: Default::default(),

@@ -44,7 +44,6 @@ What the context takes today:
 | Value | What for | Default |
 | --- | --- | --- |
 | The data folders, in order | Imported lens profiles, camera profiles and XMP presets are looked for in each one's `lens-profiles`, `camera-profiles` and `xmp-presets`; Lensfun's database and the presets' order are kept in the first | None: only RAWmakase's own profiles and presets |
-| The raw defaults | What a photo without an edit starts from: Adobe Default or a preset, for every camera or for each | Adobe Default |
 | The cache folder, its limits and a build id, given together | Decoded photos and AI Denoise's results are kept there, up to the limits (4 GiB and 10 GiB by default), and Camera Look's fits | No cache |
 
 The build id names the build that made a cache's entries; entries of another
@@ -56,15 +55,23 @@ More values join as the library takes them (fonts, the GPU, the ONNX
 Runtime's path); a value is offered only once the library reads it from the
 context.
 
+What a photo without an edit starts from is not the context's, since an
+app's preferences change it while photos are open: `Context::raw_defaults`
+reads the raw defaults the app's preferences choose (Adobe Default or a
+preset, for every camera or for each), and each photo is given them. An app
+makes new ones when its preferences change; a photo started from the old
+ones keeps what it started from.
+
 ## A photo, start to finish
 
 ```rust
-use rawmakase_core::{Cancel, Decode, ExportSettings, Parameter, View};
+use rawmakase_core::{Cancel, Decode, ExportSettings, Parameter, RawDefaults, View};
 
+let defaults = ctx.raw_defaults(&RawDefaults::default()); // Adobe Default
 let photo = ctx.open(path, cancel)?;            // metadata and the profiles that fit
-let mut recipe = photo.starting_recipe()?;      // the context's raw defaults
+let mut recipe = photo.starting_recipe(&defaults)?;
 photo.set(&mut recipe, Parameter::Temperature, 5200.)?; // white balance follows
-recipe.curve.insert([0.25, 0.2]);               // the point curve, by its methods
+recipe.curve_mut().insert([0.25, 0.2]);         // the point curve, by its methods
 
 let image = photo.decode(Decode::Full, cancel)?; // reads the file again
 let frame = ctx.render(&image, &recipe, View::Fit(2048), cancel)?;
@@ -74,9 +81,11 @@ ctx.export(&photo, &recipe, &ExportSettings::default(), "out.jpg", false, cancel
 ```
 
 - **A photo** keeps its metadata and the camera profiles that fit, not a
-  RAW's bytes: each decode reads the file again, and refuses one changed
-  since it was opened (`Changed`).
-- **A recipe** is the model's `Recipe`, read freely. Change a slider with
+  RAW's bytes: a decode reads the file again, unless the app still holds
+  the photo's last full decode, and refuses one changed since it was
+  opened (`Changed`).
+- **A recipe** is the library's `Recipe`, changed by the library's rules.
+  Change a slider with
   `Photo::set`, which brings along what depends on it, and draw it from
   `Photo::control`: its range, step, scale, value and text. Each
   `Parameter` has a name (`exposure`, `temperature`) for a binding.
@@ -87,10 +96,10 @@ ctx.export(&photo, &recipe, &ExportSettings::default(), "out.jpg", false, cancel
   a view: the whole photo at a size, or a region at 100%. Before an edit's
   frame, `Renderer::draft_due` says whether a reduced draft should be shown
   first, as the desktop does, and `render_draft` renders it.
-- **An export** develops the photo in full and writes the format its file's
-  extension names, as the desktop's Export settings choose (format,
-  quality, color space, HDR, size). It never replaces a file unless asked,
-  and never the photo's own.
+- **An export** develops the photo in full, using a full decode the app
+  holds, and writes the format its file's extension names, as its
+  `ExportSettings` choose (quality, color space, HDR, size, metadata). It
+  never replaces a file unless asked, and never the photo's own.
 
 A context is cheap to clone, and a clone is the same context. It is `Send` and
 `Sync`.
@@ -179,3 +188,21 @@ which CI compares with the code. Each change to them is noted here.
   are. The decoder's `Metadata` and the model's `CameraProfile`, whose
   matrices, tables and renderer methods they showed, are no longer
   re-exported, and `Image::metadata` is gone.
+- **The rest of the surface the library's own**: `Recipe` is the
+  library's, over the model's: its point curve through `curve` and
+  `curve_mut`, `validate`, and `uses_ai_denoise`; its sliders through
+  `Photo::set`. `Parameter` is the library's list of the model's settings,
+  with `ALL`, `name` and `named`. `Preset` is a handle with its id, name,
+  group and kind; `Applied`, `RawDefaults`, `DefaultChoice` and
+  `CameraDefault` are the library's values. `Cancelled`, which
+  `Cancel::check` returns, is re-exported. The model's methods on these,
+  which took the decoder's metadata and camera profiles, are no longer
+  shown, and the listing check refuses any item that names a type an app
+  can't name from the library.
+- **Raw defaults given to each photo**: `ContextBuilder::raw_defaults` is
+  gone. `Context::raw_defaults` reads raw defaults into `Defaults`, which
+  `Photo::starting_recipe` takes, so an app whose preferences change gives
+  new ones to the photos it opens next.
+- **A held full decode used again**: while an app holds an `Image` of a
+  photo's last full decode, the photo's next full decode and its export
+  use it, through the same context.

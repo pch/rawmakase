@@ -12,6 +12,11 @@ fn context() -> Context {
     Context::builder().build().unwrap()
 }
 
+/// Adobe Default, which photos start from without other raw defaults.
+fn adobe() -> Defaults {
+    context().raw_defaults(&RawDefaults::default())
+}
+
 /// The chart copied into `dir`, for a test that changes or replaces it.
 fn chart_in(dir: &Path) -> PathBuf {
     let copy = dir.join("chart.dng");
@@ -45,9 +50,9 @@ fn a_photo_opens_with_its_metadata_and_a_valid_starting_recipe() {
     assert!(m.width > 0 && m.height > 0 && !m.make.is_empty() && !m.rendered);
     // Adobe's profiles fit every camera the chart's could be.
     assert!(photo.profiles().iter().all(|p| !p.name().is_empty()));
-    let recipe = photo.starting_recipe().unwrap();
+    let recipe = photo.starting_recipe(&adobe()).unwrap();
     recipe.validate().unwrap();
-    assert_eq!(recipe.exposure, 0.);
+    assert_eq!(recipe.0.exposure, 0.);
 }
 
 #[test]
@@ -116,8 +121,8 @@ fn an_image_s_size_at_a_view_is_its_frame_s() {
     let ctx = context();
     let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let mut recipe = photo.starting_recipe().unwrap();
-    recipe.straighten = 7.3;
+    let mut recipe = photo.starting_recipe(&adobe()).unwrap();
+    recipe.0.straighten = 7.3;
     let mut renderer = ctx.renderer();
     for edge in [0, 101, 333, 640] {
         let frame = renderer
@@ -138,30 +143,24 @@ fn an_image_s_size_at_a_view_is_its_frame_s() {
     );
 }
 
-/// The raw defaults are the context's: a photo starts from the preset they
-/// name.
+/// A photo starts from the raw defaults it is given: the preset they name.
 #[test]
-fn a_photo_starts_from_the_context_s_raw_defaults() {
-    let adobe = context()
-        .open(chart(), Cancel::NEVER)
-        .unwrap()
-        .starting_recipe()
-        .unwrap();
-    let (presets, _) = context().presets();
+fn a_photo_starts_from_the_raw_defaults_it_is_given() {
+    let ctx = context();
+    let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+    let adobe = photo.starting_recipe(&adobe()).unwrap();
+    let (presets, _) = ctx.presets();
     let starts = presets
         .iter()
-        .filter(|p| p.id.starts_with("builtin:"))
+        .filter(|p| p.is_builtin() && p.id().starts_with("builtin:"))
         .map(|preset| {
-            let defaults = RawDefaults {
-                master: rawmakase_interop::raw_defaults::DefaultChoice::Preset {
-                    id: preset.id.clone(),
-                    name: preset.name.clone(),
-                },
+            let choices = RawDefaults {
+                master: DefaultChoice::preset(preset),
                 ..Default::default()
             };
-            let ctx = Context::builder().raw_defaults(defaults).build().unwrap();
-            let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
-            photo.starting_recipe().unwrap()
+            let defaults = ctx.raw_defaults(&choices);
+            assert_eq!(defaults.choices(), choices);
+            photo.starting_recipe(&defaults).unwrap()
         });
     let mut starts = starts.peekable();
     assert!(starts.peek().is_some(), "built-in presets");
@@ -176,16 +175,16 @@ fn a_photo_starts_from_the_context_s_raw_defaults() {
 #[test]
 fn setting_a_parameter_follows_the_models_rules() {
     let photo = context().open(chart(), Cancel::NEVER).unwrap();
-    let mut recipe = photo.starting_recipe().unwrap();
-    let before = recipe.wb;
+    let mut recipe = photo.starting_recipe(&adobe()).unwrap();
+    let before = recipe.0.wb;
     photo
         .set(&mut recipe, Parameter::Temperature, 3200.)
         .unwrap();
-    assert_eq!(recipe.temperature, 3200.);
-    assert_ne!(recipe.wb, before, "white balance follows Temp");
+    assert_eq!(recipe.0.temperature, 3200.);
+    assert_ne!(recipe.0.wb, before, "white balance follows Temp");
     assert_eq!(photo.value(&recipe, Parameter::Temperature), 3200.);
     photo.set(&mut recipe, Parameter::Exposure, 1.25).unwrap();
-    assert_eq!(recipe.exposure, 1.25);
+    assert_eq!(recipe.0.exposure, 1.25);
     let kept = recipe.clone();
     for value in [f32::NAN, 100., -100.] {
         let e = photo
@@ -205,7 +204,7 @@ fn setting_a_parameter_follows_the_models_rules() {
 #[test]
 fn a_control_describes_its_slider_from_the_model() {
     let photo = context().open(chart(), Cancel::NEVER).unwrap();
-    let mut recipe = photo.starting_recipe().unwrap();
+    let mut recipe = photo.starting_recipe(&adobe()).unwrap();
     photo.set(&mut recipe, Parameter::Exposure, 0.5).unwrap();
     photo.set(&mut recipe, Parameter::Contrast, -0.35).unwrap();
     let exposure = photo.control(&recipe, Parameter::Exposure);
@@ -250,7 +249,7 @@ fn a_full_decode_is_kept_in_the_contexts_cache() {
     let render = |ctx: &Context| {
         let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
         let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-        let recipe = photo.starting_recipe().unwrap();
+        let recipe = photo.starting_recipe(&adobe()).unwrap();
         ctx.render(&image, &recipe, View::Fit(0), Cancel::NEVER)
             .unwrap()
             .rgb16()
@@ -305,7 +304,7 @@ fn a_renderer_renders_the_whole_photo_at_a_size_and_a_region_at_full_size() {
     let ctx = context();
     let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let recipe = photo.starting_recipe().unwrap();
+    let recipe = photo.starting_recipe(&adobe()).unwrap();
     let (width, height) = image.output_size(&recipe).unwrap();
     let mut renderer = ctx.renderer();
     let fit = renderer
@@ -350,7 +349,7 @@ fn a_draft_is_due_while_a_view_is_edited_unless_its_frames_are_quick() {
     let ctx = context();
     let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let recipe = photo.starting_recipe().unwrap();
+    let recipe = photo.starting_recipe(&adobe()).unwrap();
     let mut renderer = ctx.renderer();
     let region = View::Region([0, 0, 600, 400]);
     assert_eq!(
@@ -386,7 +385,7 @@ fn a_cancelled_render_and_an_invalid_recipe_have_their_kinds() {
     let ctx = context();
     let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let mut recipe = photo.starting_recipe().unwrap();
+    let mut recipe = photo.starting_recipe(&adobe()).unwrap();
     let mut renderer = ctx.renderer();
     let stop = AtomicBool::new(true);
     let e = renderer
@@ -396,7 +395,7 @@ fn a_cancelled_render_and_an_invalid_recipe_have_their_kinds() {
     renderer
         .render(&image, &recipe, View::Fit(400), Cancel::NEVER)
         .unwrap();
-    recipe.exposure = 99.;
+    recipe.0.exposure = 99.;
     let e = renderer
         .render(&image, &recipe, View::Fit(400), Cancel::NEVER)
         .unwrap_err();
@@ -408,7 +407,7 @@ fn an_edit_and_a_curve_point_change_the_pixels() {
     let ctx = context();
     let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let mut recipe = photo.starting_recipe().unwrap();
+    let mut recipe = photo.starting_recipe(&adobe()).unwrap();
     let mut renderer = ctx.renderer();
     let mut render = |recipe: &Recipe| {
         renderer
@@ -420,13 +419,13 @@ fn an_edit_and_a_curve_point_change_the_pixels() {
     photo.set(&mut recipe, Parameter::Exposure, 1.).unwrap();
     let brighter = render(&recipe);
     assert_ne!(brighter, start);
-    let Inserted::Added(point) = recipe.curve.insert([0.5, 0.3]) else {
+    let Inserted::Added(point) = recipe.curve_mut().insert([0.5, 0.3]) else {
         panic!("a point added");
     };
-    assert_eq!(recipe.curve.sampled(3)[1][0], 0.5);
+    assert_eq!(recipe.curve().sampled(3)[1][0], 0.5);
     let curved = render(&recipe);
     assert_ne!(curved, brighter);
-    assert!(recipe.curve.remove(point));
+    assert!(recipe.curve_mut().remove(point));
     assert_eq!(render(&recipe), brighter);
 }
 
@@ -436,10 +435,13 @@ fn an_edit_and_a_curve_point_change_the_pixels() {
 fn auto_tone_measures_the_photo() {
     let photo = context().open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-    let recipe = photo.starting_recipe().unwrap();
+    let recipe = photo.starting_recipe(&adobe()).unwrap();
     let auto = photo.auto_tone(&recipe, &image, Cancel::NEVER).unwrap();
     auto.validate().unwrap();
-    assert_eq!(auto.temperature, recipe.temperature, "white balance kept");
+    assert_eq!(
+        auto.0.temperature, recipe.0.temperature,
+        "white balance kept"
+    );
     let balanced = photo
         .auto_white_balance(&recipe, &image, Cancel::NEVER)
         .unwrap();
@@ -458,9 +460,9 @@ mod export {
         let ctx = context();
         let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
         let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-        let mut recipe = photo.starting_recipe().unwrap();
+        let mut recipe = photo.starting_recipe(&adobe()).unwrap();
         photo.set(&mut recipe, Parameter::Exposure, 0.5).unwrap();
-        recipe.curve.insert([0.3, 0.22]);
+        recipe.curve_mut().insert([0.3, 0.22]);
         let (width, height) = image.output_size(&recipe).unwrap();
         let settings = ExportSettings::default();
         let jpeg = dir.path().join("out.jpg");
@@ -560,7 +562,7 @@ mod export {
             .build()
             .unwrap();
         let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
-        let recipe = photo.starting_recipe().unwrap();
+        let recipe = photo.starting_recipe(&adobe()).unwrap();
         let out = dir.path().join("out.jpg");
         ctx.export(
             &photo,
@@ -583,7 +585,7 @@ mod export {
         let dir = tempfile::tempdir().unwrap();
         let ctx = context();
         let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
-        let recipe = photo.starting_recipe().unwrap();
+        let recipe = photo.starting_recipe(&adobe()).unwrap();
         let settings = ExportSettings::default();
         let export = |recipe: &Recipe, out: &Path, cancel| {
             ctx.export(&photo, recipe, &settings, out, false, cancel, |_| {})
@@ -607,7 +609,7 @@ mod export {
         )
         .unwrap();
         let rendered = ctx.open(&jpeg, Cancel::NEVER).unwrap();
-        let start = rendered.starting_recipe().unwrap();
+        let start = rendered.starting_recipe(&adobe()).unwrap();
         let e = ctx
             .export(
                 &rendered,
@@ -636,8 +638,8 @@ mod export {
             .unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Invalid, "ProPhoto in a JPEG: {e:#}");
         let mut denoised = recipe.clone();
-        denoised.ai_denoise.enabled = true;
-        denoised.ai_denoise.amount = 1.;
+        denoised.0.ai_denoise.enabled = true;
+        denoised.0.ai_denoise.amount = 1.;
         let e = export(&denoised, &dir.path().join("out.jpg"), Cancel::NEVER).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Unsupported, "{e:#}");
         let stop = AtomicBool::new(true);

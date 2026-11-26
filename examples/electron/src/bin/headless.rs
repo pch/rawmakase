@@ -17,7 +17,7 @@
 //! and the same editor the addon wraps, from a slider's change to the frame's
 //! RGBA reaching the editor's sink, with no Node.
 #![forbid(unsafe_code)]
-use rawmakase_core::{Cancel, Context, Decode, Parameter, View};
+use rawmakase_core::{Cancel, Context, Decode, Parameter, RawDefaults, View};
 use rawmakase_electron::editor::{self, Config, Editor, Update, Work};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -122,7 +122,7 @@ fn bench(args: &[String]) -> Result<(), Failure> {
     let ctx = Context::builder().data_dirs([home.join("data")]).build()?;
     let opened = ctx.open(photo, Cancel::NEVER)?;
     let image = opened.decode(Decode::Full, Cancel::NEVER)?;
-    let mut recipe = opened.starting_recipe()?;
+    let mut recipe = opened.starting_recipe(&ctx.raw_defaults(&RawDefaults::default()))?;
     let mut renderer = ctx.renderer();
     // The first render of a photo also reduces it for the view; an editor pays
     // that once, when the photo opens.

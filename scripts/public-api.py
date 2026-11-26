@@ -23,11 +23,19 @@ variant's fields; a trait's supertraits and items; each implementation's
 generics and the type it is for. A type is named by the path an app names it
 by, so a re-exported item reads as the library's wherever it appears.
 
+Every workspace type an item names must be one an app can name from the
+library: the library's own, or one it re-exports. `check` and `write` both
+fail on a line that names another workspace crate's path
+(`rawmakase_model::...`), which an app depending on the library alone could
+neither name nor make: such a type is re-exported, or the item that shows it
+is given a type of the library's own.
+
 Blanket implementations (`impl<T> From<T> for T`), auto traits other than
 `Send` and `Sync`, and `StructuralPartialEq` are left out: they say nothing an
 app relies on. Items hidden from the documentation are left out by rustdoc.
 """
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -493,8 +501,33 @@ def listing(package=CRATE, workspace=ROOT):
     return sorted(lister.lines)
 
 
+def foreign(lines, crate=CRATE):
+    """The lines that name a workspace crate's item by a path outside `crate`."""
+    own = crate.replace("-", "_")
+    path = re.compile(r"\brawmakase_[a-z0-9_]+::")
+    return [line for line in lines
+            if any(m.group(0) != f"{own}::" for m in path.finditer(line))]
+
+
+def refuse_foreign(lines):
+    """1, saying why, when `lines` name a type an app can't; else 0."""
+    named = foreign(lines)
+    for line in named:
+        print(f"! {line}")
+    if named:
+        print(
+            f"\n{len(named)} public items of {CRATE} name a workspace crate's type that the\n"
+            "library doesn't re-export, which an app depending on it can't name. Re-export\n"
+            "the type, or give the item a type of the library's own."
+        )
+        return 1
+    return 0
+
+
 def check():
     have = listing()
+    if refuse_foreign(have):
+        return 1
     want = LISTING.read_text(encoding="utf-8").splitlines() if LISTING.exists() else []
     want = [line for line in want if line and not line.startswith("#")]
     added = sorted(set(have) - set(want))
@@ -515,6 +548,8 @@ def check():
 
 def write():
     lines = listing()
+    if refuse_foreign(lines):
+        return 1
     header = (
         f"# The public items of {CRATE}, the re-exported ones among them, written by\n"
         "# scripts/public-api.py and compared in CI. A change here is a change to the\n"

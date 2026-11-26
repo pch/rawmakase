@@ -6,7 +6,6 @@ use rawmakase_decode::camera_look::cache::FitCache;
 use rawmakase_decode::decode_cache::{self, DecodeCache};
 use rawmakase_decode::photo::LensProfiles;
 use rawmakase_interop::presets::PresetLibrary;
-use rawmakase_interop::raw_defaults::{DevelopDefaults, RawDefaults};
 use rawmakase_model::camera_profiles::ProfileLibrary;
 use rawmakase_model::lens::lensfun::installed::{self, Handle as LensfunHandle};
 use std::path::{Path, PathBuf};
@@ -39,9 +38,11 @@ impl Default for CacheLimits {
 /// Each value is the context's only once the library reads it from here; one
 /// that nothing reads yet is not offered. Today that is the data folders,
 /// from which the lens profile, camera profile and preset libraries and
-/// Lensfun's database are made; the cache folder, its limits and its build
-/// id, from which the decode, AI Denoise and Camera Look caches are made; and
-/// the raw defaults. The GPU, the ONNX Runtime and the rest join as the
+/// Lensfun's database are made; and the cache folder, its limits and its
+/// build id, from which the decode, AI Denoise and Camera Look caches are
+/// made. What a new photo starts from is not the context's: an app's
+/// preferences change it while photos are open, so each photo is given it
+/// ([`Context::raw_defaults`]). The GPU, the ONNX Runtime and the rest join as the
 /// crates under the library take them as values (`docs/embedding-plan.md`).
 #[derive(Clone, Debug)]
 pub struct Context {
@@ -54,7 +55,6 @@ struct Inner {
     lenses: LensProfiles,
     profiles: ProfileLibrary,
     presets: PresetLibrary,
-    defaults: Arc<DevelopDefaults>,
     lensfun: LensfunHandle,
     cache: Option<Cache>,
 }
@@ -75,7 +75,6 @@ struct Cache {
 pub struct ContextBuilder {
     data_dirs: Vec<PathBuf>,
     cache: Option<(PathBuf, CacheLimits, String)>,
-    raw_defaults: RawDefaults,
 }
 
 impl ContextBuilder {
@@ -105,16 +104,6 @@ impl ContextBuilder {
         self
     }
 
-    /// The settings a photo without an edit starts from: Adobe Default, or a
-    /// preset, for every camera or for each, as the desktop's Preferences
-    /// choose them. Without them, Adobe Default. A preset they name is read
-    /// as the context is built, from the file its id names (or RAWmakase's
-    /// own, for a built-in one's); one that is gone gives Adobe Default.
-    pub fn raw_defaults(mut self, defaults: RawDefaults) -> Self {
-        self.raw_defaults = defaults;
-        self
-    }
-
     /// The context, or [`ErrorKind::Invalid`] for an empty build id.
     pub fn build(self) -> Result<Context> {
         let cache = match self.cache {
@@ -141,14 +130,12 @@ impl ContextBuilder {
             .map_or_else(LensfunHandle::none, |data| {
                 LensfunHandle::installed_in(installed::dir_in(data))
             });
-        let defaults = DevelopDefaults::load(self.raw_defaults).with_lensfun(lensfun.clone());
         Ok(Context {
             inner: Arc::new(Inner {
                 lenses: LensProfiles::in_data_dirs(&self.data_dirs),
                 profiles: ProfileLibrary::in_data_dirs(&self.data_dirs),
                 presets: PresetLibrary::in_data_dirs(&self.data_dirs),
                 lensfun,
-                defaults: Arc::new(defaults),
                 data_dirs: self.data_dirs,
                 cache,
             }),
@@ -195,9 +182,6 @@ impl Context {
     }
     pub(crate) fn lensfun(&self) -> &LensfunHandle {
         &self.inner.lensfun
-    }
-    pub(crate) fn defaults(&self) -> &Arc<DevelopDefaults> {
-        &self.inner.defaults
     }
     pub(crate) fn decoded(&self) -> Option<&DecodeCache> {
         self.inner.cache.as_ref().map(|c| &c.decoded)

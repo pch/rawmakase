@@ -512,68 +512,78 @@ macro_rules! parameters {
     };
 }
 
-parameters! {
-    Exposure "exposure" => { exposure }
-    Contrast "contrast" => { contrast }
-    Highlights "highlights" => { highlights }
-    Shadows "shadows" => { shadows }
-    Whites "whites" => { whites }
-    Blacks "blacks" => { blacks }
-    Texture "texture" => { effects.texture }
-    Clarity "clarity" => { effects.clarity }
-    Dehaze "dehaze" => { effects.dehaze }
-    Vibrance "vibrance" => { vibrance }
-    Saturation "saturation" => { saturation }
-    Temperature "temperature" => { temperature }
-    Tint "tint" => { tint }
-    IncrementalTemperature "incremental_temperature" => { incremental_temperature }
-    IncrementalTint "incremental_tint" => { incremental_tint }
-    Straighten "straighten" => { straighten }
-    SharpeningAmount "sharpening_amount" => { sharpening }
-    SharpeningRadius "sharpening_radius" => { sharpening_radius }
-    SharpeningDetail "sharpening_detail" => { sharpening_detail }
-    SharpeningMasking "sharpening_masking" => { sharpening_masking }
-    LuminanceNoise "luminance_noise" => { noise_luma }
-    LuminanceDetail "luminance_detail" => { effects.luma_detail }
-    LuminanceContrast "luminance_contrast" => { effects.luma_contrast }
-    ColorNoise "color_noise" => { noise_chroma }
-    ColorNoiseDetail "color_noise_detail" => { effects.chroma_detail }
-    ColorNoiseSmoothness "color_noise_smoothness" => { effects.chroma_smoothness }
-    AiDenoiseAmount "ai_denoise_amount" => { ai_denoise.amount }
-    VignetteAmount "vignette_amount" => { effects.vignette }
-    VignetteMidpoint "vignette_midpoint" => { effects.vignette_midpoint }
-    VignetteFeather "vignette_feather" => { effects.vignette_feather }
-    GrainAmount "grain_amount" => { effects.grain }
-    GrainSize "grain_size" => { effects.grain_size }
-    GrainRoughness "grain_roughness" => { effects.grain_roughness }
-    TransformVertical "transform_vertical" => { transform.vertical }
-    TransformHorizontal "transform_horizontal" => { transform.horizontal }
-    TransformRotate "transform_rotate" => { transform.rotate }
-    TransformAspect "transform_aspect" => { transform.aspect }
-    TransformScale "transform_scale" => { transform.scale }
-    TransformOffsetX "transform_offset_x" => { transform.offset_x }
-    TransformOffsetY "transform_offset_y" => { transform.offset_y }
-    LensDistortion "lens_distortion" => { lens_distortion }
-    LensVignetting "lens_vignetting" => { lens_vignetting }
-    ManualDistortion "manual_distortion" => { lens_manual_distortion }
-    LensVignetteAmount "lens_vignette_amount" => { effects.lens_vignette }
-    LensVignetteMidpoint "lens_vignette_midpoint" => { effects.lens_vignette_midpoint }
-    ShadowTint "shadow_tint" => { effects.shadow_tint }
-    RedPrimaryHue "red_primary_hue" => { effects.calibration[0][0] }
-    RedPrimarySaturation "red_primary_saturation" => { effects.calibration[0][1] }
-    GreenPrimaryHue "green_primary_hue" => { effects.calibration[1][0] }
-    GreenPrimarySaturation "green_primary_saturation" => { effects.calibration[1][1] }
-    BluePrimaryHue "blue_primary_hue" => { effects.calibration[2][0] }
-    BluePrimarySaturation "blue_primary_saturation" => { effects.calibration[2][1] }
-    ParametricShadows "parametric_shadows" => { effects.parametric[0] }
-    ParametricDarks "parametric_darks" => { effects.parametric[1] }
-    ParametricLights "parametric_lights" => { effects.parametric[2] }
-    ParametricHighlights "parametric_highlights" => { effects.parametric[3] }
-    CurveSaturation "curve_saturation" => { curve_saturation }
-    Midtone "midtone" => { midtone }
-    GradingBlending "grading_blending" => { effects.blending }
-    GradingBalance "grading_balance" => { effects.balance }
+/// The table [`parameters`] is made from, given to `$callback`: how a crate
+/// above the model makes its own list of the settings from the same table.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! with_parameters {
+    ($callback:path) => {
+        $callback! {
+            Exposure "exposure" => { exposure }
+            Contrast "contrast" => { contrast }
+            Highlights "highlights" => { highlights }
+            Shadows "shadows" => { shadows }
+            Whites "whites" => { whites }
+            Blacks "blacks" => { blacks }
+            Texture "texture" => { effects.texture }
+            Clarity "clarity" => { effects.clarity }
+            Dehaze "dehaze" => { effects.dehaze }
+            Vibrance "vibrance" => { vibrance }
+            Saturation "saturation" => { saturation }
+            Temperature "temperature" => { temperature }
+            Tint "tint" => { tint }
+            IncrementalTemperature "incremental_temperature" => { incremental_temperature }
+            IncrementalTint "incremental_tint" => { incremental_tint }
+            Straighten "straighten" => { straighten }
+            SharpeningAmount "sharpening_amount" => { sharpening }
+            SharpeningRadius "sharpening_radius" => { sharpening_radius }
+            SharpeningDetail "sharpening_detail" => { sharpening_detail }
+            SharpeningMasking "sharpening_masking" => { sharpening_masking }
+            LuminanceNoise "luminance_noise" => { noise_luma }
+            LuminanceDetail "luminance_detail" => { effects.luma_detail }
+            LuminanceContrast "luminance_contrast" => { effects.luma_contrast }
+            ColorNoise "color_noise" => { noise_chroma }
+            ColorNoiseDetail "color_noise_detail" => { effects.chroma_detail }
+            ColorNoiseSmoothness "color_noise_smoothness" => { effects.chroma_smoothness }
+            AiDenoiseAmount "ai_denoise_amount" => { ai_denoise.amount }
+            VignetteAmount "vignette_amount" => { effects.vignette }
+            VignetteMidpoint "vignette_midpoint" => { effects.vignette_midpoint }
+            VignetteFeather "vignette_feather" => { effects.vignette_feather }
+            GrainAmount "grain_amount" => { effects.grain }
+            GrainSize "grain_size" => { effects.grain_size }
+            GrainRoughness "grain_roughness" => { effects.grain_roughness }
+            TransformVertical "transform_vertical" => { transform.vertical }
+            TransformHorizontal "transform_horizontal" => { transform.horizontal }
+            TransformRotate "transform_rotate" => { transform.rotate }
+            TransformAspect "transform_aspect" => { transform.aspect }
+            TransformScale "transform_scale" => { transform.scale }
+            TransformOffsetX "transform_offset_x" => { transform.offset_x }
+            TransformOffsetY "transform_offset_y" => { transform.offset_y }
+            LensDistortion "lens_distortion" => { lens_distortion }
+            LensVignetting "lens_vignetting" => { lens_vignetting }
+            ManualDistortion "manual_distortion" => { lens_manual_distortion }
+            LensVignetteAmount "lens_vignette_amount" => { effects.lens_vignette }
+            LensVignetteMidpoint "lens_vignette_midpoint" => { effects.lens_vignette_midpoint }
+            ShadowTint "shadow_tint" => { effects.shadow_tint }
+            RedPrimaryHue "red_primary_hue" => { effects.calibration[0][0] }
+            RedPrimarySaturation "red_primary_saturation" => { effects.calibration[0][1] }
+            GreenPrimaryHue "green_primary_hue" => { effects.calibration[1][0] }
+            GreenPrimarySaturation "green_primary_saturation" => { effects.calibration[1][1] }
+            BluePrimaryHue "blue_primary_hue" => { effects.calibration[2][0] }
+            BluePrimarySaturation "blue_primary_saturation" => { effects.calibration[2][1] }
+            ParametricShadows "parametric_shadows" => { effects.parametric[0] }
+            ParametricDarks "parametric_darks" => { effects.parametric[1] }
+            ParametricLights "parametric_lights" => { effects.parametric[2] }
+            ParametricHighlights "parametric_highlights" => { effects.parametric[3] }
+            CurveSaturation "curve_saturation" => { curve_saturation }
+            Midtone "midtone" => { midtone }
+            GradingBlending "grading_blending" => { effects.blending }
+            GradingBalance "grading_balance" => { effects.balance }
+        }
+    };
 }
+
+with_parameters!(parameters);
 
 impl ParameterId {
     /// The setting this control moves on photo `m`: a JPEG, PNG or TIFF keeps its

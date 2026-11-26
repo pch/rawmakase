@@ -1,6 +1,6 @@
 //! A decoded image: a photo's pixels, ready to render.
+use crate::Recipe;
 use rawmakase_model::camera_data::CameraImage;
-use rawmakase_model::model::recipe::Recipe;
 use rayon::prelude::*;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
@@ -97,7 +97,7 @@ impl Image {
     }
 
     pub(crate) fn size_at(&self, recipe: &Recipe, max_edge: u32) -> crate::Result<(u32, u32)> {
-        rawmakase_engine::develop::quality::rendered_size(&self.image, recipe, max_edge)
+        rawmakase_engine::develop::quality::rendered_size(&self.image, &recipe.0, max_edge)
             .map_err(|e| crate::Error::of(rawmakase_model::error::Invalid::from_error(e).into()))
     }
 }

@@ -1,24 +1,110 @@
 //! Changing a recipe through the model's rules: a slider as a parameter, by
 //! its id, so that what depends on it follows; what a front end needs to draw
 //! the slider; presets, and Auto.
-use crate::{Error, Image, Photo, Result};
+use crate::{Error, Image, Photo, Recipe, Result};
 use rawmakase_cancel::Cancel;
 use rawmakase_engine::develop::{self, Measures};
-use rawmakase_interop::presets;
+use rawmakase_interop::{presets, xmp};
 use rawmakase_model::model::edit::change_setting;
-use rawmakase_model::model::recipe::Recipe;
+use rawmakase_model::model::params::ParameterId;
 
-pub use rawmakase_interop::xmp::Preset;
-/// A develop setting a slider moves, by its id: the model's own, named by
-/// [`Parameter::name`] (`exposure`, `temperature`) and found by
-/// [`Parameter::named`].
-pub use rawmakase_model::model::params::ParameterId as Parameter;
 pub use rawmakase_model::model::params::{Control, Scale};
 
-/// A preset applied to a photo's settings: the settings, what of the preset
-/// did not fit this photo and was left as it was, and the profile used in
-/// place of one the preset names that this camera lacks.
-pub use rawmakase_interop::presets::Applied;
+macro_rules! library_parameters {
+    ($($id:ident $name:literal => { $($field:tt)+ })*) => {
+        /// A develop setting a slider moves, named by [`Parameter::name`]
+        /// (`exposure`, `temperature`) and found by [`Parameter::named`]:
+        /// the model's list of them, in the desktop's order.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[non_exhaustive]
+        pub enum Parameter {
+            $(
+                #[doc = concat!("The `", $name, "` setting.")]
+                $id,
+            )*
+        }
+
+        impl Parameter {
+            /// Every setting, in the desktop's order.
+            pub const ALL: [Self; [$(Self::$id),*].len()] = [$(Self::$id),*];
+
+            pub(crate) const fn id(self) -> ParameterId {
+                match self {
+                    $(Self::$id => ParameterId::$id,)*
+                }
+            }
+
+            const fn of(id: ParameterId) -> Self {
+                match id {
+                    $(ParameterId::$id => Self::$id,)*
+                }
+            }
+        }
+    };
+}
+
+rawmakase_model::with_parameters!(library_parameters);
+
+impl Parameter {
+    /// The setting's name, as RAWmakase's MIDI mappings, control socket and
+    /// command line spell it: `exposure`, `sharpening_amount`.
+    pub const fn name(self) -> &'static str {
+        self.id().name()
+    }
+
+    /// The setting named `name`, if there is one.
+    pub fn named(name: &str) -> Option<Self> {
+        ParameterId::named(name).map(Self::of)
+    }
+}
+
+/// A Develop preset: an XMP preset, Lightroom's or Camera Raw's, or one of
+/// RAWmakase's own. Applied with [`Photo::apply_preset`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Preset(pub(crate) xmp::Preset);
+
+impl Preset {
+    /// What a preset is known by: `builtin:<UUID>` for one of RAWmakase's,
+    /// else its file's path.
+    pub fn id(&self) -> &str {
+        &self.0.id
+    }
+
+    /// Its name.
+    pub fn name(&self) -> &str {
+        &self.0.name
+    }
+
+    /// The group it is listed in.
+    pub fn group(&self) -> &str {
+        &self.0.group
+    }
+
+    /// Whether it is one of RAWmakase's own, which come with it.
+    pub fn is_builtin(&self) -> bool {
+        self.0.builtin
+    }
+
+    /// Whether applying it measures the photo (Auto Settings, Auto white
+    /// balance, an automatic B&W mix), so it needs the photo's decode.
+    pub fn measures_photo(&self) -> bool {
+        self.0.measures_photo()
+    }
+}
+
+/// A preset applied to a photo's settings.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct Applied {
+    /// The settings, with the preset applied.
+    pub recipe: Recipe,
+    /// What of the preset did not fit this photo and was left as it was, one
+    /// line each.
+    pub skipped: Vec<String>,
+    /// The profile used in place of one the preset names that this camera
+    /// lacks, by name.
+    pub substitute: Option<String>,
+}
 
 impl Photo {
     /// Sets `parameter` of `recipe` to `value`, in the recipe's units, and
@@ -31,7 +117,7 @@ impl Photo {
     /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a value a recipe
     /// may not hold; the recipe is then unchanged.
     pub fn set(&self, recipe: &mut Recipe, parameter: Parameter, value: f32) -> Result<()> {
-        let id = parameter.for_photo(Some(self.facts()));
+        let id = parameter.id().for_photo(Some(self.facts()));
         let d = id.descriptor();
         if !value.is_finite() || !d.valid.contains(&value) {
             return Err(Error::of(
@@ -44,7 +130,7 @@ impl Photo {
                 .into(),
             ));
         }
-        change_setting(recipe, id, Some(self.facts()), |r| {
+        change_setting(&mut recipe.0, id, Some(self.facts()), |r| {
             *id.value_mut(r) = value;
         });
         Ok(())
@@ -53,12 +139,18 @@ impl Photo {
     /// `parameter`'s value in `recipe`, in the recipe's units, for the setting
     /// it moves on this photo.
     pub fn value(&self, recipe: &Recipe, parameter: Parameter) -> f32 {
-        parameter.for_photo(Some(self.facts())).value(recipe)
+        parameter
+            .id()
+            .for_photo(Some(self.facts()))
+            .value(&recipe.0)
     }
 
     /// `parameter`'s slider for this photo, with its value in `recipe`.
     pub fn control(&self, recipe: &Recipe, parameter: Parameter) -> Control {
-        let mut control = parameter.for_photo(Some(self.facts())).control(recipe);
+        let mut control = parameter
+            .id()
+            .for_photo(Some(self.facts()))
+            .control(&recipe.0);
         // Named as asked: a rendered file's relative Temp is still Temp's.
         control.id = parameter.name();
         control
@@ -75,9 +167,9 @@ impl Photo {
         image: Option<&Image>,
     ) -> Result<Applied> {
         let measures = image.map(|i| Measures(i.camera()));
-        presets::apply_to_photo(
-            preset,
-            recipe,
+        let applied = presets::apply_to_photo(
+            &preset.0,
+            &recipe.0,
             self.facts(),
             self.camera_profiles(),
             measures
@@ -85,7 +177,12 @@ impl Photo {
                 .map(|m| m as &dyn rawmakase_interop::xmp::PhotoMeasures),
             self.context().lensfun(),
         )
-        .map_err(Error::of)
+        .map_err(Error::of)?;
+        Ok(Applied {
+            recipe: Recipe(applied.recipe),
+            skipped: applied.skipped,
+            substitute: applied.substitute,
+        })
     }
 
     /// Saves `recipe`, this photo's edit, as a RAWmakase preset at `path`,
@@ -97,17 +194,17 @@ impl Photo {
     /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a recipe that does
     /// not validate.
     pub fn save_recipe(&self, recipe: &Recipe, path: impl AsRef<std::path::Path>) -> Result<()> {
-        recipe
-            .validate()
-            .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
-        presets::save_preset(path.as_ref(), recipe, self.facts()).map_err(Error::of)
+        recipe.validate()?;
+        presets::save_preset(path.as_ref(), &recipe.0, self.facts()).map_err(Error::of)
     }
 
     /// `recipe` with Exposure, Contrast, Highlights, Shadows, Whites, Blacks
     /// and Vibrance estimated from `image`, this photo's decode, as the Basic
     /// panel's Auto applies them; white balance and the rest are kept.
     pub fn auto_tone(&self, recipe: &Recipe, image: &Image, cancel: Cancel<'_>) -> Result<Recipe> {
-        develop::auto_tone(image.camera(), recipe, cancel).map_err(Error::of)
+        develop::auto_tone(image.camera(), &recipe.0, cancel)
+            .map(Recipe)
+            .map_err(Error::of)
     }
 
     /// `recipe` with the white balance that renders `image`'s near-neutral
@@ -118,7 +215,9 @@ impl Photo {
         image: &Image,
         cancel: Cancel<'_>,
     ) -> Result<Recipe> {
-        develop::auto_white_balance(image.camera(), recipe, cancel).map_err(Error::of)
+        develop::auto_white_balance(image.camera(), &recipe.0, cancel)
+            .map(Recipe)
+            .map_err(Error::of)
     }
 }
 
@@ -128,7 +227,10 @@ impl crate::Context {
     /// files that could not be read.
     pub fn presets(&self) -> (Vec<Preset>, Vec<String>) {
         let library = self.preset_library().load();
-        (library.presets, library.errors)
+        (
+            library.presets.into_iter().map(Preset).collect(),
+            library.errors,
+        )
     }
 
     /// Reads a recipe from the file [`Photo::save_recipe`] writes: a
@@ -138,7 +240,7 @@ impl crate::Context {
     /// file.
     pub fn load_recipe(&self, path: impl AsRef<std::path::Path>) -> Result<Recipe> {
         presets::load_preset(path.as_ref())
-            .map(|preset| preset.recipe)
+            .map(|preset| Recipe(preset.recipe))
             .map_err(Error::of)
     }
 
@@ -150,6 +252,6 @@ impl crate::Context {
     pub fn load_preset(&self, path: impl AsRef<std::path::Path>) -> Result<Preset> {
         let path = path.as_ref();
         let text = std::fs::read_to_string(path).map_err(|e| Error::of(e.into()))?;
-        rawmakase_interop::xmp::parse(path, &text).map_err(Error::of)
+        xmp::parse(path, &text).map(Preset).map_err(Error::of)
     }
 }

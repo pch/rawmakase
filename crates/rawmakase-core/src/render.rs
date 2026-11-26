@@ -1,12 +1,11 @@
 //! Rendering an image with a recipe to pixels, on the CPU, as a view of an
 //! editor shows it: the whole photo at a size, or a region at 100%, with a
 //! reduced draft first when the full frame will be slow.
-use crate::{Context, Error, Image, Result};
+use crate::{Context, Error, Image, Recipe, Result};
 use rawmakase_cancel::Cancel;
 use rawmakase_engine::develop::PreviewRenderer;
 use rawmakase_engine::develop::draft::{Drafts, draft_edge};
 use rawmakase_model::camera_data::CameraImage;
-use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::rendered::{Rendered, unit_to_u8};
 use rayon::prelude::*;
 use std::sync::{Arc, Weak};
@@ -176,14 +175,14 @@ impl Renderer {
         view: View,
         cancel: Cancel<'_>,
     ) -> Result<Frame> {
-        recipe.validate().map_err(invalid)?;
+        recipe.validate()?;
         let (rendered, draft) = match view {
             View::Fit(edge) => {
                 let (w, h) = image.size_at(recipe, edge)?;
                 let reduced = draft_edge(w, h);
                 let rendered = self.preview.render(
                     image.camera(),
-                    recipe,
+                    &recipe.0,
                     reduced.unwrap_or(edge),
                     None,
                     cancel,
@@ -193,7 +192,7 @@ impl Renderer {
             View::Region(region) => {
                 let rendered =
                     self.preview
-                        .render_region_preview(image.camera(), recipe, region, cancel);
+                        .render_region_preview(image.camera(), &recipe.0, region, cancel);
                 (rendered, true)
             }
         };
@@ -219,7 +218,7 @@ impl Renderer {
         view: View,
         cancel: Cancel<'_>,
     ) -> Result<Frame> {
-        recipe.validate().map_err(invalid)?;
+        recipe.validate()?;
         let (max_edge, region) = match view {
             View::Fit(max_edge) => (max_edge, None),
             View::Region(region) => (0, Some(region)),
@@ -227,7 +226,7 @@ impl Renderer {
         let started = Instant::now();
         let rendered = self
             .preview
-            .render(image.camera(), recipe, max_edge, region, cancel)
+            .render(image.camera(), &recipe.0, max_edge, region, cancel)
             .map_err(Error::of)?;
         // A frame on the CPU is finished when it returns; turning it into
         // RGBA is the caller's, and quick.
@@ -243,10 +242,6 @@ impl Renderer {
             draft: false,
         })
     }
-}
-
-fn invalid(e: anyhow::Error) -> Error {
-    Error::of(rawmakase_model::error::Invalid::from_error(e).into())
 }
 
 impl std::fmt::Debug for Renderer {
