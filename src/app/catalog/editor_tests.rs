@@ -792,10 +792,9 @@ fn reopening_an_earlier_catalog_reports_its_upgrade() -> anyhow::Result<()> {
     let ctx = egui::Context::default();
     let event = super::folder_locations::reopened(
         &crate::catalog::CatalogLocation::File(earlier.path.clone()),
+        &crate::environment::Libraries::default(),
         true,
-        false,
-        &Default::default(),
-        &[],
+        Default::default(),
         &tx,
         &ctx,
     );
@@ -834,10 +833,9 @@ fn opening_a_catalog_again_keeps_only_the_newest_backup() -> anyhow::Result<()> 
     let open = |chosen: bool| {
         let event = super::folder_locations::reopened(
             &location,
+            &crate::environment::Libraries::default(),
             chosen,
-            false,
-            &Default::default(),
-            &[],
+            Default::default(),
             &tx,
             &ctx,
         );
