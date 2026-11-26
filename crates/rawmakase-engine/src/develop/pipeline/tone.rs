@@ -29,7 +29,8 @@ pub(super) struct CurveSet {
     pub(super) photo: crate::develop::basic_tone::PhotoTone,
     /// The measured parametric curve, when a region is set.
     pub(super) parametric: Option<crate::develop::tone_lut::ToneLut>,
-    pub(super) master: CurveLut,
+    /// The master point curve, when it is not the identity.
+    pub(super) master: Option<CurveLut>,
     /// Each channel's curve: the user's, then in SDR the look's ([`channel_curves`]).
     pub(super) channels: [CurveLut; 3],
     /// What the scene tone stage measured of the photo.
@@ -64,7 +65,7 @@ struct HdrCurves {
     /// Black point, white point and midtone, when they are not the default.
     levels: Option<[f32; 3]>,
     parametric: Option<crate::develop::tone_lut::ToneLut>,
-    master: crate::color::hdr_curve::HdrPointCurve,
+    master: Option<crate::color::hdr_curve::HdrPointCurve>,
     /// Red, green and blue's own curves, each when it is not the identity; when none
     /// is, `None`.
     channels: Option<[Option<crate::color::hdr_curve::HdrPointCurve>; 3]>,
@@ -116,10 +117,11 @@ impl HdrCurves {
                 .each_ref()
                 .map(|c| (!renders_identity(c)).then(|| HdrPointCurve::new(c)))
         });
+        let master = (!renders_identity(&r.curve)).then(|| HdrPointCurve::new(&r.curve));
         let look = LookChannels::new(r);
         if levels.is_none()
             && parametric.is_none()
-            && renders_identity(&r.curve)
+            && master.is_none()
             && channels.is_none()
             && look.is_none()
         {
@@ -128,7 +130,7 @@ impl HdrCurves {
         Some(Self {
             levels,
             parametric,
-            master: HdrPointCurve::new(&r.curve),
+            master,
             channels,
             refine: r.curve_saturation,
             look,
@@ -146,7 +148,12 @@ impl HdrCurves {
             Some(curve) => rgb_tone(p, |e| parametric(e, |x| curve.eval(x))),
             None => p,
         };
-        let p = crate::color::hdr_curve::apply_master(p, |e| self.master.evaluate(e), self.refine);
+        let p = match &self.master {
+            Some(curve) => {
+                crate::color::hdr_curve::apply_master(p, |e| curve.evaluate(e), self.refine)
+            }
+            None => p,
+        };
         // An identity channel curve leaves its channel as the master curve renders it.
         let channels = self.channels.as_ref();
         let p = std::array::from_fn(|c| match channels.and_then(|curves| curves[c].as_ref()) {
@@ -244,9 +251,16 @@ fn rgb_tone(p: [f32; 3], curve: impl Fn(f32) -> f32) -> [f32; 3] {
 /// apply and where the master curve's extension starts, its value there and slope
 /// beyond ([`crate::color::hdr_curve::HdrPointCurve::extension`]), and each channel
 /// curve's that is not the identity, when any is not.
+/// The GPU parameters for [`HdrCurves`]: whether Levels apply and, when the master point
+/// curve is not the identity, its extension and hold flag.
+pub(crate) struct HdrCurvesGpu {
+    pub(crate) levels: bool,
+    pub(crate) master: Option<([f32; 3], bool)>,
+}
+
 pub(crate) struct HdrFinishGpu<'a> {
     pub(crate) contrast: Option<(&'a [f32], f32, f32)>,
-    pub(crate) curves: Option<(bool, [f32; 3], bool)>,
+    pub(crate) curves: Option<HdrCurvesGpu>,
     pub(crate) channels: Option<[Option<[f32; 3]>; 3]>,
     /// The look's channel curves, after the user's: their samples and HDR rules.
     pub(crate) look: Option<(
@@ -258,10 +272,10 @@ impl HdrFinish {
     pub(super) fn gpu(&self) -> HdrFinishGpu<'_> {
         HdrFinishGpu {
             contrast: self.contrast.as_ref().map(|c| c.gpu()),
-            curves: self
-                .curves
-                .as_ref()
-                .map(|c| (c.levels.is_some(), c.master.extension(), c.master.holds())),
+            curves: self.curves.as_ref().map(|c| HdrCurvesGpu {
+                levels: c.levels.is_some(),
+                master: c.master.as_ref().map(|m| (m.extension(), m.holds())),
+            }),
             channels: self
                 .curves
                 .as_ref()
@@ -642,7 +656,7 @@ impl CurveSet {
                 r.effects.shadow_tint,
             ),
             parametric: parametric_curve(r),
-            master: CurveLut::new(&r.curve),
+            master: (!r.curve.is_identity()).then(|| CurveLut::new(&r.curve)),
             channels: channel_curves(r, hdr.is_none()),
             measures: Default::default(),
             scene: crate::develop::scene_tone::SceneTone::new(r, &Default::default(), None),
@@ -1104,7 +1118,9 @@ pub(super) fn apply_reference_curves(
     let p = curve_input(rgb, r, lut, local);
     // No region set: the identity.
     let p = lut.parametric.as_ref().map_or(p, |curve| curve.apply(p));
-    let master = apply_master(p, |x| lut.master.evaluate(x), r.curve_saturation);
+    let master = lut.master.as_ref().map_or(p, |curve| {
+        apply_master(p, |x| curve.evaluate(x), r.curve_saturation)
+    });
     let channels = std::array::from_fn(|c| srgb_decode(lut.channels[c].evaluate(master[c])));
     mul(crate::camera_profiles::PRO_TO_RGB, channels)
 }

@@ -474,17 +474,19 @@ fn hdr_tone_controls(rgb: vec3<f32>) -> vec3<f32> {
         if offset(P_PARAMETRIC_LUT) >= 0 {
             q = encoded_tone(q, 1u);
         }
-        let input = q;
-        var m = smooth_master_hdr(input);
-        if p(P_REFINE_SATURATION) < 1.0 {
-            let per = vec3(
-                max(encoded_curve(2u, input.x), 0.0),
-                max(encoded_curve(2u, input.y), 0.0),
-                max(encoded_curve(2u, input.z), 0.0),
-            );
-            m = refine_saturation_hdr(input, m, per);
+        if offset(P_MASTER) >= 0 && p(P_HDR_CURVES + 2u) >= 0.0 {
+            let input = q;
+            var m = smooth_master_hdr(input);
+            if p(P_REFINE_SATURATION) < 1.0 {
+                let per = vec3(
+                    max(encoded_curve(2u, input.x), 0.0),
+                    max(encoded_curve(2u, input.y), 0.0),
+                    max(encoded_curve(2u, input.z), 0.0),
+                );
+                m = refine_saturation_hdr(input, m, per);
+            }
+            q = m;
         }
-        q = m;
         out = vec3(hdr_channel(0u, q.x), hdr_channel(1u, q.y), hdr_channel(2u, q.z));
     }
     return look_channels(out);
@@ -1264,7 +1266,7 @@ fn level(v: f32) -> f32 {
     let low = x;
     return low / max(low + (1.0 - x), 1e-8);
 }
-// curve::refine_saturation: Refine Saturation below 100 keeps the color's channel
+// curve::apply_master's Refine Saturation below 100 keeps the color's channel
 // differences from before the point curve, with Photoshop luma (`0.30 R + 0.59 G + 0.11 B`)
 // from the per-channel curved color.
 fn refine_saturation(input: vec3<f32>, curved: vec3<f32>, per_channel: vec3<f32>) -> vec3<f32> {
@@ -1287,7 +1289,7 @@ fn refine_saturation(input: vec3<f32>, curved: vec3<f32>, per_channel: vec3<f32>
     let kept = goal + offset * max(scale, 0.0);
     return kept + (curved - kept) * amount;
 }
-// hdr_curve::refine_saturation: refine_saturation without its bound at white.
+// hdr_curve::apply_master's Refine Saturation without its bound at white.
 fn refine_saturation_hdr(input: vec3<f32>, curved: vec3<f32>, per_channel: vec3<f32>) -> vec3<f32> {
     let amount = clamp(p(P_REFINE_SATURATION), 0.0, 1.0);
     if amount >= 1.0 {
@@ -1350,15 +1352,18 @@ fn reference_curves(rgb: vec3<f32>) -> vec3<f32> {
         let hi = max(max(max(q.x, q.y), q.z), 0.0);
         q = rgb_tone_values(q, lut(parametric, 1024u, lo), lut(parametric, 1024u, hi), lo, hi);
     }
-    var m = smooth_master_sdr(q);
-    if p(P_REFINE_SATURATION) < 1.0 {
-        let master = offset(P_MASTER);
-        let per = vec3(
-            clamp(lut(master, 4096u, q.x), 0.0, 1.0),
-            clamp(lut(master, 4096u, q.y), 0.0, 1.0),
-            clamp(lut(master, 4096u, q.z), 0.0, 1.0),
-        );
-        m = refine_saturation(q, m, per);
+    var m = q;
+    if offset(P_MASTER) >= 0 {
+        m = smooth_master_sdr(q);
+        if p(P_REFINE_SATURATION) < 1.0 {
+            let master = offset(P_MASTER);
+            let per = vec3(
+                clamp(lut(master, 4096u, q.x), 0.0, 1.0),
+                clamp(lut(master, 4096u, q.y), 0.0, 1.0),
+                clamp(lut(master, 4096u, q.z), 0.0, 1.0),
+            );
+            m = refine_saturation(q, m, per);
+        }
     }
     let channels = vec3(
         srgb_decode(lut(offset(P_CHANNELS), 4096u, m.x)),
