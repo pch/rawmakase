@@ -11,7 +11,7 @@ use rawmakase_model::camera_profiles::CameraProfile;
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::storage::Identity;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 /// How much of a photo a decode makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub enum Decode {
 /// A photo opened for developing: its file's metadata and the camera
 /// profiles that fit it. Made by [`Context::open`]. `Send` and `Sync`.
 ///
-/// It keeps no RAW file's bytes: each [`Photo::decode`] reads the file again,
+/// It keeps no RAW file's bytes: a [`Photo::decode`] reads the file again,
 /// and refuses it as [`ErrorKind::Changed`](crate::ErrorKind::Changed) when it
 /// is no longer the file that was opened.
 pub struct Photo {
@@ -42,6 +42,10 @@ pub struct Photo {
     identity: Option<Identity>,
     /// A rendered file (JPEG, PNG, TIFF…), which opening decodes.
     rendered: Option<Arc<CameraImage>>,
+    /// A RAW's last full decode by [`Photo::decode`], while an [`Image`] of
+    /// it is held: the next full decode through the same context is that
+    /// one.
+    full: Mutex<Weak<CameraImage>>,
 }
 
 impl Context {
@@ -88,6 +92,7 @@ impl Context {
                 Opened::Raw(_) => None,
                 Opened::Rendered(image) => Some(Arc::new(image)),
             },
+            full: Mutex::new(Weak::new()),
         };
         // The file read is the one whose identity was taken.
         photo.still_the_file_opened()?;
@@ -151,7 +156,10 @@ impl Photo {
     /// that is not in the cache.
     ///
     /// A full decode is kept in the context's cache, when it has one, and comes
-    /// from there next time. Each decode reads the file again.
+    /// from there next time. While an [`Image`] of the last full decode is
+    /// held, a full decode, and [`Context::export`](crate::Context), use it
+    /// and read nothing; otherwise each decode reads the file again. Each
+    /// checks that the file is still the one opened.
     ///
     /// Errors: [`ErrorKind::Changed`](crate::ErrorKind::Changed) when the file
     /// is no longer the one opened, [`ErrorKind::Missing`](crate::ErrorKind::Missing)
@@ -172,9 +180,24 @@ impl Photo {
     ) -> Result<Image> {
         cancelled(cancel, "Decoding cancelled")?;
         self.still_the_file_opened()?;
-        let image = match &self.rendered {
-            Some(image) => image.clone(),
-            None => Arc::new(self.decode_raw(ctx, decode, keep, cancel)?),
+        let held = || {
+            let full = self.full.lock().unwrap_or_else(PoisonError::into_inner);
+            // Decoded with this context's lens profiles, as asked.
+            full.upgrade().filter(|_| ctx.is(&self.ctx))
+        };
+        let image = match (&self.rendered, decode) {
+            (Some(image), _) => image.clone(),
+            (None, Decode::Full) if let Some(image) = held() => image,
+            (None, _) => {
+                let image = Arc::new(self.decode_raw(ctx, decode, keep, cancel)?);
+                // Only a decode the cache has kept: one an export made isn't,
+                // and a decode that used it would leave the cache without it.
+                if decode == Decode::Full && keep && ctx.is(&self.ctx) {
+                    *self.full.lock().unwrap_or_else(PoisonError::into_inner) =
+                        Arc::downgrade(&image);
+                }
+                image
+            }
         };
         Ok(Image::new(image, &self.path))
     }

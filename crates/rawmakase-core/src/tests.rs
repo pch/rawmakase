@@ -1,6 +1,7 @@
 //! The library used as an app uses it, on a color-chart DNG.
 use super::*;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 fn chart() -> PathBuf {
@@ -255,6 +256,42 @@ fn a_full_decode_is_kept_in_the_contexts_cache() {
     assert_eq!(entries, 1);
     assert_eq!(render(&ctx), decoded, "the cache's copy");
     assert_eq!(render(&context()), decoded, "no cache");
+}
+
+/// A full decode an app holds is the next one's, and an export's, through
+/// the same context: nothing is read again, but a file changed since it was
+/// opened is still refused. Another context decodes its own.
+#[test]
+fn a_held_full_decode_is_used_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = chart_in(dir.path());
+    let ctx = context();
+    let photo = ctx.open(&file, Cancel::NEVER).unwrap();
+    // An export's own decode, which the cache doesn't keep, is not used
+    // again: a decode after it decodes, and keeps, its own.
+    let exported = photo
+        .decode_in(&ctx, Decode::Full, false, Cancel::NEVER)
+        .unwrap();
+    let held = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+    assert!(!Arc::ptr_eq(held.camera(), exported.camera()));
+    let again = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+    assert!(Arc::ptr_eq(held.camera(), again.camera()));
+    let half = photo.decode(Decode::Half, Cancel::NEVER).unwrap();
+    assert!(!Arc::ptr_eq(held.camera(), half.camera()));
+    let other = context();
+    let theirs = photo
+        .decode_in(&other, Decode::Full, false, Cancel::NEVER)
+        .unwrap();
+    assert!(!Arc::ptr_eq(held.camera(), theirs.camera()));
+    drop((again, held));
+    let after = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+    assert!(!Arc::ptr_eq(after.camera(), theirs.camera()));
+    // Held, and the file changed: refused all the same.
+    let mut bytes = std::fs::read(&file).unwrap();
+    bytes.push(0);
+    std::fs::write(&file, bytes).unwrap();
+    let e = photo.decode(Decode::Full, Cancel::NEVER).unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Changed, "{e:#}");
 }
 
 #[test]

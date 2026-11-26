@@ -180,6 +180,10 @@ impl Context {
 
 /// What the operations read of the context.
 impl Context {
+    /// Whether `other` is this context, or a clone of it.
+    pub(crate) fn is(&self, other: &Context) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
     pub(crate) fn lenses(&self) -> &LensProfiles {
         &self.inner.lenses
     }
