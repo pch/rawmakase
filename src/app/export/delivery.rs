@@ -132,7 +132,7 @@ impl Editor {
             .iter()
             .filter(|(_, d)| to_it(d))
             .map(|(id, _)| id.clone())
-            .min_by_key(|id| id.parse::<u64>().unwrap_or(u64::MAX))
+            .min_by_key(|id| order(id))
         else {
             return;
         };
@@ -200,6 +200,19 @@ impl Editor {
         }
     }
 
+    /// Delivery `id`'s export was removed from the queue before it ran. One
+    /// still waiting its turn is forgotten, since its program never heard
+    /// of it; one begun ends with no files, as cancelled.
+    pub(super) fn delivery_removed(&mut self, id: &str) {
+        match self.exports.deliveries.get(id) {
+            Some(d) if d.begin.is_some() => {
+                self.exports.deliveries.remove(id);
+            }
+            Some(_) => self.delivery_exported(id, "Export removed".into(), true),
+            None => {}
+        }
+    }
+
     /// One of a delivery's requests answered.
     pub(in crate::app) fn delivery_answered(
         &mut self,
@@ -238,6 +251,50 @@ impl Editor {
         }
     }
 
+    /// Whether Send To has a delivery not over: sending, or waiting for its
+    /// export or its turn.
+    pub(in crate::app) fn delivering(&self) -> bool {
+        !self.exports.deliveries.is_empty()
+    }
+
+    /// A delivery to `name`, begun and sending after its export, for tests
+    /// that draw what it shows.
+    #[cfg(test)]
+    pub(in crate::app) fn open_delivery_for_tests(&mut self, name: &str) {
+        let id = self.exports.next_delivery();
+        self.exports.deliveries.insert(
+            id,
+            Delivery {
+                to: Begun {
+                    extension: "dev.jane.gallery".into(),
+                    destination: "web".into(),
+                    name: name.into(),
+                },
+                begin: None,
+                paths: HashSet::new(),
+                facts: Vec::new(),
+                begun: true,
+                waiting: Vec::new(),
+                in_flight: 0,
+                sent: BTreeMap::new(),
+                exported: Some(("Exported 12 of 12".into(), false)),
+                ending: true,
+            },
+        );
+    }
+
+    /// Stops every delivery, as closing anyway does. All are gone first, so
+    /// none waiting its turn begins in a stopped one's place; each program
+    /// that heard of one is told.
+    pub(in crate::app) fn stop_all_deliveries(&mut self) {
+        for (id, d) in std::mem::take(&mut self.exports.deliveries) {
+            if d.begin.is_none() {
+                let outcomes = self.extensions.stop_delivery(&d.to, &id);
+                self.extension_outcomes(outcomes);
+            }
+        }
+    }
+
     /// Stop on the top bar's delivery.
     fn stop_delivery(&mut self, id: &str) {
         let Some(d) = self.exports.deliveries.remove(id) else {
@@ -269,7 +326,7 @@ impl Editor {
             let file = d.waiting.remove(0);
             let (index, name) = (file.index, file.name.clone());
             if let Err(why) = self.extensions.send_file(&to, file) {
-                return self.delivery_failed(id, &why);
+                return self.cut_off(id, &why);
             }
             d = self.exports.deliveries.get_mut(id).expect("still open");
             d.in_flight += 1;
@@ -284,7 +341,18 @@ impl Editor {
         d.ending = true;
         let files = u32::try_from(d.sent.len()).unwrap_or(u32::MAX);
         if let Err(why) = self.extensions.end_delivery(&to, id, files, cancelled) {
-            self.delivery_failed(id, &why);
+            self.cut_off(id, &why);
+        }
+    }
+
+    /// Delivery `id` couldn't send a request because the host no longer has
+    /// it open. When the host ended it (a request of it failed, or its
+    /// program ended), an outcome that says why follows in the same batch of
+    /// outcomes or the next, and ends it with that reason: it waits for that
+    /// outcome rather than being called stopped. Any other reason ends it now.
+    fn cut_off(&mut self, id: &str, why: &RemoteError) {
+        if why.code != ErrorCode::Cancelled {
+            self.delivery_failed(id, why);
         }
     }
 
@@ -330,15 +398,10 @@ impl Editor {
     /// Web Gallery", with what it last said of how far it is, over a bar, and
     /// a button that stops it.
     pub(in crate::app) fn delivery_progress(&mut self, ui: &mut egui::Ui) {
-        let Some((id, d)) = self
-            .exports
-            .deliveries
-            .iter()
-            .find(|(_, d)| d.exported.is_some())
-        else {
+        let Some(id) = sending(&self.exports.deliveries).cloned() else {
             return;
         };
-        let id = id.clone();
+        let d = &self.exports.deliveries[&id];
         let progress = self.extensions.delivery_progress(&d.to, &id);
         let palette = theme::palette(ui.ctx());
         let (rect, _) = ui.allocate_exact_size(Vec2::new(210., 28.), Sense::hover());
@@ -393,16 +456,39 @@ impl Editor {
     }
 }
 
-/// `path` with its folder's links resolved, so one file reached through a
-/// linked folder is the same file; as it is when the folder can't be read.
+/// Where delivery `id` comes in the order deliveries began: ids are
+/// numbers, and "10" comes after "9".
+fn order(id: &str) -> u64 {
+    id.parse().unwrap_or(u64::MAX)
+}
+
+/// The delivery the top bar shows: the earliest one still sending after its
+/// export is over. One waiting its turn behind another isn't sending yet.
+fn sending(deliveries: &BTreeMap<String, Delivery>) -> Option<&String> {
+    deliveries
+        .iter()
+        .filter(|(_, d)| d.exported.is_some() && d.begin.is_none())
+        .map(|(id, _)| id)
+        .min_by_key(|id| order(id))
+}
+
+/// `path` with its folders' links resolved, so one file reached through a
+/// linked folder is the same file. A folder the export hasn't made yet is
+/// resolved from the deepest one that exists, so the path stays the same
+/// once the export makes it (on Windows, a resolved path also gains a
+/// `\\?\` prefix the unresolved one lacks). As it is when no folder of it
+/// can be read.
 fn same_file(path: &Path) -> PathBuf {
-    match (
-        path.parent().and_then(|p| p.canonicalize().ok()),
-        path.file_name(),
-    ) {
-        (Some(folder), Some(name)) => folder.join(name),
-        _ => path.to_path_buf(),
+    let mut rest = Vec::new();
+    let mut at = path;
+    while let (Some(parent), Some(name)) = (at.parent(), at.file_name()) {
+        rest.push(name);
+        if let Ok(resolved) = parent.canonicalize() {
+            return rest.iter().rev().fold(resolved, |p, n| p.join(n));
+        }
+        at = parent;
     }
+    path.to_path_buf()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -425,8 +511,12 @@ fn delivered_line(d: &Delivery, ended: &ExportEnded) -> (Level, Option<String>, 
     let mut sent = 0;
     let mut problems = Vec::new();
     let mut said = Vec::new();
+    // By index, once: an answer may hold a result for each of thousands of
+    // files.
+    let results: std::collections::HashMap<u32, _> =
+        ended.files.iter().map(|r| (r.index, r)).collect();
     for (index, file) in &d.sent {
-        let Some(r) = ended.files.iter().find(|r| r.index == *index) else {
+        let Some(r) = results.get(index) else {
             sent += 1;
             continue;
         };
@@ -512,6 +602,46 @@ mod tests {
             remote_id: None,
             url: url.map(str::to_string),
         }
+    }
+
+    /// The top bar shows the delivery sending, not one waiting its turn
+    /// behind it, though "10" sorts before "9" as text.
+    #[test]
+    fn the_top_bar_shows_the_delivery_sending_not_one_waiting_its_turn() {
+        let mut waiting = delivery(&[]);
+        waiting.begin = Some(ExportBegin {
+            delivery: "10".into(),
+            destination: "web".into(),
+            folder: None,
+            count: 1,
+            options: serde_json::Map::new(),
+        });
+        waiting.begun = false;
+        waiting.ending = false;
+        let deliveries: BTreeMap<String, Delivery> = [
+            ("9".to_string(), delivery(&[(0, "a.jpg")])),
+            ("10".to_string(), waiting),
+            ("11".to_string(), delivery(&[(0, "b.jpg")])),
+        ]
+        .into();
+        assert_eq!(sending(&deliveries).map(String::as_str), Some("9"));
+    }
+
+    /// A folder the export makes later is the same folder before and after,
+    /// reached through a link or not: the hold finds it either way.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_in_a_folder_not_made_yet_is_the_same_file_once_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let planned = link.join("Web").join("a.jpg");
+        let before = same_file(&planned);
+        std::fs::create_dir(real.join("Web")).unwrap();
+        assert_eq!(before, same_file(&planned));
+        assert_eq!(before, same_file(&real.join("Web").join("a.jpg")));
     }
 
     #[test]

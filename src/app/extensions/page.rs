@@ -1971,7 +1971,16 @@ pub(in crate::app) fn setting_shown(
             .find(|o| o.id == when.setting)
             .map(|o| &o.default)
     });
-    value == Some(&when.equals)
+    value.is_some_and(|v| same_value(v, &when.equals))
+}
+
+/// Whether two setting values are the same: numbers by their value, so a
+/// manifest's `3` is a control's `3.0`.
+pub(in crate::app) fn same_value(a: &Value, b: &Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(a), Some(b)) => a == b,
+        _ => a == b,
+    }
 }
 
 #[cfg(test)]

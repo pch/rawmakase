@@ -111,7 +111,7 @@ pub(crate) use editor::{Done, PathTarget};
 pub(in crate::app) use page::AVAILABLE;
 pub(in crate::app) use page::Page;
 pub(in crate::app) use page::Section;
-pub(in crate::app) use page::{FormOf, SettingForm, setting_help, setting_shown};
+pub(in crate::app) use page::{FormOf, SettingForm, same_value, setting_help, setting_shown};
 pub(crate) use sources::ReportDone;
 
 use crate::app::shell::commands::registry::{self, Dynamic};

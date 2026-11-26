@@ -26,6 +26,7 @@ pub(in crate::app) enum Kind {
     CurveHistogram,
     PresetThumbnails,
     Export,
+    Sending,
     Batch,
     AutoSync,
     FolderChange,
@@ -70,6 +71,9 @@ pub(in crate::app) const OUTPUT: &str = "the output the control socket asked for
 pub(in crate::app) const FOLDER_CHANGE: &str = "the folder change";
 /// What the close guard calls a file operation.
 pub(in crate::app) const FILE_CHANGE: &str = "the file operation";
+/// What the close guard calls Send To's deliveries still sending files to an
+/// export destination.
+pub(in crate::app) const SENDING: &str = "the files being sent";
 /// What the close guard calls Auto Sync writing the other selected photos.
 pub(in crate::app) const AUTO_SYNC: &str = "Auto Sync";
 
@@ -184,6 +188,18 @@ const WORK: &[Row] = &[
         slows_previews: true,
         pauses_checksums: true,
         stop: Some(|e, _| vec![task::Stopping::new(e.exports.close())]),
+    },
+    // Its progress and Stop in the top bar. Quitting would cut off what a
+    // destination still sends, so closing waits; the extension host ends the
+    // programs at exit.
+    Row {
+        kind: Kind::Sending,
+        running: Some(|e| e.delivering()),
+        closing: Some(Label::Fixed(SENDING)),
+        status: None,
+        slows_previews: false,
+        pauses_checksums: false,
+        stop: None,
     },
     // Its window, with its progress and Cancel.
     Row {

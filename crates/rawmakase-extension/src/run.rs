@@ -741,8 +741,6 @@ impl Extension {
     }
 }
 
-/// Maps a request's buffer as its access says: an input to read, an output
-/// to write.
 /// A delivery's request that doesn't follow its `begin`.
 fn out_of_order(why: String) -> RemoteError {
     RemoteError::new(ErrorCode::InvalidRequest, why)
@@ -762,6 +760,8 @@ fn export_api(api: u32) -> Result<(), RemoteError> {
     Ok(())
 }
 
+/// Maps a request's buffer as its access says: an input to read, an output
+/// to write.
 fn map(
     buffer: &rawmakase_extension_protocol::buffer::Buffer,
     name: &str,

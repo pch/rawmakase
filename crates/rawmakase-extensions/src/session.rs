@@ -387,6 +387,8 @@ pub struct Session {
     stopping: bool,
     /// Messages the reader dropped because the owner's queue was full.
     dropped: Arc<AtomicU64>,
+    /// Progress reports in the owner's queue (see [`Reading::progress`]).
+    progress: Arc<AtomicUsize>,
     /// The manifest's `api` the program serves.
     api: u32,
     child: crate::shm::Child,
@@ -422,6 +424,7 @@ impl Session {
         let (to_owner, incoming) = sync_channel(queue);
         let reader_done = Arc::new(AtomicBool::new(false));
         let dropped = Arc::new(AtomicU64::new(0));
+        let progress = Arc::new(AtomicUsize::new(0));
         let leased: Leased = Arc::default();
         let started = (|| -> std::io::Result<()> {
             std::thread::Builder::new()
@@ -437,6 +440,8 @@ impl Session {
                 wake: options.wake.clone(),
                 done: reader_done.clone(),
                 dropped: dropped.clone(),
+                progress: progress.clone(),
+                progress_room: (queue / 2).max(1),
                 leased: leased.clone(),
             };
             let reader = Watch {
@@ -466,6 +471,7 @@ impl Session {
             closed: false,
             stopping: false,
             dropped,
+            progress,
             api: api_of(launch),
             child: spawned.child,
             ledger: options.ledger,
@@ -740,6 +746,9 @@ impl Session {
             loop {
                 match self.incoming.try_recv() {
                     Ok(Incoming::Message(message)) => {
+                        if matches!(message, Message::Progress { .. }) {
+                            self.progress.fetch_sub(1, Ordering::AcqRel);
+                        }
                         self.take(message, &mut updates, &mut hang);
                     }
                     Ok(Incoming::Malformed(reason)) => updates.push(Update::Malformed { reason }),
@@ -1212,6 +1221,12 @@ struct Reading {
     wake: Option<Wake>,
     done: Arc<AtomicBool>,
     dropped: Arc<AtomicU64>,
+    /// Progress reports in the owner's queue. At most `progress_room` wait
+    /// there: one past that is dropped, so a program that reports progress
+    /// faster than the app reads it leaves room for the reply that follows.
+    /// A later report says the same and more.
+    progress: Arc<AtomicUsize>,
+    progress_room: usize,
     leased: Leased,
 }
 impl Reading {
@@ -1254,9 +1269,18 @@ impl Reading {
                         self.request(id, m, p);
                     }
                 }
+                Ok((Message::Progress { .. }, _))
+                    if self.progress.load(Ordering::Acquire) >= self.progress_room => {}
                 Ok((message, _)) => {
                     let id = self.record(&message);
+                    let progress = matches!(message, Message::Progress { .. });
+                    if progress {
+                        self.progress.fetch_add(1, Ordering::AcqRel);
+                    }
                     if self.to_owner.try_send(Incoming::Message(message)).is_err() {
+                        if progress {
+                            self.progress.fetch_sub(1, Ordering::AcqRel);
+                        }
                         // Marked before it is counted: whoever sees the count
                         // (Acquire in `Session::dropped`) and then reconciles
                         // sees the mark.
@@ -1515,6 +1539,8 @@ mod tests {
             wake: None,
             done: Arc::default(),
             dropped: Arc::default(),
+            progress: Arc::default(),
+            progress_room: 1,
             leased: leased.clone(),
         };
         reading.read(Box::new(&b"{\"t\":\"ok\",\"id\":3,\"v\":1}\n"[..]));
@@ -1522,5 +1548,40 @@ mod tests {
         let recorded = leased.lock().unwrap()[&3].clone().unwrap();
         assert!(recorded.dropped);
         assert_eq!(recorded.outcome, Outcome::Ok);
+    }
+
+    /// A program that reports progress faster than the app reads it, then
+    /// answers: the reports fill only their share of the queue, and the
+    /// reply still gets in.
+    #[test]
+    fn a_burst_of_progress_leaves_room_for_the_reply() {
+        let (to_owner, incoming) = sync_channel(4);
+        let (send, _to_writer) = sync_channel(1);
+        let reading = Reading {
+            to_owner,
+            outgoing: Arc::new(Outgoing {
+                sender: Mutex::new(Some(send)),
+                owner_queued: AtomicUsize::new(0),
+                limit: 1,
+            }),
+            lifecycle: None,
+            wake: None,
+            done: Arc::default(),
+            dropped: Arc::default(),
+            progress: Arc::default(),
+            progress_room: 2,
+            leased: Arc::default(),
+        };
+        let mut lines = "{\"t\":\"progress\",\"id\":7,\"done\":0.5}\n".repeat(10);
+        lines.push_str("{\"t\":\"ok\",\"id\":7,\"v\":null}\n");
+        reading.read(Box::new(std::io::Cursor::new(lines.into_bytes())));
+        let got: Vec<_> = incoming.try_iter().collect();
+        assert_eq!(got.len(), 3);
+        assert!(matches!(
+            got.last(),
+            Some(Incoming::Message(Message::Ok { id: 7, .. }))
+        ));
+        assert_eq!(reading.progress.load(Ordering::Acquire), 2);
+        assert_eq!(reading.dropped.load(Ordering::Acquire), 0);
     }
 }

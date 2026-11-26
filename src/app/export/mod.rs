@@ -757,17 +757,22 @@ impl Editor {
         match batch::plan(&pending.batch, &pending.settings, answer) {
             Ok(plan) => {
                 // Files a delivery still sends keep their bytes: an export
-                // into a folder it writes to names its own copies apart.
-                let held = plan
-                    .entries
-                    .iter()
-                    .filter(|e| e.write != batch::Write::Skip)
-                    .find_map(|e| self.delivery_holds(&e.target))
+                // into a folder it writes to names its own copies apart. Only
+                // Overwrite replaces a file; Skip and Use Unique Names never
+                // do, so they keep their choice.
+                let held = (plan.late == Existing::Overwrite)
+                    .then(|| {
+                        plan.entries
+                            .iter()
+                            .filter(|e| e.write != batch::Write::Skip)
+                            .find_map(|e| self.delivery_holds(&e.target))
+                    })
+                    .flatten()
                     .map(str::to_string);
                 match held {
-                    Some(name) if pending.settings.existing != Existing::Unique => {
+                    Some(name) => {
                         self.messages.note(format!(
-                            "Files still being sent to {name} are kept: this export's got names of their own"
+                            "Files still being sent to {name} are kept: this export gives its files names of their own"
                         ));
                         // This batch only: the settings saved keep their choice.
                         pending.settings.existing = Existing::Unique;
@@ -1039,7 +1044,7 @@ impl Editor {
                     {
                         let removed = self.exports.queued.remove(queued);
                         if let Some(id) = removed.and_then(|q| q.delivery) {
-                            self.delivery_exported(&id, "Export removed".into(), true);
+                            self.delivery_removed(&id);
                         }
                         ui.close();
                     }

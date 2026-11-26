@@ -133,6 +133,9 @@ impl Editor {
         let mut host = std::mem::take(&mut self.extensions);
         let mut outcomes = Vec::new();
         let next = host.poll(now, &mut |call| self.answer_extension(call), &mut outcomes);
+        // Deliveries a program's end cut off during the poll end in it too,
+        // not on a later frame that may not come soon.
+        outcomes.extend(host.take_lost_deliveries());
         self.extensions = host;
         self.sync_extension_commands();
         self.end_device_gesture();

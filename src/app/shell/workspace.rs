@@ -12,7 +12,7 @@ use crate::app::shell::panels::WorkspacePanel;
 use crate::app::ui::design::{self, Tone, inset, space, text};
 use crate::app::ui::theme;
 use crate::app::ui::widgets::{TOP_BAR_SEGMENTS, segment_bar};
-use crate::app::work::{AUTO_SYNC, FILE_CHANGE, FOLDER_CHANGE, OUTPUT};
+use crate::app::work::{AUTO_SYNC, FILE_CHANGE, FOLDER_CHANGE, OUTPUT, SENDING};
 use crate::catalog::PhotoId;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::time::{Duration, Instant};
@@ -2217,6 +2217,7 @@ impl Editor {
                 let anyway = match waits_for.as_deref() {
                     Some(OUTPUT | MERGE_HDR) => Some("Cancel it and close"),
                     Some(FOLDER_CHANGE | FILE_CHANGE | AUTO_SYNC) => Some("Close anyway"),
+                    Some(SENDING) => Some("Stop sending and close"),
                     _ => None,
                 };
                 if let Some(label) = anyway
@@ -2224,6 +2225,7 @@ impl Editor {
                 {
                     self.automation.cancel_outputs();
                     self.cancel_merge_hdr();
+                    self.stop_all_deliveries();
                     // Only when it is Auto Sync that closing goes without: the
                     // steps not written yet then stay on the open photo alone.
                     // Behind other work, they are still written before closing.

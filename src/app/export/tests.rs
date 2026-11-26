@@ -1827,6 +1827,16 @@ fn a_file_goes_to_the_destination_before_the_export_ends_and_is_held_until_then(
     wait(&mut e, &ctx);
     assert_eq!(std::fs::read(&targets[0]).unwrap(), b"a");
     assert!(out.join("a-2.tif").is_file(), "{:?}", listing(&out));
+    // Skip never replaces a file, so it keeps its choice: beside a new file
+    // the delivery holds the folder of, the file there is skipped, not
+    // copied under a new name.
+    let mut skip = settings(&out);
+    skip.existing = Existing::Skip;
+    let scope = e.export_scope_of(vec![ids[0], ids[1]]).expect("photos");
+    export(&mut e, scope, skip).unwrap();
+    wait(&mut e, &ctx);
+    assert!(!out.join("a-3.tif").exists(), "{:?}", listing(&out));
+    assert_eq!(std::fs::read(&targets[0]).unwrap(), b"a");
     e.delivery_exported(&id, "Exported 1 of 2".into(), false);
     answered(&mut e, &id, Step::End).unwrap();
 }
@@ -1859,6 +1869,133 @@ fn a_delivery_between_its_requests_ends_when_its_extension_is_disabled() {
         "{}",
         e.messages.line()
     );
+}
+
+/// An export removed from the queue while its delivery waits its turn
+/// behind another to the same extension: the delivery is forgotten, and
+/// nothing of it goes to the program.
+#[test]
+fn a_delivery_waiting_its_turn_is_forgotten_when_its_export_is_removed() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    let first = e
+        .begin_delivery(&photos, &[out.join("a.tif")], &chosen)
+        .expect("begun");
+    let second = e
+        .begin_delivery(&photos, &[out.join("b.tif")], &chosen)
+        .expect("waiting its turn");
+    answered(&mut e, &first, Step::Begin).unwrap();
+    e.delivery_removed(&second);
+    assert!(!e.exports.deliveries.contains_key(&second));
+    e.delivery_exported(&first, "Exported 0 of 1".into(), false);
+    answered(&mut e, &first, Step::End).unwrap();
+    assert!(e.exports.deliveries.is_empty());
+}
+
+/// The close guard while a delivery is sending: it names the files being
+/// sent and offers to stop them and close.
+#[test]
+fn shots_of_closing_while_sending() {
+    crate::app::ui::shots::shot(
+        "closing-while-sending",
+        egui::vec2(520., 260.),
+        |e, _| {
+            e.onboarding.visible = false;
+            e.open_delivery_for_tests("Web Gallery");
+            e.close_confirm = true;
+        },
+        |e, ctx| e.pending_work(ctx),
+    );
+}
+/// Closing waits while a delivery is sending, after its export is over, and
+/// Stop sending and close ends every delivery, the one waiting its turn too.
+#[test]
+fn closing_waits_for_the_files_being_sent() {
+    use crate::app::extensions::destinations::Step;
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    assert_eq!(e.closing_waits_for(), None);
+    let first = e
+        .begin_delivery(&photos, &[out.join("a.tif")], &chosen)
+        .expect("begun");
+    let second = e
+        .begin_delivery(&photos, &[out.join("b.tif")], &chosen)
+        .expect("waiting its turn");
+    answered(&mut e, &first, Step::Begin).unwrap();
+    e.delivery_exported(&first, "Exported 0 of 1".into(), false);
+    assert!(!e.exporting());
+    assert_eq!(
+        e.closing_waits_for().as_deref(),
+        Some(crate::app::work::SENDING)
+    );
+    e.stop_all_deliveries();
+    assert_eq!(e.closing_waits_for(), None);
+    assert!(!e.exports.deliveries.contains_key(&second));
+    assert!(!e.extensions.working("dev.rawmakase.destinations"));
+}
+
+/// A request answered, then another failed, in one poll: the host has
+/// already closed the delivery when the answer drives it on, and the failure
+/// right behind it says why it ended. It isn't called stopped.
+#[test]
+fn a_delivery_the_host_ended_says_why_not_that_it_stopped() {
+    use crate::app::extensions::Outcome as Told;
+    use crate::app::extensions::destinations::Step;
+    use rawmakase_extensions::protocol::{ErrorCode, RemoteError};
+    let (dir, mut e, _, _) = editor().unwrap();
+    load_destinations(&mut e, dir.path());
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let mut chosen = settings(&out);
+    chosen.send_to = Some("dev.rawmakase.destinations/index".into());
+    let photos = [batch_photo(Values::default(), None, true)];
+    let target = out.join("a.tif");
+    let id = e
+        .begin_delivery(&photos, std::slice::from_ref(&target), &chosen)
+        .expect("begun");
+    answered(&mut e, &id, Step::Begin).unwrap();
+    std::fs::write(&target, b"a").unwrap();
+    let written = Outcome::Exported {
+        path: target.clone(),
+        notes: Vec::new(),
+        size: (4, 3),
+    };
+    e.delivery_photo(&id, 0, &written);
+    e.delivery_exported(&id, "Exported 1 of 1".into(), false);
+    // The host closes it, as it does when a request of it fails.
+    drop(e.extensions.stop_work("dev.rawmakase.destinations"));
+    e.extension_outcomes(vec![
+        Told::Delivery {
+            delivery: id.clone(),
+            step: Step::File(0),
+            result: Ok(None),
+        },
+        Told::Delivery {
+            delivery: id.clone(),
+            step: Step::End,
+            result: Err(RemoteError::new(
+                ErrorCode::Unavailable,
+                "the service is down",
+            )),
+        },
+    ]);
+    assert!(
+        e.messages.line().contains("the service is down"),
+        "{}",
+        e.messages.line()
+    );
+    assert!(e.delivery_holds(&target).is_none());
 }
 
 #[test]
@@ -1949,4 +2086,26 @@ fn a_destinations_options_are_their_defaults_until_chosen_and_while_they_fit() {
     assert_eq!(settings.send_to_options[key]["captions"], true);
     super::dialog::choose_option(&mut settings, key, &options[2], false.into());
     assert!(settings.send_to_options.is_empty());
+    // A number control gives `3.0` for a manifest's `3`: still the default.
+    let mut columns = option(
+        "columns",
+        SettingControl::Number([1., 6.]),
+        serde_json::json!(3),
+    );
+    super::dialog::choose_option(&mut settings, key, &columns, serde_json::json!(4.0));
+    assert_eq!(settings.send_to_options[key]["columns"], 4.0);
+    super::dialog::choose_option(&mut settings, key, &columns, serde_json::json!(3.0));
+    assert!(settings.send_to_options.is_empty());
+    // And an option shown when it is `4` shows for the control's `4.0`.
+    columns.id = "rows".into();
+    columns.visible_when = Some(rawmakase_extensions::protocol::manifest::SettingCondition {
+        setting: "columns".into(),
+        equals: serde_json::json!(4),
+    });
+    let values = [("columns".to_string(), serde_json::json!(4.0))]
+        .into_iter()
+        .collect();
+    assert!(crate::app::extensions::setting_shown(
+        &options, &values, &columns
+    ));
 }

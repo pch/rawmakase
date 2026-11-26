@@ -867,7 +867,7 @@ pub(super) fn choose_option(
     value: serde_json::Value,
 ) {
     let chosen = settings.send_to_options.entry(key.to_string()).or_default();
-    if value == option.default {
+    if crate::app::extensions::same_value(&value, &option.default) {
         chosen.remove(&option.id);
     } else {
         chosen.insert(option.id.clone(), value);

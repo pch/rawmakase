@@ -581,7 +581,9 @@ finishing in the program. `export.end` has 2 minutes without news: each `progres
 sends for it (`Context::progress` in the SDK) moves its deadline 2 minutes
 ahead as the app reads it, so a long upload that reports how far it is never runs out. The top
 bar shows the latest progress under "Sending to Web Gallery" while the export
-is over and the delivery isn't, with a button that stops it.
+is over and the delivery isn't, with a button that stops it. Closing the app
+waits while a delivery is open, as it does for an export, or stops it with
+**Stop sending and close**.
 
 **Stop, cancel and exit.** Stop in the top bar, or on the extension's page in
 Preferences > Extensions, ends the delivery: a request in flight is cancelled
