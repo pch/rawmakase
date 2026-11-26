@@ -672,3 +672,27 @@ fn a_developed_thumbnail_rendering_as_the_files_are_checked_is_tried_again() -> 
     );
     Ok(())
 }
+
+/// A developed thumbnail that failed with the old defaults is developed again
+/// with new ones: the defaults may have been what failed.
+#[test]
+fn a_developed_thumbnail_that_failed_is_tried_again_with_new_defaults() -> Result<()> {
+    let (_directory, mut library) = library_with(scanner_dng)?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let (sent, renders) = without_its_thumbnail(&mut library)?;
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { ticket, .. }) = sent.try_recv() else {
+        panic!("no render asked for");
+    };
+    renders.send(previews::EditResult::Failed(photo.id, ticket))?;
+    library.cache.poll(&ctx);
+    let defaults = other_defaults();
+    library.set_defaults(defaults.clone());
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { source, .. }) = sent.try_recv() else {
+        panic!("not developed again");
+    };
+    assert_eq!(source.tag(), previews::EditSource::Defaults(defaults).tag());
+    Ok(())
+}

@@ -457,33 +457,34 @@ impl PreviewTextures {
             self.stand_ins.insert(ticket, photo.path.clone());
         }
     }
-    /// The defaults changed: previews still being developed with the old ones
-    /// in place of an embedded preview are no longer the latest, so what they
-    /// bring is dropped, and their photos are developed again with the new
-    /// ones the next time they are shown.
+    /// The defaults changed: previews developed with the old ones in place of
+    /// an embedded preview, still on their way or failed, are no longer the
+    /// latest, so what they bring is dropped, and their photos are developed
+    /// again with the new ones the next time they are shown.
     pub(super) fn defaults_changed(&mut self) {
-        self.drop_stand_ins_in_flight();
+        self.ask_stand_ins_again();
     }
-    /// Takes the previews still being developed in place of an embedded one
-    /// off the latest requests: what they bring is dropped, and their photos
-    /// are asked about again the next time they are shown.
-    fn drop_stand_ins_in_flight(&mut self) {
+    /// Takes the previews developed in place of an embedded one that are still
+    /// on their way, or whose latest failed, off the latest requests: what they
+    /// bring is dropped, and their photos are asked about again the next time
+    /// they are shown. A failed one asked for again since is left alone.
+    fn ask_stand_ins_again(&mut self) {
         let stand_ins = &self.stand_ins;
         self.edited_requested
             .retain(|_, ticket| !stand_ins.contains_key(ticket));
-    }
-    /// Lets the previews that failed be asked for again, e.g. once their
-    /// files are back online: embedded thumbnails, and the photos developed
-    /// in their place, unless asked for again since. Those still being
-    /// developed may fail as these did, so they are asked for afresh.
-    pub(super) fn retry_failed(&mut self) {
-        self.failed.clear();
-        self.drop_stand_ins_in_flight();
         for (id, ticket) in self.stand_ins_failed.drain() {
             if self.edited_requested.get(&id) == Some(&ticket) {
                 self.edited_requested.remove(&id);
             }
         }
+    }
+    /// Lets the previews that failed be asked for again, e.g. once their
+    /// files are back online: embedded thumbnails, and the photos developed
+    /// in their place. Those still being developed may fail as these did, so
+    /// they are asked for afresh.
+    pub(super) fn retry_failed(&mut self) {
+        self.failed.clear();
+        self.ask_stand_ins_again();
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());
