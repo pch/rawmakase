@@ -321,9 +321,12 @@ pub fn convert_develop(
     // Spots and masks convert on their own and report what they skip.
     let local_settings = std::mem::take(&mut preset.local);
     let base = Recipe::with_profiles(m, profiles);
-    let (mut recipe, substitute) = match preset.apply(&base, m, profiles, image) {
-        Ok(recipe) => (recipe, preset.profile_substitute(m, profiles)),
-        Err(_) => {
+    let (mut recipe, substitute) = match can_try_whole_preset_fast_path(&preset, image)
+        .then(|| preset.apply(&base, m, profiles, image))
+        .and_then(Result::ok)
+    {
+        Some(recipe) => (recipe, preset.profile_substitute(m, profiles)),
+        None => {
             // Build a compatible patch before application. Related fields are validated together.
             let mut accepted = preset.clone();
             accepted.settings.clear();
@@ -431,6 +434,31 @@ pub fn convert_develop(
     warnings.sort();
     warnings.dedup();
     Ok((recipe, warnings))
+}
+
+/// Whether `preset` can take the single-pass [`crate::xmp::Preset::apply`] fast path
+/// without diverging from the per-group/per-key validator. Returns `false` whenever an
+/// ungrouped setting could alter another group's validation outcome compared to testing
+/// each group on its own (photo measurements under a preset crop/edit, legacy
+/// `RAWmakasePreset` crop interpretation, carried fitted profiles or look UUIDs, or
+/// multi-key Lensfun choices).
+pub(crate) fn can_try_whole_preset_fast_path(
+    preset: &crate::xmp::Preset,
+    image: Option<&dyn crate::xmp::PhotoMeasures>,
+) -> bool {
+    if image.is_some() && (preset.measures_photo() || preset.settings.contains_key("AutoTone")) {
+        return false;
+    }
+    if preset.settings.contains_key("RAWmakasePreset")
+        || preset.settings.contains_key(crate::xmp::FITTED_PROFILE_KEY)
+        || preset.settings.contains_key("RAWmakaseLookUUID")
+        || crate::xmp::LENSFUN_KEYS
+            .iter()
+            .any(|k| preset.settings.contains_key(*k))
+    {
+        return false;
+    }
+    true
 }
 
 /// The items of a flat Lua list (`{ "a", 1, 2.5 }`): strings decoded, numbers as written.

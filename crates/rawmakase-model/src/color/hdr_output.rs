@@ -233,23 +233,55 @@ impl HdrTransfer {
 }
 
 impl HdrOutput {
+    /// Linear ProPhoto `prophoto` converted to linear gamut RGB by `to_rgb`,
+    /// out-of-gamut and non-finite channels clipped at 0, and each held to `peak`
+    /// by [`roll_off`].
+    fn to_gamut(to_rgb: [[f32; 3]; 3], prophoto: [f32; 3], peak: f32) -> [f32; 3] {
+        super::mul(to_rgb, prophoto).map(|v| {
+            if v.is_finite() {
+                roll_off(v.max(0.), peak)
+            } else {
+                0.
+            }
+        })
+    }
+
     /// Encodes one pixel of an HDR master (linear ProPhoto, 1 = graphics white) whose
     /// channels may reach `peak`: in the gamut, out-of-gamut channels clipped at 0 and
     /// each held to `peak` by the HDR limit's roll-off (a saturated color can have a
     /// channel above it here that it had not in ProPhoto), then the transfer: PQ and
     /// HLG to 0–1 signal values, linear unchanged.
     pub fn encode(self, prophoto: [f32; 3], peak: f32) -> [f32; 3] {
-        let rgb = super::mul(self.gamut.prophoto_to_rgb(), prophoto).map(|v| {
-            if v.is_finite() {
-                roll_off(v.max(0.), peak)
-            } else {
-                0.
-            }
-        });
+        let rgb = Self::to_gamut(self.gamut.prophoto_to_rgb(), prophoto, peak);
         match self.transfer {
             HdrTransfer::Pq => rgb.map(|v| pq_encode(v * GRAPHICS_WHITE_NITS)),
             HdrTransfer::Hlg => hlg_encode(rgb, self.gamut.luminance()),
             HdrTransfer::Linear => rgb,
+        }
+    }
+
+    /// Encodes every pixel of `pixels` as [`HdrOutput::encode`], computing the gamut
+    /// matrix and luminance weights once for the whole slice.
+    pub fn encode_slice(self, pixels: &[[f32; 3]], peak: f32) -> Vec<[f32; 3]> {
+        let to_rgb = self.gamut.prophoto_to_rgb();
+        match self.transfer {
+            HdrTransfer::Pq => pixels
+                .iter()
+                .map(|p| {
+                    Self::to_gamut(to_rgb, *p, peak).map(|v| pq_encode(v * GRAPHICS_WHITE_NITS))
+                })
+                .collect(),
+            HdrTransfer::Hlg => {
+                let weights = self.gamut.luminance();
+                pixels
+                    .iter()
+                    .map(|p| hlg_encode(Self::to_gamut(to_rgb, *p, peak), weights))
+                    .collect()
+            }
+            HdrTransfer::Linear => pixels
+                .iter()
+                .map(|p| Self::to_gamut(to_rgb, *p, peak))
+                .collect(),
         }
     }
 }
@@ -546,6 +578,37 @@ mod tests {
                 white.iter().all(|v| (v - 1.).abs() < 2e-3),
                 "{gamut:?} {white:?}"
             );
+        }
+    }
+
+    #[test]
+    fn encode_slice_matches_encode_bit_for_bit() {
+        let pixels = [
+            [0., 0., 0.],
+            [-0.25, 0.5, 1.5],
+            [1., 1., 1.],
+            [0.01, 2.5, -0.8],
+            [5., 18., 25.],
+            [f32::NAN, f32::INFINITY, f32::NEG_INFINITY],
+        ];
+        for gamut in HdrGamut::ALL {
+            for transfer in HdrTransfer::ALL {
+                let output = HdrOutput {
+                    gamut,
+                    transfer,
+                    gain_map: false,
+                };
+                let got = output.encode_slice(&pixels, 16.);
+                let want: Vec<[f32; 3]> = pixels.iter().map(|p| output.encode(*p, 16.)).collect();
+                assert_eq!(got.len(), want.len());
+                for (a, b) in got.iter().zip(&want) {
+                    assert_eq!(
+                        a.map(f32::to_bits),
+                        b.map(f32::to_bits),
+                        "{gamut:?} {transfer:?}"
+                    );
+                }
+            }
         }
     }
 }

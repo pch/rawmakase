@@ -93,38 +93,10 @@ impl HdrPixels {
         master: &crate::rendered::HdrImage,
         output: crate::color::hdr_output::HdrOutput,
     ) -> Self {
-        use crate::color::hdr_output::{
-            GRAPHICS_WHITE_NITS, HdrTransfer, hlg_encode, pq_encode, roll_off,
-        };
-        let to_rgb = output.gamut.prophoto_to_rgb();
-        let weights = output.gamut.luminance();
-        let peak = master.peak;
-        let to_gamut = |p: &[f32; 3]| {
-            crate::color::mul(to_rgb, *p).map(|v| {
-                if v.is_finite() {
-                    roll_off(v.max(0.), peak)
-                } else {
-                    0.
-                }
-            })
-        };
-        let pixels = match output.transfer {
-            HdrTransfer::Pq => master
-                .pixels
-                .iter()
-                .map(|p| to_gamut(p).map(|v| pq_encode(v * GRAPHICS_WHITE_NITS)))
-                .collect(),
-            HdrTransfer::Hlg => master
-                .pixels
-                .iter()
-                .map(|p| hlg_encode(to_gamut(p), weights))
-                .collect(),
-            HdrTransfer::Linear => master.pixels.iter().map(to_gamut).collect(),
-        };
         Self {
             width: master.width,
             height: master.height,
-            pixels,
+            pixels: output.encode_slice(&master.pixels, master.peak),
             output,
         }
     }

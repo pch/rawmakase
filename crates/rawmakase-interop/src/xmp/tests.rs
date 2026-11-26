@@ -3314,3 +3314,175 @@ fn unknown_xmp_keys_stay_sorted_and_lr_develop_fallback_keeps_valid_keys() -> Re
     );
     Ok(())
 }
+
+/// Cross-group validation semantics in `lr_develop::convert_develop` must stay
+/// identical to the per-group/per-key validator:
+/// - Auto WB with a crop when `image.is_some()` still validates the WB group on the
+///   uncropped base (failing when the full frame has no usable pixels, while keeping
+///   the crop and emitting the WB warning).
+/// - `AutoTone` with `Exposure2012` when `image.is_some()` still validates `AutoTone`
+///   independently (emitting any `auto_tone` failure warning).
+/// - `RAWmakasePreset = "2"` with a 45° crop still validates the crop group without
+///   `RAWmakasePreset` (rejecting the invalid Lightroom crop and leaving the photo
+///   uncropped).
+/// - Normal records without those cross-group keys still use the fast path.
+#[test]
+fn lr_develop_fast_path_guard_preserves_cross_group_validation() -> Result<()> {
+    /// Models a 1024×1024 black photo with a central 6×6 `[0.35, 0.20, 0.25]` patch:
+    /// Auto WB fails on the uncropped frame where the patch is too small, and succeeds
+    /// when cropped tightly around the centre.
+    struct CentralPatchMeasures {
+        width: usize,
+        height: usize,
+        pixels: Vec<[f32; 3]>,
+        fail_auto_tone: bool,
+    }
+    impl CentralPatchMeasures {
+        fn new(fail_auto_tone: bool) -> Self {
+            let (width, height) = (1024, 1024);
+            let mut pixels = vec![[0.0; 3]; width * height];
+            let (cx, cy) = (width / 2, height / 2);
+            for y in cy - 3..cy + 3 {
+                for x in cx - 3..cx + 3 {
+                    pixels[y * width + x] = [0.35, 0.20, 0.25];
+                }
+            }
+            Self {
+                width,
+                height,
+                pixels,
+                fail_auto_tone,
+            }
+        }
+    }
+    impl PhotoMeasures for CentralPatchMeasures {
+        fn auto_tone(&self, base: &Recipe) -> Result<Recipe> {
+            if self.fail_auto_tone {
+                anyhow::bail!("Auto tone failed on synthetic patch");
+            }
+            Ok(base.clone())
+        }
+        fn auto_white_balance(&self, base: &Recipe) -> Result<Recipe> {
+            // Sample on a 256-pixel long edge of the crop, matching `develop::auto`.
+            let [l, t, r, b] = base.crop;
+            let x0 = (l * self.width as f32).floor() as usize;
+            let y0 = (t * self.height as f32).floor() as usize;
+            let x1 = (r * self.width as f32).ceil().min(self.width as f32) as usize;
+            let y1 = (b * self.height as f32).ceil().min(self.height as f32) as usize;
+            let cw = x1.saturating_sub(x0).max(1);
+            let ch = y1.saturating_sub(y0).max(1);
+            let step = (cw.max(ch) / 256).max(1);
+            let mut usable = 0usize;
+            for y in (y0..y1).step_by(step) {
+                for x in (x0..x1).step_by(step) {
+                    let p = self.pixels[y * self.width + x];
+                    if p[0] > 0.02 && p[1] > 0.02 && p[2] > 0.02 {
+                        usable += 1;
+                    }
+                }
+            }
+            anyhow::ensure!(usable >= 16, "No usable pixels for automatic white balance");
+            Ok(Recipe {
+                wb: [1.5, 1.0, 1.25],
+                temperature: 4321.,
+                tint: 12.,
+                ..base.clone()
+            })
+        }
+        fn auto_gray_mix(&self, _r: &Recipe, _m: &Metadata) -> [f32; 8] {
+            [0.0; 8]
+        }
+    }
+
+    // 1. Auto WB + tight crop around central 6×6 patch on 1024×1024 black frame.
+    let m1024 = Metadata {
+        width: 1024,
+        height: 1024,
+        wb: [2., 1., 1.8],
+        daylight_wb: [2., 1., 1.8],
+        matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+        ..Default::default()
+    };
+    let base1024 = Recipe::with_profiles(&m1024, &[]);
+    let patch = CentralPatchMeasures::new(false);
+    let wb_crop = r#"s = { WhiteBalance = "Auto", HasCrop = true, CropLeft = 0.485, CropTop = 0.485, CropRight = 0.515, CropBottom = 0.515 }"#;
+    let (r, warnings) = crate::lr_develop::convert_develop(wb_crop, &m1024, &[], Some(&patch))?;
+    assert_eq!(r.crop, [0.485, 0.485, 0.515, 0.515]);
+    assert_eq!(
+        (r.temperature, r.tint, r.wb),
+        (base1024.temperature, base1024.tint, base1024.wb)
+    );
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("No usable pixels for automatic white balance")),
+        "expected Auto WB warning, got {warnings:?}"
+    );
+
+    // 1b. AutoTone paired with Exposure2012 still validates AutoTone alone when image is present.
+    let failing_tone = CentralPatchMeasures::new(true);
+    let (r, warnings) = crate::lr_develop::convert_develop(
+        "s = { AutoTone = true, Exposure2012 = 0.5 }",
+        &m1024,
+        &[],
+        Some(&failing_tone),
+    )?;
+    assert_eq!(r.exposure, 0.5);
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("Auto tone failed on synthetic patch")),
+        "expected AutoTone warning, got {warnings:?}"
+    );
+
+    // 2. RAWmakasePreset = "2" with 45° crop on a 96×64 frame.
+    let m96 = Metadata {
+        width: 96,
+        height: 64,
+        ..Default::default()
+    };
+    let legacy_crop = r#"s = { RAWmakasePreset = "2", HasCrop = true, CropLeft = 0.1, CropTop = 0.1, CropRight = 0.9, CropBottom = 0.9, CropAngle = 45 }"#;
+    let (r, warnings) = crate::lr_develop::convert_develop(legacy_crop, &m96, &[], None)?;
+    assert_eq!(r.crop, [0., 0., 1., 1.]);
+    assert_eq!(r.straighten, 0.);
+    assert!(
+        warnings.iter().any(|w| w.contains("Invalid crop")),
+        "expected Invalid crop warning, got {warnings:?}"
+    );
+
+    // 3. Guard predicate accepts normal records and rejects cross-group cases.
+    let normal = parse(
+        Path::new("normal.xmp"),
+        &xml(r#"c:HasCrop="False" c:Exposure2012="0.5""#, ""),
+    )?;
+    assert!(crate::lr_develop::can_try_whole_preset_fast_path(
+        &normal,
+        Some(&patch)
+    ));
+    let mut with_auto_wb = normal.clone();
+    with_auto_wb
+        .settings
+        .insert("WhiteBalance".into(), "Auto".into());
+    assert!(crate::lr_develop::can_try_whole_preset_fast_path(
+        &with_auto_wb,
+        None
+    ));
+    assert!(!crate::lr_develop::can_try_whole_preset_fast_path(
+        &with_auto_wb,
+        Some(&patch)
+    ));
+    for key in [
+        "RAWmakasePreset",
+        crate::xmp::FITTED_PROFILE_KEY,
+        "RAWmakaseLookUUID",
+        crate::xmp::LENSFUN_KEYS[0],
+    ] {
+        let mut p = normal.clone();
+        p.settings.insert(key.into(), "1".into());
+        assert!(
+            !crate::lr_develop::can_try_whole_preset_fast_path(&p, None),
+            "expected fast path guard to reject {key}"
+        );
+    }
+    Ok(())
+}

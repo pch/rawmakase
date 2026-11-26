@@ -649,6 +649,8 @@ mod tests {
     fn run_guarded_triggers_terminate_when_cancelled() {
         use std::sync::atomic::{AtomicBool, Ordering};
         let cancel = AtomicBool::new(false);
+        let terminated = AtomicBool::new(false);
+        let unblocked_by_terminate = AtomicBool::new(false);
         let unblocked = (Mutex::new(false), Condvar::new());
         let result = std::thread::scope(|scope| {
             scope.spawn(|| {
@@ -658,6 +660,7 @@ mod tests {
             run_guarded(
                 Cancel::new(&cancel),
                 || {
+                    terminated.store(true, Ordering::SeqCst);
                     let (lock, cvar) = &unblocked;
                     *lock.lock().unwrap() = true;
                     cvar.notify_all();
@@ -668,13 +671,24 @@ mod tests {
                     while !*flag {
                         let (guard, timeout) =
                             cvar.wait_timeout(flag, Duration::from_secs(2)).unwrap();
-                        assert!(!timeout.timed_out(), "watcher never called terminate");
+                        if timeout.timed_out() {
+                            return Err(InferenceError::Failed("timed out".into()));
+                        }
                         flag = guard;
                     }
+                    unblocked_by_terminate.store(true, Ordering::SeqCst);
                     Ok(())
                 },
             )
         });
         assert_eq!(result, Err(InferenceError::Cancelled));
+        assert!(
+            terminated.load(Ordering::SeqCst),
+            "watcher never called terminate"
+        );
+        assert!(
+            unblocked_by_terminate.load(Ordering::SeqCst),
+            "work timed out instead of being unblocked by terminate"
+        );
     }
 }
