@@ -627,3 +627,48 @@ fn a_raster_whose_thumbnail_fails_is_not_developed() -> Result<()> {
     stays_settled(&mut library, 20);
     Ok(())
 }
+
+/// The files checked again while a developed thumbnail is still rendering: a
+/// failure it brings afterwards, of the file as it was, is not taken for the
+/// latest, and the photo is developed again.
+#[test]
+fn a_developed_thumbnail_rendering_as_the_files_are_checked_is_tried_again() -> Result<()> {
+    let (_directory, mut library) = library_with(scanner_dng)?;
+    let ctx = library.ctx.clone();
+    let photo = library.session.photos()[0].clone();
+    let sent = library.detach_edited_previews();
+    let (thumbs, _asked) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_tx = thumbs;
+    let (results, answered) = std::sync::mpsc::sync_channel(8);
+    library.cache.thumb_rx = answered;
+    let (renders, rendered) = std::sync::mpsc::channel();
+    library.cache.edit_rx = rendered;
+    let thumbnail_fails = || {
+        results.send(previews::PreviewResult {
+            path: photo.path.clone(),
+            image: None,
+            display: Default::default(),
+            cache_error: None,
+            skipped: false,
+        })
+    };
+    library.request_previews(&photo, &ctx);
+    thumbnail_fails()?;
+    library.cache.poll(&ctx);
+    library.request_previews(&photo, &ctx);
+    let Some(previews::EditJob::Render { ticket, .. }) = sent.try_recv() else {
+        panic!("no render asked for");
+    };
+    library.check_files();
+    renders.send(previews::EditResult::Failed(photo.id, ticket))?;
+    library.cache.poll(&ctx);
+    library.request_previews(&photo, &ctx);
+    thumbnail_fails()?;
+    library.cache.poll(&ctx);
+    library.request_previews(&photo, &ctx);
+    assert!(
+        matches!(sent.try_recv(), Some(previews::EditJob::Render { .. })),
+        "not developed again"
+    );
+    Ok(())
+}

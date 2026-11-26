@@ -462,15 +462,23 @@ impl PreviewTextures {
     /// bring is dropped, and their photos are developed again with the new
     /// ones the next time they are shown.
     pub(super) fn defaults_changed(&mut self) {
+        self.drop_stand_ins_in_flight();
+    }
+    /// Takes the previews still being developed in place of an embedded one
+    /// off the latest requests: what they bring is dropped, and their photos
+    /// are asked about again the next time they are shown.
+    fn drop_stand_ins_in_flight(&mut self) {
         let stand_ins = &self.stand_ins;
         self.edited_requested
             .retain(|_, ticket| !stand_ins.contains_key(ticket));
     }
     /// Lets the previews that failed be asked for again, e.g. once their
     /// files are back online: embedded thumbnails, and the photos developed
-    /// in their place, unless asked for again since.
+    /// in their place, unless asked for again since. Those still being
+    /// developed may fail as these did, so they are asked for afresh.
     pub(super) fn retry_failed(&mut self) {
         self.failed.clear();
+        self.drop_stand_ins_in_flight();
         for (id, ticket) in self.stand_ins_failed.drain() {
             if self.edited_requested.get(&id) == Some(&ticket) {
                 self.edited_requested.remove(&id);
