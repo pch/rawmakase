@@ -8,9 +8,9 @@
 //! up for itself. Nothing here is stable.
 //!
 //! ```no_run
+//! # #[cfg(feature = "export")] {
 //! use rawmakase_core::{CacheLimits, Cancel, Context, Decode, ExportSettings, Parameter, View};
 //!
-//! # fn main() -> rawmakase_core::Result<()> {
 //! let ctx = Context::builder()
 //!     .data_dirs(["/app/data"])
 //!     .cache("/app/cache", CacheLimits::default(), "my-app 1.0 (build 42)")
@@ -28,8 +28,8 @@
 //! let settings = ExportSettings::default();
 //! ctx.export(&photo, &recipe, &settings, "photo.jpg", false, Cancel::NEVER, |_| {})?;
 //! # let _ = rgba;
-//! # Ok(())
 //! # }
+//! # Ok::<(), rawmakase_core::Error>(())
 //! ```
 //!
 //! # The parts
@@ -95,10 +95,17 @@ pub use export::ExportSettings;
 pub use image::{DecodeStats, Image};
 pub use mailbox::{Mailbox, Numbered, Shown, Taken};
 pub use photo::{Decode, Photo};
+/// The values an [`ExportSettings`]'s fields take.
+#[cfg(feature = "export")]
+pub use rawmakase_interop::export_settings::{Format, Include};
+#[cfg(feature = "export")]
+pub use rawmakase_model::color::OutputSpace;
+#[cfg(feature = "export")]
+pub use rawmakase_model::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
 pub use render::{Frame, Renderer, View};
 
 pub use rawmakase_cancel::Cancel;
-pub use rawmakase_interop::raw_defaults::RawDefaults;
+pub use rawmakase_interop::raw_defaults::{CameraDefault, DefaultChoice, RawDefaults};
 pub use rawmakase_model::camera_data::Metadata;
 pub use rawmakase_model::camera_profiles::CameraProfile;
 pub use rawmakase_model::color::curve::{Inserted, ToneCurve};

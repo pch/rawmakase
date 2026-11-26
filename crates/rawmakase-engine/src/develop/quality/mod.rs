@@ -28,6 +28,16 @@ pub fn fit_edge(width: u32, height: u32, viewport: [u32; 2]) -> u32 {
         .min(1.);
     ((width.max(height) as f64 * scale).round() as u32).max(1)
 }
+/// The size a preview render of `image` with `recipe` comes out at, its long
+/// edge at most `max_edge` (0 for full size): the recipe checked and resolved
+/// for the photo as the render resolves it (a panel switched off included),
+/// then scaled and rounded as its Fit is.
+pub fn rendered_size(image: &CameraImage, recipe: &Recipe, max_edge: u32) -> Result<(u32, u32)> {
+    let checked = recipe.checked()?;
+    let full = resolve(image, &checked).geometry;
+    Ok(output_size(full.width, full.height, max_edge))
+}
+
 pub(crate) fn output_size(width: u32, height: u32, max_edge: u32) -> (u32, u32) {
     if max_edge == 0 || width.max(height) <= max_edge {
         return (width, height);

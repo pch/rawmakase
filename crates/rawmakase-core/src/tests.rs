@@ -74,6 +74,63 @@ fn a_decode_refuses_a_file_changed_since_it_was_opened() {
     assert_eq!(e.kind(), ErrorKind::Missing, "{e:#}");
 }
 
+/// A cancelled open or decode returns the cancelled kind, the fast paths
+/// (a rendered file, the cache's copy) included; a file only touched since
+/// it was opened is still the photo.
+#[test]
+fn cancel_is_heard_everywhere_and_a_touched_file_is_the_same_photo() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = chart_in(dir.path());
+    let ctx = Context::builder()
+        .cache(dir.path().join("cache"), CacheLimits::default(), "test")
+        .build()
+        .unwrap();
+    let stop = AtomicBool::new(true);
+    let e = ctx.open(&path, Cancel::new(&stop)).unwrap_err();
+    assert!(e.is_cancelled(), "{e:#}");
+    let photo = ctx.open(&path, Cancel::NEVER).unwrap();
+    photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+    let e = photo.decode(Decode::Full, Cancel::new(&stop)).unwrap_err();
+    assert!(e.is_cancelled(), "a cache hit is cancelled too: {e:#}");
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    photo.decode(Decode::Half, Cancel::NEVER).unwrap();
+}
+
+/// What a view's size is said to be is what the renderer gives it, for a
+/// straightened photo whose sizes round, at any edge.
+#[test]
+fn an_image_s_size_at_a_view_is_its_frame_s() {
+    let ctx = context();
+    let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+    let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+    let mut recipe = photo.starting_recipe().unwrap();
+    recipe.straighten = 7.3;
+    let mut renderer = ctx.renderer();
+    for edge in [0, 101, 333, 640] {
+        let frame = renderer
+            .render(&image, &recipe, View::Fit(edge), Cancel::NEVER)
+            .unwrap();
+        assert_eq!(
+            image.size_in(&recipe, View::Fit(edge)).unwrap(),
+            (frame.width(), frame.height()),
+            "Fit({edge})"
+        );
+    }
+    let draft = renderer
+        .render_draft(&image, &recipe, View::Fit(400), Cancel::NEVER)
+        .unwrap();
+    assert!(
+        !draft.is_draft(),
+        "a photo too small for a draft is rendered whole"
+    );
+}
+
 /// The raw defaults are the context's: a photo starts from the preset they
 /// name.
 #[test]
@@ -206,7 +263,7 @@ fn a_renderer_renders_the_whole_photo_at_a_size_and_a_region_at_full_size() {
     let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
     let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
     let recipe = photo.starting_recipe().unwrap();
-    let (width, height) = image.output_size(&recipe);
+    let (width, height) = image.output_size(&recipe).unwrap();
     let mut renderer = ctx.renderer();
     let fit = renderer
         .render(&image, &recipe, View::Fit(400), Cancel::NEVER)
@@ -214,7 +271,7 @@ fn a_renderer_renders_the_whole_photo_at_a_size_and_a_region_at_full_size() {
     assert_eq!(fit.width().max(fit.height()), 400);
     assert_eq!(
         (fit.width(), fit.height()),
-        image.size_in(&recipe, View::Fit(400))
+        image.size_in(&recipe, View::Fit(400)).unwrap()
     );
     assert!(!fit.is_draft());
     let rgba = fit.rgba8();
@@ -361,7 +418,7 @@ mod export {
         let mut recipe = photo.starting_recipe().unwrap();
         photo.set(&mut recipe, Parameter::Exposure, 0.5).unwrap();
         recipe.curve.insert([0.3, 0.22]);
-        let (width, height) = image.output_size(&recipe);
+        let (width, height) = image.output_size(&recipe).unwrap();
         let settings = ExportSettings::default();
         let jpeg = dir.path().join("out.jpg");
         let progress = std::sync::Mutex::new(Vec::new());
@@ -432,6 +489,22 @@ mod export {
         assert_eq!(pixels(&tiff), pixels(&reread));
         let e = ctx.load_recipe(dir.path().join("none.json")).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Missing, "{e:#}");
+        // The settings' own format doesn't decide the file's: a ProPhoto
+        // export, which only a TIFF holds, goes to a .tif from JPEG settings.
+        let mut prophoto = settings;
+        prophoto.color_space = OutputSpace::ProPhoto;
+        let wide = dir.path().join("wide.tif");
+        ctx.export(
+            &photo,
+            &recipe,
+            &prophoto,
+            &wide,
+            false,
+            Cancel::NEVER,
+            |_| {},
+        )
+        .unwrap();
+        assert!(wide.is_file());
     }
 
     #[test]
@@ -444,8 +517,14 @@ mod export {
         let export = |recipe: &Recipe, out: &Path, cancel| {
             ctx.export(&photo, recipe, &settings, out, false, cancel, |_| {})
         };
-        let e = export(&recipe, &dir.path().join("out.bmp"), Cancel::NEVER).unwrap_err();
+        let e = export(&recipe, &dir.path().join("sub/out.bmp"), Cancel::NEVER).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Invalid, "{e:#}");
+        assert!(
+            !dir.path().join("sub").exists(),
+            "refused before anything is made"
+        );
+        let e = export(&recipe, photo.path(), Cancel::NEVER).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::Invalid, "the photo's own file: {e:#}");
         let mut denoised = recipe.clone();
         denoised.ai_denoise.enabled = true;
         denoised.ai_denoise.amount = 1.;

@@ -69,10 +69,6 @@ impl Error {
     /// was cancelled is cancelled whatever else its chain says. Otherwise the
     /// first cause in the chain that has a kind gives it, so a failure is the
     /// kind of what went wrong, not of a cause it was handled from.
-    #[allow(
-        dead_code,
-        reason = "the operations that return the crates' errors join in step 5"
-    )]
     pub(crate) fn of(cause: anyhow::Error) -> Self {
         let cancelled = cause.chain().any(|c| {
             c.is::<rawmakase_cancel::Cancelled>()
@@ -87,7 +83,6 @@ impl Error {
     }
 }
 
-#[allow(dead_code, reason = "read by `Error::of`")]
 fn kind_of(cause: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
     use rawmakase_model::error::{Changed, Exists, Invalid, Missing};
     use rawmakase_model::storage::{mask_assets, recipe_assets};

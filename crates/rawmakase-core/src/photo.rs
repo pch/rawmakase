@@ -59,6 +59,7 @@ impl Context {
     /// read), and [`ErrorKind::Cancelled`](crate::ErrorKind::Cancelled).
     pub fn open(&self, path: impl AsRef<Path>, cancel: Cancel<'_>) -> Result<Photo> {
         let path = path.as_ref();
+        cancelled(cancel, "Opening cancelled")?;
         let identity = Identity::read(path).ok();
         let opened =
             rawmakase_decode::photo::open_source(path, self.lenses(), cancel).map_err(Error::of)?;
@@ -72,7 +73,10 @@ impl Context {
             listed.profiles,
             cancel,
         );
-        Ok(Photo {
+        // A Camera Look fit stopped short leaves the photo without it, which
+        // would change where it starts: the open is cancelled, not made.
+        cancelled(cancel, "Opening cancelled")?;
+        let photo = Photo {
             ctx: self.clone(),
             path: path.to_path_buf(),
             metadata,
@@ -84,8 +88,15 @@ impl Context {
                 Opened::Raw(_) => None,
                 Opened::Rendered(image) => Some(Arc::new(image)),
             },
-        })
+        };
+        // The file read is the one whose identity was taken.
+        photo.still_the_file_opened()?;
+        Ok(photo)
     }
+}
+
+fn cancelled(cancel: Cancel<'_>, message: &'static str) -> Result<()> {
+    cancel.check(message).map_err(|c| Error::of(c.into()))
 }
 
 impl Photo {
@@ -146,10 +157,17 @@ impl Photo {
     /// is no longer the one opened, [`ErrorKind::Missing`](crate::ErrorKind::Missing)
     /// when it is gone, and [`ErrorKind::Cancelled`](crate::ErrorKind::Cancelled).
     pub fn decode(&self, decode: Decode, cancel: Cancel<'_>) -> Result<Image> {
+        cancelled(cancel, "Decoding cancelled")?;
         self.still_the_file_opened()?;
         let image = match &self.rendered {
             Some(image) => image.clone(),
-            None => Arc::new(self.decode_raw(decode, cancel).map_err(Error::of)?),
+            None => {
+                let image = Arc::new(self.decode_raw(decode, cancel).map_err(Error::of)?);
+                // The file read is still the one opened: one replaced while it
+                // was read is not shown as this photo.
+                self.still_the_file_opened()?;
+                image
+            }
         };
         Ok(Image::new(image, &self.path))
     }
@@ -161,7 +179,8 @@ impl Photo {
         match (decode, self.ctx.decoded()) {
             (Decode::Half, _) => open()?.develop(camera_data::Decode::Half, cancel),
             (Decode::Full, Some(cache)) => {
-                FullSize::with_cache(&self.path, demosaic, cache.clone())
+                // Keyed by the file as opened, not as it is now.
+                FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone())
                     .get(open, DecodePolicy::Show, cancel)?
                     .ok_or_else(|| anyhow::anyhow!("The decode cache gave no image"))
             }
@@ -179,7 +198,9 @@ impl Photo {
             return Ok(());
         };
         match Identity::read(&self.path) {
-            Ok(now) if now == *opened => Ok(()),
+            // The same photo even when only its time changed (`touch`, a
+            // cloud mount's rounding), as the catalog judges it.
+            Ok(now) if now.same_photo(opened) => Ok(()),
             Ok(_) => Err(Error::of(
                 rawmakase_model::error::Changed::new(format!(
                     "{} changed since it was opened",

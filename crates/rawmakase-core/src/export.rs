@@ -4,13 +4,15 @@
 use crate::{Context, Error, Photo, Result};
 use rawmakase_cancel::Cancel;
 use rawmakase_export::export::{Replace, job};
+use rawmakase_interop::export_settings::Format;
 use rawmakase_model::model::recipe::Recipe;
 use std::path::Path;
 
-/// How a file is exported: its format, quality, color space, HDR encoding,
-/// size, sharpening and metadata, as the desktop's Export dialog chooses
-/// them. Its destination folder and file naming are the dialog's; the
-/// library's [`Context::export`] is given the file to write.
+/// How a file is exported: its quality, color space, HDR encoding, size,
+/// sharpening and metadata, as the desktop's Export dialog chooses them. Its
+/// destination folder and file naming are the dialog's, and its format is
+/// the file's: the library's [`Context::export`] is given the file to write,
+/// and writes the format its extension names.
 pub use rawmakase_interop::export_settings::ExportSettings;
 
 impl Context {
@@ -26,7 +28,9 @@ impl Context {
     /// finished.
     ///
     /// Errors: [`ErrorKind::Exists`](crate::ErrorKind::Exists) when `target`
-    /// is there and `replace` is false; the photo's own file is never replaced.
+    /// is there and `replace` is false, before anything is decoded; the
+    /// photo's own file and a RAW file are never replaced, and an extension
+    /// that names no export format is [`ErrorKind::Invalid`](crate::ErrorKind::Invalid).
     /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a recipe or
     /// settings that do not validate, or a format that can't hold them;
     /// [`ErrorKind::Unsupported`](crate::ErrorKind::Unsupported) for a recipe
@@ -48,6 +52,32 @@ impl Context {
         progress: impl Fn(f32),
     ) -> Result<Option<String>> {
         let target = target.as_ref();
+        let invalid =
+            |message: String| Error::of(rawmakase_model::error::Invalid::new(message).into());
+        // What the file is named decides its format, and what can be refused
+        // without a render is refused first.
+        let format = Format::from_path(target).ok_or_else(|| {
+            invalid(format!(
+                "Export extension must be {}",
+                Format::extensions_listed()
+            ))
+        })?;
+        let mut settings = settings.clone();
+        settings.choose_format(format);
+        if rawmakase_model::storage::is_raw(target) {
+            return Err(invalid("An export cannot overwrite a RAW file".into()));
+        }
+        if target.exists() {
+            let same = |p: &Path| std::fs::canonicalize(p).ok();
+            if same(target).is_some() && same(target) == same(photo.path()) {
+                return Err(invalid("Cannot overwrite source".into()));
+            }
+            if !replace {
+                return Err(Error::of(
+                    rawmakase_model::error::Exists::new("Destination already exists").into(),
+                ));
+            }
+        }
         if recipe.as_rendered().ai_denoise.renders() {
             return Err(Error::of(
                 rawmakase_decode::ai::denoise::Unsupported(
@@ -60,7 +90,7 @@ impl Context {
             .validate()
             .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
         let image = photo.decode(crate::Decode::Full, cancel)?;
-        let ctx = photo.context();
+        let ctx = self;
         let job = job::Photo {
             image: image.camera().clone(),
             source: photo.path().to_path_buf(),
@@ -81,6 +111,6 @@ impl Context {
         } else {
             Replace::NoClobber
         };
-        job::run(job, settings, target, replace, cancel, progress).map_err(Error::of)
+        job::run(job, &settings, target, replace, cancel, progress).map_err(Error::of)
     }
 }

@@ -402,7 +402,10 @@ fn describe(state: &State) -> Value {
     };
     let photo = &document.photo;
     let metadata = photo.metadata();
-    let (width, height) = document.image.output_size(&document.recipe);
+    let (width, height) = document
+        .image
+        .output_size(&document.recipe)
+        .unwrap_or_default();
     let stats = document.image.stats();
     let controls: Vec<Value> = CONTROLS
         .iter()

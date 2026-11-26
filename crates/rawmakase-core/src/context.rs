@@ -37,11 +37,12 @@ impl Default for CacheLimits {
 /// `Sync`.
 ///
 /// Each value is the context's only once the library reads it from here; one
-/// that nothing reads yet is not offered. Today that is the data folders, in
-/// which the imported lens profiles are found, and the cache folder, its limits
-/// and its build id, from which the decode cache and AI Denoise's cache are
-/// made. Fonts and the rest join as the crates under the library take them as
-/// values (`docs/embedding-plan.md`, step 4).
+/// that nothing reads yet is not offered. Today that is the data folders,
+/// from which the lens profile, camera profile and preset libraries and
+/// Lensfun's database are made; the cache folder, its limits and its build
+/// id, from which the decode, AI Denoise and Camera Look caches are made; and
+/// the raw defaults. The GPU, the ONNX Runtime and the rest join as the
+/// crates under the library take them as values (`docs/embedding-plan.md`).
 #[derive(Clone, Debug)]
 pub struct Context {
     inner: Arc<Inner>,
@@ -107,7 +108,8 @@ impl ContextBuilder {
     /// The settings a photo without an edit starts from: Adobe Default, or a
     /// preset, for every camera or for each, as the desktop's Preferences
     /// choose them. Without them, Adobe Default. A preset they name is read
-    /// as the context is built; one that is gone gives Adobe Default.
+    /// as the context is built, from the file its id names (or RAWmakase's
+    /// own, for a built-in one's); one that is gone gives Adobe Default.
     pub fn raw_defaults(mut self, defaults: RawDefaults) -> Self {
         self.raw_defaults = defaults;
         self

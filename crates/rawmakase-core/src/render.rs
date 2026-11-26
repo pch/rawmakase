@@ -98,6 +98,9 @@ impl std::fmt::Debug for Frame {
 /// last full frames took, which says whether a draft is due
 /// ([`Renderer::draft_due`]): the desktop's rule. It belongs to the thread
 /// that renders, and one photo at a time. Made by [`Context::renderer`].
+///
+/// It doesn't run AI Denoise yet: a recipe with it on renders as if it were
+/// off, where [`Context::export`](crate::Context) refuses it.
 pub struct Renderer {
     preview: PreviewRenderer,
     fit: Drafts,
@@ -152,9 +155,10 @@ impl Renderer {
                 if !self.fit.wanted(editing) {
                     return None;
                 }
-                let (w, h) = image.size_at(recipe, edge);
+                // An invalid recipe has no draft: its render says why.
+                let (w, h) = image.size_at(recipe, edge).ok()?;
                 let reduced = draft_edge(w, h)?;
-                Some(image.size_at(recipe, reduced))
+                image.size_at(recipe, reduced).ok()
             }
             View::Region([_, _, w, h]) => self.region.wanted(editing).then_some((w, h)),
         }
@@ -162,7 +166,9 @@ impl Renderer {
 
     /// Renders the reduced draft of `view`: the whole photo at the draft's
     /// size, or the region at half resolution or less, which the caller
-    /// stretches over it. Shown until the full frame comes.
+    /// stretches over it. Shown until the full frame comes. A whole photo
+    /// small enough to need no draft is rendered at its size, and is no
+    /// draft.
     pub fn render_draft(
         &mut self,
         image: &Image,
@@ -171,23 +177,30 @@ impl Renderer {
         cancel: Cancel<'_>,
     ) -> Result<Frame> {
         recipe.validate().map_err(invalid)?;
-        let rendered = match view {
+        let (rendered, draft) = match view {
             View::Fit(edge) => {
-                let (w, h) = image.size_at(recipe, edge);
-                let reduced = draft_edge(w, h).unwrap_or(edge);
-                self.preview
-                    .render(image.camera(), recipe, reduced, None, cancel)
+                let (w, h) = image.size_at(recipe, edge)?;
+                let reduced = draft_edge(w, h);
+                let rendered = self.preview.render(
+                    image.camera(),
+                    recipe,
+                    reduced.unwrap_or(edge),
+                    None,
+                    cancel,
+                );
+                (rendered, reduced.is_some())
             }
             View::Region(region) => {
-                self.preview
-                    .render_region_preview(image.camera(), recipe, region, cancel)
+                let rendered =
+                    self.preview
+                        .render_region_preview(image.camera(), recipe, region, cancel);
+                (rendered, true)
             }
-        }
-        .map_err(Error::of)?;
+        };
         Ok(Frame {
-            rendered,
+            rendered: rendered.map_err(Error::of)?,
             view,
-            draft: true,
+            draft,
         })
     }
 

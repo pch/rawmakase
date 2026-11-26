@@ -157,4 +157,9 @@ which CI compares with the code. Each change to them is noted here.
   model's `Recipe`, `Metadata`, `CameraProfile`, `ToneCurve` and `Inserted`,
   interop's `RawDefaults` and `ExportSettings`, and `Cancel`, re-exported.
   `ExportSettings::load` and `save` still read and write the desktop's own
-  file in its data folder; step 15 gives them a path.
+  file in its data folder; step 15 gives them a path. The values their
+  fields take are re-exported too: `Format`, `Include`, `OutputSpace`,
+  `HdrOutput`, `HdrGamut` and `HdrTransfer`, and `DefaultChoice` and
+  `CameraDefault`. `Image::output_size` and `size_in` return a `Result`,
+  since they resolve the recipe as the renderer does. An export writes the
+  format its file's extension names, whatever the settings' `format`.

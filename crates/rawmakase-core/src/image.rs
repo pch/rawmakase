@@ -1,5 +1,4 @@
 //! A decoded image: a photo's pixels, ready to render.
-use rawmakase_engine::develop::Geometry;
 use rawmakase_model::camera_data::{CameraImage, Metadata};
 use rawmakase_model::model::recipe::Recipe;
 use rayon::prelude::*;
@@ -84,25 +83,27 @@ impl Image {
     }
 
     /// The size in pixels `recipe` renders this image at in full: oriented,
-    /// cropped and transformed. A 100% region
+    /// cropped and transformed, as the renderer resolves it. A 100% region
     /// ([`View::Region`](crate::View::Region)) is given in these pixels.
-    pub fn output_size(&self, recipe: &Recipe) -> (u32, u32) {
+    ///
+    /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a recipe that
+    /// does not validate.
+    pub fn output_size(&self, recipe: &Recipe) -> crate::Result<(u32, u32)> {
         self.size_at(recipe, 0)
     }
 
     /// The size in pixels `recipe` renders this image at in `view`: a Fit's
-    /// whole photo with its long edge at most the view's, or a region's own
-    /// size.
-    pub fn size_in(&self, recipe: &Recipe, view: crate::View) -> (u32, u32) {
+    /// whole photo, its long edge at most the view's, or a region's own size.
+    pub fn size_in(&self, recipe: &Recipe, view: crate::View) -> crate::Result<(u32, u32)> {
         match view {
             crate::View::Fit(edge) => self.size_at(recipe, edge),
-            crate::View::Region([_, _, w, h]) => (w, h),
+            crate::View::Region([_, _, w, h]) => Ok((w, h)),
         }
     }
 
-    pub(crate) fn size_at(&self, recipe: &Recipe, max_edge: u32) -> (u32, u32) {
-        let geometry = Geometry::new(&self.image, recipe, max_edge);
-        (geometry.width, geometry.height)
+    pub(crate) fn size_at(&self, recipe: &Recipe, max_edge: u32) -> crate::Result<(u32, u32)> {
+        rawmakase_engine::develop::quality::rendered_size(&self.image, recipe, max_edge)
+            .map_err(|e| crate::Error::of(rawmakase_model::error::Invalid::from_error(e).into()))
     }
 }
 

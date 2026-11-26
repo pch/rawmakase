@@ -1118,6 +1118,17 @@ so the design is proved on one path before it is spread.
    Electron's main process, 78 ms from a slider to pixels in the page) and
    is to be taken again on a quiet one before the 15–20% gap is explained.
 
+   What the library's review found its error kinds don't yet tell apart,
+   left for a change of typed causes of its own (before stage 1 ends with
+   step 13's catalog causes, or with it): a rendered file the decoders
+   can't read and a HEIC with no system decoder are `Other`, not
+   `Unsupported`; a region outside the photo, a profile for another camera,
+   a recipe or preset file that doesn't parse or comes from a later
+   release are `Other`, not `Invalid`. An export reads the camera's EXIF
+   from the file after the photo was decoded, as the desktop's does, and
+   checks the file again only through AI Denoise; exports capturing their
+   files whole are steps 13 and 15's.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in

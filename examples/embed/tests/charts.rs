@@ -66,7 +66,7 @@ fn every_chart_opens_decodes_renders_and_exports() {
             "{name}"
         );
         let full = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
-        let size = full.output_size(&recipe);
+        let size = full.output_size(&recipe).unwrap();
         let out = dir.path().join(format!("{name}.png"));
         ctx.export(
             &photo,

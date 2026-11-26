@@ -72,10 +72,16 @@ impl<T> Mailbox<T> {
         let mut state = self.lock();
         let number = state.next;
         state.next += 1;
-        if !state.closed {
-            state.waiting = Some(Numbered { number, job });
+        let displaced = if state.closed {
+            Some(job)
+        } else {
+            let replaced = state.waiting.replace(Numbered { number, job });
             self.wake.notify_one();
-        }
+            replaced.map(|n| n.job)
+        };
+        // Dropped once the lock is let go and the render thread is woken.
+        drop(state);
+        drop(displaced);
         number
     }
 
@@ -101,7 +107,8 @@ impl<T> Mailbox<T> {
     /// showing a draft, so that the draft's frame is rendered only once no
     /// newer edit has come for that long, and a newer edit goes first.
     pub fn take_within(&self, quiet: Duration) -> Taken<T> {
-        let deadline = Instant::now() + quiet;
+        // A quiet time too long for the clock is no deadline.
+        let deadline = Instant::now().checked_add(quiet);
         let mut state = self.lock();
         loop {
             if state.closed {
@@ -110,6 +117,13 @@ impl<T> Mailbox<T> {
             if let Some(job) = state.waiting.take() {
                 return Taken::Job(job);
             }
+            let Some(deadline) = deadline else {
+                state = self
+                    .wake
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+                continue;
+            };
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 return Taken::Quiet;
@@ -132,8 +146,10 @@ impl<T> Mailbox<T> {
     pub fn close(&self) {
         let mut state = self.lock();
         state.closed = true;
-        state.waiting = None;
+        let dropped = state.waiting.take();
         self.wake.notify_all();
+        drop(state);
+        drop(dropped);
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State<T>> {
@@ -206,6 +222,8 @@ mod tests {
             mailbox.take_within(quiet),
             Taken::Job(Numbered { number: 1, job: 1 })
         );
+        mailbox.put(2);
+        assert!(matches!(mailbox.take_within(Duration::MAX), Taken::Job(_)));
         mailbox.close();
         assert_eq!(mailbox.take_within(quiet), Taken::Closed);
     }
