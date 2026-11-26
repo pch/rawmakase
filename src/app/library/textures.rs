@@ -46,6 +46,10 @@ pub(super) struct PreviewTextures {
     /// Photos with an edited preview requested, by the ticket of the latest
     /// request; results of earlier requests are dropped.
     pub(super) edited_requested: HashMap<PhotoId, u64>,
+    /// Photos whose latest request found no edit, so nothing was rendered.
+    /// Should the file's embedded preview fail, the photo is asked about
+    /// again and developed with the defaults instead.
+    unedited: HashSet<PhotoId>,
     /// Offline photos' up-to-date editable previews, by photo: where Develop's
     /// renders of a photo opened from its copy are looked up too.
     copies: HashMap<PhotoId, PathBuf>,
@@ -93,7 +97,10 @@ pub(super) struct PreviewTextures {
 impl PreviewTextures {
     /// Starts both preview workers on the shared disk cache.
     pub(super) fn new(ctx: &egui::Context) -> Self {
-        let cache = crate::catalog::preview_cache::PreviewCache::path();
+        Self::with_cache(ctx, crate::catalog::preview_cache::PreviewCache::path())
+    }
+    /// Starts both preview workers on the disk cache at `cache`.
+    pub(super) fn with_cache(ctx: &egui::Context, cache: PathBuf) -> Self {
         let thumb_shown = previews::ShownFiles::default();
         let (thumb_tx, thumb_rx, thumbs) =
             previews::spawn(cache.clone(), ctx.clone(), thumb_shown.clone());
@@ -114,6 +121,7 @@ impl PreviewTextures {
             edit_tx,
             edit_rx,
             edited_requested: HashMap::new(),
+            unedited: HashSet::new(),
             copies: HashMap::new(),
             next_ticket: 0,
             edit_seen: HashSet::new(),
@@ -161,6 +169,7 @@ impl PreviewTextures {
         self.edited.clear();
         self.edited_order.clear();
         self.edited_requested.clear();
+        self.unedited.clear();
         self.ahead_scan.1 = 0;
     }
     /// Takes every finished preview. Drain in every workspace so the bounded
@@ -346,6 +355,7 @@ impl PreviewTextures {
     /// keeping the one shown until then.
     pub(super) fn ask_again(&mut self, id: PhotoId) {
         self.edited_requested.remove(&id);
+        self.unedited.remove(&id);
     }
     /// The file at `path` was saved again: its thumbnail is made again the
     /// next time it is shown, the one shown staying until the new one comes.
@@ -360,6 +370,7 @@ impl PreviewTextures {
         self.edited.remove(&id);
         self.edited_order.retain(|other| *other != id);
         self.edited_requested.remove(&id);
+        self.unedited.remove(&id);
         self.edit_seen.remove(&id);
         self.kept.remove(&id);
         self.ahead_scan.1 = 0;
@@ -380,17 +391,26 @@ impl PreviewTextures {
     }
     /// Queues the previews a shown photo needs: the embedded one until its
     /// edited one is in, and the edited one for a saved or Lightroom edit,
-    /// which `edit` looks up when it is first asked for.
+    /// which `edit` looks up when it is first asked for. A photo without an
+    /// edit whose file has no embedded preview to show, such as a film
+    /// scanner's DNG, whose previews are not JPEG, is developed with
+    /// `defaults` instead, as Develop would open it.
     pub(super) fn request(
         &mut self,
         photo: &Photo,
         ctx: &egui::Context,
         edit: impl FnOnce() -> Option<EditSource>,
+        defaults: impl FnOnce() -> EditSource,
     ) {
         if !self.edited.contains_key(&photo.id) {
             self.request_thumbnail(&photo.path, ctx);
         }
-        self.request_edited(photo, edit);
+        let no_thumbnail = self.failed.contains(&photo.path);
+        // Asked about before its thumbnail failed, and found without an edit.
+        if no_thumbnail && self.unedited.remove(&photo.id) {
+            self.edited_requested.remove(&photo.id);
+        }
+        self.request_edited(photo, || edit().or_else(|| no_thumbnail.then(defaults)));
     }
     pub(super) fn request_thumbnail(&mut self, path: &Path, ctx: &egui::Context) {
         self.thumb_seen.insert(path.to_path_buf());
@@ -421,7 +441,8 @@ impl PreviewTextures {
         }
     }
     /// Queues an edited preview for a photo with a saved or Lightroom edit.
-    /// A photo without one is asked about once, until it is forgotten.
+    /// A photo without one is asked about once, until it is forgotten or (see
+    /// [`Self::request`]) its file's embedded preview fails.
     pub(super) fn request_edited(
         &mut self,
         photo: &Photo,
@@ -433,19 +454,22 @@ impl PreviewTextures {
         }
         let ticket = self.ticket();
         self.edited_requested.insert(photo.id, ticket);
-        if let Some(source) = edit()
-            && self
-                .edit_tx
-                .send(EditJob::Render {
-                    id: photo.id,
-                    ticket,
-                    path: photo.path.clone(),
-                    copy: self.copies.get(&photo.id).cloned(),
-                    source,
-                    ahead: false,
-                    display: self.display.clone(),
-                })
-                .is_ok()
+        let Some(source) = edit() else {
+            self.unedited.insert(photo.id);
+            return;
+        };
+        if self
+            .edit_tx
+            .send(EditJob::Render {
+                id: photo.id,
+                ticket,
+                path: photo.path.clone(),
+                copy: self.copies.get(&photo.id).cloned(),
+                source,
+                ahead: false,
+                display: self.display.clone(),
+            })
+            .is_ok()
         {
             self.edits_pending += 1;
         }
@@ -536,19 +560,22 @@ impl PreviewTextures {
             looked_up += 1;
             let ticket = self.ticket();
             self.edited_requested.insert(photo.id, ticket);
-            if let Some(source) = edit(photo.id)
-                && self
-                    .edit_tx
-                    .send(EditJob::Render {
-                        id: photo.id,
-                        ticket,
-                        path: photo.path.clone(),
-                        copy: self.copies.get(&photo.id).cloned(),
-                        source,
-                        ahead: true,
-                        display: self.display.clone(),
-                    })
-                    .is_ok()
+            let Some(source) = edit(photo.id) else {
+                self.unedited.insert(photo.id);
+                continue;
+            };
+            if self
+                .edit_tx
+                .send(EditJob::Render {
+                    id: photo.id,
+                    ticket,
+                    path: photo.path.clone(),
+                    copy: self.copies.get(&photo.id).cloned(),
+                    source,
+                    ahead: true,
+                    display: self.display.clone(),
+                })
+                .is_ok()
             {
                 self.ahead.insert(ticket);
             }
@@ -571,6 +598,7 @@ impl PreviewTextures {
     ) {
         let ticket = self.ticket();
         self.edited_requested.insert(id, ticket);
+        self.unedited.remove(&id);
         self.show_edited(ctx, id, ticket, &image);
         if let Some(stamp) = stamp {
             let _ = self.edit_tx.send(EditJob::Store {

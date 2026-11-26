@@ -1672,11 +1672,17 @@ impl Library {
     fn texture(&self, photo: &Photo) -> Option<&egui::TextureHandle> {
         self.cache.texture(photo)
     }
-    /// Queues the previews a shown photo needs; its edit comes from the catalog.
+    /// Queues the previews a shown photo needs; its edit comes from the catalog,
+    /// and without one, should its file have no embedded preview to show, it is
+    /// developed with the defaults.
     fn request_previews(&mut self, photo: &Photo, ctx: &egui::Context) {
-        let catalog = self.session.catalog();
-        self.cache
-            .request(photo, ctx, || edit_source(catalog, photo.id));
+        let (catalog, defaults) = (self.session.catalog(), &self.defaults);
+        self.cache.request(
+            photo,
+            ctx,
+            || edit_source(catalog, photo.id),
+            || EditSource::Defaults(defaults.clone()),
+        );
     }
     /// Replaces the edited-preview worker's queue with one nothing takes from:
     /// what is sent to it is read from the returned end.
@@ -2046,6 +2052,8 @@ mod zoom;
 use thumbnails::thumbnail;
 #[cfg(test)]
 mod monitor_tests;
+#[cfg(test)]
+mod no_preview_tests;
 #[cfg(test)]
 mod tests;
 
