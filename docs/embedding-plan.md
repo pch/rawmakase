@@ -972,6 +972,10 @@ so the design is proved on one path before it is spread.
    (`watermark/font_dirs.rs`) matched, a test said; the copy is gone, and
    the export crate with it no longer depends on `directories`. The app
    makes its watermarks once, so the fonts are listed once, as before.
+
+   A downloaded profile is staged in a hidden folder beside its
+   destination, not in the system's temporary folder, and installed from
+   there through the same import as a chosen one.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

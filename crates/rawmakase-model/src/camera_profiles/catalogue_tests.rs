@@ -337,6 +337,12 @@ fn verified_install_is_persistent_idempotent_and_never_overwrites_a_conflict() {
     assert_eq!(e.status_in(&[], &destination), Status::Available);
     let target = e.install_into(&bytes, &fuji(), &destination).unwrap();
     assert_eq!(target, destination.join("Test.dcp"));
+    // Staged beside the destination, and nothing staged is left there.
+    let beside: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(beside, ["library"]);
     assert_eq!(
         e.status_in(&[], &destination),
         Status::Installed(target.clone())
