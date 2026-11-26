@@ -20,12 +20,12 @@
 //!   [`crate::develop::render_export`] while keeping the GPU active for subsequent
 //!   photos.
 //! - **Tier 2 (session-wide)**: no hardware compute adapter, validation or internal
-//!   driver errors, device loss, poll timeouts (>5 s per band), or an unwinding panic
+//!   driver errors, device loss, poll timeouts (>5 s per GPU submission), or an unwinding panic
 //!   disable the GPU for the remainder of the session and fall back to the CPU
 //!   reference.
 //! - **Cancellation** is never a fallback: when [`Cancel::is_cancelled`] becomes true
-//!   (checked before upload, between bands, and in 2 ms poll slices), rendering aborts
-//!   immediately without running the CPU fallback or disabling the GPU.
+//!   (checked before upload, between pyramid stages/channels and bands, and in 2 ms poll slices),
+//!   rendering aborts immediately without running the CPU fallback or disabling the GPU.
 
 use super::{
     develop::{Developer, Variant},
@@ -79,7 +79,7 @@ const DEFAULT_BAND_PIXELS: u64 = 6_000_000;
 const MIN_BAND_HEIGHT: u64 = 64;
 /// Poll slice interval while waiting for a band submission.
 const BAND_POLL_SLICE: Duration = Duration::from_millis(2);
-/// Per-band GPU poll deadline before treating the driver as stalled (Tier-2 fallback).
+/// Per-submission GPU poll deadline before treating the driver as stalled (Tier-2 fallback).
 const BAND_POLL_DEADLINE: Duration = Duration::from_secs(5);
 /// Workgroup width for 1D compute dispatches (`sample_region`, `develop`, `pack_*`).
 const WORKGROUP_1D: u32 = 256;

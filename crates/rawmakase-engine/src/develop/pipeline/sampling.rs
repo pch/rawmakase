@@ -224,15 +224,7 @@ fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
         let y = (i as u32 / im.width).clamp(y0, y1 - 1);
         im.px((y * im.width + x) as usize)
     };
-    let (w, h) = if im.width.max(im.height) <= max {
-        (im.width, im.height)
-    } else {
-        let scale = max as f32 / im.width.max(im.height) as f32;
-        (
-            (im.width as f32 * scale).round() as u32,
-            (im.height as f32 * scale).round() as u32,
-        )
-    };
+    let (w, h) = measurement_size(im.width, im.height, max);
     let pixels = if (w, h) == (im.width, im.height) {
         (0..(w * h) as usize).into_par_iter().map(read).collect()
     } else {
@@ -251,12 +243,10 @@ fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
     }
 }
 pub(crate) fn preview_source(im: Source, max: u32) -> CameraImage {
-    if im.width.max(im.height) <= max {
+    let (w, h) = measurement_size(im.width, im.height, max);
+    if (w, h) == (im.width, im.height) {
         return im.image.clone();
     }
-    let scale = max as f32 / im.width.max(im.height) as f32;
-    let w = (im.width as f32 * scale).round() as u32;
-    let h = (im.height as f32 * scale).round() as u32;
     let pixels = box_reduce(im.width, im.height, w, h, |i| im.px(i));
     CameraImage {
         recovered: Default::default(),

@@ -1469,9 +1469,10 @@ fn gpu_pyramid_matches_cpu_for_chroma_luma_texture_and_box_reduce() -> Result<()
     let mut ctx = GpuExportContext::new().expect("hardware GPU required");
     let cases = [
         ("full_odd", noisy_synthetic_photo(257, 193, 257, 193, false)),
+        // Odd-sided half-size decode gives a fractional photo_scale (193 / 385 != 0.5).
         (
-            "half_decode",
-            noisy_synthetic_photo(192, 129, 384, 258, true),
+            "half_decode_fractional",
+            noisy_synthetic_photo(193, 129, 385, 257, true),
         ),
     ];
 
@@ -1659,6 +1660,43 @@ fn gpu_export_matches_cpu_with_nr_texture_retouch_and_automask() -> Result<()> {
                     opacity: 0.9,
                     offset: [0.2, 0.0],
                     patch: None,
+                });
+            }),
+        ),
+        (
+            "nr_retouch_automask_without_texture",
+            Box::new(|r| {
+                r.noise_chroma = 0.4;
+                r.noise_luma = 0.35;
+                r.effects.texture = 0.0;
+                r.retouch.push(RetouchOp {
+                    mode: RetouchMode::Clone,
+                    shape: RetouchShape::Spot {
+                        center: [0.45, 0.5],
+                        radius: 0.06,
+                    },
+                    feather: 0.5,
+                    opacity: 0.9,
+                    offset: [0.15, 0.0],
+                    patch: None,
+                });
+                r.masks.push(MaskGroup {
+                    components: vec![MaskComponent::new(MaskShape::Brush {
+                        strokes: vec![BrushStroke {
+                            points: vec![[0.35, 0.45], [0.5, 0.5], [0.65, 0.55]].into(),
+                            radius: 0.08,
+                            feather: 0.4,
+                            flow: 1.0,
+                            density: 1.0,
+                            erase: false,
+                            auto_mask: true,
+                        }],
+                    })],
+                    adjust: LocalAdjust {
+                        exposure: 0.4,
+                        ..Default::default()
+                    },
+                    ..Default::default()
                 });
             }),
         ),

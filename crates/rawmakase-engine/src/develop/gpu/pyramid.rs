@@ -1,12 +1,13 @@
 //! Shared GPU Laplacian pyramid compute runner for Color Noise Reduction,
 //! Luminance Noise Reduction, Texture, and measurement box reduction.
 //!
-//! Designed to be device-agnostic via [`PyramidHost`] so both headless export
-//! ([`super::export::ExportBackend`]) and interactive previews ([`super::Processor`])
-//! execute the exact same GPU pyramid kernels and CPU quantile logic.
+//! Currently wired into headless exports ([`super::export::ExportBackend`]) and
+//! decoupled from submission/polling via [`PyramidHost`] so interactive previews
+//! ([`super::Processor`]) can reuse the exact same kernels and CPU quantile logic.
 //!
-//! Temporary pyramid working buffers live only for the duration of each call so
-//! pyramid VRAM never overlaps with downstream banded develop/finish VRAM.
+//! Temporary pyramid working buffers live only for the duration of each stage call
+//! and are dropped before downstream banded develop/finish dispatches begin (cached
+//! band buffers from a previous photo are released on idle or OOM retry).
 
 use super::uniforms::PyramidParams;
 use crate::develop::{
@@ -616,11 +617,8 @@ impl GpuPyramid {
                     blocks.push((energy, raw_stats[off + b * 2 + 1]));
                 }
             }
-            let noise = match color_noise::smoothest(blocks) {
-                Some(n) if l == 0 => n,
-                Some(n) => n.min(finer_noise),
-                None => finer_noise * color_noise::COARSER_NOISE,
-            };
+            let noise =
+                color_noise::chain_level_noise(l, color_noise::smoothest(blocks), finer_noise);
             if l == 0 {
                 finest_noise = noise;
             }
@@ -893,11 +891,10 @@ impl GpuPyramid {
                 .copied()
                 .filter(|&e| e >= 0.)
                 .collect();
-            let noise = luminance_noise::band_noise_from_blocks(&mut energies).map_or(
-                finer_noise * 0.6,
-                |n| {
-                    if l == 0 { n } else { n.min(finer_noise) }
-                },
+            let noise = luminance_noise::chain_level_noise(
+                l,
+                luminance_noise::band_noise_from_blocks(&mut energies),
+                finer_noise,
             );
             finer_noise = noise;
             thresholds[l] = denoise.threshold_at(photo_level, noise);
@@ -976,7 +973,8 @@ impl GpuPyramid {
     }
 
     /// Runs measured Texture (`texture.rs`) in-place on the GPU camera RGB buffer `photo`
-    /// (`width` × `height`) for all three channels in a single submission with zero readbacks.
+    /// (`width` × `height`), submitting one channel at a time with zero readbacks so
+    /// cancellation is checked between channels and each submission stays bounded.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_texture<H: PyramidHost>(
         &self,
@@ -1032,8 +1030,11 @@ impl GpuPyramid {
             .max(u64::from(width) * u64::from(height.div_ceil(2)));
         let scratch = Self::alloc_storage(device, "Texture pyramid scratch", scratch_px * 4, false);
 
-        let mut encoder = device.create_command_encoder(&Default::default());
         for channel in 0..3u32 {
+            if cancel.is_cancelled() {
+                return Err(host.cancelled());
+            }
+            let mut encoder = device.create_command_encoder(&Default::default());
             self.dispatch(
                 device,
                 &mut encoder,
@@ -1172,9 +1173,9 @@ impl GpuPyramid {
                     ..Default::default()
                 },
             );
+            let sub = host.submit(encoder);
+            host.wait(sub, cancel)?;
         }
-        let sub = host.submit(encoder);
-        host.wait(sub, cancel)?;
         Ok(())
     }
 

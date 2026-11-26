@@ -107,9 +107,7 @@ impl LuminanceDenoise {
             .par_iter_mut()
             .zip(&plane.data)
             .for_each(|(b, p)| *b = p - *b);
-        let noise = band_noise(plane, &band, white, cancel)?.map_or(finer_noise * 0.6, |n| {
-            if level == 0 { n } else { n.min(finer_noise) }
-        });
+        let noise = chain_level_noise(level, band_noise(plane, &band, white, cancel)?, finer_noise);
         let coarse = self.filter(&coarse, level + 1, offset, noise, white, cancel)?;
         let mut out = up(&coarse, plane.w, plane.h, cancel)?;
         let threshold = self.threshold_at(photo_level, noise);
@@ -208,6 +206,14 @@ fn band_noise(plane: &Plane, band: &Plane, white: f32, cancel: Cancel<'_>) -> Re
         .collect();
     check(cancel)?;
     Ok(band_noise_from_blocks(&mut energies))
+}
+
+/// Chains a band's measured `noise` with `finer_noise`, clamping coarser bands to the
+/// finer band's estimate and falling back to 0.6× when unmeasurable.
+pub(crate) fn chain_level_noise(level: usize, measured: Option<f32>, finer_noise: f32) -> f32 {
+    measured.map_or(finer_noise * 0.6, |n| {
+        if level == 0 { n } else { n.min(finer_noise) }
+    })
 }
 
 /// Tenth-percentile RMS noise from valid 8×8 block mean-squared energies.

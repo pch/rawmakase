@@ -203,11 +203,7 @@ impl ChromaDenoise {
             // A level too small or too clipped to measure has the finer level's noise, as
             // much smaller as coarser levels usually are. Demosaiced noise is never larger
             // at a coarser level, so more than the finer level's is color detail.
-            let noise = match noise(&plane, &measurable) {
-                Some(n) if level == 0 => n,
-                Some(n) => n.min(finer_noise),
-                None => finer_noise * COARSER_NOISE,
-            };
+            let noise = chain_level_noise(level, noise(&plane, &measurable), finer_noise);
             (noise, Measurable::Level(measurable.down()))
         };
         let finest_noise = if level == 0 { noise } else { finest_noise };
@@ -271,6 +267,16 @@ pub(crate) const BLOCK: usize = 8;
 const BLOCK_PERCENTILE: f32 = 0.1;
 /// The fewest measurable blocks a level's noise is measured from.
 const MIN_BLOCKS: usize = 16;
+/// Chains a level's measured `noise` with `finer_noise`: coarser levels are bounded by the
+/// finer level's noise and fall back to [`COARSER_NOISE`] of it when unmeasurable.
+pub(crate) fn chain_level_noise(level: usize, measured: Option<f32>, finer_noise: f32) -> f32 {
+    match measured {
+        Some(n) if level == 0 => n,
+        Some(n) => n.min(finer_noise),
+        None => finer_noise * COARSER_NOISE,
+    }
+}
+
 /// The color noise of a level's `detail` (the level less its blur): the RMS of the
 /// detail in its smoothest measurable blocks, those with no black when there are
 /// enough of them; `None` with fewer than [`MIN_BLOCKS`] either way.
