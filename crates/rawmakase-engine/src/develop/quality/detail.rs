@@ -83,40 +83,66 @@ fn sharpen_in(
     let lum: Vec<f32> = im.pixels.par_iter().map(|p| space.luminance(*p)).collect();
     let w = im.width as usize;
     let h = im.height as usize;
+    if w == 0 || h == 0 {
+        return Ok(());
+    }
+    let r_usize = radius as usize;
     let mut horizontal = vec![0.; lum.len()];
-    horizontal.par_iter_mut().enumerate().for_each(|(i, p)| {
-        if cancel.is_cancelled() {
-            return;
-        }
-        let x = i % w;
-        let y = i / w;
-        for (k, weight) in weights.iter().enumerate() {
-            let xx = (x as i32 + k as i32 - radius).clamp(0, w as i32 - 1) as usize;
-            *p += lum[y * w + xx] * weight;
-        }
-    });
-    im.pixels.par_iter_mut().enumerate().for_each(|(i, p)| {
-        if cancel.is_cancelled() {
-            return;
-        }
-        let x = i % w;
-        let y = i / w;
-        let mut blur = 0.;
-        for (k, weight) in weights.iter().enumerate() {
-            let yy = (y as i32 + k as i32 - radius).clamp(0, h as i32 - 1) as usize;
-            blur += horizontal[yy * w + x] * weight;
-        }
-        let d = lum[i] - blur;
-        let amount = r.sharpening
-            + local
-                .and_then(|w| w.delta(i))
-                .map_or(0., |d| d[slot::SHARPNESS]);
-        let delta = sharpener.delta(d, amount);
-        // Add only luminance detail, preserving inter-channel differences.
-        for v in p {
-            *v = bound(*v + delta);
-        }
-    });
+    horizontal
+        .par_chunks_mut(w)
+        .zip(lum.par_chunks(w))
+        .for_each(|(dst_row, src_row)| {
+            if cancel.is_cancelled() {
+                return;
+            }
+            let interior_end = w.saturating_sub(r_usize);
+            for (x, p) in dst_row.iter_mut().enumerate() {
+                let mut sum = 0.;
+                if x >= r_usize && x < interior_end {
+                    let win = &src_row[x - r_usize..x + r_usize + 1];
+                    for (&src, &weight) in win.iter().zip(&weights) {
+                        sum += src * weight;
+                    }
+                } else {
+                    for (k, &weight) in weights.iter().enumerate() {
+                        let xx = (x as i32 + k as i32 - radius).clamp(0, w as i32 - 1) as usize;
+                        sum += src_row[xx] * weight;
+                    }
+                }
+                *p = sum;
+            }
+        });
+    im.pixels.par_chunks_mut(w).enumerate().for_each_init(
+        || vec![0f32; w],
+        |blur_row, (y, dst_row)| {
+            if cancel.is_cancelled() {
+                return;
+            }
+            blur_row.fill(0.);
+            for (k, &weight) in weights.iter().enumerate() {
+                let yy = (y as i32 + k as i32 - radius).clamp(0, h as i32 - 1) as usize;
+                let src_row = &horizontal[yy * w..(yy + 1) * w];
+                for (b, &h_val) in blur_row.iter_mut().zip(src_row) {
+                    *b += h_val * weight;
+                }
+            }
+            let row_start = y * w;
+            let lum_row = &lum[row_start..row_start + w];
+            for (x, p) in dst_row.iter_mut().enumerate() {
+                let i = row_start + x;
+                let d = lum_row[x] - blur_row[x];
+                let amount = r.sharpening
+                    + local
+                        .and_then(|w| w.delta(i))
+                        .map_or(0., |d| d[slot::SHARPNESS]);
+                let delta = sharpener.delta(d, amount);
+                // Add only luminance detail, preserving inter-channel differences.
+                for v in p {
+                    *v = bound(*v + delta);
+                }
+            }
+        },
+    );
     check_cancel(cancel)
 }
 /// Masks' Noise: an edge-aware 5×5 average blended in by the pixel's amount (0–1).
@@ -157,4 +183,79 @@ pub(super) fn local_noise(
             p[c] += (sum[c] / total - p[c]) * amount;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn naive_sharpen(im: &Rendered, r: &Recipe, sigma: f32) -> Rendered {
+        let space = crate::color::OutputSpace::Srgb;
+        let sharpener = Sharpener::new(r);
+        let (radius, weights) = gaussian(sigma);
+        let lum: Vec<f32> = im.pixels.iter().map(|p| space.luminance(*p)).collect();
+        let (w, h) = (im.width as usize, im.height as usize);
+        let mut horizontal = vec![0f32; lum.len()];
+        for (i, p) in horizontal.iter_mut().enumerate() {
+            let (x, y) = (i % w, i / w);
+            for (k, weight) in weights.iter().enumerate() {
+                let xx = (x as i32 + k as i32 - radius).clamp(0, w as i32 - 1) as usize;
+                *p += lum[y * w + xx] * weight;
+            }
+        }
+        let mut out = im.clone();
+        for (i, p) in out.pixels.iter_mut().enumerate() {
+            let (x, y) = (i % w, i / w);
+            let mut blur = 0f32;
+            for (k, weight) in weights.iter().enumerate() {
+                let yy = (y as i32 + k as i32 - radius).clamp(0, h as i32 - 1) as usize;
+                blur += horizontal[yy * w + x] * weight;
+            }
+            let delta = sharpener.delta(lum[i] - blur, r.sharpening);
+            for v in p {
+                *v = (*v + delta).clamp(0., 1.);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn row_chunked_sharpen_is_bit_exact_with_per_pixel_reference() {
+        let r = Recipe {
+            sharpening: 0.8,
+            ..Default::default()
+        };
+        for &(w, h) in &[(1u32, 1u32), (2, 3), (3, 3), (17, 13), (64, 48)] {
+            let pixels: Vec<[f32; 3]> = (0..(w * h) as usize)
+                .map(|i| {
+                    [
+                        ((i * 17) % 101) as f32 / 100.,
+                        ((i * 31 + 7) % 97) as f32 / 96.,
+                        ((i * 53 + 13) % 89) as f32 / 88.,
+                    ]
+                })
+                .collect();
+            let base = Rendered {
+                width: w,
+                height: h,
+                pixels,
+            };
+            for sigma in [0.3, 1.0, 2.5] {
+                let expected = naive_sharpen(&base, &r, sigma);
+                let mut actual = base.clone();
+                sharpen_at(&mut actual, &r, sigma).unwrap();
+                for (idx, (a, b)) in actual.pixels.iter().zip(&expected.pixels).enumerate() {
+                    for c in 0..3 {
+                        assert_eq!(
+                            a[c].to_bits(),
+                            b[c].to_bits(),
+                            "{w}x{h} sigma={sigma} pixel {idx} ch {c}: {} vs {}",
+                            a[c],
+                            b[c]
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

@@ -76,9 +76,15 @@ impl Denoise {
         anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
         let chroma = self.chroma.map(|d| d.apply(&base, cancel)).transpose()?;
         if let Some(luminance) = self.luminance {
-            Ok(Arc::new(
-                luminance.apply(chroma.as_ref().unwrap_or(&base), cancel)?,
-            ))
+            let mut image = match chroma {
+                Some(image) => image,
+                None => match Arc::try_unwrap(base) {
+                    Ok(image) => image,
+                    Err(shared) => return Ok(Arc::new(luminance.apply(&shared, cancel)?)),
+                },
+            };
+            luminance.apply_in_place(&mut image, cancel)?;
+            Ok(Arc::new(image))
         } else {
             Ok(chroma.map(Arc::new).unwrap_or(base))
         }
@@ -165,5 +171,73 @@ mod tests {
                 .denoised(&replacement, r.denoise(), Cancel::new(&cancel))
                 .unwrap()
         ));
+    }
+
+    #[test]
+    fn denoise_does_not_mutate_shared_source_and_matches_with_chroma_in_place() {
+        let original_pixels: Vec<[f32; 3]> = (0..65 * 67)
+            .map(|i| {
+                let x = (i % 65) as f32;
+                let y = (i / 65) as f32;
+                [
+                    0.12 + ((i * 7) % 11) as f32 * 0.004,
+                    0.10 + ((x as usize * 3 + y as usize * 5) % 9) as f32 * 0.003,
+                    0.09 + ((i * 13) % 7) as f32 * 0.005,
+                ]
+            })
+            .collect();
+        let source = Arc::new(CameraImage {
+            width: 65,
+            height: 67,
+            pixels: original_pixels.clone().into(),
+            metadata: crate::camera_data::Metadata {
+                wb: [1.; 3],
+                ..Default::default()
+            },
+            recovered: Default::default(),
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        });
+        let luma_only = Recipe {
+            noise_luma: 0.6,
+            noise_chroma: 0.,
+            ..Default::default()
+        };
+        let out_luma = luma_only
+            .denoise()
+            .unwrap()
+            .apply(&source, Cancel::NEVER)
+            .unwrap();
+        assert_eq!(source.pixels, original_pixels);
+        assert_ne!(out_luma.pixels, original_pixels);
+
+        let both = Recipe {
+            noise_luma: 0.6,
+            noise_chroma: 0.4,
+            ..Default::default()
+        };
+        let out_both = both
+            .denoise()
+            .unwrap()
+            .apply(&source, Cancel::NEVER)
+            .unwrap();
+        assert_eq!(source.pixels, original_pixels);
+        let chroma_only = Recipe {
+            noise_luma: 0.,
+            noise_chroma: 0.4,
+            ..Default::default()
+        }
+        .denoise()
+        .unwrap()
+        .apply(&source, Cancel::NEVER)
+        .unwrap();
+        let expected_both = luma_only
+            .denoise()
+            .unwrap()
+            .apply(&chroma_only, Cancel::NEVER)
+            .unwrap();
+        assert_eq!(out_both.pixels, expected_both.pixels);
     }
 }

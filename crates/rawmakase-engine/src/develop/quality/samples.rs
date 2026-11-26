@@ -301,9 +301,9 @@ fn stage_means<const N: usize>(
         g.height.min(5),
     ];
     let mut means = [[0.; 3]; N];
-    for (mean, output) in means.iter_mut().zip(outputs) {
+    let outs = develop::pipeline::stage_samples_all(&toned, &tonal, &g, region, outputs, cancel)?;
+    for ((mean, output), out) in means.iter_mut().zip(outputs).zip(outs) {
         use develop::pipeline::PixelOutput;
-        let out = develop::pipeline::stage_samples(&toned, &tonal, &g, region, output, cancel)?;
         let n = out.pixels.len() as f32;
         // ProPhoto RGB without negative channels, as Point Color and the mixer see it.
         let floor = if matches!(output, PixelOutput::PointColor | PixelOutput::MixerInput) {

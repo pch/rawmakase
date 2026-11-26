@@ -1129,10 +1129,15 @@ pub(super) fn curve_input(
         Some(d) if local::uses(d, &local::TONE_SLOTS) => local::tone(d, p, &lut.photo),
         _ => p,
     };
+    let range = r.white_point - r.black_point;
+    let inv_midtone = 1. / r.midtone;
     p.map(|v| {
-        let x = ((v - r.black_point) / (r.white_point - r.black_point))
-            .clamp(0., 1.)
-            .powf(1. / r.midtone);
+        let x = ((v - r.black_point) / range).clamp(0., 1.);
+        let x = if r.midtone == 1. {
+            x
+        } else {
+            x.powf(inv_midtone)
+        };
         // Contrast renders in the basic tone curves; this is its S-curve at 0, which
         // the GPU port also applies.
         x / (x + (1. - x)).max(1e-8)

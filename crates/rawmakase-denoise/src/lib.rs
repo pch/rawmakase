@@ -234,6 +234,10 @@ struct Queue {
     stopped: bool,
 }
 
+/// How long loaded models stay resident while the worker is idle before being dropped
+/// to release ONNX Runtime / Core ML memory.
+const IDLE_UNLOAD: Duration = Duration::from_secs(60);
+
 struct Shared {
     queue: Mutex<Queue>,
     changed: Condvar,
@@ -247,6 +251,7 @@ struct Shared {
     provider: Provider,
     source: Source,
     loader: Loader,
+    idle_unload: Duration,
 }
 
 /// Clears [`Queue::working`] once a job is finished with, also when finishing panics.
@@ -367,6 +372,61 @@ fn loader(runtime: PathBuf) -> Loader {
     Arc::new(move |dir: &Path, provider: Provider| load_model(&runtime, dir, provider))
 }
 
+/// Multiplies every element of `values` by `gain`, splitting large buffers across
+/// scoped threads within [`threads`] so gain scaling does not add a `rayon` dependency
+/// to this crate.
+fn scale_in_place(values: &mut [f32], gain: f32) {
+    const MIN_CHUNK: usize = 1 << 20;
+    let workers = threads().min(values.len() / MIN_CHUNK);
+    if workers <= 1 {
+        for v in values {
+            *v *= gain;
+        }
+        return;
+    }
+    let chunk = values.len().div_ceil(workers);
+    let (first, rest) = values.split_at_mut(chunk);
+    std::thread::scope(|s| {
+        for part in rest.chunks_mut(chunk) {
+            s.spawn(move || {
+                for v in part {
+                    *v *= gain;
+                }
+            });
+        }
+        for v in first {
+            *v *= gain;
+        }
+    });
+}
+
+/// Returns `src` with every element multiplied by `gain`, splitting large buffers
+/// across scoped threads within [`threads`].
+fn scale_copy(src: &[f32], gain: f32) -> Vec<f32> {
+    const MIN_CHUNK: usize = 1 << 20;
+    let workers = threads().min(src.len() / MIN_CHUNK);
+    if workers <= 1 {
+        return src.iter().map(|&v| v * gain).collect();
+    }
+    let mut dst = vec![0f32; src.len()];
+    let chunk = src.len().div_ceil(workers);
+    let (s_first, s_rest) = src.split_at(chunk);
+    let (d_first, d_rest) = dst.split_at_mut(chunk);
+    std::thread::scope(|s| {
+        for (s_part, d_part) in s_rest.chunks(chunk).zip(d_rest.chunks_mut(chunk)) {
+            s.spawn(move || {
+                for (&v, out) in s_part.iter().zip(d_part.iter_mut()) {
+                    *out = v * gain;
+                }
+            });
+        }
+        for (&v, out) in s_first.iter().zip(d_first.iter_mut()) {
+            *out = v * gain;
+        }
+    });
+    dst
+}
+
 impl Service {
     /// The app's service: the RAW decoders, ONNX Runtime (the library bundled in
     /// `runtime` when it is there) and `cache`.
@@ -379,6 +439,15 @@ impl Service {
         )
     }
     pub fn with(cache: AiCache, provider: Provider, source: Source, loader: Loader) -> Self {
+        Self::with_idle_unload(cache, provider, source, loader, IDLE_UNLOAD)
+    }
+    fn with_idle_unload(
+        cache: AiCache,
+        provider: Provider,
+        source: Source,
+        loader: Loader,
+        idle_unload: Duration,
+    ) -> Self {
         Self {
             shared: Arc::new(Shared {
                 queue: Mutex::default(),
@@ -390,6 +459,7 @@ impl Service {
                 provider,
                 source,
                 loader,
+                idle_unload,
             }),
             thread: Arc::default(),
         }
@@ -655,9 +725,13 @@ impl Service {
                         return;
                     }
                     if queue.unload {
-                        models.clear();
+                        let dropped = std::mem::take(&mut models);
+                        drop(queue);
+                        drop(dropped);
+                        queue = self.queue();
                         queue.unload = false;
                         self.shared.changed.notify_all();
+                        continue;
                     }
                     // A job nobody wants any more goes: no Develop request wants it,
                     // and no export waits for it (one cancelled has left).
@@ -678,11 +752,26 @@ impl Service {
                         queue.working = true;
                         break job;
                     }
-                    queue = self
-                        .shared
-                        .changed
-                        .wait(queue)
-                        .unwrap_or_else(|e| e.into_inner());
+                    if models.is_empty() {
+                        queue = self
+                            .shared
+                            .changed
+                            .wait(queue)
+                            .unwrap_or_else(|e| e.into_inner());
+                    } else {
+                        let (guard, timeout) = self
+                            .shared
+                            .changed
+                            .wait_timeout(queue, self.shared.idle_unload)
+                            .unwrap_or_else(|e| e.into_inner());
+                        queue = guard;
+                        if timeout.timed_out() && queue.pending.is_empty() && !queue.stopped {
+                            let dropped = std::mem::take(&mut models);
+                            drop(queue);
+                            drop(dropped);
+                            queue = self.queue();
+                        }
+                    }
                 }
             };
             let cancel = self
@@ -747,8 +836,12 @@ impl Service {
             .clone()
             .ok_or_else(|| anyhow!("The AI Denoise model is not installed."))?;
         self.tell(job, |_| Some(State::Running(0.)));
-        let packed = (self.shared.source)(&job.path, cancel)?;
-        let layout = packed.layout;
+        let PackedBayer {
+            layout,
+            planes: packed_planes,
+            reference: packed_reference,
+            clipped,
+        } = (self.shared.source)(&job.path, cancel)?;
         let model = match models.entry((model_dir.clone(), job.provider)) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::hash_map::Entry::Vacant(e) => {
@@ -786,13 +879,13 @@ impl Service {
         let reference = GainReference {
             width: layout.packed_width,
             height: layout.packed_height,
-            rgb: &packed.reference,
-            clipped: &packed.clipped,
+            rgb: &packed_reference,
+            clipped: &clipped,
         };
         let planes = rawmakase_inference::denoise::Planes {
             width: layout.packed_width,
             height: layout.packed_height,
-            data: &packed.planes,
+            data: &packed_planes,
         };
         let mut last = 0usize;
         run(
@@ -810,7 +903,7 @@ impl Service {
                             .flat_map(|y| (0..layout.packed_width).map(move |x| (x, y)))
                             .map(|(x, y)| out.is_done(x, y))
                             .collect();
-                        let mut rgb: Vec<f32> = out.data.iter().map(|v| v * gain).collect();
+                        let mut rgb = scale_copy(&out.data, gain);
                         rawmakase_inference::denoise::correct_dark(&mut rgb, &reference);
                         self.tell(job, |plain| {
                             let image = assemble(
@@ -818,7 +911,7 @@ impl Service {
                                     layout,
                                     rgb: &rgb,
                                     done: Some(&done_mask),
-                                    clipped: &packed.clipped,
+                                    clipped: &clipped,
                                 },
                                 plain,
                                 cancel,
@@ -847,12 +940,12 @@ impl Service {
             }
             e => anyhow!("AI Denoise failed: {e}"),
         })?;
+        drop(packed_planes);
         let gain = fit_gain(&out, &reference).map_err(|why| anyhow!("AI Denoise failed: {why}"))?;
         let mut rgb = out.data;
-        for v in &mut rgb {
-            *v *= gain;
-        }
+        scale_in_place(&mut rgb, gain);
         rawmakase_inference::denoise::correct_dark(&mut rgb, &reference);
+        drop(packed_reference);
         // Rejected when the file or the model changed during the run.
         let now = crate::storage::Identity::read(&job.path).ok();
         if now.as_ref() != Some(&job.identity) {
@@ -873,7 +966,7 @@ impl Service {
             layout,
             gain,
             rgb,
-            clipped: packed.clipped,
+            clipped,
         };
         // A result that cannot be stored at half precision is not one.
         match self.shared.cache.store(&job.key, &entry) {

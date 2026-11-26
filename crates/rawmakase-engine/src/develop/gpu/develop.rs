@@ -92,6 +92,8 @@ pub(super) struct Developer {
     /// The pass's parameters, tables and mask weights, kept and written in place:
     /// creating a buffer of them per render took about 25 ms on an Intel UHD 620.
     inputs: [Option<wgpu::Buffer>; 5],
+    /// Persistent 16-byte uniform buffer for the develop dispatch size and mode.
+    size: wgpu::Buffer,
     /// The Shadows/Highlights map's grids on the device, most recently used first: one
     /// per map base, which a slider drag's renders share (`PixelParams::grid`).
     grids: Vec<(crate::develop::local_tone::MapGrid, wgpu::Buffer)>,
@@ -198,11 +200,18 @@ impl Developer {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
+        let size = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Develop size"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         Self {
             layout,
             pipelines: Vec::new(),
             pipeline_layout,
             inputs: Default::default(),
+            size,
             grids: Vec::new(),
             samples: Vec::new(),
         }
@@ -447,18 +456,15 @@ impl Processor {
         let groups = (n as u32).div_ceil(GROUP);
         let max = device.limits().max_compute_workgroups_per_dimension;
         let (gx, gy) = (groups.min(max), groups.div_ceil(groups.min(max)));
-        let size = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Develop size"),
-            contents: bytemuck::cast_slice(&[n as u32, gx, mode, 0]),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let size_data = [n as u32, gx, mode, 0];
+        queue.write_buffer(&developer.size, 0, bytemuck::cast_slice(&size_data));
         let entries: Vec<_> = [
             &pixels,
             &positions,
             &output,
             &params_buffer,
             &tables,
-            &size,
+            &developer.size,
             &weights,
             &grid,
             &color,

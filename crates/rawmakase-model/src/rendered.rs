@@ -1,5 +1,7 @@
 //! Developed pixels as values: an output image, its histogram and clipping, as
 //! the renderer, export and watermarks pass them; nothing here renders.
+use rayon::prelude::*;
+
 /// A value from 0 to 1 as a byte, rounded; out-of-range values are clamped.
 pub fn unit_to_u8(v: f32) -> u8 {
     (v.clamp(0., 1.) * 255. + 0.5) as u8
@@ -101,29 +103,50 @@ pub struct Rendered {
 }
 impl Rendered {
     pub fn rgb8(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.pixels.len());
         self.pixels
-            .iter()
-            .flatten()
-            .map(|v| unit_to_u8(*v))
-            .collect()
+            .par_iter()
+            .map(|p| p.map(unit_to_u8))
+            .collect_into_vec(&mut out);
+        out.into_flattened()
     }
     pub fn rgb16(&self) -> Vec<u16> {
+        let mut out = Vec::with_capacity(self.pixels.len());
         self.pixels
-            .iter()
-            .flatten()
-            .map(|v| unit_to_u16(*v))
-            .collect()
+            .par_iter()
+            .map(|p| p.map(unit_to_u16))
+            .collect_into_vec(&mut out);
+        out.into_flattened()
     }
     pub fn histogram(&self) -> Histogram {
-        let mut h = Histogram::EMPTY;
-        for p in &self.pixels {
-            for (c, &v) in p.iter().enumerate() {
-                h.bins[c][(v.clamp(0., 1.) * 255.) as usize] += 1;
-                h.clipped.highlights[c] += (v >= HIGHLIGHT_CLIP) as u32;
-                h.clipped.shadows[c] += (v <= SHADOW_CLIP) as u32;
-            }
-        }
-        h
+        self.pixels
+            .par_chunks(4096)
+            .fold(
+                || Histogram::EMPTY,
+                |mut h, chunk| {
+                    for p in chunk {
+                        for (c, &v) in p.iter().enumerate() {
+                            h.bins[c][(v.clamp(0., 1.) * 255.) as usize] += 1;
+                            h.clipped.highlights[c] += (v >= HIGHLIGHT_CLIP) as u32;
+                            h.clipped.shadows[c] += (v <= SHADOW_CLIP) as u32;
+                        }
+                    }
+                    h
+                },
+            )
+            .reduce(
+                || Histogram::EMPTY,
+                |mut a, b| {
+                    for c in 0..3 {
+                        for i in 0..256 {
+                            a.bins[c][i] += b.bins[c][i];
+                        }
+                        a.clipped.highlights[c] += b.clipped.highlights[c];
+                        a.clipped.shadows[c] += b.clipped.shadows[c];
+                    }
+                    a
+                },
+            )
     }
 }
 
@@ -325,5 +348,45 @@ mod tests {
         assert_eq!(bright.total(), 2);
         assert_eq!(bright.above(7.9), [1; 3]);
         assert_eq!(bright.sdr.map(|c| c[0]), [1; 3]);
+    }
+
+    #[test]
+    fn parallel_conversions_and_histogram_match_sequential_across_chunks() {
+        let pixels: Vec<[f32; 3]> = (0..10_000usize)
+            .map(|i| {
+                [
+                    (i % 1009) as f32 / 1000. - 0.004,
+                    ((i * 7) % 503) as f32 / 500.,
+                    ((i * 13) % 257) as f32 / 255.,
+                ]
+            })
+            .collect();
+        let out = Rendered {
+            width: 100,
+            height: 100,
+            pixels: pixels.clone(),
+        };
+        let expected_rgb8: Vec<u8> = pixels.iter().flatten().map(|v| unit_to_u8(*v)).collect();
+        let expected_rgb16: Vec<u16> = pixels.iter().flatten().map(|v| unit_to_u16(*v)).collect();
+        let mut expected_hist = Histogram::EMPTY;
+        for p in &pixels {
+            for (c, &v) in p.iter().enumerate() {
+                expected_hist.bins[c][(v.clamp(0., 1.) * 255.) as usize] += 1;
+                expected_hist.clipped.highlights[c] += (v >= HIGHLIGHT_CLIP) as u32;
+                expected_hist.clipped.shadows[c] += (v <= SHADOW_CLIP) as u32;
+            }
+        }
+        assert_eq!(out.rgb8(), expected_rgb8);
+        assert_eq!(out.rgb16(), expected_rgb16);
+        assert_eq!(out.histogram(), expected_hist);
+        assert_eq!(
+            Rendered {
+                width: 0,
+                height: 0,
+                pixels: Vec::new()
+            }
+            .histogram(),
+            Histogram::EMPTY
+        );
     }
 }

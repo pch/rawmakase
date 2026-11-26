@@ -432,19 +432,44 @@ pub(crate) fn stage_samples(
     output: PixelOutput,
     cancel: Cancel<'_>,
 ) -> Result<Rendered> {
+    let [out] = stage_samples_all(toned, r, g, region, [output], cancel)?;
+    Ok(out)
+}
+/// [`stage_samples`] for multiple stages over the same region, preparing the
+/// samples, masks and photo curves once across all `N` outputs.
+pub(crate) fn stage_samples_all<const N: usize>(
+    toned: &Toned,
+    r: &Recipe,
+    g: &Geometry,
+    region: [u32; 4],
+    outputs: [PixelOutput; N],
+    cancel: Cancel<'_>,
+) -> Result<[Rendered; N]> {
     let im = toned.source();
     let samples = Arc::new(sample_region(im, r, g, region, 0., cancel)?);
     let weights = mask_weights(toned, r, g, region, 0., Some(&samples), None, cancel)?;
     let samples = detail(toned, r, samples, weights.as_deref(), None, cancel)?;
-    develop_samples_to(
-        im,
-        r,
-        &samples,
-        cancel,
-        weights.as_deref(),
-        output,
-        crate::color::OutputSpace::Srgb,
-    )
+    let camera = camera_stage(&im.metadata, r);
+    let local_tone = weights
+        .as_ref()
+        .is_some_and(|w| w.uses(&[slot::SHADOWS, slot::HIGHLIGHTS]));
+    let mut lut = CurveSet::for_image(im, r, camera, local_tone);
+    lut.space = crate::color::OutputSpace::Srgb;
+    let math = weights.as_ref().map(|_| LocalMath::new(&im.metadata, r));
+    let mut results = Vec::with_capacity(N);
+    for output in outputs {
+        lut.output = output;
+        results.push(develop_with_lut(
+            r,
+            &lut,
+            camera,
+            &samples,
+            weights.as_deref(),
+            math.as_ref(),
+            cancel,
+        )?);
+    }
+    Ok(results.try_into().unwrap_or_else(|_| unreachable!()))
 }
 /// The camera's own samples of `region`, before highlight reconstruction, noise
 /// reduction and retouching, through the same geometry, lens correction and
@@ -490,6 +515,17 @@ fn develop_samples_to(
     lut.output = output;
     lut.space = space;
     let math = weights.map(|_| LocalMath::new(&im.metadata, r));
+    develop_with_lut(r, &lut, camera, samples, weights, math.as_ref(), cancel)
+}
+fn develop_with_lut(
+    r: &Recipe,
+    lut: &CurveSet,
+    camera: Camera,
+    samples: &Samples,
+    weights: Option<&MaskWeights>,
+    math: Option<&LocalMath>,
+    cancel: Cancel<'_>,
+) -> Result<Rendered> {
     let mut pixels = vec![[0.; 3]; samples.pixels.len()];
     pixels.par_iter_mut().enumerate().for_each(|(i, out)| {
         if cancel.is_cancelled() {
@@ -499,12 +535,12 @@ fn develop_samples_to(
         let delta = weights.and_then(|w| w.delta(i));
         let local = delta
             .as_ref()
-            .zip(math.as_ref())
+            .zip(math)
             .map(|(delta, math)| Local { delta, math });
         *out = if pos[0].is_nan() {
             [1.; 3]
         } else {
-            process_pixel(samples.pixels[i], r, &lut, camera, pos, local)
+            process_pixel(samples.pixels[i], r, lut, camera, pos, local)
         };
     });
     ensure!(!cancel.is_cancelled(), "Render superseded");

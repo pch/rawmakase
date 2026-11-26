@@ -116,14 +116,28 @@ pub(super) fn scene_color(
 /// tone stage's, as Camera Raw's does not follow the camera's baseline exposure.
 pub(super) fn exposure_stage(color: [f32; 3], lut: &CurveSet, local: Option<Local>) -> [f32; 3] {
     let exposure = local.map_or(0., |l| l.delta[slot::EXPOSURE]);
-    let mut rgb = mul(TO_2020, color).map(|v| v * lut.exposure_gain * exposure.exp2());
-    if let Some(l) = local {
+    let local_gain = if exposure == 0. { 1. } else { exposure.exp2() };
+    let mut rgb = mul(TO_2020, color).map(|v| {
+        if exposure == 0. {
+            v * lut.exposure_gain
+        } else {
+            v * lut.exposure_gain * local_gain
+        }
+    });
+    if let Some(l) = local
+        && l.delta[slot::COLOR..slot::COLOR + 3] != [0.; 3]
+    {
         let strength = match lut.hdr {
             Some(_) => local::color_hdr_strength(rgb),
             None => 1.,
         };
-        for (c, v) in rgb.iter_mut().enumerate() {
-            *v *= (l.delta[slot::COLOR + c] * strength).exp2();
+        if strength != 0. {
+            for (c, v) in rgb.iter_mut().enumerate() {
+                let d = l.delta[slot::COLOR + c];
+                if d != 0. {
+                    *v *= (d * strength).exp2();
+                }
+            }
         }
     }
     mul(crate::camera_profiles::RGB_TO_PRO, mul(FROM_2020, rgb))
@@ -264,7 +278,9 @@ pub(super) fn color_stage(
     }
     let rgb = toning(rgb, lut);
     let mut lab = srgb_to_lab(rgb);
-    if let Some(d) = local {
+    if let Some(d) = local
+        && (d[slot::HUE] != 0. || d[slot::SATURATION] != 0.)
+    {
         lab = local::hue_saturation(d, lab);
     }
     if lut.output == PixelOutput::ColorInput {
@@ -320,7 +336,9 @@ fn black_white_stage(
     selection: Option<f32>,
 ) -> [f32; 3] {
     let mut lab = srgb_to_lab(rgb);
-    if let Some(d) = local {
+    if let Some(d) = local
+        && (d[slot::HUE] != 0. || d[slot::SATURATION] != 0.)
+    {
         lab = local::hue_saturation(d, lab);
     }
     if lut.output == PixelOutput::ColorInput {

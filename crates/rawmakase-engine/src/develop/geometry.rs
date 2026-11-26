@@ -145,7 +145,8 @@ pub struct Geometry {
     pub oriented_width: f32,
     pub oriented_height: f32,
     crop: [f32; 4],
-    angle: f32,
+    sin: f32,
+    cos: f32,
     zoom: f32,
     turns: u8,
     flip_x: bool,
@@ -190,7 +191,7 @@ impl Geometry {
         let turns = (frame.turns + r.rotation) % 4;
         let [w, h] = frame.size();
         let (ow, oh) = if r.rotation % 2 == 1 { (h, w) } else { (w, h) };
-        let angle = r.straighten.to_radians();
+        let (sin, cos) = r.straighten.to_radians().sin_cos();
         let zoom = crate::model::image_frame::straighten_zoom(r.straighten, [ow, oh]);
         let [width, height] = size;
         let (frame_width, frame_height) = (
@@ -210,7 +211,8 @@ impl Geometry {
             oriented_width: ow,
             oriented_height: oh,
             crop: r.crop,
-            angle,
+            sin,
+            cos,
             zoom,
             turns,
             flip_x: r.flip_x,
@@ -301,7 +303,7 @@ impl Geometry {
     /// `S_HOMOGRAPHY`): crop, oriented size, zoom, sine and cosine, turns, flips, inset,
     /// then whether there is a transform and its homography.
     pub(crate) fn gpu_params(&self) -> [f32; 26] {
-        let (s, c) = self.angle.sin_cos();
+        let (s, c) = (self.sin, self.cos);
         let h = self.transform.unwrap_or([[0.; 3]; 3]);
         let mut out = [0.; 26];
         out[..4].copy_from_slice(&self.crop);
@@ -359,7 +361,7 @@ impl Geometry {
     fn unwarped(&self, x: f32, y: f32) -> [f32; 2] {
         let x = (x - 0.5) * self.oriented_width / self.zoom;
         let y = (y - 0.5) * self.oriented_height / self.zoom;
-        let (s, c) = self.angle.sin_cos();
+        let (s, c) = (self.sin, self.cos);
         let nx = (c * x + s * y) / self.oriented_width + 0.5;
         let ny = (-s * x + c * y) / self.oriented_height + 0.5;
         let (mut x, mut y) = (nx, ny);
@@ -416,7 +418,7 @@ impl Geometry {
         }
         let big_x = (x - 0.5) * self.oriented_width;
         let big_y = (y - 0.5) * self.oriented_height;
-        let (s, c) = self.angle.sin_cos();
+        let (s, c) = (self.sin, self.cos);
         let x0 = c * big_x - s * big_y;
         let y0 = s * big_x + c * big_y;
         let xc = x0 * self.zoom / self.oriented_width + 0.5;

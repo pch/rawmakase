@@ -28,6 +28,13 @@ pub struct Behaviour {
     pub gate: Mutex<()>,
     /// Panic when a loaded model is dropped, outside any job.
     panic_on_drop: bool,
+    /// Hold or notify while a loaded model is being dropped, outside any lock.
+    drop_gate: Option<DropGate>,
+}
+
+struct DropGate {
+    started: Mutex<Option<mpsc::Sender<()>>>,
+    release: Mutex<mpsc::Receiver<()>>,
 }
 
 /// Nearest-neighbour stand-in for the network, at the model's own scale (×10⁶).
@@ -38,6 +45,12 @@ struct Fake {
 
 impl Drop for Fake {
     fn drop(&mut self) {
+        if let Some(gate) = &self.behaviour.drop_gate {
+            if let Some(tx) = gate.started.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            let _ = gate.release.lock().unwrap().recv();
+        }
         if self.behaviour.panic_on_drop && !std::thread::panicking() {
             panic!("fake model panicked when dropped");
         }
@@ -1029,6 +1042,141 @@ fn a_request_while_the_dying_worker_reports_its_failures_starts_a_new_worker() {
     release.send(()).unwrap();
     let states = until_final(&c);
     assert!(matches!(states.last(), Some(State::Ready(_))), "{states:?}");
+}
+
+#[test]
+fn stop_does_not_block_while_unload_drops_model() {
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let f = fixture(
+        Provider::Cpu,
+        Behaviour {
+            drop_gate: Some(DropGate {
+                started: Mutex::new(Some(started_tx)),
+                release: Mutex::new(release_rx),
+            }),
+            ..Default::default()
+        },
+    );
+    let plain = f.plain();
+    let (rx, _w) = f.request(&f.photo("a.raw"), &plain, None);
+    assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+    let service = f.service.clone();
+    let unloader = std::thread::spawn(move || service.unload());
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("model drop started");
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let stop_service = f.service;
+    let stop_thread = std::thread::spawn(move || {
+        let handle = stop_service.stop();
+        let _ = stop_tx.send(());
+        handle
+    });
+    let stopped_in_time = stop_rx.recv_timeout(Duration::from_millis(500)).is_ok();
+    let _ = release_tx.send(());
+    drop(release_tx);
+    unloader.join().unwrap();
+    if let Some(handle) = stop_thread.join().unwrap() {
+        handle.join().unwrap();
+    }
+    assert!(stopped_in_time, "stop() blocked while model was dropping");
+}
+
+#[test]
+fn idle_timeout_unloads_models_without_blocking_stop_and_reloads_on_demand() {
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let dir = tempfile::tempdir().unwrap();
+    let behaviour = Arc::new(Behaviour {
+        drop_gate: Some(DropGate {
+            started: Mutex::new(Some(started_tx)),
+            release: Mutex::new(release_rx),
+        }),
+        ..Default::default()
+    });
+    let source: Source = Arc::new(|path: &Path, _: Cancel<'_>| {
+        anyhow::ensure!(path.exists(), "no such photo");
+        Ok(PackedBayer::pack(W, H, &mosaic(), [0, 0]))
+    });
+    let b = behaviour.clone();
+    let loader: Loader = Arc::new(move |_: &Path, provider: Provider| {
+        b.loads.lock().unwrap().push(provider);
+        Ok(Box::new(Fake {
+            provider,
+            behaviour: b.clone(),
+        }) as Box<dyn TileModel + Send>)
+    });
+    let service = Service::with_idle_unload(
+        AiCache::new(dir.path().join("cache"), 1 << 30),
+        Provider::Cpu,
+        source,
+        loader,
+        Duration::from_millis(50),
+    );
+    let model = dir.path().join("model");
+    std::fs::create_dir(&model).unwrap();
+    std::fs::write(model.join(RAWNIND.model.name), b"m").unwrap();
+    service.set_model(Some(model));
+    let f = Fixture {
+        service,
+        behaviour,
+        dir,
+    };
+    let plain = f.plain();
+    let (rx, _w) = f.request(&f.photo("a.raw"), &plain, None);
+    assert!(matches!(until_final(&rx).last(), Some(State::Ready(_))));
+    assert_eq!(*f.behaviour.loads.lock().unwrap(), [Provider::Cpu]);
+    // After the idle timeout, the worker drops the model outside the queue mutex.
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("idle unload started");
+    let (queued_tx, queued_rx) = mpsc::channel();
+    let req_service = f.service.clone();
+    let b_photo = f.photo("b.raw");
+    let requester = std::thread::spawn(move || {
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        req_service.request(Request {
+            path: b_photo.clone(),
+            file: crate::storage::Identity::read(&b_photo).unwrap(),
+            plain,
+            region: None,
+            wanted: Arc::new(AtomicBool::new(true)),
+            sink: Arc::new(move |u: Update| {
+                let _ = tx.lock().unwrap().send(u.state);
+            }),
+        });
+        let _ = queued_tx.send(rx);
+    });
+    // Queueing a new request must not block while the idle model is dropping.
+    let b_rx = queued_rx
+        .recv_timeout(Duration::from_millis(500))
+        .expect("request() blocked while idle model was dropping");
+    let _ = release_tx.send(());
+    drop(release_tx);
+    requester.join().unwrap();
+    assert!(matches!(until_final(&b_rx).last(), Some(State::Ready(_))));
+    assert_eq!(
+        *f.behaviour.loads.lock().unwrap(),
+        [Provider::Cpu, Provider::Cpu]
+    );
+    if let Some(handle) = f.service.stop() {
+        handle.join().unwrap();
+    }
+}
+
+#[test]
+fn parallel_gain_scaling_matches_sequential_above_and_below_chunk_threshold() {
+    let gain = 1.375f32;
+    for len in [0usize, 17, (1 << 21) + 123] {
+        let src: Vec<f32> = (0..len).map(|i| (i % 997) as f32 * 0.001 - 0.5).collect();
+        let expected: Vec<f32> = src.iter().map(|&v| v * gain).collect();
+        assert_eq!(scale_copy(&src, gain), expected);
+        let mut in_place = src;
+        scale_in_place(&mut in_place, gain);
+        assert_eq!(in_place, expected);
+    }
 }
 
 /// A result is filed under the file's identity, the model and its assembly version,
