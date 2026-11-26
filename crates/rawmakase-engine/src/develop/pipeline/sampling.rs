@@ -215,14 +215,22 @@ pub(crate) fn finish_measurement_source(
 /// to the nearest active pixel before box integration so out-of-crop borders do not
 /// bleed black into the copy or drag down `PhotoMeasures::dark` and the tone histogram.
 fn crop_clamped_preview(im: Source, max: u32) -> CameraImage {
-    let Some([x0, y0, x1, y1]) = crate::develop::local_tone::inner_crop_rect(im.image) else {
-        return preview_source(im, max);
-    };
-    let (x0, y0, x1, y1) = (x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+    let crop = crate::develop::local_tone::inner_crop_rect(im.image)
+        .map(|[x0, y0, x1, y1]| (x0 as u32, y0 as u32, x1 as u32, y1 as u32));
+    // Clip negative demosaiced noise samples with `clip_at_black` before box
+    // reduction so `PhotoMeasures::dark`, `default_black`, and the local-tone
+    // measurement copy stay calibrated to non-negative shadow levels without
+    // introducing color bias.
     let read = |i: usize| {
-        let x = (i as u32 % im.width).clamp(x0, x1 - 1);
-        let y = (i as u32 / im.width).clamp(y0, y1 - 1);
-        im.px((y * im.width + x) as usize)
+        let p = match crop {
+            Some((x0, y0, x1, y1)) => {
+                let x = (i as u32 % im.width).clamp(x0, x1 - 1);
+                let y = (i as u32 / im.width).clamp(y0, y1 - 1);
+                im.px((y * im.width + x) as usize)
+            }
+            None => im.px(i),
+        };
+        crate::develop::color_noise::clip_at_black(p)
     };
     let (w, h) = measurement_size(im.width, im.height, max);
     let pixels = if (w, h) == (im.width, im.height) {

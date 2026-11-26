@@ -240,6 +240,31 @@ impl ChromaDenoise {
     }
 }
 
+/// Clips a white-balanced pixel below black while preserving its chroma direction
+/// and per-channel-clipped brightness `(R + 2G + B) / 4` (#802), so color noise
+/// reduction does not turn unequal-variance R/B shadow noise into a magenta cast
+/// and measurement copies keep non-negative dark keys calibrated to `default_black`.
+pub(crate) fn clip_at_black(p: [f32; 3]) -> [f32; 3] {
+    let lowest = p[0].min(p[1]).min(p[2]);
+    if lowest >= 0. {
+        return p;
+    }
+    let luminance = |p: [f32; 3]| (p[0] + 2. * p[1] + p[2]) * 0.25;
+    let target = luminance(p.map(|v| v.max(0.)));
+    let own = luminance(p);
+    if own <= 0. {
+        return [target; 3];
+    }
+    let keep = own / (own - lowest);
+    let scale = target / own;
+    let pulled = p.map(|v| (own + (v - own) * keep) * scale);
+    if pulled.iter().all(|v| v.is_finite()) {
+        pulled.map(|v| v.max(0.))
+    } else {
+        p.map(|v| v.max(0.))
+    }
+}
+
 /// `im` in square-root values: its luminance, and its chroma as the plane the
 /// filter works on.
 fn planes(im: &CameraImage) -> (Vec<f32>, Plane) {
@@ -247,7 +272,7 @@ fn planes(im: &CameraImage) -> (Vec<f32>, Plane) {
         .pixels
         .par_iter()
         .map(|p| {
-            let [r, g, b] = p.map(|v| v.max(0.).sqrt());
+            let [r, g, b] = clip_at_black(*p).map(|v| v.max(0.).sqrt());
             ((r + 2. * g + b) * 0.25, [r - g, b - g])
         })
         .unzip();
@@ -873,5 +898,68 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A pixel clipped at black is as bright as clipping each channel at zero
+    /// makes it, keeps the order of its channels, is grey when its own luminance
+    /// is not above zero, and cuts the magenta square-root bias of high-ISO shadow
+    /// noise compared with per-channel clipping (#802).
+    #[test]
+    fn clip_at_black_keeps_brightness_without_magenta_noise_bias() {
+        let luminance = |p: [f32; 3]| (p[0] + 2. * p[1] + p[2]) * 0.25;
+        for p in [
+            [-0.02, 0.01, 0.03],
+            [0.05, -0.01, 0.02],
+            [0.01, 0.02, -0.04],
+        ] {
+            let q = clip_at_black(p);
+            let want = luminance(p.map(|v| v.max(0.)));
+            assert!((luminance(q) - want).abs() < 1e-6, "{p:?} → {q:?}");
+            assert!(q.iter().all(|v| *v >= 0.), "{q:?}");
+            for (i, j) in [(0, 1), (1, 2), (0, 2)] {
+                assert_eq!(p[i] < p[j], q[i] < q[j], "{p:?} → {q:?}");
+            }
+        }
+        let q = clip_at_black([-0.03, 0.01, -0.02]);
+        assert!(q.iter().all(|v| (v - 0.005).abs() < 1e-6), "{q:?}");
+        assert_eq!(clip_at_black([0.1, 0.2, 0.3]), [0.1, 0.2, 0.3]);
+        assert_eq!(
+            clip_at_black([f32::INFINITY, -0.01, 0.02]),
+            [f32::INFINITY, 0., 0.02]
+        );
+
+        // White-balanced high-ISO noise (R ×2, B ×1.5): `clip_at_black` removes
+        // most of the magenta/blue square-root chroma bias that per-channel
+        // clipping introduces into `planes()` (#802).
+        let mut seed = 0x51a7_9b3du64;
+        let mut gauss = || {
+            let mut sum = 0f32;
+            for _ in 0..12 {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                sum += (seed >> 40) as f32 / (1u64 << 24) as f32;
+            }
+            sum - 6.
+        };
+        let (mut pulled, mut per_channel) = ([0f64; 3], [0f64; 3]);
+        for _ in 0..8192 {
+            let raw = [
+                0.0025 + 0.02 * 2.0 * gauss(),
+                0.0025 + 0.02 * gauss(),
+                0.0025 + 0.02 * 1.5 * gauss(),
+            ];
+            for (c, v) in clip_at_black(raw).into_iter().enumerate() {
+                pulled[c] += f64::from(v.max(0.).sqrt());
+            }
+            for (c, v) in raw.into_iter().enumerate() {
+                per_channel[c] += f64::from(v.max(0.).sqrt());
+            }
+        }
+        let ratio = |s: [f64; 3]| [(s[0] / s[1]).powi(2), (s[2] / s[1]).powi(2)];
+        let [r_pulled, b_pulled] = ratio(pulled);
+        let [r_clip, b_clip] = ratio(per_channel);
+        assert!(
+            r_pulled < r_clip - 0.3 && b_pulled < b_clip - 0.25,
+            "pulled=({r_pulled:.3}, {b_pulled:.3}) vs per_channel=({r_clip:.3}, {b_clip:.3})"
+        );
     }
 }

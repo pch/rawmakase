@@ -733,3 +733,22 @@ fn srgb_encoded_tables_render_in_hdr() {
         );
     }
 }
+
+#[test]
+fn profile_table_clamps_negative_channels_before_hue_conversion() {
+    let profile = CameraProfile::camera_matrix_default(&x100f())
+        .unwrap()
+        .with_test_srgb_look();
+    let table = profile.look.as_ref().unwrap();
+    for p in [
+        [-0.08, 0.04, 0.01],
+        [0.05, -0.03, 0.02],
+        [0.02, 0.01, -0.06],
+        [-0.05, -0.02, -0.01],
+    ] {
+        let got = table.apply(p, None, 0.);
+        let want = table.apply(p.map(|v| v.max(0.)), None, 0.);
+        assert_eq!(got, want, "{p:?}");
+        assert!(got.iter().all(|v| v.is_finite() && *v >= 0.), "{got:?}");
+    }
+}

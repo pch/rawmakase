@@ -82,10 +82,17 @@ fn band_changes(
     let (lo, hi) = (y0.saturating_sub(MARGIN), (y1 + MARGIN).min(h));
     let bh = hi - lo;
     let pixels = &image[lo * w..hi * w];
-    // The square root of luminance, so that shares do not depend on exposure.
+    // Regularized signed square root of luminance: matches `sqrt(L)`'s contrast
+    // sensitivity on real stripes (`L >= 0.04`) while bounding the slope at zero
+    // so high-ISO read noise around black does not blow up variance past `NOISE`
+    // and falsely trigger stripe suppression in deep shadows.
+    const LUM_FLOOR: f32 = 0.04;
     let luminance: Vec<f32> = pixels
         .iter()
-        .map(|p| ((p[0] + 2. * p[1] + p[2]) * 0.25).max(0.).sqrt())
+        .map(|p| {
+            let l = (p[0] + 2. * p[1] + p[2]) * 0.25;
+            l / (l.abs() + LUM_FLOOR).sqrt()
+        })
         .collect();
     let grid = Plane::new(w, bh, GRID);
     let (strength, along_rows) = grid.strength(&luminance);
@@ -205,12 +212,18 @@ fn band_changes(
 }
 
 /// `p` with R − G and B − G of `r` and `b`, keeping its luminance, (R + 2G + B) / 4.
-/// Where that would make a channel negative, the color is moved towards neutral
-/// until it is not, rather than clipping the channel, which would add light.
+/// For non-negative pixels, where that would make a channel negative, the color is
+/// moved towards neutral until it is not, rather than clipping the channel, which
+/// would add light. Pixels already carrying below-black sensor noise keep their
+/// signed channels linear so noise stays zero-mean into the camera matrix.
 fn with_colour(p: [f32; 3], r: f32, b: f32) -> [f32; 3] {
-    let l = ((p[0] + 2. * p[1] + p[2]) * 0.25).max(0.);
+    let l = (p[0] + 2. * p[1] + p[2]) * 0.25;
     // Each channel as luminance plus a share of the color.
     let offsets = [(3. * r - b) * 0.25, -(r + b) * 0.25, (3. * b - r) * 0.25];
+    if p[0].min(p[1]).min(p[2]) < 0. {
+        return offsets.map(|o| l + o);
+    }
+    let l = l.max(0.);
     let share = offsets
         .iter()
         .filter(|&&o| o < 0.)

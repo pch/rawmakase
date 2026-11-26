@@ -199,9 +199,10 @@ fn table_lookup(t: Table, h: f32, s: f32, v: f32) -> vec3<f32> {
     }
     return out;
 }
-fn table_apply(t: Table, rgb: vec3<f32>, other: i32, weight: f32) -> vec3<f32> {
-    let max_v = max(max(max(rgb.x, rgb.y), rgb.z), 0.0);
-    let min_v = max(min(min(rgb.x, rgb.y), rgb.z), 0.0);
+fn table_apply(t: Table, rgb_in: vec3<f32>, other: i32, weight: f32) -> vec3<f32> {
+    let rgb = max(rgb_in, vec3(0.0));
+    let max_v = max(max(rgb.x, rgb.y), rgb.z);
+    let min_v = min(min(rgb.x, rgb.y), rgb.z);
     let d = max_v - min_v;
     let h = hue_of(rgb, max_v, d);
     let sat = select(0.0, d / max_v, max_v > 0.0);
