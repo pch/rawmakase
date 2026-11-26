@@ -300,8 +300,9 @@ impl RetouchCache {
     ) -> Result<Arc<CameraImage>> {
         self.denoised_with(source, d, cancel, None)
     }
-    /// As [`Self::denoised`], running Color and luminance noise reduction on `backend`'s
-    /// GPU when available and within device limits, falling back to CPU otherwise.
+    /// `source` with Color and luminance noise reduction `d`, reused while neither changes;
+    /// without one, `source` itself, and the last result is let go. Runs on `backend`'s GPU
+    /// when available and within device limits, falling back to CPU otherwise.
     pub(crate) fn denoised_with(
         &mut self,
         source: &Arc<CameraImage>,
@@ -335,7 +336,7 @@ impl RetouchCache {
         self.denoised = Some((source.clone(), d, out.clone()));
         Ok(out)
     }
-    /// The last noise-reduced image, when the next [`Self::denoised`] of `source` with
+    /// The last noise-reduced image, when the next [`Self::denoised_with`] of `source` with
     /// `d` will replace it rather than reuse it.
     pub(crate) fn replaced_by(
         &self,

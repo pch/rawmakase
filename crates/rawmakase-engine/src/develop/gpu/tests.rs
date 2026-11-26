@@ -3346,7 +3346,7 @@ fn preview_renderer_uses_shared_gpu_pyramids_for_nr_and_texture_with_cpu_and_exp
     );
     assert!(gpu_preview.backend().resident_fallback.is_none());
 
-    // 3. Cancellation leaves the GPU pyramid/resident path healthy and does not poison caches.
+    // 3a. Early cancellation leaves the GPU pyramid/resident path healthy and does not poison caches.
     let cancel = AtomicBool::new(true);
     let mut changed = r.clone();
     changed.noise_luma = 0.8;
@@ -3355,7 +3355,10 @@ fn preview_renderer_uses_shared_gpu_pyramids_for_nr_and_texture_with_cpu_and_exp
             .render(&image, &changed, 0, None, Cancel::new(&cancel))
             .is_err()
     );
-    assert!(gpu_preview.backend().resident_fallback.is_none());
+    assert!(
+        gpu_preview.backend().resident_fallback.is_none()
+            && gpu_preview.backend().pyramid_fallback.is_none()
+    );
     cancel.store(false, std::sync::atomic::Ordering::Relaxed);
     let after_cancel = gpu_preview.render(&image, &changed, 0, None, Cancel::new(&cancel))?;
     let expected_after = cpu_preview.render(&image, &changed, 0, None, Cancel::NEVER)?;
@@ -3373,6 +3376,97 @@ fn preview_renderer_uses_shared_gpu_pyramids_for_nr_and_texture_with_cpu_and_exp
         gpu_preview.backend().resident_fallback.is_none()
             && gpu_preview.backend().pyramid_fallback.is_none()
     );
+
+    // 3b. Mid-flight cancellation right after submission exercises `wait_cancellable` and
+    // staging-buffer unmap on a live GPU readback, then verifies the same processor recovers.
+    {
+        use super::pyramid::{GpuPyramid, PyramidHost};
+        use wgpu::util::DeviceExt;
+
+        struct CancelAfterSubmitHost<'a> {
+            inner: super::ProcessorHost<'a>,
+            cancel: &'a AtomicBool,
+        }
+        impl PyramidHost for CancelAfterSubmitHost<'_> {
+            type Error = anyhow::Error;
+            fn device(&self) -> &wgpu::Device {
+                self.inner.device()
+            }
+            fn submit(&self, encoder: wgpu::CommandEncoder) -> wgpu::SubmissionIndex {
+                let sub = self.inner.submit(encoder);
+                self.cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                sub
+            }
+            fn wait(&self, submission: wgpu::SubmissionIndex, cancel: Cancel<'_>) -> Result<()> {
+                self.inner.wait(submission, cancel)
+            }
+            fn cancelled(&self) -> Self::Error {
+                self.inner.cancelled()
+            }
+            fn readback_error(&self, message: String) -> Self::Error {
+                self.inner.readback_error(message)
+            }
+            fn exceeds_limits(&self, message: String) -> Self::Error {
+                self.inner.exceeds_limits(message)
+            }
+        }
+
+        let mid_cancel = AtomicBool::new(false);
+        let proc = gpu_preview.gpu().expect("GPU processor active");
+        let runner = GpuPyramid::new(&proc.device);
+        let photo = proc
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Mid-flight cancel test photo"),
+                contents: bytemuck::cast_slice(&image.pixels),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let host = CancelAfterSubmitHost {
+            inner: super::ProcessorHost {
+                device: &proc.device,
+                queue: &proc.queue,
+            },
+            cancel: &mid_cancel,
+        };
+        let err = runner
+            .compute_texture_detail(
+                &host,
+                &photo,
+                image.width,
+                image.height,
+                0,
+                Cancel::new(&mid_cancel),
+            )
+            .err()
+            .expect("mid-flight cancel after submit must abort readback");
+        assert!(
+            err.to_string().contains("Render superseded"),
+            "unexpected error after mid-flight cancel: {err}"
+        );
+        // Subsequent full render on the same `PreviewRenderer` / device still matches CPU.
+        let mut r_after = changed.clone();
+        r_after.effects.texture = -0.25;
+        let recovered_gpu = gpu_preview.render(&image, &r_after, 0, None, Cancel::NEVER)?;
+        let recovered_cpu = cpu_preview.render(&image, &r_after, 0, None, Cancel::NEVER)?;
+        let rec_rms = (recovered_gpu
+            .pixels
+            .iter()
+            .flatten()
+            .zip(recovered_cpu.pixels.iter().flatten())
+            .map(|(&a, &b)| (f64::from(a) - f64::from(b)).powi(2))
+            .sum::<f64>()
+            / (recovered_gpu.pixels.len() * 3) as f64)
+            .sqrt();
+        assert!(
+            rec_rms <= 1e-4,
+            "Post mid-flight cancel RMS {rec_rms} > 1e-4"
+        );
+        assert!(
+            gpu_preview.backend().resident_fallback.is_none()
+                && gpu_preview.backend().pyramid_fallback.is_none()
+        );
+    }
 
     // 4. Empty and oversized workgroup dimensions fail `fits_pyramid` cleanly without disabling GPU.
     let empty_im = CameraImage {

@@ -656,9 +656,10 @@ impl Backend {
         }
     }
     /// Runs a shared GPU Laplacian pyramid stage (NR or Texture). Cancellation and
-    /// per-photo out-of-memory errors fall back to CPU for this photo only without
+    /// per-photo out-of-memory errors fall back to CPU for this attempt without
     /// disabling future pyramid stages or resident GPU sampling; any other device error
-    /// turns off only `pyramid_fallback`, leaving `resident_fallback` untouched.
+    /// sets only `pyramid_fallback` (turning GPU pyramid stages off), leaving
+    /// `resident_fallback` untouched.
     pub(crate) fn run_pyramid<T>(
         &mut self,
         cancel: Cancel<'_>,
