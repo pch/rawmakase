@@ -105,3 +105,35 @@ fn profile_matrix(m: &Metadata, r: &Recipe) -> [[f32; 3]; 3] {
         .as_ref()
         .map_or(m.matrix, |p| p.camera_matrix_at(r.temperature, r.tint))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::camera_data::{Metadata, Source};
+    use crate::model::recipe::Recipe;
+
+    #[test]
+    fn rendered_camera_stage_preserves_cool_magenta_blue_and_clip() {
+        let m = Metadata {
+            source: Source::Rendered,
+            ..Default::default()
+        };
+        let mut r = Recipe::for_rendered(&m);
+        r.incremental_temperature = -25.;
+        r.incremental_tint = 100.;
+        r.update_wb(&m);
+        let stage = camera_stage(&m, &r);
+        assert!(
+            stage.clip.iter().all(|&c| c >= 0.37),
+            "Temp -25 Tint +100 camera stage clip must not collapse: {:?}",
+            stage.clip
+        );
+        // Applying the stage to a dark grey keeps all three sRGB channels positive
+        // (warm white rather than neon yellow).
+        let srgb = mul(stage.matrix, [0.02; 3]);
+        assert!(
+            srgb[0] > srgb[1] && srgb[1] > srgb[2] && srgb[2] > 0.01,
+            "Temp -25 Tint +100 camera stage should warm grey without dropping blue: {srgb:?}"
+        );
+    }
+}

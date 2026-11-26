@@ -101,59 +101,50 @@ impl NamedWhiteBalance {
 }
 
 /// Lightroom's Temp for a rendered file (`IncrementalTemperature`, −100…100) as the
-/// DNG SDK's reciprocal temperature of the white it names and a drift of its DNG
-/// tint: `[Temp, mired, tint drift]`. Measured on Lightroom Classic 15.6 (Camera Raw
-/// 18.7) renders of synthetic JPEG charts, as the white [`rendered_white_balance`] needs
-/// to reproduce them (`scripts/corpus/rendered-white-balance.py`). At 0 it is the
-/// file's D50 white; Temp moves only the temperature, except a drift of a few units of
-/// tint at the coldest Temp.
-const RENDERED_TEMPERATURE: [[f32; 3]; 27] = [
-    [-100., 523.2, -2.3],
-    [-90., 470., -0.7],
-    [-75., 415.6, -0.3],
-    [-60., 367.7, -0.3],
-    [-50., 336.1, 0.],
-    [-35., 291.7, 0.],
-    [-25., 263.8, 0.],
-    [-15., 237.3, 0.],
-    [-10., 224.6, 0.],
-    [-5., 212.1, 0.],
-    [0., 199.9, 0.],
-    [5., 188.1, 0.],
-    [10., 176.6, 0.],
-    [15., 165.3, 0.],
-    [25., 143.7, 0.],
-    [35., 123.3, 0.],
-    [40., 113.5, 0.],
-    [45., 104., 0.],
-    [50., 94.7, 0.],
-    [55., 85.8, 0.],
-    [60., 77.1, 0.],
-    [65., 68.8, 0.],
-    [70., 60.7, 0.],
-    [75., 52.9, 0.],
-    [80., 45.3, 0.],
-    [90., 31.1, 0.],
-    [100., 17.9, 0.],
+/// DNG SDK's reciprocal temperature (mired) of the white it names: `[Temp, mired]`.
+/// Measured on Camera Raw 18.7 renders of synthetic JPEG charts
+/// (`scripts/corpus/rendered-white-balance.py`). At 0 it is the file's D50 white
+/// (199.9 mired), reaching 500.0 mired (2000 K) at −100; Temp moves only temperature.
+const RENDERED_TEMPERATURE: [[f32; 2]; 27] = [
+    [-100., 500.0],
+    [-90., 464.0],
+    [-75., 413.7],
+    [-60., 366.5],
+    [-50., 336.1],
+    [-35., 291.7],
+    [-25., 263.8],
+    [-15., 237.3],
+    [-10., 224.6],
+    [-5., 212.1],
+    [0., 199.9],
+    [5., 188.1],
+    [10., 176.6],
+    [15., 165.3],
+    [25., 143.7],
+    [35., 123.3],
+    [40., 113.5],
+    [45., 104.0],
+    [50., 94.7],
+    [55., 85.8],
+    [60., 77.1],
+    [65., 68.8],
+    [70., 60.7],
+    [75., 52.9],
+    [80., 45.3],
+    [90., 31.1],
+    [100., 17.9],
 ];
-/// Lightroom's Tint for a rendered file (`IncrementalTint`) as the DNG tint of the
-/// white it names, measured as [`RENDERED_TEMPERATURE`] (Tint moves only the tint):
-/// `[Tint, DNG tint]`.
-const RENDERED_TINT: [[f32; 2]; 13] = [
-    [-100., -151.11],
-    [-75., -93.38],
-    [-50., -48.06],
-    [-35., -26.39],
-    [-25., -14.05],
-    [-10., 1.35],
-    [0., 9.6],
-    [10., 17.81],
-    [25., 32.83],
-    [35., 44.5],
-    [50., 64.6],
-    [75., 104.74],
-    [100., 154.41],
-];
+/// Lightroom's Tint for a rendered file (`IncrementalTint`, −100…100) as the DNG
+/// tint of the white it names: D50's tint (+9.6) at 0, reaching ±150 at ±100 along a
+/// quadratic curve. Matches unbiased Camera Raw 18.7 JPEG and linear-DNG measurements
+/// within ~0.2 tint units across −100…100 (`scripts/corpus/rendered-white-balance.py`),
+/// avoiding the `rgb_tone` bias that previously pushed +100 to +154.41 and −100 to
+/// −151.11.
+fn rendered_dng_tint(tint: f32) -> f32 {
+    let u = (tint / 100.).clamp(-1., 1.);
+    let t = 0.5 * u * (1. + u.abs());
+    9.6 * (1. - t * t) + 150. * t
+}
 
 /// `rows` (sorted by their first value) at `x`, linearly between rows, clamped to the ends.
 fn interpolate<const K: usize>(rows: &[[f32; K]], x: f32) -> [f32; K] {
@@ -200,14 +191,25 @@ pub(crate) fn map_white(from: [f32; 3], to: [f32; 3]) -> [[f32; 3]; 3] {
     mul_matrix(inverse(BRADFORD), mul_matrix(diagonal, BRADFORD))
 }
 
+/// Minimum channel of the normalized camera white in Camera Raw 18.7, measured on
+/// matrix-only linear DNG renders in the cool magenta corner.
+const CAMERA_WHITE_FLOOR: f32 = 0.001;
+/// Maximum per-channel white-balance gain (4 stops) Camera Raw applies before the
+/// camera-to-PCS matrix. Where `camera_white[c] < 1 / MAX_WB_GAIN`, capping the gain
+/// at `MAX_WB_GAIN` scales column `c` of the matrix by `camera_white[c] * MAX_WB_GAIN`.
+const MAX_WB_GAIN: f32 = 16.;
+
 /// The DNG SDK's camera to ProPhoto matrix, and camera white, for a camera whose RGB
 /// is linear ProPhoto and has no forward matrix (Lightroom's view of a rendered file's
 /// pseudo-scene), under `white` (XYZ): ProPhoto to camera is the color matrix after
 /// adaptation from D50 to the white, scaled so its largest channel of D50 is 1; the
-/// camera white is the white in camera RGB, its largest channel 1 and none below 0:
-/// Lightroom's renders of the cool magenta corner, where the white's ProPhoto blue is
-/// negative, have blue at 0, as a camera white held at 0 gives.
-fn camera_to_prophoto(white: [f32; 3]) -> ([[f32; 3]; 3], [f32; 3]) {
+/// camera white is the white in camera RGB, its largest channel 1 and none below
+/// [`CAMERA_WHITE_FLOOR`]. When `cap_gain` is true (rendering), each column `c` of the
+/// matrix is scaled by `(camera_white[c] * MAX_WB_GAIN).clamp(0., 1.)`, matching
+/// Camera Raw's 16× gain cap in the cool magenta corner while leaving normal settings
+/// untouched; `rendered_controls` passes `false` so strongly blue picks warm toward
+/// positive Temp instead of folding into the capped corner.
+fn camera_to_prophoto(white: [f32; 3], cap_gain: bool) -> ([[f32; 3]; 3], [f32; 3]) {
     use crate::camera_profiles::XYZ_TO_PRO;
     use crate::color::{inverse, mul, mul_matrix};
     let d50 = mul(inverse(XYZ_TO_PRO), [1.; 3]);
@@ -216,8 +218,34 @@ fn camera_to_prophoto(white: [f32; 3]) -> ([[f32; 3]; 3], [f32; 3]) {
     let scale = largest(mul(to_camera, d50));
     let to_camera = to_camera.map(|row| row.map(|v| v / scale));
     let camera_white = mul(XYZ_TO_PRO, white);
-    let camera_white = camera_white.map(|v| (v / largest(camera_white)).clamp(0., 1.));
-    (mul_matrix(XYZ_TO_PRO, inverse(to_camera)), camera_white)
+    let camera_white =
+        camera_white.map(|v| (v / largest(camera_white)).clamp(CAMERA_WHITE_FLOOR, 1.));
+    let matrix = mul_matrix(XYZ_TO_PRO, inverse(to_camera));
+    let matrix = if cap_gain {
+        let wb_scale = camera_white.map(|v| (v * MAX_WB_GAIN).clamp(0., 1.));
+        std::array::from_fn(|i| std::array::from_fn(|j| matrix[i][j] * wb_scale[j]))
+    } else {
+        matrix
+    };
+    (matrix, camera_white)
+}
+
+/// Shared matrix and camera-white builder for [`rendered_white_balance`] (`cap_gain = true`)
+/// and [`rendered_controls`] (`cap_gain = false`).
+fn rendered_wb_matrix(temperature: f32, tint: f32, cap_gain: bool) -> ([[f32; 3]; 3], [f32; 3]) {
+    if temperature == 0. && tint == 0. {
+        return ([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]], [1.; 3]);
+    }
+    let white = |temperature: f32, tint: f32| {
+        let [_, mired] = interpolate(&RENDERED_TEMPERATURE, temperature);
+        white_xyz(mired, rendered_dng_tint(tint))
+    };
+    let (file, _) = camera_to_prophoto(white(0., 0.), false);
+    let (matrix, camera_white) = camera_to_prophoto(white(temperature, tint), cap_gain);
+    (
+        crate::color::mul_matrix(matrix, crate::color::inverse(file)),
+        camera_white,
+    )
 }
 
 /// A rendered file's white balance as Lightroom applies it to the scene its rendering
@@ -231,18 +259,17 @@ pub struct RenderedWhiteBalance {
 }
 
 /// Where a rendered file's scene stands against the camera white Lightroom clips it
-/// at: the file's white (about 1 in the scene) times this. Measured on Lightroom's
-/// renders of strong cooling and the cool magenta corner: at 1 the brightest greys at
-/// Temp −90 and −100 lose blue Lightroom keeps (greys 6 → 19 levels off at −100);
-/// 2 to 8 fit equally.
-const CAMERA_WHITE_SCALE: f32 = 4.;
+/// at: the file's white (about 1 in the scene) times this. Measured on Camera Raw 18.7
+/// renders across strong cooling and the cool magenta transition: at 4 the brightest
+/// greys and near-whites at Temp −25, Tint +100 (sRGB 208–224/255) clip blue too early;
+/// 6 keeps those levels intact and drops blue at 240/255 as Camera Raw does.
+const CAMERA_WHITE_SCALE: f32 = 6.;
 
 /// A rendered file's white balance at its Temp and Tint (−100…100): what the DNG SDK
 /// does to a camera whose RGB is linear ProPhoto ([`camera_to_prophoto`]) under the
-/// white they name, against the file's own D50 white. The camera white
-/// ([`CAMERA_WHITE_SCALE`] times it) holds each channel, as the SDK clips camera
-/// values at it; in the cool magenta corner that takes blue to 0, as in Lightroom.
-/// The file as it is at 0, 0.
+/// white they name, against the file's own D50 white. Each channel is held at
+/// [`CAMERA_WHITE_SCALE`] times the effective camera white (floored at `1 / MAX_WB_GAIN`
+/// by the 16× gain cap) before the matrix. The file as it is at 0, 0.
 pub fn rendered_white_balance(temperature: f32, tint: f32) -> RenderedWhiteBalance {
     if temperature == 0. && tint == 0. {
         return RenderedWhiteBalance {
@@ -250,35 +277,31 @@ pub fn rendered_white_balance(temperature: f32, tint: f32) -> RenderedWhiteBalan
             clip: [f32::MAX; 3],
         };
     }
-    let white = |temperature: f32, tint: f32| {
-        let [_, mired, drift] = interpolate(&RENDERED_TEMPERATURE, temperature);
-        let [_, tint] = interpolate(&RENDERED_TINT, tint);
-        white_xyz(mired, tint + drift)
-    };
-    let (file, _) = camera_to_prophoto(white(0., 0.));
-    let (matrix, camera_white) = camera_to_prophoto(white(temperature, tint));
+    let (matrix, camera_white) = rendered_wb_matrix(temperature, tint, true);
     RenderedWhiteBalance {
-        matrix: crate::color::mul_matrix(matrix, crate::color::inverse(file)),
-        clip: camera_white.map(|c| c * CAMERA_WHITE_SCALE),
+        matrix,
+        clip: camera_white.map(|c| c.max(1. / MAX_WB_GAIN) * CAMERA_WHITE_SCALE),
     }
 }
 
 /// The ProPhoto channel gains greys below [`rendered_white_balance`]'s clip get at a
-/// rendered file's Temp and Tint. Exactly `[1, 1, 1]` at 0, 0.
+/// rendered file's Temp and Tint, clamped at 0 where the cool magenta corner's 16× gain
+/// cap leaves blue below 0. Exactly `[1, 1, 1]` at 0, 0.
 pub fn rendered_gains(temperature: f32, tint: f32) -> [f32; 3] {
-    crate::color::mul(rendered_white_balance(temperature, tint).matrix, [1.; 3])
+    crate::color::mul(rendered_white_balance(temperature, tint).matrix, [1.; 3]).map(|v| v.max(0.))
 }
 
 /// The rendered file's Temp and Tint that render most neutral the color `gains`
 /// would (the picked color is `1 / gains`): least squares on the log2 spread of its
-/// channels after [`rendered_white_balance`]'s matrix, whose cross-channel terms a
+/// channels after the uncapped illuminant matrix, whose cross-channel terms a
 /// comparison of gains would miss, within −100…100: a coarse grid, then a pattern
-/// search to 0.01. A color no Temp and Tint neutralise (an eyedropper's, say) gives
-/// the nearest that do.
+/// search to 0.01. Scoring with the uncapped matrix prevents strongly blue picks from
+/// folding into the 16×-capped cool magenta corner. A color no Temp and Tint
+/// neutralise (an eyedropper's, say) gives the nearest that do.
 pub fn rendered_controls(gains: [f32; 3]) -> [f32; 2] {
     let sample = gains.map(|g| if g.is_finite() { 1. / g.max(1e-6) } else { 1. });
     let cost = |t: f32, n: f32| {
-        let l = crate::color::mul(rendered_white_balance(t, n).matrix, sample)
+        let l = crate::color::mul(rendered_wb_matrix(t, n, false).0, sample)
             .map(|v| v.max(1e-6).log2());
         let mean = l.iter().sum::<f32>() / 3.;
         l.iter().map(|v| (v - mean).powi(2)).sum::<f32>()
@@ -374,6 +397,121 @@ mod rendered_tests {
         }
     }
 
+    /// Camera Raw 18.7 caps per-channel WB gain at 16× (`camera_white` floored at
+    /// 0.001): at Temp −25, Tint +100 (`DNG tint = +150`), whites stay gently warm
+    /// with positive blue rather than collapsing to yellow; across the transition
+    /// (`−24, +100`, `−40, +75`) blue scales continuously; and deep in the corner
+    /// (`−50, +100`) a saturated blue sample keeps the 0.001 floor's blue response
+    /// while greys drop to 0 blue.
+    #[test]
+    fn cool_magenta_corner_matches_camera_raw() {
+        let apply = |t: f32, n: f32, scene: [f32; 3]| {
+            let wb = rendered_white_balance(t, n);
+            let held: [f32; 3] = std::array::from_fn(|c| scene[c].min(wb.clip[c]));
+            crate::color::mul(wb.matrix, held).map(|v| v.max(0.))
+        };
+
+        // Temp -25, Tint +100: ACR 18.7 matrix-only linear DNG at identical white
+        // (3791 K, +150) maps grey [0.02003, 0.02, 0.02006] to [0.02397, 0.02002, 0.01375]
+        // — warm with positive blue, not zero-blue yellow.
+        let wb_25_100 = rendered_white_balance(-25., 100.);
+        assert!(
+            wb_25_100.clip[2] >= 0.25,
+            "Temp -25 Tint +100 clip must not collapse midtones: {:?}",
+            wb_25_100.clip
+        );
+        let got = apply(-25., 100., [0.02003, 0.02, 0.02006]);
+        let want = [0.02397, 0.02002, 0.01375];
+        assert!(
+            (0..3).all(|c| (got[c] - want[c]).abs() <= 0.001),
+            "Temp -25 Tint +100 grey: got {got:?}, ACR {want:?}"
+        );
+
+        // Temp -50, Tint +100: ACR 18.7 linear DNG (2975 K, +100) maps blue-ish
+        // [0.01002, 0.00999, 0.0401] to [0.00915, 0.01034, 0.00314] via the 0.001
+        // camera-white floor (16 × 0.001 = 0.016), while greys drop to 0 blue.
+        let got_blue = apply(-50., 100., [0.01002, 0.00999, 0.0401]);
+        let want_blue = [0.00915, 0.01034, 0.00314];
+        assert!(
+            (0..3).all(|c| (got_blue[c] - want_blue[c]).abs() <= 0.001),
+            "Temp -50 Tint +100 saturated blue: got {got_blue:?}, ACR {want_blue:?}"
+        );
+
+        // Regression pins on the 16× ramp: blue is attenuated relative to the uncapped
+        // matrix while staying strongly positive.
+        let got_24 = apply(-24., 100., [0.02; 3]);
+        assert!(
+            (0.05..=0.065).contains(&got_24[2]),
+            "Temp -24 Tint +100 grey blue should sit on the 16× ramp: {got_24:?}"
+        );
+        let got_40 = apply(-40., 75., [0.02; 3]);
+        assert!(
+            (0.08..=0.10).contains(&got_40[2]),
+            "Temp -40 Tint +75 grey blue should sit on the 16× ramp: {got_40:?}"
+        );
+    }
+
+    #[test]
+    fn cool_magenta_transition_is_continuous_and_uncollapsed() {
+        let apply = |t: f32, n: f32, scene: [f32; 3]| {
+            let wb = rendered_white_balance(t, n);
+            let held: [f32; 3] = std::array::from_fn(|c| scene[c].min(wb.clip[c]));
+            crate::color::mul(wb.matrix, held).map(|v| v.max(0.))
+        };
+        let min_clip = (1. / MAX_WB_GAIN) * CAMERA_WHITE_SCALE;
+        for t in (-100..=100).step_by(5) {
+            for n in (-100..=100).step_by(5) {
+                let wb = rendered_white_balance(t as f32, n as f32);
+                assert!(
+                    wb.clip.iter().all(|&c| c >= min_clip - 1e-6),
+                    "Temp {t} Tint {n}: clip below 16× floor: {:?}",
+                    wb.clip
+                );
+            }
+        }
+        // Adjacent 1-unit steps across the Tint +100 transition (Temp -30..-15) and
+        // Temp -100 transition (Tint 0..30) move continuously without a cliff collapse.
+        for t in -30..-15 {
+            let a = apply(t as f32, 100., [0.02; 3]);
+            let b = apply((t + 1) as f32, 100., [0.02; 3]);
+            let step = (0..3).map(|c| (b[c] - a[c]).abs()).fold(0.0f32, f32::max);
+            assert!(
+                step < 0.055,
+                "discontinuous jump at Tint +100 Temp {t}->{}: {a:?} -> {b:?} (max {step})",
+                t + 1
+            );
+        }
+        for n in 0..30 {
+            let a = apply(-100., n as f32, [0.02; 3]);
+            let b = apply(-100., (n + 1) as f32, [0.02; 3]);
+            let step = (0..3).map(|c| (b[c] - a[c]).abs()).fold(0.0f32, f32::max);
+            assert!(
+                step < 0.035,
+                "discontinuous jump at Temp -100 Tint {n}->{}: {a:?} -> {b:?} (max {step})",
+                n + 1
+            );
+        }
+        // Regression pin along Temp -100: Tint +6 sits above the 16× cap, Tint +22
+        // remains positive, and blue reaches 0 by Tint +24.
+        let b6 = rendered_gains(-100., 6.)[2];
+        let b20 = rendered_gains(-100., 20.)[2];
+        let b22 = rendered_gains(-100., 22.)[2];
+        let b24 = rendered_gains(-100., 24.)[2];
+        assert!(b6 > b20 && b20 > b22 && b22 > 0.5, "{b6} {b20} {b22}");
+        assert_eq!(b24, 0., "Temp -100 Tint +24 should reach 0 blue");
+
+        // `rendered_dng_tint` hits exact D50 at 0, ±150 at ±100, and increases strictly.
+        assert_eq!(rendered_dng_tint(-100.), -150.);
+        assert!((rendered_dng_tint(0.) - 9.6).abs() < 1e-6);
+        assert_eq!(rendered_dng_tint(100.), 150.);
+        let mut prev = f32::NEG_INFINITY;
+        for n in -100..=100 {
+            let v = rendered_dng_tint(n as f32);
+            assert!(v > prev, "non-monotonic tint at {n}: {v} <= {prev}");
+            prev = v;
+        }
+    }
+
     #[test]
     fn rendered_white_balance_leaves_the_file_as_it_is_at_zero() {
         let wb = rendered_white_balance(0., 0.);
@@ -382,30 +520,54 @@ mod rendered_tests {
     }
 
     #[test]
-    fn rendered_gains_stay_finite_and_positive() {
+    fn rendered_gains_stay_finite_and_non_negative() {
         let mut previous = f32::NEG_INFINITY;
         for t in (-100..=100).step_by(5) {
             for n in (-100..=100).step_by(25) {
                 let g = rendered_gains(t as f32, n as f32);
                 assert!(
-                    g.iter().all(|v| v.is_finite() && (0.5..=32.).contains(v)),
+                    g[0].is_finite()
+                        && g[1].is_finite()
+                        && g[2].is_finite()
+                        && (0.5..=32.).contains(&g[0])
+                        && (0.5..=32.).contains(&g[1])
+                        && (0.0..=32.).contains(&g[2]),
                     "{t} {n}: {g:?}"
                 );
             }
             // Warmer is always redder against blue.
             let g = rendered_gains(t as f32, 0.);
+            assert!(
+                g.iter().all(|v| v.is_finite() && (0.5..=32.).contains(v)),
+                "{t} 0: {g:?}"
+            );
             let warmth = (g[0] / g[2]).log2();
             assert!(warmth >= previous, "{t}: {warmth} < {previous}");
             previous = warmth;
         }
     }
 
-    /// The gains the eyedropper takes from a grey under the white a Temp and Tint
-    /// name.
+    /// The gains the eyedropper takes from a grey under the illuminant a Temp and Tint
+    /// name (using the uncapped illuminant matrix, which matches
+    /// [`rendered_white_balance`] everywhere outside the 16×-capped corner).
     fn picked_gains(temperature: f32, tint: f32) -> [f32; 3] {
-        let m = rendered_white_balance(temperature, tint).matrix;
+        let (m, _) = rendered_wb_matrix(temperature, tint, false);
         let sample = crate::color::mul(crate::color::inverse(m), [0.05; 3]);
         sample.map(|v| sample[1] / v)
+    }
+
+    /// A strongly blue pick (e.g. a blue sign or saturated sky) warms the photo toward
+    /// positive Temp instead of folding into the 16×-capped cool magenta corner.
+    #[test]
+    fn strongly_blue_pick_warms_rather_than_folding_into_cool_magenta() {
+        for sample in [[1., 1., 6.], [1., 1., 8.], [0.9, 1., 8.]] {
+            let gains = sample.map(|v| 1. / v);
+            let [t, _n] = rendered_controls(gains);
+            assert!(
+                t > 50.,
+                "strongly blue pick {sample:?} should warm (Temp > 50), got Temp {t}"
+            );
+        }
     }
 
     #[test]
