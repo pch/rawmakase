@@ -111,16 +111,18 @@ class Crate:
         if kind == "impl_trait":
             return "impl " + " + ".join(self.bound(b) for b in v)
         if kind == "dyn_trait":
-            traits = [self.trait_path(p["trait"]) for p in v["traits"]]
+            traits = [self.binder(p.get("generic_params", [])) + self.trait_path(p["trait"]) for p in v["traits"]]
             return "dyn " + " + ".join(traits + ([v["lifetime"]] if v.get("lifetime") else []))
         if kind == "qualified_path":
             trait = v.get("trait")
             base = f"<{self.ty(v['self_type'])} as {self.trait_path(trait)}>" if trait \
                 else self.ty(v["self_type"])
-            return f"{base}::{v['name']}"
+            return f"{base}::{v['name']}{self.args(v.get('args'))}"
         if kind == "function_pointer":
             sig = v["sig"]
-            return "fn(" + ", ".join(self.ty(x) for _, x in sig["inputs"]) + ")" + self.ret(sig["output"])
+            inputs = [self.ty(x) for _, x in sig["inputs"]] + (["..."] if sig.get("is_c_variadic") else [])
+            return (self.binder(v.get("generic_params", [])) + qualifiers(v.get("header", {}))
+                    + "fn(" + ", ".join(inputs) + ")" + self.ret(sig["output"]))
         return kind
 
     def trait_path(self, t):
@@ -211,6 +213,20 @@ class Crate:
         return f" where {', '.join(clauses)}" if clauses else ""
 
 
+def qualifiers(header):
+    """`const async unsafe extern "C"`, as a function's header has them."""
+    abi = header.get("abi", "Rust")
+    if isinstance(abi, dict):
+        (name, fields), = abi.items()
+        abi = name + ("-unwind" if isinstance(fields, dict) and fields.get("unwind") else "")
+    return "".join([
+        "const " if header.get("is_const") else "",
+        "async " if header.get("is_async") else "",
+        "unsafe " if header.get("is_unsafe") else "",
+        "" if abi == "Rust" else f'extern "{abi}" ',
+    ])
+
+
 def non_exhaustive(item):
     return " #[non_exhaustive]" if any("non_exhaustive" in str(a) for a in item.get("attrs", [])) else ""
 
@@ -236,7 +252,11 @@ class Lister:
         """Records that `item` of `crate` is named `path` by an app."""
         key = crate.canonical(item["id"])
         if key is not None:
-            self.public.setdefault(key, path)
+            # An item reachable at two paths is named by the shorter, then the
+            # first in order, whichever the walk meets first.
+            known = self.public.get(key)
+            if known is None or (path.count("::"), path) < (known.count("::"), known):
+                self.public[key] = path
 
     def walk_module(self, crate, item, prefix):
         for child in item["inner"]["module"]["items"]:
@@ -263,10 +283,15 @@ class Lister:
                 if shape["plain"].get("has_stripped_fields"):
                     self.lines.add(f"{path} has private fields")
             elif isinstance(shape, dict) and "tuple" in shape:
+                self.lines.add(f"{path} is a tuple struct of {len(shape['tuple'])}")
                 for i, f in enumerate(shape["tuple"]):
                     field = crate.item(f)
                     if field and field["visibility"] == "public":
                         self.lines.add(f"pub {path}::{i}: {crate.ty(field['inner']['struct_field'])}")
+                    else:
+                        self.lines.add(f"{path} has private fields")
+            elif shape == "unit":
+                self.lines.add(f"{path} is a unit struct")
             self.impls(crate, v["impls"], path)
         elif kind == "union":
             self.lines.add(f"pub union {path}{crate.generics(v['generics'])}")
@@ -322,6 +347,9 @@ class Lister:
         quals = ("unsafe " if v.get("is_unsafe") else "") + ("auto " if v.get("is_auto") else "")
         self.lines.add(f"pub {quals}trait {path}{crate.generics(g)}"
                        f"{': ' + supertraits if supertraits else ''}{crate.where(g)}")
+        # Its implementations, wherever the types are from: one for a foreign
+        # or re-exported type is listed nowhere else.
+        self.impls(crate, v.get("implementations", []), path)
         for member_id in v["items"]:
             member = crate.item(member_id)
             if member is None:
@@ -363,7 +391,12 @@ class Lister:
 
     def walk_target(self, crate, target, use, prefix):
         (kind, _), = target["inner"].items()
-        if not use["is_glob"]:
+        if not use["is_glob"] and kind == "variant":
+            # A variant is no item of its own visibility: `pub use Enum::Variant`.
+            source = crate.paths.get(str(target["id"]))
+            named = "::".join(source["path"]) if source else use["source"]
+            self.lines.add(f"pub use {prefix}::{use['name']} = {named}")
+        elif not use["is_glob"]:
             self.walk(crate, target, prefix, name=use["name"])
         elif kind == "module":
             self.walk_module(crate, target, prefix)
@@ -391,7 +424,9 @@ class Lister:
             if trait is None:
                 # An inherent impl's generics and target go on each method, as
                 # an app sees them where it calls one.
-                context = f" [impl{header} {target}{crate.where(g)}]" if header or g.get("where_predicates") else ""
+                plain = target == path
+                context = f" [impl{header} {target}{crate.where(g)}]" \
+                    if header or g.get("where_predicates") or not plain else ""
                 for m in v["items"]:
                     member = crate.item(m)
                     if not member or member["visibility"] != "public":
@@ -407,7 +442,21 @@ class Lister:
                 continue
             negative = "!" if v.get("is_negative") else ""
             unsafe = "unsafe " if v.get("is_unsafe") else ""
-            self.lines.add(f"{unsafe}impl{header} {negative}{crate.trait_path(trait)} for {target}{crate.where(g)}")
+            line = f"{unsafe}impl{header} {negative}{crate.trait_path(trait)} for {target}{crate.where(g)}"
+            self.lines.add(line)
+            # What the implementation chooses for the trait: `type Target`,
+            # `type Item`, an associated constant.
+            for m in v["items"]:
+                member = crate.item(m)
+                if member is None:
+                    continue
+                if "assoc_type" in member["inner"]:
+                    t = member["inner"]["assoc_type"].get("type")
+                    self.lines.add(f"{line}: type {member['name']} = {crate.ty(t)}")
+                elif "assoc_const" in member["inner"]:
+                    c = member["inner"]["assoc_const"]
+                    self.lines.add(f"{line}: const {member['name']}: {crate.ty(c['type'])}"
+                                   + (f" = {c['value']}" if c.get("value") else ""))
 
     def function(self, crate, item, path, public=True):
         f = item["inner"]["function"]
@@ -422,14 +471,7 @@ class Lister:
                 inputs.append(f"{name}: {crate.ty(t)}")
         if sig.get("is_c_variadic"):
             inputs.append("...")
-        header = f["header"]
-        abi = header.get("abi", "Rust")
-        quals = "".join([
-            "const " if header.get("is_const") else "",
-            "async " if header.get("is_async") else "",
-            "unsafe " if header.get("is_unsafe") else "",
-            "" if abi == "Rust" else f'extern "{next(iter(abi)) if isinstance(abi, dict) else abi}" ',
-        ])
+        quals = qualifiers(f["header"])
         g = f["generics"]
         body = "" if public else ("" if f.get("has_body") is False else " { default }")
         visibility = "pub " if public else ""

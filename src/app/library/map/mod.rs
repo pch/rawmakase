@@ -122,8 +122,14 @@ impl Map {
         Self::at(None, Net::default())
     }
     /// Keeps fetched tiles in `map-tiles` of the cache folder `cache`.
+    /// A fetcher started for another folder is let go, and the next tiles
+    /// are fetched into the new one.
     pub(in crate::app::library) fn keep_tiles_in(&mut self, cache: Option<&std::path::Path>) {
-        self.root = cache.map(|c| c.join("map-tiles"));
+        let root = cache.map(|c| c.join("map-tiles"));
+        if root != self.root {
+            self.fetcher = None;
+            self.root = root;
+        }
     }
     fn at(root: Option<PathBuf>, net: Net) -> Self {
         Self {

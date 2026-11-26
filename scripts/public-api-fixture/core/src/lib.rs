@@ -16,6 +16,36 @@ pub enum Rich {
 pub mod variants {
     pub use crate::Rich::*;
 }
+pub use Rich::Unit as Nothing;
+
+pub struct Opaque(u32);
+pub struct HalfOpen(pub u32, String);
+pub struct Marker;
+
+pub struct Boxed<T>(pub T);
+impl Boxed<u32> {
+    pub fn reset(&mut self) {
+        self.0 = 0;
+    }
+}
+
+pub struct Letters(Vec<char>);
+impl std::ops::Deref for Letters {
+    type Target = [char];
+    fn deref(&self) -> &[char] {
+        &self.0
+    }
+}
+pub trait Named {
+    fn name(&self) -> String;
+}
+impl Named for String {
+    fn name(&self) -> String {
+        self.clone()
+    }
+}
+pub type Callback = Box<dyn for<'a> Fn(&'a str) + Send>;
+pub type Raw = unsafe extern "C" fn(u8) -> u8;
 
 pub trait Run<T>: Send {
     type Output;
