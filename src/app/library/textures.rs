@@ -53,7 +53,7 @@ pub(super) struct PreviewTextures {
     /// Requests for previews developed with the defaults in place of the
     /// embedded preview their file can't give, by ticket, with the file,
     /// until their results come back.
-    stand_ins: HashMap<u64, PathBuf>,
+    pub(super) stand_ins: HashMap<u64, PathBuf>,
     /// Offline photos' up-to-date editable previews, by photo: where Develop's
     /// renders of a photo opened from its copy are looked up too.
     copies: HashMap<PhotoId, PathBuf>,
@@ -223,11 +223,16 @@ impl PreviewTextures {
                 | EditResult::Failed(id, ticket) => (*id, *ticket),
             };
             let ahead = self.ahead.remove(&ticket);
-            self.stand_ins.remove(&ticket);
-            if !ahead {
+            let stand_in = self.stand_ins.remove(&ticket);
+            if !ahead && stand_in.is_none() {
                 self.edits_pending = self.edits_pending.saturating_sub(1);
             }
             let latest = self.edited_requested.get(&id) == Some(&ticket);
+            // A file developed in place of its embedded preview is unavailable
+            // only when that fails too.
+            if let (EditResult::Failed(..), Some(path), true) = (&result, &stand_in, latest) {
+                self.progress.not_developed(path);
+            }
             match result {
                 EditResult::Ready(_, _, im) if latest => self.insert_edited(ctx, id, &im),
                 // Asked again when shown, from the cache; one that failed ahead
@@ -435,7 +440,7 @@ impl PreviewTextures {
             })
             .is_ok()
         {
-            self.edits_pending += 1;
+            self.progress.developing(&photo.path);
             self.stand_ins.insert(ticket, photo.path.clone());
         }
     }
@@ -648,11 +653,18 @@ impl PreviewTextures {
     }
     /// Worth a status line: still working, or something could not be prepared.
     pub(super) fn progress_active(&self) -> bool {
-        self.progress.active() || self.edits_pending > 0 || !self.ahead.is_empty()
+        self.progress.active()
+            || self.edits_pending > 0
+            || !self.ahead.is_empty()
+            || !self.stand_ins.is_empty()
     }
     pub(super) fn show_progress(&self, ui: &mut egui::Ui) {
-        self.progress
-            .show(ui, self.edits_pending, !self.ahead.is_empty());
+        self.progress.show(
+            ui,
+            self.edits_pending,
+            !self.ahead.is_empty(),
+            self.stand_ins.len(),
+        );
     }
 }
 /// Takes the oldest of `order` not shown in the last frame; `None` when all

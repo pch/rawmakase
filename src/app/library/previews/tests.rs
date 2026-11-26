@@ -564,13 +564,13 @@ fn cache_failure_does_not_stop_previews_or_completion() -> anyhow::Result<()> {
     assert_eq!((progress.completed, progress.total), (1, 2));
     progress.finish(&missing);
     assert_eq!(
-        (progress.completed, progress.total, progress.failed),
+        (progress.completed, progress.total, progress.failed.len()),
         (2, 2, 1)
     );
     assert!(progress.cache_error.is_some());
     progress.queued();
     assert_eq!(
-        (progress.completed, progress.total, progress.failed),
+        (progress.completed, progress.total, progress.failed.len()),
         (0, 1, 0)
     );
     Ok(())
@@ -879,7 +879,7 @@ fn thumbnails_no_longer_shown_are_skipped() -> anyhow::Result<()> {
     let mut progress = Progress::default();
     progress.queued();
     progress.finish(&skipped);
-    assert_eq!(progress.failed, 0);
+    assert!(progress.failed.is_empty());
     Ok(())
 }
 
@@ -1135,4 +1135,44 @@ fn thumbnails_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow::Resu
         );
     }
     Ok(())
+}
+
+/// The preview status line for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]),
+/// right-aligned as the status row draws it: photos developed in place of an
+/// embedded preview their files cannot give, alone and beside edited previews;
+/// all of them shown (nothing to say); and one that could not be developed.
+#[test]
+fn shots_of_the_preview_status_line() {
+    let unavailable = || {
+        let mut progress = Progress::default();
+        progress.not_developed(Path::new("/photos/scan.dng"));
+        progress
+    };
+    let states: [(&str, Progress, usize, usize); 4] = [
+        ("preview-status-developing", Progress::default(), 0, 1),
+        (
+            "preview-status-developing-and-edited",
+            Progress::default(),
+            2,
+            3,
+        ),
+        ("preview-status-developed", Progress::default(), 0, 0),
+        ("preview-status-unavailable", unavailable(), 0, 0),
+    ];
+    for (name, progress, edits, developing) in states {
+        crate::app::ui::shots::shot(
+            name,
+            egui::Vec2::new(560., 28.),
+            |_, _| {},
+            |_, ctx| {
+                crate::app::ui::shots::panel(ctx, 540., |ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if progress.active() || edits > 0 || developing > 0 {
+                            progress.show(ui, edits, false, developing);
+                        }
+                    });
+                });
+            },
+        );
+    }
 }

@@ -166,7 +166,9 @@ fn show_until(library: &mut Library, done: impl Fn(&Library, &Photo) -> bool) ->
 
 /// Whether thumbnails or edited previews are still being made for the views.
 fn busy(library: &Library) -> bool {
-    !library.cache.pending.is_empty() || library.cache.edits_pending > 0
+    !library.cache.pending.is_empty()
+        || library.cache.edits_pending > 0
+        || !library.cache.stand_ins.is_empty()
 }
 
 /// Shows the Library's only photo until nothing has been building for three
@@ -415,5 +417,69 @@ fn a_defaults_change_drops_a_developed_thumbnail_still_rendering() -> Result<()>
         panic!("not developed again");
     };
     assert_eq!(source.tag(), previews::EditSource::Defaults(defaults).tag());
+    Ok(())
+}
+
+/// What the Library's preview status line says, line by line, as the status
+/// row draws it.
+fn status(library: &Library) -> Vec<String> {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        if library.cache.progress_active() {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                library.cache.show_progress(ui);
+            });
+        }
+    });
+    output.textures_delta.clear();
+    output
+        .platform_output
+        .accesskit_update
+        .expect("accessibility is on")
+        .nodes
+        .iter()
+        .filter_map(|(_, node)| node.label().or(node.value()).map(str::to_string))
+        .fold(Vec::new(), |mut lines, line| {
+            // A label's text is its node's and its text run's.
+            if !lines.contains(&line) {
+                lines.push(line);
+            }
+            lines
+        })
+}
+
+/// The status line says a photo is being developed in place of its embedded
+/// preview, not that an edited preview is rendering (it has no edit), and once
+/// it is shown doesn't count it unavailable. One whose develop fails too is.
+#[test]
+fn the_status_line_tells_a_developed_thumbnail_from_an_unavailable_one() -> Result<()> {
+    for develops in [true, false] {
+        let (_directory, mut library) = library_with(scanner_dng)?;
+        let ctx = library.ctx.clone();
+        let photo = library.session.photos()[0].clone();
+        let (sent, renders) = without_its_thumbnail(&mut library)?;
+        library.request_previews(&photo, &ctx);
+        let Some(previews::EditJob::Render { ticket, .. }) = sent.try_recv() else {
+            panic!("no render asked for");
+        };
+        // Neither an edited preview nor, while it may still come, unavailable.
+        assert_eq!(status(&library), ["Rendering 1 preview"]);
+        assert!(busy(&library));
+        renders.send(if develops {
+            previews::EditResult::Ready(photo.id, ticket, image::RgbImage::new(4, 3))
+        } else {
+            previews::EditResult::Failed(photo.id, ticket)
+        })?;
+        library.cache.poll(&ctx);
+        assert!(!busy(&library));
+        assert_eq!(library.texture(&photo).is_some(), develops);
+        let shown = status(&library);
+        if develops {
+            assert!(shown.is_empty(), "{shown:?}");
+        } else {
+            assert_eq!(shown, ["1 preview unavailable"]);
+        }
+    }
     Ok(())
 }
