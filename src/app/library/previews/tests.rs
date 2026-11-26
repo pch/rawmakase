@@ -253,6 +253,105 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
     Ok(())
 }
 
+/// The photo at `path` developed with the defaults, as resolved against the
+/// profile library `profiles`, on a worker that reads the library with
+/// `library` and renders with `render`: whether the preview was shown, and
+/// whether it was kept under its request's identity.
+fn render_of_the_defaults(
+    path: &Path,
+    profiles: &str,
+    render: fn(&Path, &EditSource, Cancel<'_>) -> anyhow::Result<image::RgbImage>,
+    library: fn() -> String,
+) -> anyhow::Result<(bool, bool)> {
+    let directory = tempfile::tempdir()?;
+    let cache = directory.path().join("previews.sqlite3");
+    let wanted = Wanted::default();
+    wanted.lock().unwrap().insert(PhotoId(1));
+    let (tx, rx, _) = spawn_edited_with_profiles(
+        cache.clone(),
+        wanted,
+        egui::Context::default(),
+        render,
+        render_edited_with_ai,
+        library,
+    );
+    let source = EditSource::Defaults(PreviewDefaults {
+        develop: Default::default(),
+        profiles: profiles.into(),
+    });
+    tx.send(EditJob::Render {
+        id: PhotoId(1),
+        ticket: 1,
+        path: path.into(),
+        copy: None,
+        source: source.clone(),
+        ahead: false,
+        display: Default::default(),
+    })?;
+    // The render's answer comes after its store, so the cache is as it left it.
+    let shown = match rx.recv_timeout(Duration::from_secs(10))? {
+        EditResult::Ready(PhotoId(1), 1, _) => true,
+        EditResult::CacheError(error) => panic!("{error}"),
+        EditResult::Failed(..) | EditResult::Skipped(..) | EditResult::Kept(..) => false,
+        EditResult::Ready(..) => panic!("another photo"),
+    };
+    let kept = PreviewCache::open(&cache)?
+        .load_tagged(path, &source.preview_tag(PreviewAi::Off))?
+        .is_some();
+    Ok((shown, kept))
+}
+
+/// A preview of the defaults is kept under the profile library its request
+/// named only when it was resolved against that library: profiles imported
+/// (or removed) while it was being rendered leave it shown but not kept, so
+/// a later request naming that library, as after the change is undone or the
+/// app starts again, never finds a render made with other profiles.
+#[test]
+fn a_render_of_the_defaults_is_kept_only_under_the_library_it_was_resolved_against()
+-> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = edited_png(directory.path(), "scan.png")?;
+
+    static STEADY: Mutex<&str> = Mutex::new("before");
+    fn steady() -> String {
+        STEADY.lock().unwrap().to_string()
+    }
+    fn renders(_: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+        Ok(image::RgbImage::new(4, 3))
+    }
+    assert_eq!(
+        render_of_the_defaults(&path, "before", renders, steady)?,
+        (true, true)
+    );
+
+    static CHANGING: Mutex<&str> = Mutex::new("before");
+    fn changing() -> String {
+        CHANGING.lock().unwrap().to_string()
+    }
+    // Profiles imported as the render resolves the defaults.
+    fn renders_as_profiles_are_imported(
+        _: &Path,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
+        *CHANGING.lock().unwrap() = "after";
+        Ok(image::RgbImage::new(4, 3))
+    }
+    assert_eq!(
+        render_of_the_defaults(&path, "before", renders_as_profiles_are_imported, changing)?,
+        (true, false),
+        "kept under the library before the import"
+    );
+
+    // Asked for with a library that has changed since: rendered with the
+    // library as it is, shown, and not kept under the one asked for.
+    assert_eq!(
+        render_of_the_defaults(&path, "stale", renders, steady)?,
+        (true, false)
+    );
+    Ok(())
+}
+
 /// Develop's render of a photo opened from its editable preview is kept under
 /// the copy's file, and found only by a lookup that names the copy, as the
 /// Library makes for an offline photo with an up-to-date copy; a lookup of the
@@ -564,13 +663,13 @@ fn cache_failure_does_not_stop_previews_or_completion() -> anyhow::Result<()> {
     assert_eq!((progress.completed, progress.total), (1, 2));
     progress.finish(&missing);
     assert_eq!(
-        (progress.completed, progress.total, progress.failed),
+        (progress.completed, progress.total, progress.failed.len()),
         (2, 2, 1)
     );
     assert!(progress.cache_error.is_some());
     progress.queued();
     assert_eq!(
-        (progress.completed, progress.total, progress.failed),
+        (progress.completed, progress.total, progress.failed.len()),
         (0, 1, 0)
     );
     Ok(())
@@ -879,7 +978,7 @@ fn thumbnails_no_longer_shown_are_skipped() -> anyhow::Result<()> {
     let mut progress = Progress::default();
     progress.queued();
     progress.finish(&skipped);
-    assert_eq!(progress.failed, 0);
+    assert!(progress.failed.is_empty());
     Ok(())
 }
 
@@ -1135,4 +1234,44 @@ fn thumbnails_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow::Resu
         );
     }
     Ok(())
+}
+
+/// The preview status line for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]),
+/// right-aligned as the status row draws it: photos developed in place of an
+/// embedded preview their files cannot give, alone and beside edited previews;
+/// all of them shown (nothing to say); and one that could not be developed.
+#[test]
+fn shots_of_the_preview_status_line() {
+    let unavailable = || {
+        let mut progress = Progress::default();
+        progress.not_developed(Path::new("/photos/scan.dng"));
+        progress
+    };
+    let states: [(&str, Progress, usize, usize); 4] = [
+        ("preview-status-developing", Progress::default(), 0, 1),
+        (
+            "preview-status-developing-and-edited",
+            Progress::default(),
+            2,
+            3,
+        ),
+        ("preview-status-developed", Progress::default(), 0, 0),
+        ("preview-status-unavailable", unavailable(), 0, 0),
+    ];
+    for (name, progress, edits, developing) in states {
+        crate::app::ui::shots::shot(
+            name,
+            egui::Vec2::new(560., 28.),
+            |_, _| {},
+            |_, ctx| {
+                crate::app::ui::shots::panel(ctx, 540., |ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if progress.active() || edits > 0 || developing > 0 {
+                            progress.show(ui, edits, false, developing);
+                        }
+                    });
+                });
+            },
+        );
+    }
 }

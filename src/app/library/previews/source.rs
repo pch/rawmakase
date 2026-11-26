@@ -15,7 +15,18 @@ pub(in crate::app) enum EditSource {
     /// Lightroom develop settings from an imported catalog.
     Lightroom(String),
     /// No edit: the raw defaults, as Develop would open the photo.
-    Defaults(Arc<crate::raw_defaults::DevelopDefaults>),
+    Defaults(PreviewDefaults),
+}
+/// What a photo without an edit is previewed with: the raw defaults, and the
+/// profile library they are resolved against
+/// (`camera_profiles::library_fingerprint`), as the app last read it. Which
+/// profile a default picks, and a photo without color data's fitted look,
+/// depend on the library, so a preview made before profiles were imported or
+/// removed is not found again under the same identity.
+#[derive(Clone, Debug, Default)]
+pub(in crate::app) struct PreviewDefaults {
+    pub develop: Arc<crate::raw_defaults::DevelopDefaults>,
+    pub profiles: Arc<str>,
 }
 /// A saved recipe and what identifies it: a hash of its text in the catalog's
 /// stored form, which names its profile and calibration by content. The same edit
@@ -71,7 +82,7 @@ impl EditSource {
             Some(Self::Recipe(saved)) => Start::Recipe(saved.recipe.clone()),
             Some(Self::Unreadable(why)) => anyhow::bail!("{why}"),
             Some(Self::Lightroom(text)) => Start::Lightroom(text.clone()),
-            Some(Self::Defaults(defaults)) => Start::Defaults(defaults.clone()),
+            Some(Self::Defaults(defaults)) => Start::Defaults(defaults.develop.clone()),
             None => Start::AdobeDefault,
         };
         Ok(start.resolve(m, &profiles)?.recipe)
@@ -85,7 +96,9 @@ impl EditSource {
             Self::Recipe(saved) => ("stored recipe", saved.identity).hash(&mut h),
             Self::Unreadable(why) => ("unreadable", why).hash(&mut h),
             Self::Lightroom(text) => ("lightroom", text).hash(&mut h),
-            Self::Defaults(defaults) => ("defaults", format!("{defaults:?}")).hash(&mut h),
+            Self::Defaults(PreviewDefaults { develop, profiles }) => {
+                ("defaults", format!("{develop:?}"), profiles).hash(&mut h)
+            }
         }
         crate::raw::developed().hash(&mut h);
         format!("edit-{:016x}", h.finish())
@@ -106,6 +119,15 @@ impl EditSource {
             // with the result under the edit's plain tag. They are not shown again.
             PreviewAi::Plain => format!("{tag}-fit-noai"),
             PreviewAi::Finished => format!("{tag}-fit-ai-{model}"),
+        }
+    }
+    /// The profile library this source's identity names, which a render must be
+    /// resolved against to be kept under [`Self::tag`]: the defaults', as the
+    /// app last read it. A saved or Lightroom edit names its profile itself.
+    pub(in crate::app) fn profile_library(&self) -> Option<&str> {
+        match self {
+            Self::Defaults(defaults) => Some(&defaults.profiles),
+            Self::Recipe(_) | Self::Unreadable(_) | Self::Lightroom(_) => None,
         }
     }
     /// Whether this edit renders AI Denoise, as far as the Library tells without

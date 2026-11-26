@@ -102,6 +102,14 @@ impl Editor {
         self.refresh_photo_defaults();
         saved
     }
+    /// What the Library previews photos without an edit with: the raw defaults,
+    /// and the profile library as last read.
+    pub(in crate::app) fn preview_defaults(&self) -> crate::app::library::PreviewDefaults {
+        crate::app::library::PreviewDefaults {
+            develop: self.raw_defaults.clone(),
+            profiles: self.profile_library.as_str().into(),
+        }
+    }
     /// Renders the Library's previews of photos without an edit again, e.g. as
     /// imported camera profiles change what the defaults resolve to.
     pub(in crate::app) fn refresh_library_defaults(&mut self) {
@@ -112,8 +120,9 @@ impl Editor {
         &mut self,
         current: Option<crate::catalog::PhotoId>,
     ) {
+        let defaults = self.preview_defaults();
         if let Some(library) = &mut self.library {
-            library.set_defaults_preserving(self.raw_defaults.clone(), current);
+            library.set_defaults_preserving(defaults, current);
         }
         // An unedited reference photo follows them too, profiles imported included.
         self.reload_reference();

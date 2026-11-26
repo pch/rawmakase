@@ -26,6 +26,7 @@ fn counting(
         },
         render,
         render_ai: render_edited_with_ai,
+        profiles: String::new,
     };
     (renders, rx)
 }

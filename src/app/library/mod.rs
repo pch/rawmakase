@@ -80,7 +80,7 @@ pub(in crate::app) use descriptive::parse_keywords;
 pub(crate) use filmstrip::{DraggedPhoto, Module, Pick};
 pub(crate) use keyword_list::KeywordCommand;
 pub(crate) use metadata::{Metadata, MetadataCommand};
-pub(in crate::app) use previews::{EditSource, Pace, PreviewAi};
+pub(in crate::app) use previews::{EditSource, Pace, PreviewAi, PreviewDefaults};
 pub(crate) use quick::CollectionCommand;
 pub(in crate::app) use stacks::StackAction;
 pub(crate) use stacks::StackCommand;
@@ -353,7 +353,7 @@ pub(crate) struct Library {
     /// Read Metadata from Files finished since the editor last asked.
     reread_finished: bool,
     /// What photos without an edit are previewed with (see `set_defaults`).
-    defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
+    defaults: PreviewDefaults,
 }
 impl Library {
     /// Ends the preview workers at exit: the renders under way are cancelled and the
@@ -479,7 +479,7 @@ impl Library {
     /// Checks which files are online again, after the catalog was read.
     fn check_files(&mut self) {
         self.availability.start(self.session.photos(), &self.ctx);
-        self.cache.failed.clear();
+        self.cache.retry_failed();
         self.screen.retry_failed();
         self.filter();
     }
@@ -1672,11 +1672,17 @@ impl Library {
     fn texture(&self, photo: &Photo) -> Option<&egui::TextureHandle> {
         self.cache.texture(photo)
     }
-    /// Queues the previews a shown photo needs; its edit comes from the catalog.
+    /// Queues the previews a shown photo needs; its edit comes from the catalog,
+    /// and without one, should its file have no embedded preview to show, it is
+    /// developed with the defaults.
     fn request_previews(&mut self, photo: &Photo, ctx: &egui::Context) {
-        let catalog = self.session.catalog();
-        self.cache
-            .request(photo, ctx, || edit_source(catalog, photo.id));
+        let (catalog, defaults) = (self.session.catalog(), &self.defaults);
+        self.cache.request(
+            photo,
+            ctx,
+            || edit_source(catalog, photo.id),
+            || EditSource::Defaults(defaults.clone()),
+        );
     }
     /// Replaces the edited-preview worker's queue with one nothing takes from:
     /// what is sent to it is read from the returned end.
@@ -1764,10 +1770,7 @@ impl Library {
     }
     /// Previews photos without an edit with `defaults` from now on; the ones
     /// shown with the previous defaults are made again.
-    pub(in crate::app) fn set_defaults(
-        &mut self,
-        defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
-    ) {
+    pub(in crate::app) fn set_defaults(&mut self, defaults: PreviewDefaults) {
         self.set_defaults_preserving(defaults, None);
     }
 
@@ -1775,11 +1778,12 @@ impl Library {
     /// existing render remains valid; other unedited photos still invalidate.
     pub(in crate::app) fn set_defaults_preserving(
         &mut self,
-        defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
+        defaults: PreviewDefaults,
         current: Option<PhotoId>,
     ) {
         self.defaults = defaults;
         self.screen.clear();
+        self.cache.defaults_changed();
         // Develop's renders of photos without an edit: back to the embedded
         // preview until Develop shows one with the new defaults.
         let unedited: Vec<PhotoId> = self
@@ -2046,6 +2050,8 @@ mod zoom;
 use thumbnails::thumbnail;
 #[cfg(test)]
 mod monitor_tests;
+#[cfg(test)]
+mod no_preview_tests;
 #[cfg(test)]
 mod tests;
 

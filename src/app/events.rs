@@ -545,7 +545,7 @@ impl Editor {
                 }
                 self.onboarding.catalog_error = None;
                 self.messages.absorb(&mut l.messages);
-                l.set_defaults(self.raw_defaults.clone());
+                l.set_defaults(self.preview_defaults());
                 l.set_ai_cache(self.ai_denoise_cache());
                 let selected = self.document.catalog_photo;
                 self.library = Some(l);
@@ -586,7 +586,7 @@ impl Editor {
                     // Photo ids belong to their catalog, and so does the reference.
                     self.clear_reference();
                 }
-                l.set_defaults(self.raw_defaults.clone());
+                l.set_defaults(self.preview_defaults());
                 l.set_ai_cache(self.ai_denoise_cache());
                 // A catalog opened (not read again) may have file
                 // operations a crash left unfinished.
