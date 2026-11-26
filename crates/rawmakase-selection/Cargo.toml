@@ -16,5 +16,13 @@ rawmakase-inference = { path = "../rawmakase-inference", version = "0.1.0" }
 # rawmakase-inference's, where the providers are registered.
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic"] }
 
+# Select Sky's converted model, run by Core ML through rawmakase-inference: the few
+# single-precision tensors of the ONNX model are rounded to half precision.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+half = "2.7"
+
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

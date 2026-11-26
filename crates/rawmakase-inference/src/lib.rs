@@ -7,7 +7,8 @@
 //! of ([`ModelFile`]), and AI Denoise: its pinned contract ([`manifest`]), its tiler
 //! and gain fit on packed mosaic planes ([`denoise`]) and its loaded model
 //! ([`Denoiser`]), and on Apple's Neural Engine its converted model run by Core ML
-//! (`neural_engine`, on Apple platforms only). The selection models (Subject, Background and Sky) are
+//! (`neural_engine`, on Apple platforms only, on the converted-model loader `core_ml`, which
+//! Select Sky's GPU model uses too). The selection models (Subject, Background and Sky) are
 //! `rawmakase-selection`'s, which builds on this crate. The only other workspace
 //! crate it depends on is the cancellation token (`rawmakase-cancel`). Where a
 //! model file lives, how it is downloaded and verified, job scheduling and cache
@@ -16,6 +17,8 @@
 //! A missing or unusable ONNX Runtime library is reported as
 //! [`InferenceError::RuntimeUnavailable`]; the library is never linked.
 
+#[cfg(target_vendor = "apple")]
+pub mod core_ml;
 pub mod denoise;
 mod error;
 pub mod manifest;

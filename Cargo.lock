@@ -4366,9 +4366,11 @@ dependencies = [
 name = "rawmakase-selection"
 version = "0.1.0"
 dependencies = [
+ "half",
  "ort",
  "rawmakase-cancel",
  "rawmakase-inference",
+ "tempfile",
 ]
 
 [[package]]

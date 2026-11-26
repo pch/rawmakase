@@ -14,7 +14,9 @@ use std::ffi::OsString;
 use std::path::Path;
 
 /// The options every model loads with: the runtime above, and this
-/// computer's CPU. The accelerators are the remote worker's concern.
+/// computer's CPU. The accelerators ONNX Runtime registers are the remote
+/// worker's concern; Sky's own model for Apple Silicon's GPU is run by Core ML
+/// beside them (`rawmakase_selection::Sky::load_on_gpu`).
 pub(crate) fn load_options() -> LoadOptions {
     options_from(
         &rawmakase_model_install::runtime_dir(),
