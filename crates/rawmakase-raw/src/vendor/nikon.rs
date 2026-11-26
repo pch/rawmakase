@@ -118,13 +118,17 @@ pub(crate) fn read(t: &TiffFile, model: &str) -> Notes {
 /// order and offset, then the note), read; `None` for another record or
 /// maker. (DNG Specification 1.7, DNGPrivateData; Adobe's record layout
 /// from our own reading of the dataset's DNGs.)
-pub(crate) fn read_dng(file: &[u8], at: u64, model: &str) -> Option<Notes> {
-    let head = file.get(usize::try_from(at).ok()?..)?;
-    if !head.starts_with(b"Adobe\0MakN") {
+pub(crate) fn read_dng<'a>(
+    file: impl Into<crate::io::Source<'a>>,
+    at: u64,
+    model: &str,
+) -> Option<Notes> {
+    let file = file.into();
+    if !file.starts_with_at(at, b"Adobe\0MakN") {
         return None;
     }
     let note_at = at.checked_add(20)?;
-    if !head.get(20..)?.starts_with(b"Nikon\0") {
+    if !file.starts_with_at(note_at, b"Nikon\0") {
         return None;
     }
     let note = TiffFile::parse(file, note_at.checked_add(10)?)?;
@@ -173,7 +177,7 @@ fn read_note(note: &TiffFile, headerless: bool, model: &str) -> Notes {
         notes.cb_black = color_balance_black(&cb, |b, at| u16_at(b, at));
     }
     if let Some(data) = note.bytes_of(ifd, 0x0014) {
-        coolpix_color(data, &mut notes);
+        coolpix_color(&data, &mut notes);
     }
     notes.black = note
         .ints_upto(ifd, 0x003d, 4)
@@ -212,9 +216,11 @@ fn read_note(note: &TiffFile, headerless: bool, model: &str) -> Notes {
     // The D1X writes its table in 0x008c, after 2110 bytes of other data.
     notes.curve = note
         .bytes_of(ifd, 0x0096)
+        .as_deref()
         .and_then(|c| curve(c, little))
         .or_else(|| {
             note.bytes_of(ifd, 0x008c)
+                .as_deref()
                 .and_then(|c| curve(c, little))
                 .filter(|c| c.version[0] == 0x49 || c.version[1] == 0x58)
         });
@@ -252,12 +258,11 @@ pub(crate) fn cfa(model: &str) -> Option<Cfa> {
 fn maker_note<'a>(t: &TiffFile<'a>) -> Option<TiffFile<'a>> {
     let exif = t.exif.as_ref()?;
     let at = t.offset_of(exif.entries.get(&0x927c)?)?;
-    let head = t.bytes.data.get(usize::try_from(at).ok()?..)?;
-    if head.starts_with(b"Nikon\0") {
+    if t.data.starts_with_at(at, b"Nikon\0") {
         // The note's own TIFF, its offsets from its header; a camera's own
         // TIFF starts the file.
         (t.base == 0)
-            .then_some(t.bytes.data)
+            .then_some(t.data)
             .and_then(|file| TiffFile::parse(file, at.checked_add(10)?))
     } else {
         t.directory_at(at)

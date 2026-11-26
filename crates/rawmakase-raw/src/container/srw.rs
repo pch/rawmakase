@@ -164,7 +164,7 @@ fn cfa(t: &TiffFile, raw: &Ifd) -> Cfa {
     let colors = t
         .bytes_of(raw, 33422)
         .filter(|p| p.len() == 4 && p.iter().all(|&c| c <= 2))
-        .map_or(vec![0, 1, 1, 2], <[u8]>::to_vec);
+        .map_or(vec![0, 1, 1, 2], |p| p.into_owned());
     crate::info::second_green(Cfa {
         rows: 2,
         cols: 2,

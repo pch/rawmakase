@@ -3,21 +3,21 @@
 //! reading the whole file costs its size in memory and most of the time, and
 //! for Develop's placeholder on network volumes.
 //!
-//! The readers stay as they are. They are given a buffer the file's size in
-//! which only the parts read from the file are filled: its start and end,
-//! where most containers keep their directories and boxes; the parts a
-//! container says its header is in beyond those (`variant::header_parts`: a
-//! RAF's records and raw directory, which follow its embedded JPEG, a TIFF's
-//! directories and their short values wherever they are, the start of a
-//! CR2's or a NEF's sensor data, a CR3's timed metadata and the start of the
-//! JPEG after an Olympus compact's sensor data); then the start of each
-//! preview candidate (whose header says its size) and the chosen preview
-//! whole. A reader that needed a part not read finds zeros there and
+//! The readers stay as they are. They are given a sparse view over the file's
+//! length in which only the parts read from the file are allocated and held:
+//! its start and end, where most containers keep their directories and boxes;
+//! the parts a container says its header is in beyond those
+//! (`variant::header_parts`: a RAF's records and raw directory, which follow
+//! its embedded JPEG, a TIFF's directories and their short values wherever they
+//! are, the start of a CR2's or a NEF's sensor data, a CR3's timed metadata
+//! and the start of the JPEG after an Olympus compact's sensor data); then the
+//! start of each preview candidate (whose header says its size) and the chosen
+//! preview whole. A reader that needed a part not read finds zeros there and
 //! gives up, finds no preview, finds fewer candidates or reads a fact as
-//! absent. Giving up or finding no preview is `None`, and the caller reads
-//! the whole file as before. The others can't be told from the file's own,
-//! so only formats compared with whole-file reads are read this way
-//! ([`checked`]), and a preview smaller than the one asked for is `None` too.
+//! absent. Giving up or finding no preview is `None`, and the caller reads the
+//! whole file as before. The others can't be told from the file's own, so only
+//! formats compared with whole-file reads are read this way ([`checked`]), and
+//! a preview smaller than the one asked for is `None` too.
 use crate::Variant;
 use crate::info::RawInfo;
 use std::io::{Read, Seek, SeekFrom};
@@ -96,13 +96,15 @@ fn largest_in_pieces(
 ) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, allow)?;
-    let (at, len) = crate::preview::find(&info, &f.bytes).ok()?;
+    let (at, len) = crate::preview::find(&info, f.source()).ok()?;
     f.fill(at, len)?;
-    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    let preview = crate::embedded_source(f.source(), (at, len))
+        .ok()?
+        .into_owned();
     Some(PartialPreview {
         info,
         preview,
-        read: f.read,
+        read: f.read(),
     })
 }
 
@@ -194,7 +196,10 @@ pub struct PartialHeader {
 pub fn header_from_file(file: &mut (impl Read + Seek)) -> Option<PartialHeader> {
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, checked)?;
-    Some(PartialHeader { info, read: f.read })
+    Some(PartialHeader {
+        info,
+        read: f.read(),
+    })
 }
 
 /// The preview [`preview_from_file`] reads, for files whose variant `allow`
@@ -206,13 +211,15 @@ fn in_pieces(
 ) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, allow)?;
-    let (at, len) = crate::preview::find_reaching(&info, &f.bytes, edge).ok()?;
+    let (at, len) = crate::preview::find_reaching(&info, f.source(), edge).ok()?;
     f.fill(at, len)?;
-    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    let preview = crate::embedded_source(f.source(), (at, len))
+        .ok()?
+        .into_owned();
     Some(PartialPreview {
         info,
         preview,
-        read: f.read,
+        read: f.read(),
     })
 }
 
@@ -227,7 +234,7 @@ fn header_in_pieces<R: Read + Seek>(
     f.fill(0, HEAD)?;
     f.fill(f.len().saturating_sub(TAIL), TAIL)?;
     f.fill_header_parts()?;
-    let info = crate::variant::open(&f.bytes).ok()?;
+    let info = crate::variant::open_source(f.source()).ok()?;
     if !allow(info.variant) {
         return None;
     }
@@ -242,8 +249,8 @@ fn header_in_pieces<R: Read + Seek>(
         // looked for in the part read alone, so that a frame header cut short
         // isn't completed with zeros.
         let mut read = c.len.min(CANDIDATE_HEAD);
-        while crate::preview::is_jpeg(&f.bytes, c.offset)
-            && crate::preview::jpeg_size(&f.bytes, c.offset, read).is_none()
+        while crate::preview::is_jpeg(f.source(), c.offset)
+            && crate::preview::jpeg_size(f.source(), c.offset, read).is_none()
         {
             if read >= c.len {
                 // Read whole without a frame: the readers see the same
@@ -265,25 +272,17 @@ fn header_in_pieces<R: Read + Seek>(
     // read whole. The candidates themselves come from the directories
     // already read; should they differ, a reader used what wasn't read.
     let first: Vec<_> = info.previews.iter().map(|c| (c.offset, c.len)).collect();
-    let info = crate::variant::open(&f.bytes).ok()?;
+    let info = crate::variant::open_source(f.source()).ok()?;
     if !allow(info.variant) || !info.previews.iter().map(|c| (c.offset, c.len)).eq(first) {
         return None;
     }
     Some(info)
 }
 
-/// A buffer the size of the file, filled where the file has been read. It
-/// is filled with zeros first, so it takes the file's size in memory while
-/// it is read, as the file read whole does: what reading in pieces saves is
-/// the reading (measured 2026-11-18 on macOS: a 100 MB RAF's preview peaks at
-/// 111 MB either way). A buffer the allocator zeroes instead is no smaller
-/// there, as a freed block of the size is taken again and written with zeros.
+/// On-demand sparse chunks read from `file` without allocating `file.len()`.
 struct Sparse<'r, R: Read + Seek> {
     file: &'r mut R,
-    bytes: Vec<u8>,
-    /// The ranges read, as start and end, sorted and apart.
-    filled: Vec<(u64, u64)>,
-    read: u64,
+    data: crate::io::SparseData,
 }
 
 impl<'r, R: Read + Seek> Sparse<'r, R> {
@@ -292,32 +291,28 @@ impl<'r, R: Read + Seek> Sparse<'r, R> {
         if len == 0 || len > MAX_FILE {
             return None;
         }
-        let mut bytes = Vec::new();
-        bytes.try_reserve_exact(usize::try_from(len).ok()?).ok()?;
-        bytes.resize(usize::try_from(len).ok()?, 0);
         Some(Self {
             file,
-            bytes,
-            filled: Vec::new(),
-            read: 0,
+            data: crate::io::SparseData::new(len),
         })
     }
     fn len(&self) -> u64 {
-        self.bytes.len() as u64
+        self.data.len()
+    }
+    fn read(&self) -> u64 {
+        self.data.read()
+    }
+    fn source(&self) -> crate::io::Source<'_> {
+        crate::io::Source::Sparse {
+            data: &self.data,
+            base: 0,
+            len: self.data.len(),
+        }
     }
     /// Reads `len` bytes at `at`, fewer where the file ends sooner, skipping
     /// what has been read already.
     fn fill(&mut self, at: u64, len: u64) -> Option<()> {
-        let end = at.saturating_add(len).min(self.len());
-        let start = at.min(end);
-        for (from, to) in self.gaps(start, end) {
-            self.file.seek(SeekFrom::Start(from)).ok()?;
-            let range = usize::try_from(from).ok()?..usize::try_from(to).ok()?;
-            self.file.read_exact(&mut self.bytes[range]).ok()?;
-            self.read += to - from;
-        }
-        self.mark(start, end);
-        Some(())
+        self.data.fill(self.file, at, len)
     }
     /// Reads the parts the file's container keeps its header in beyond the
     /// start and the end ([`crate::variant::header_parts`]): a RAF's records
@@ -331,8 +326,8 @@ impl<'r, R: Read + Seek> Sparse<'r, R> {
     /// missing after [`MAX_ROUNDS`].
     fn fill_header_parts(&mut self) -> Option<()> {
         for _ in 0..MAX_ROUNDS {
-            let mut parts = crate::variant::header_parts(&self.bytes)?;
-            parts.retain(|&(at, len)| !self.gaps(at, at.saturating_add(len)).is_empty());
+            let mut parts = crate::variant::header_parts(self.source())?;
+            parts.retain(|&(at, len)| self.data.has_gap(at, at.saturating_add(len)));
             if parts.is_empty() {
                 return Some(());
             }
@@ -353,44 +348,6 @@ impl<'r, R: Read + Seek> Sparse<'r, R> {
             }
         }
         None
-    }
-    /// The parts of `start..end` not read yet, as far as the file goes.
-    fn gaps(&self, start: u64, end: u64) -> Vec<(u64, u64)> {
-        let end = end.min(self.len());
-        let mut gaps = Vec::new();
-        let mut at = start;
-        for &(s, e) in &self.filled {
-            if e <= at {
-                continue;
-            }
-            if s >= end {
-                break;
-            }
-            if s > at {
-                gaps.push((at, s));
-            }
-            at = at.max(e);
-        }
-        if at < end {
-            gaps.push((at, end));
-        }
-        gaps
-    }
-    /// Records `start..end` as read.
-    fn mark(&mut self, start: u64, end: u64) {
-        if start >= end {
-            return;
-        }
-        self.filled.push((start, end));
-        self.filled.sort_unstable();
-        let mut merged: Vec<(u64, u64)> = Vec::with_capacity(self.filled.len());
-        for &(s, e) in &self.filled {
-            match merged.last_mut() {
-                Some(last) if s <= last.1 => last.1 = last.1.max(e),
-                _ => merged.push((s, e)),
-            }
-        }
-        self.filled = merged;
     }
 }
 

@@ -57,7 +57,7 @@ pub(crate) fn open(t: TiffFile) -> Result<RawInfo> {
         .entries
         .get(&LEAF_DATA)
         .and_then(|e| Some((t.offset_of(e)?, u64::from(e.count))))
-        .and_then(|(at, len)| leaf::read(t.bytes.data, at, len))
+        .and_then(|(at, len)| leaf::read(t.data, at, len))
         .ok_or_else(|| corrupt("MOS without Leaf's data"))?;
     if notes.planes.unwrap_or(1) != 1 {
         return Err(Error::Unsupported("MOS of several planes".into()));

@@ -139,24 +139,24 @@ impl<'a> Note<'a> {
 fn note<'a>(t: &TiffFile<'a>) -> Option<Note<'a>> {
     let entry = t.exif.as_ref()?.entries.get(&0x927c)?;
     let at = t.offset_of(entry)?;
-    let head = t.bytes.data.get(usize::try_from(at).ok()?..)?;
-    let order = |mark: &[u8]| match mark {
+    let order = |mark: [u8; 2]| match &mark {
         b"II" => Some(Order::Little),
         b"MM" => Some(Order::Big),
         _ => None,
     };
     if let Some(start) = [&b"OLYMPUS\0"[..], b"OM SYSTEM\0\0\0"]
         .into_iter()
-        .find_map(|magic| head.starts_with(magic).then_some(magic.len()))
+        .find_map(|magic| t.data.starts_with_at(at, magic).then_some(magic.len()))
     {
-        let view = TiffFile::view(t.bytes.data, at, order(head.get(start..start + 2)?)?)?;
+        let mark = t.data.array::<2>(at.checked_add(start as u64)?)?;
+        let view = TiffFile::view(t.data, at, order(mark)?)?;
         let main = view.ifd_at(start as u64 + 4)?;
         return Some(Note::new(view, main));
     }
-    if head.starts_with(b"OLYMP\0") {
+    if t.data.starts_with_at(at, b"OLYMP\0") {
         // Offsets from the TIFF header.
-        let view = TiffFile::view(t.bytes.data, 0, t.bytes.order)?;
-        let main = view.ifd_at(at + 8)?;
+        let view = TiffFile::view(t.data, 0, t.order)?;
+        let main = view.ifd_at(at.checked_add(8)?)?;
         return Some(Note::new(view, main));
     }
     None

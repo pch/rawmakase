@@ -200,7 +200,7 @@ fn a100(t: &TiffFile) -> Result<RawInfo> {
     let [width, height] = [mrw.width + 1, mrw.height];
     crate::io::samples(width, height, 1)?;
     let at = t.base + u64::from(at);
-    let chunks = vec![(at, (t.bytes.data.len() as u64).saturating_sub(at))];
+    let chunks = vec![(at, t.data.len().saturating_sub(at))];
     let mut info = header(t, Variant::ArwV1, [width, height], &chunks);
     info.cfa = Some(crate::info::second_green(Cfa {
         rows: 2,
@@ -257,7 +257,7 @@ fn cfa(t: &TiffFile, ifd: &Ifd) -> Cfa {
     let pattern = t
         .bytes_of(ifd, 33422)
         .filter(|p| p.len() == 4 && p.iter().all(|&c| c <= 2))
-        .map_or(vec![0, 1, 1, 2], <[u8]>::to_vec);
+        .map_or(vec![0, 1, 1, 2], |p| p.into_owned());
     crate::info::second_green(Cfa {
         rows: 2,
         cols: 2,

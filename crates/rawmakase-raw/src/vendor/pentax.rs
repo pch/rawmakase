@@ -66,19 +66,23 @@ pub(crate) fn read_at(t: &TiffFile, at: u64) -> Option<Notes> {
 /// The directory of the note at `at` (from the TIFF header) in `t`, and the
 /// view its offsets count in.
 fn directory<'a>(t: &TiffFile<'a>, at: u64) -> Option<(TiffFile<'a>, Ifd)> {
-    let head = t.bytes.data.get(usize::try_from(at).ok()?..)?;
-    let order = |mark: &[u8]| match mark {
+    let order = |mark: [u8; 2]| match &mark {
         b"II" => Some(Order::Little),
         b"MM" => Some(Order::Big),
         _ => None,
     };
-    let (view, ifd) = if head.starts_with(b"AOC\0") {
-        let order = order(head.get(4..6)?).unwrap_or(t.bytes.order);
-        let view = TiffFile::view(t.bytes.data, 0, order)?;
-        let ifd = view.ifd_at(at + 6)?;
+    let (view, ifd) = if t.data.starts_with_at(at, b"AOC\0") {
+        let order = t
+            .data
+            .array::<2>(at.checked_add(4)?)
+            .and_then(order)
+            .unwrap_or(t.order);
+        let view = TiffFile::view(t.data, 0, order)?;
+        let ifd = view.ifd_at(at.checked_add(6)?)?;
         (view, ifd)
-    } else if head.starts_with(b"PENTAX \0") || head.starts_with(b"SAMSUNG\0") {
-        let view = TiffFile::view(t.bytes.data, at, order(head.get(8..10)?)?)?;
+    } else if t.data.starts_with_at(at, b"PENTAX \0") || t.data.starts_with_at(at, b"SAMSUNG\0") {
+        let mark = t.data.array::<2>(at.checked_add(8)?)?;
+        let view = TiffFile::view(t.data, at, order(mark)?)?;
         let ifd = view.ifd_at(10)?;
         (view, ifd)
     } else {
@@ -150,6 +154,6 @@ fn notes(v: &TiffFile, ifd: &Ifd) -> Notes {
         out.crop = Some([origin[0], origin[1], size[0], size[1]]);
     }
     // The table's count and up to 15 codes and lengths: 59 bytes at most.
-    out.huffman = v.raw_upto(ifd, HUFFMAN, 64).map(|b| (b, v.bytes.order));
+    out.huffman = v.raw_upto(ifd, HUFFMAN, 64).map(|b| (b, v.order));
     out
 }

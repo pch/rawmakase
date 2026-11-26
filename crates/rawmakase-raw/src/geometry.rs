@@ -55,11 +55,15 @@ pub(crate) fn apply(info: &mut crate::info::RawInfo) {
 /// the visible area's within a tenth on each side (either way round, for a
 /// size recorded turned). A size further off is another crop (an aspect
 /// ratio, a smaller preview), and the visible area stays the frame.
-pub(crate) fn camera_frame(info: &mut crate::info::RawInfo, bytes: &[u8]) {
+pub(crate) fn camera_frame<'a>(
+    info: &mut crate::info::RawInfo,
+    bytes: impl Into<crate::io::Source<'a>>,
+) {
     let none = [crate::info::UNSET, crate::info::UNSET, 0, 0];
     if info.dng_version > 0 || info.frame != none || info.super_ccd.is_some() {
         return;
     }
+    let bytes = bytes.into();
     let Some([mut w, mut h]) = info.image_size.or_else(|| {
         let (at, len) = crate::preview::largest(&info.previews, bytes)?;
         crate::preview::jpeg_size(bytes, at, len)

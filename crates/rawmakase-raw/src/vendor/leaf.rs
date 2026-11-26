@@ -11,7 +11,7 @@
 //! Sources: ExifTool's Leaf tag documentation (the packet names), and our
 //! own measurements on the test dataset's files (the packet layout, the
 //! filter's color codes, the levels as the white balance).
-use crate::io::{Bytes, Order};
+use crate::io::{Order, Source};
 
 /// The most packets read, and how deep they nest.
 const MAX_PACKETS: usize = 4096;
@@ -36,43 +36,44 @@ pub(crate) struct Notes {
 }
 
 /// The packets of `len` bytes at `at` in `file`, when they start there.
-pub(crate) fn read(file: &[u8], at: u64, len: u64) -> Option<Notes> {
-    let b = Bytes::new(file, Order::Big);
-    if b.slice(at, 4).ok()? != b"PKTS" {
+pub(crate) fn read<'a>(file: impl Into<Source<'a>>, at: u64, len: u64) -> Option<Notes> {
+    let b = file.into();
+    if !b.starts_with_at(at, b"PKTS") {
         return None;
     }
-    let end = at.checked_add(len)?.min(file.len() as u64);
+    let end = at.checked_add(len)?.min(b.len());
     let mut notes = Notes::default();
     let mut count = 0;
-    walk(&b, at, end, 0, &mut count, &mut notes);
+    walk(b, at, end, 0, &mut count, &mut notes);
     Some(notes)
 }
 
-fn walk(b: &Bytes, mut at: u64, end: u64, depth: u32, count: &mut usize, n: &mut Notes) {
-    while at.saturating_add(52) <= end && b.slice(at, 4).ok() == Some(b"PKTS") {
+fn walk(b: Source<'_>, mut at: u64, end: u64, depth: u32, count: &mut usize, n: &mut Notes) {
+    while at.saturating_add(52) <= end && b.starts_with_at(at, b"PKTS") {
         *count += 1;
         if *count > MAX_PACKETS {
             return;
         }
-        let Ok(name) = b.slice(at + 8, 40) else {
+        let Some(name) = b.array::<40>(at + 8) else {
             return;
         };
         let name = &name[..name.iter().position(|&c| c == 0).unwrap_or(40)];
-        let Ok(size) = b.u32(at + 48) else { return };
+        let Some(size) = b.u32(Order::Big, at + 48) else {
+            return;
+        };
         let value = at + 52;
         let next = value.saturating_add(u64::from(size));
         if next > end {
             return;
         }
-        if b.slice(value, 4).ok() == Some(b"PKTS") {
+        if b.starts_with_at(value, b"PKTS") {
             if depth < MAX_DEPTH {
                 walk(b, value, next, depth + 1, count, n);
             }
         } else {
             let text = || {
-                b.slice(value, u64::from(size).min(MAX_TEXT))
-                    .ok()
-                    .map(|t| String::from_utf8_lossy(t).into_owned())
+                b.get(value, u64::from(size).min(MAX_TEXT))
+                    .map(|t| String::from_utf8_lossy(&t).into_owned())
             };
             let numbers = || -> Vec<f64> {
                 text()
@@ -99,7 +100,7 @@ fn walk(b: &Bytes, mut at: u64, end: u64, depth: u32, count: &mut usize, n: &mut
                 b"CaptProf_number_of_planes" => n.planes = int(),
                 b"CaptProf_mosaic_pattern" => n.cfa = filter(&numbers()),
                 b"JPEG_preview_data" => n.preview = Some((value, u64::from(size))),
-                b"Rows_data" if size == 4 => n.rows = b.u32(value).ok(),
+                b"Rows_data" if size == 4 => n.rows = b.u32(Order::Big, value),
                 _ => {}
             }
         }

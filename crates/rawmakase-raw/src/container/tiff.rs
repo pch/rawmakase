@@ -1,10 +1,10 @@
 //! TIFF-based containers (DNG, CR2, NEF, ARW, PEF, ORF, RW2, SRW, 3FR…): every
 //! image directory reachable from the header (the IFD chain and SubIFDs), the
 //! EXIF directory and where the maker notes are.
-use crate::io::{Bytes, Order};
+use crate::io::{Order, Source, SourceReader};
 use rawmakase_tiff::{Entry, Tiff, kind};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::io::Cursor;
 
 /// An image file directory.
 pub(crate) struct Ifd {
@@ -19,9 +19,11 @@ impl Ifd {
 
 /// A TIFF file in memory, its directories read.
 pub(crate) struct TiffFile<'a> {
-    /// The file from the TIFF header on, in its byte order: offsets in the
-    /// directories are into it.
-    pub bytes: Bytes<'a>,
+    /// The file from the TIFF header on: offsets in the directories are into
+    /// it.
+    pub data: Source<'a>,
+    /// Byte order of the TIFF.
+    pub order: Order,
     /// Where the TIFF header is in the file.
     pub base: u64,
     /// IFD0 and its chain, each followed by its SubIFDs (depth first).
@@ -56,27 +58,30 @@ fn collect<T>(values: impl ExactSizeIterator<Item = T>) -> Option<Vec<T>> {
 
 impl<'a> TiffFile<'a> {
     /// The TIFF whose header is at `base` in `file`.
-    pub(crate) fn parse(file: &'a [u8], base: u64) -> Option<Self> {
+    pub(crate) fn parse<'f>(file: impl Into<Source<'f>>, base: u64) -> Option<TiffFile<'f>> {
+        let file = file.into();
         let Followed { t, ifds, exif, .. } = follow(file, base)?;
         if ifds.is_empty() {
             return None;
         }
         let order = if t.little { Order::Little } else { Order::Big };
-        Some(Self {
-            bytes: Bytes::new(file.get(usize::try_from(base).ok()?..)?, order),
+        Some(TiffFile {
+            data: file.slice_from(base)?,
+            order,
             base,
             ifds,
             exif,
         })
     }
     pub(crate) fn little(&self) -> bool {
-        self.bytes.order == Order::Little
+        self.order == Order::Little
     }
     /// The directory at `offset` (from the TIFF header) alone, read with this
     /// TIFF's byte order and offsets: a maker note's or a preview's.
     pub(crate) fn directory_at(&self, offset: u64) -> Option<TiffFile<'a>> {
         Some(Self {
-            bytes: self.bytes,
+            data: self.data,
+            order: self.order,
             base: self.base,
             ifds: vec![self.ifd_at(offset)?],
             exif: None,
@@ -92,17 +97,17 @@ impl<'a> TiffFile<'a> {
     /// length in the file (see [`parts`]): for a directory outside the chain,
     /// as a maker note's.
     pub(crate) fn values(&self, ifd: &Ifd) -> Vec<(u64, u64)> {
-        let t = Tiff::headless(Cursor::new(self.bytes.data), 0, self.little());
+        let t = Tiff::headless(self.data.reader(), 0, self.little());
         values(&t, self.base, &ifd.entries).collect()
     }
     pub(crate) fn u32(&self, b: &[u8]) -> u32 {
-        match self.bytes.order {
+        match self.order {
             Order::Little => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             Order::Big => u32::from_be_bytes([b[0], b[1], b[2], b[3]]),
         }
     }
     pub(crate) fn u16(&self, b: &[u8]) -> u16 {
-        match self.bytes.order {
+        match self.order {
             Order::Little => u16::from_le_bytes([b[0], b[1]]),
             Order::Big => u16::from_be_bytes([b[0], b[1]]),
         }
@@ -110,15 +115,20 @@ impl<'a> TiffFile<'a> {
     /// The directory at `offset` (from the TIFF header), outside the chain:
     /// a maker note's or a private one.
     pub(crate) fn ifd_at(&self, offset: u64) -> Option<Ifd> {
-        let mut t = Tiff::headless(Cursor::new(self.bytes.data), 0, self.little());
+        let mut t = Tiff::headless(self.data.reader(), 0, self.little());
         t.ifd(offset).map(|entries| Ifd { entries })
     }
     /// A maker note whose offsets count from `base` in `file`, in `order`:
     /// it has no directories of its own (`ifds` is empty); read them with
     /// [`TiffFile::ifd_at`].
-    pub(crate) fn view(file: &'a [u8], base: u64, order: Order) -> Option<Self> {
-        Some(Self {
-            bytes: Bytes::new(file.get(usize::try_from(base).ok()?..)?, order),
+    pub(crate) fn view<'f>(
+        file: impl Into<Source<'f>>,
+        base: u64,
+        order: Order,
+    ) -> Option<TiffFile<'f>> {
+        Some(TiffFile {
+            data: file.into().slice_from(base)?,
+            order,
             base,
             ifds: Vec::new(),
             exif: None,
@@ -127,20 +137,18 @@ impl<'a> TiffFile<'a> {
     /// A tag's first `max` bytes at most, where they are (in the entry or
     /// in the file): borrowed, not copied. `usize::MAX` takes the whole
     /// value, which must then be in the file.
-    fn slice_upto<'s>(&'s self, e: &'s Entry, max: usize) -> Option<&'s [u8]> {
+    fn slice_upto<'s>(&'s self, e: &'s Entry, max: usize) -> Option<Cow<'s, [u8]>> {
         let len = usize::try_from(e.count).ok()?.checked_mul(e.type_size()?)?;
         let take = len.min(max);
         if len <= 4 {
-            e.value.get(..take)
+            e.value.get(..take).map(Cow::Borrowed)
         } else {
-            self.bytes
-                .slice(u64::from(self.u32(&e.value)), take as u64)
-                .ok()
+            self.data.get(u64::from(self.u32(&e.value)), take as u64)
         }
     }
     /// A tag's bytes where they are, borrowed: a record read in place
     /// costs nothing however long the file says it is.
-    pub(crate) fn bytes_of<'s>(&'s self, ifd: &'s Ifd, tag: u16) -> Option<&'s [u8]> {
+    pub(crate) fn bytes_of<'s>(&'s self, ifd: &'s Ifd, tag: u16) -> Option<Cow<'s, [u8]>> {
         self.slice_upto(ifd.entries.get(&tag)?, usize::MAX)
     }
     /// A tag's type and count of values, when the directory has it: whether
@@ -155,7 +163,7 @@ impl<'a> TiffFile<'a> {
         let b = self.slice_upto(ifd.entries.get(&tag)?, max)?;
         let mut out = Vec::new();
         out.try_reserve_exact(b.len()).ok()?;
-        out.extend_from_slice(b);
+        out.extend_from_slice(&b);
         Some(out)
     }
     /// The values of an unsigned integer tag (BYTE, SHORT, LONG, IFD) of
@@ -278,7 +286,7 @@ impl<'a> TiffFile<'a> {
 /// The directories of a TIFF, as [`TiffFile::parse`] follows them from its
 /// header.
 struct Followed<'a> {
-    t: Tiff<Cursor<&'a [u8]>>,
+    t: Tiff<SourceReader<'a>>,
     ifds: Vec<Ifd>,
     exif: Option<Ifd>,
     /// Where each directory followed is, from the TIFF header, whether it
@@ -289,8 +297,8 @@ struct Followed<'a> {
 /// Follows the directories of the TIFF at `base` in `file`: IFD0 and its
 /// chain, each followed by its SubIFDs, and IFD0's EXIF directory. `None`
 /// when `file` has no TIFF header there.
-fn follow(file: &[u8], base: u64) -> Option<Followed<'_>> {
-    let mut t = Tiff::open(Cursor::new(file), base)?;
+fn follow(file: Source<'_>, base: u64) -> Option<Followed<'_>> {
+    let mut t = Tiff::open(file.reader(), base)?;
     let mut ifds = Vec::new();
     let mut seen = Vec::new();
     let mut next = t.first;
@@ -338,8 +346,8 @@ const UNREAD_DIRECTORY: u64 = 64 << 10;
 /// neither its values nor the next directory: it is listed as its first
 /// [`UNREAD_DIRECTORY`] bytes, and once those are read the parts are listed
 /// again. Empty without a TIFF header at `base`.
-pub(crate) fn parts(file: &[u8], base: u64, longest: u64) -> Vec<(u64, u64)> {
-    let Some(mut f) = follow(file, base) else {
+pub(crate) fn parts<'a>(file: impl Into<Source<'a>>, base: u64, longest: u64) -> Vec<(u64, u64)> {
+    let Some(mut f) = follow(file.into(), base) else {
         return Vec::new();
     };
     let mut parts = Vec::new();
@@ -368,7 +376,7 @@ fn values<'e, R: std::io::Read + std::io::Seek>(
 }
 
 fn walk(
-    t: &mut Tiff<Cursor<&[u8]>>,
+    t: &mut Tiff<SourceReader<'_>>,
     at: u64,
     ifds: &mut Vec<Ifd>,
     seen: &mut Vec<u64>,
@@ -505,8 +513,8 @@ mod tests {
         assert_eq!(t.reals(ifd, 1, 2), None);
         assert_eq!(t.reals_upto(ifd, 1, 1), Some(vec![1.]));
         assert_eq!(t.real(ifd, 1), Some(1.));
-        assert_eq!(t.bytes_of(ifd, 1), Some(&[1, 0, 2, 0, 3, 0][..]));
-        assert_eq!(t.bytes_of(ifd, 2), Some(&[7, 0][..]));
+        assert_eq!(t.bytes_of(ifd, 1).as_deref(), Some(&[1, 0, 2, 0, 3, 0][..]));
+        assert_eq!(t.bytes_of(ifd, 2).as_deref(), Some(&[7, 0][..]));
         assert_eq!(t.raw_upto(ifd, 1, 3), Some(vec![1, 0, 2]));
     }
 

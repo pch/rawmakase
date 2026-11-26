@@ -44,7 +44,7 @@ pub(crate) struct Rw2Plan {
 }
 
 /// Whether `bytes` is an RW2-structured file.
-pub(crate) fn is_rw2(bytes: &[u8]) -> bool {
+pub(crate) fn is_rw2(bytes: crate::io::Source<'_>) -> bool {
     bytes.starts_with(b"IIU\0")
 }
 

@@ -56,27 +56,32 @@ pub(crate) struct RafPlan {
 }
 
 /// Whether `bytes` is a RAF file.
-pub(crate) fn is_raf(bytes: &[u8]) -> bool {
+pub(crate) fn is_raf(bytes: crate::io::Source<'_>) -> bool {
     bytes.starts_with(b"FUJIFILMCCD-RAW ")
 }
 
 /// The header's pointer `i` (0 JPEG offset, 1 JPEG length, 2 records'
 /// offset, 3 their length, 4 raw data offset, 5 its length).
-fn pointer(header: &Bytes, i: u64) -> Result<u32> {
-    header.u32(84 + 4 * i)
+fn pointer(header: crate::io::Source<'_>, i: u64) -> Result<u32> {
+    header
+        .u32(Order::Big, 84 + 4 * i)
+        .ok_or_else(|| corrupt("RAF header"))
 }
 
 /// Reads a RAF's header facts.
-pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
-    let header = Bytes::new(bytes, Order::Big);
-    let version = header.slice(16, 4)?;
-    let (jpeg, jpeg_len) = (pointer(&header, 0)?, pointer(&header, 1)?);
-    let (dir, dir_len) = (pointer(&header, 2)?, pointer(&header, 3)?);
-    let (raw_at, raw_len) = (pointer(&header, 4)?, pointer(&header, 5)?);
-    let records = Records::parse(header.slice(u64::from(dir), u64::from(dir_len))?);
+pub(crate) fn open(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
+    let version = bytes.array::<4>(16).ok_or_else(|| corrupt("RAF version"))?;
+    let (jpeg, jpeg_len) = (pointer(bytes, 0)?, pointer(bytes, 1)?);
+    let (dir, dir_len) = (pointer(bytes, 2)?, pointer(bytes, 3)?);
+    let (raw_at, raw_len) = (pointer(bytes, 4)?, pointer(bytes, 5)?);
+    let dir_bytes = bytes
+        .get(u64::from(dir), u64::from(dir_len))
+        .ok_or_else(|| corrupt("RAF records"))?;
+    let records = Records::parse(&dir_bytes);
     let mut info = crate::info::base(Variant::RafUnpacked);
     info.make = "Fujifilm".into();
-    info.model = fuji::camera_name(bytes);
+    let head_bytes = bytes.get(0, bytes.len().min(60)).unwrap_or_default();
+    info.model = fuji::camera_name(&head_bytes);
 
     // The embedded JPEG: the preview, and the EXIF with the exposure, lens,
     // orientation and maker notes.
@@ -92,10 +97,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
         super::tiff_exif::read(&t, &mut info);
         orientation = t.int(&t.ifds[0], 274).unwrap_or(1);
         let notes = t.exif.as_ref().and_then(|e| t.bytes_of(e, 0x927c));
-        if let Some(dr) = notes.and_then(fuji::dynamic_range) {
+        if let Some(dr) = notes.as_deref().and_then(fuji::dynamic_range) {
             info.fuji_dynamic_range = dr;
         }
-        info.camera_look = notes.and_then(fuji::film_simulation);
+        info.camera_look = notes.as_deref().and_then(fuji::film_simulation);
     }
     info.flip = crate::geometry::flip(orientation);
     if let Some(shift) = fuji::exposure_shift(&records) {
@@ -104,19 +109,18 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     // The camera table is keyed by RAWmakase's names.
     crate::names::apply(&mut info);
 
-    let raw = header.slice(u64::from(raw_at), u64::from(raw_len))?;
-    let mut plan = if raw.starts_with(b"II*\0") {
-        tiff_plan(bytes, u64::from(raw_at), &header, &records, &mut info)?
+    let raw_start = u64::from(raw_at);
+    let raw_size = u64::from(raw_len);
+    if raw_start
+        .checked_add(raw_size)
+        .is_none_or(|end| end > bytes.len())
+    {
+        return Err(corrupt("RAF raw data"));
+    }
+    let mut plan = if bytes.starts_with_at(raw_start, b"II*\0") {
+        tiff_plan(bytes, raw_start, &records, &mut info)?
     } else {
-        older_plan(
-            bytes,
-            version,
-            u64::from(raw_at),
-            u64::from(raw_len),
-            &header,
-            &records,
-            &mut info,
-        )?
+        older_plan(bytes, &version, raw_start, raw_size, &records, &mut info)?
     };
     info.raw_width = plan.width;
     info.raw_height = plan.height;
@@ -225,11 +229,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
 
 /// The TIFF at `raw_at` a current body's raw data is, and the raw image
 /// directory its first directory points to (0xF000).
-fn raw_directory(bytes: &[u8], raw_at: u64) -> Option<(TiffFile<'_>, Ifd)> {
+fn raw_directory(bytes: crate::io::Source<'_>, raw_at: u64) -> Option<(TiffFile<'_>, Ifd)> {
     let t = TiffFile::parse(bytes, raw_at)?;
     let at = t.int(&t.ifds[0], 0xf000)?;
-    let entries =
-        rawmakase_tiff::Tiff::open(std::io::Cursor::new(bytes), raw_at)?.ifd(u64::from(at))?;
+    let entries = rawmakase_tiff::Tiff::open(bytes.reader(), raw_at)?.ifd(u64::from(at))?;
     Some((t, Ifd { entries }))
 }
 
@@ -245,13 +248,10 @@ const RAW_HEAD: u64 = 64 << 10;
 /// directory is read, all that comes before its samples, where its
 /// directories keep their values (the black levels and white balances).
 /// Empty when the header doesn't read.
-pub(crate) fn header_parts(bytes: &[u8]) -> Vec<(u64, u64)> {
-    let header = Bytes::new(bytes, Order::Big);
-    let (Ok(dir), Ok(dir_len), Ok(raw_at)) = (
-        pointer(&header, 2),
-        pointer(&header, 3),
-        pointer(&header, 4),
-    ) else {
+pub(crate) fn header_parts(bytes: crate::io::Source<'_>) -> Vec<(u64, u64)> {
+    let (Ok(dir), Ok(dir_len), Ok(raw_at)) =
+        (pointer(bytes, 2), pointer(bytes, 3), pointer(bytes, 4))
+    else {
         return Vec::new();
     };
     let raw_at = u64::from(raw_at);
@@ -267,9 +267,8 @@ pub(crate) fn header_parts(bytes: &[u8]) -> Vec<(u64, u64)> {
 /// The plan of a current body's raw data: a TIFF at `raw_at` whose first
 /// directory points (0xF000) to the raw image directory.
 fn tiff_plan(
-    bytes: &[u8],
+    bytes: crate::io::Source<'_>,
     raw_at: u64,
-    header: &Bytes,
     records: &Records,
     info: &mut RawInfo,
 ) -> Result<RafPlan> {
@@ -290,7 +289,7 @@ fn tiff_plan(
         let stride = u64::from(int(fuji::RAW_STRIDE).unwrap_or(0)) * 4;
         u32::try_from(stride.max(packed)).map_err(|_| Error::TooLarge("RAF row"))
     };
-    let compression = header.u32(108).unwrap_or(0);
+    let compression = bytes.u32(Order::Big, 108).unwrap_or(0);
     let (variant, coding) = if matches!(compression, 2 | 3) {
         (Variant::RafCompressed, Coding::Compressed { bits })
     } else if int(fuji::RAW_PACKING) == Some(1) {
@@ -367,13 +366,11 @@ fn tiff_plan(
 /// of that width; a whole row, and the file holds twice the data, a Super
 /// CCD SR's rows hold their S pixels, then their R pixels, of which the S
 /// are read.
-#[allow(clippy::too_many_arguments)]
 fn older_plan(
-    bytes: &[u8],
+    bytes: crate::io::Source<'_>,
     version: &[u8],
     raw_at: u64,
     raw_len: u64,
-    header: &Bytes,
     records: &Records,
     info: &mut RawInfo,
 ) -> Result<RafPlan> {
@@ -385,9 +382,9 @@ fn older_plan(
     let run = if big {
         0
     } else {
-        header.u32(112).unwrap_or(0) / 2
+        bytes.u32(Order::Big, 112).unwrap_or(0) / 2
     };
-    let available = (bytes.len() as u64).saturating_sub(raw_at);
+    let available = bytes.len().saturating_sub(raw_at);
     let pixels = u64::from(width) * u64::from(height);
     let (variant, coding) = if run > 0 && run < width && width % run == 0 {
         (Variant::RafTiled, Coding::Tiles { tile: run })

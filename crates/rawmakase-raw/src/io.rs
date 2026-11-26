@@ -2,6 +2,7 @@
 //! file, and the allocation limits every decoder checks header sizes
 //! against before allocating.
 use crate::error::{Error, Result, corrupt};
+use std::borrow::Cow;
 use std::io::{Read, Seek, SeekFrom};
 
 /// The largest sensor decoded, in samples: 400 megapixels of four channels.
@@ -114,5 +115,527 @@ impl<'r> Pieces<'r> {
     /// As [`Self::read`], fewer bytes where the file ends sooner.
     pub(crate) fn read_upto(&mut self, at: u64, len: u64) -> Option<Vec<u8>> {
         self.read(at, len.min(self.len.checked_sub(at)?))
+    }
+}
+
+/// Sparse byte storage backed only by ranges explicitly filled from a seekable
+/// reader. Unread positions yield zero bytes for short fixed reads without
+/// reserving whole-file memory, and contiguous multi-byte reads spanning unread
+/// gaps are capped at [`MAX_PIECE`].
+#[derive(Debug)]
+pub(crate) struct SparseData {
+    len: u64,
+    read: u64,
+    /// Disjoint, sorted, non-adjacent `(start, bytes)` segments.
+    segments: Vec<(u64, Vec<u8>)>,
+}
+
+impl SparseData {
+    pub(crate) fn new(len: u64) -> Self {
+        Self {
+            len,
+            read: 0,
+            segments: Vec::new(),
+        }
+    }
+
+    pub(crate) fn len(&self) -> u64 {
+        self.len
+    }
+
+    pub(crate) fn read(&self) -> u64 {
+        self.read
+    }
+
+    #[cfg(test)]
+    pub(crate) fn allocated_bytes(&self) -> usize {
+        self.segments.iter().map(|(_, s)| s.len()).sum()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn filled_ranges(&self) -> Vec<(u64, u64)> {
+        self.segments
+            .iter()
+            .map(|(start, s)| (*start, *start + s.len() as u64))
+            .collect()
+    }
+
+    /// Returns whether `[start, end)` (clamped to [`Self::len`]) contains any
+    /// byte not read yet.
+    pub(crate) fn has_gap(&self, start: u64, end: u64) -> bool {
+        let mut cursor = start.min(self.len);
+        let end = end.min(self.len);
+        if cursor >= end {
+            return false;
+        }
+        for (seg_start, seg_data) in &self.segments {
+            let seg_end = *seg_start + seg_data.len() as u64;
+            if seg_end <= cursor {
+                continue;
+            }
+            if *seg_start > cursor {
+                return true;
+            }
+            cursor = cursor.max(seg_end);
+            if cursor >= end {
+                return false;
+            }
+        }
+        cursor < end
+    }
+
+    /// The unfilled `[from, to)` sub-ranges within `[start, end)` (clamped to
+    /// [`Self::len`]).
+    fn gaps(&self, start: u64, end: u64) -> Vec<(u64, u64)> {
+        let mut cursor = start.min(self.len);
+        let end = end.min(self.len);
+        let mut gaps = Vec::new();
+        if cursor >= end {
+            return gaps;
+        }
+        for (seg_start, seg_data) in &self.segments {
+            let seg_end = *seg_start + seg_data.len() as u64;
+            if seg_end <= cursor {
+                continue;
+            }
+            if *seg_start >= end {
+                break;
+            }
+            if cursor < *seg_start {
+                gaps.push((cursor, (*seg_start).min(end)));
+            }
+            cursor = cursor.max(seg_end);
+            if cursor >= end {
+                break;
+            }
+        }
+        if cursor < end {
+            gaps.push((cursor, end));
+        }
+        gaps
+    }
+
+    /// Reads any missing bytes in `[at, at + len)` (clamped to [`Self::len`])
+    /// from `file`, merging adjacent or overlapping segments so subsequent
+    /// slice reads borrow without copying.
+    pub(crate) fn fill(&mut self, file: &mut (impl Read + Seek), at: u64, len: u64) -> Option<()> {
+        let gaps = self.gaps(at, at.saturating_add(len));
+        if gaps.is_empty() {
+            return Some(());
+        }
+        for (gs, ge) in gaps {
+            let gap_len = usize::try_from(ge - gs).ok()?;
+            let mut buf = Vec::new();
+            buf.try_reserve_exact(gap_len).ok()?;
+            buf.resize(gap_len, 0);
+            file.seek(SeekFrom::Start(gs)).ok()?;
+            file.read_exact(&mut buf).ok()?;
+            self.read += ge - gs;
+            self.segments.push((gs, buf));
+            self.coalesce();
+        }
+        Some(())
+    }
+
+    fn coalesce(&mut self) {
+        self.segments.sort_by_key(|(start, _)| *start);
+        let mut write = 0usize;
+        for read in 0..self.segments.len() {
+            if write == 0 {
+                write = 1;
+                continue;
+            }
+            let prev_end = {
+                let (s, d) = &self.segments[write - 1];
+                *s + d.len() as u64
+            };
+            let curr_start = self.segments[read].0;
+            if curr_start <= prev_end {
+                let overlap = (prev_end - curr_start) as usize;
+                let curr = std::mem::take(&mut self.segments[read].1);
+                if overlap < curr.len() {
+                    self.segments[write - 1]
+                        .1
+                        .extend_from_slice(&curr[overlap..]);
+                }
+            } else {
+                if write != read {
+                    self.segments.swap(write, read);
+                }
+                write += 1;
+            }
+        }
+        self.segments.truncate(write);
+    }
+
+    fn first_segment_after(&self, at: u64) -> usize {
+        self.segments
+            .partition_point(|(start, data)| *start + data.len() as u64 <= at)
+    }
+
+    pub(crate) fn byte_at(&self, at: u64) -> Option<u8> {
+        if at >= self.len {
+            return None;
+        }
+        let idx = self.first_segment_after(at);
+        if let Some((start, data)) = self.segments.get(idx)
+            && *start <= at
+        {
+            return Some(data[(at - *start) as usize]);
+        }
+        Some(0)
+    }
+
+    pub(crate) fn array_at<const N: usize>(&self, at: u64) -> Option<[u8; N]> {
+        let end = at.checked_add(N as u64)?;
+        if end > self.len {
+            return None;
+        }
+        let mut out = [0u8; N];
+        if N == 0 {
+            return Some(out);
+        }
+        self.copy_into(at, &mut out);
+        Some(out)
+    }
+
+    fn copy_into(&self, at: u64, dst: &mut [u8]) {
+        let end = at + dst.len() as u64;
+        let mut idx = self.first_segment_after(at);
+        while let Some((seg_start, seg_data)) = self.segments.get(idx) {
+            if *seg_start >= end {
+                break;
+            }
+            let copy_start = at.max(*seg_start);
+            let copy_end = end.min(*seg_start + seg_data.len() as u64);
+            if copy_start < copy_end {
+                let count = (copy_end - copy_start) as usize;
+                let dst_off = (copy_start - at) as usize;
+                let src_off = (copy_start - *seg_start) as usize;
+                dst[dst_off..dst_off + count].copy_from_slice(&seg_data[src_off..src_off + count]);
+            }
+            idx += 1;
+        }
+    }
+
+    pub(crate) fn get(&self, at: u64, len: u64) -> Option<Cow<'_, [u8]>> {
+        let end = at.checked_add(len)?;
+        if end > self.len {
+            return None;
+        }
+        if len == 0 {
+            return Some(Cow::Borrowed(&[]));
+        }
+        let len_usize = usize::try_from(len).ok()?;
+        let idx = self.first_segment_after(at);
+        if let Some((seg_start, seg_data)) = self.segments.get(idx)
+            && *seg_start <= at
+            && *seg_start + seg_data.len() as u64 >= end
+        {
+            let off = (at - *seg_start) as usize;
+            return Some(Cow::Borrowed(&seg_data[off..off + len_usize]));
+        }
+        if len > MAX_PIECE {
+            return None;
+        }
+        let mut out = Vec::new();
+        out.try_reserve_exact(len_usize).ok()?;
+        out.resize(len_usize, 0);
+        self.copy_into(at, &mut out);
+        Some(Cow::Owned(out))
+    }
+
+    pub(crate) fn starts_with_at(&self, at: u64, prefix: &[u8]) -> bool {
+        let Some(end) = at.checked_add(prefix.len() as u64) else {
+            return false;
+        };
+        if end > self.len {
+            return false;
+        }
+        let mut idx = self.first_segment_after(at);
+        let mut cursor = at;
+        while cursor < end {
+            let p_off = (cursor - at) as usize;
+            if let Some((seg_start, seg_data)) = self.segments.get(idx)
+                && *seg_start < end
+            {
+                if cursor < *seg_start {
+                    let gap_end = (*seg_start).min(end);
+                    let gap_len = (gap_end - cursor) as usize;
+                    if !prefix[p_off..p_off + gap_len].iter().all(|&b| b == 0) {
+                        return false;
+                    }
+                    cursor = gap_end;
+                    continue;
+                }
+                let seg_end = (*seg_start + seg_data.len() as u64).min(end);
+                let count = (seg_end - cursor) as usize;
+                let src_off = (cursor - *seg_start) as usize;
+                if seg_data[src_off..src_off + count] != prefix[p_off..p_off + count] {
+                    return false;
+                }
+                cursor = seg_end;
+                idx += 1;
+            } else {
+                let tail_len = (end - cursor) as usize;
+                return prefix[p_off..p_off + tail_len].iter().all(|&b| b == 0);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn find_byte(&self, from: u64, to: u64, needle: u8) -> Option<u64> {
+        let end = to.min(self.len);
+        if from >= end {
+            return None;
+        }
+        let mut cursor = from;
+        let mut idx = self.first_segment_after(from);
+        while cursor < end {
+            if let Some((seg_start, seg_data)) = self.segments.get(idx)
+                && *seg_start < end
+            {
+                if cursor < *seg_start {
+                    let gap_end = (*seg_start).min(end);
+                    if needle == 0 && cursor < gap_end {
+                        return Some(cursor);
+                    }
+                    cursor = gap_end;
+                    continue;
+                }
+                let seg_end = (*seg_start + seg_data.len() as u64).min(end);
+                let count = (seg_end - cursor) as usize;
+                let src_off = (cursor - *seg_start) as usize;
+                if let Some(pos) = seg_data[src_off..src_off + count]
+                    .iter()
+                    .position(|&b| b == needle)
+                {
+                    return Some(cursor + pos as u64);
+                }
+                cursor = seg_end;
+                idx += 1;
+            } else {
+                return (needle == 0).then_some(cursor);
+            }
+        }
+        None
+    }
+}
+
+/// Random-access view over a whole in-memory file slice or a sparse file.
+#[derive(Clone, Copy)]
+pub(crate) enum Source<'a> {
+    Slice(&'a [u8]),
+    Sparse {
+        data: &'a SparseData,
+        base: u64,
+        len: u64,
+    },
+}
+
+impl<'a> From<&'a [u8]> for Source<'a> {
+    fn from(bytes: &'a [u8]) -> Self {
+        Self::Slice(bytes)
+    }
+}
+
+impl<'a, const N: usize> From<&'a [u8; N]> for Source<'a> {
+    fn from(bytes: &'a [u8; N]) -> Self {
+        Self::Slice(bytes)
+    }
+}
+
+impl<'a> From<&'a Vec<u8>> for Source<'a> {
+    fn from(bytes: &'a Vec<u8>) -> Self {
+        Self::Slice(bytes)
+    }
+}
+
+impl<'a> Source<'a> {
+    pub(crate) fn len(self) -> u64 {
+        match self {
+            Self::Slice(s) => s.len() as u64,
+            Self::Sparse { len, .. } => len,
+        }
+    }
+
+    pub(crate) fn slice_from(self, at: u64) -> Option<Self> {
+        let len = self.len().checked_sub(at)?;
+        self.slice_exact(at, len)
+    }
+
+    pub(crate) fn slice_exact(self, at: u64, len: u64) -> Option<Self> {
+        let end = at.checked_add(len)?;
+        if end > self.len() {
+            return None;
+        }
+        Some(match self {
+            Self::Slice(s) => {
+                Self::Slice(s.get(usize::try_from(at).ok()?..usize::try_from(end).ok()?)?)
+            }
+            Self::Sparse { data, base, .. } => Self::Sparse {
+                data,
+                base: base.checked_add(at)?,
+                len,
+            },
+        })
+    }
+
+    pub(crate) fn byte(self, at: u64) -> Option<u8> {
+        match self {
+            Self::Slice(s) => usize::try_from(at).ok().and_then(|i| s.get(i).copied()),
+            Self::Sparse { data, base, len } => {
+                (at < len).then(|| data.byte_at(base + at)).flatten()
+            }
+        }
+    }
+
+    pub(crate) fn array<const N: usize>(self, at: u64) -> Option<[u8; N]> {
+        match self {
+            Self::Slice(s) => {
+                let start = usize::try_from(at).ok()?;
+                let end = start.checked_add(N)?;
+                s.get(start..end)?.try_into().ok()
+            }
+            Self::Sparse { data, base, len } => {
+                let end = at.checked_add(N as u64)?;
+                if end > len {
+                    return None;
+                }
+                data.array_at(base + at)
+            }
+        }
+    }
+
+    pub(crate) fn get(self, at: u64, len: u64) -> Option<Cow<'a, [u8]>> {
+        match self {
+            Self::Slice(s) => {
+                let start = usize::try_from(at).ok()?;
+                let end = start.checked_add(usize::try_from(len).ok()?)?;
+                s.get(start..end).map(Cow::Borrowed)
+            }
+            Self::Sparse {
+                data,
+                base,
+                len: view_len,
+            } => {
+                let end = at.checked_add(len)?;
+                if end > view_len {
+                    return None;
+                }
+                data.get(base + at, len)
+            }
+        }
+    }
+
+    pub(crate) fn u16(self, order: Order, at: u64) -> Option<u16> {
+        let b = self.array::<2>(at)?;
+        Some(match order {
+            Order::Little => u16::from_le_bytes(b),
+            Order::Big => u16::from_be_bytes(b),
+        })
+    }
+
+    pub(crate) fn u32(self, order: Order, at: u64) -> Option<u32> {
+        let b = self.array::<4>(at)?;
+        Some(match order {
+            Order::Little => u32::from_le_bytes(b),
+            Order::Big => u32::from_be_bytes(b),
+        })
+    }
+
+    pub(crate) fn u64(self, order: Order, at: u64) -> Option<u64> {
+        let b = self.array::<8>(at)?;
+        Some(match order {
+            Order::Little => u64::from_le_bytes(b),
+            Order::Big => u64::from_be_bytes(b),
+        })
+    }
+
+    pub(crate) fn starts_with(self, prefix: &[u8]) -> bool {
+        self.starts_with_at(0, prefix)
+    }
+
+    pub(crate) fn starts_with_at(self, at: u64, prefix: &[u8]) -> bool {
+        match self {
+            Self::Slice(s) => usize::try_from(at)
+                .ok()
+                .and_then(|i| s.get(i..))
+                .is_some_and(|rest| rest.starts_with(prefix)),
+            Self::Sparse { data, base, len } => at
+                .checked_add(prefix.len() as u64)
+                .is_some_and(|end| end <= len && data.starts_with_at(base + at, prefix)),
+        }
+    }
+
+    pub(crate) fn find_byte(self, from: u64, to: u64, needle: u8) -> Option<u64> {
+        match self {
+            Self::Slice(s) => {
+                let start = usize::try_from(from).ok()?;
+                let end = usize::try_from(to.min(s.len() as u64)).ok()?;
+                let slice = s.get(start..end)?;
+                slice
+                    .iter()
+                    .position(|&b| b == needle)
+                    .map(|p| from + p as u64)
+            }
+            Self::Sparse { data, base, len } => {
+                let clamped_to = to.min(len);
+                data.find_byte(
+                    base.checked_add(from)?,
+                    base.checked_add(clamped_to)?,
+                    needle,
+                )
+                .map(|abs| abs - base)
+            }
+        }
+    }
+
+    pub(crate) fn reader(self) -> SourceReader<'a> {
+        SourceReader {
+            source: self,
+            pos: 0,
+        }
+    }
+}
+
+/// [`Read`] + [`Seek`] cursor over a [`Source`].
+pub(crate) struct SourceReader<'a> {
+    source: Source<'a>,
+    pos: u64,
+}
+
+impl Read for SourceReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let len = self.source.len();
+        if self.pos >= len || buf.is_empty() {
+            return Ok(0);
+        }
+        let avail = (len - self.pos).min(buf.len() as u64) as usize;
+        match self.source {
+            Source::Slice(s) => {
+                let start = self.pos as usize;
+                buf[..avail].copy_from_slice(&s[start..start + avail]);
+            }
+            Source::Sparse { data, base, .. } => {
+                buf[..avail].fill(0);
+                data.copy_into(base + self.pos, &mut buf[..avail]);
+            }
+        }
+        self.pos += avail as u64;
+        Ok(avail)
+    }
+}
+
+impl Seek for SourceReader<'_> {
+    fn seek(&mut self, style: SeekFrom) -> std::io::Result<u64> {
+        let next = match style {
+            SeekFrom::Start(at) => Some(at),
+            SeekFrom::End(offset) => self.source.len().checked_add_signed(offset),
+            SeekFrom::Current(offset) => self.pos.checked_add_signed(offset),
+        }
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "negative seek"))?;
+        self.pos = next;
+        Ok(next)
     }
 }

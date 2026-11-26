@@ -602,7 +602,7 @@ fn a_nef_s_coding_is_read_from_the_start_of_its_sensor_data() {
     let mut sparse = Sparse::new(&mut cursor).unwrap();
     let read = super::header_in_pieces(&mut sparse, |_| true).unwrap();
     assert_eq!(facts(&read), facts(&whole));
-    assert!(sparse.read < file.len() as u64);
+    assert!(sparse.read() < file.len() as u64);
 }
 
 /// Cut short or damaged, the files whose containers name parts of their own
@@ -698,10 +698,293 @@ fn each_byte_is_read_once() {
     s.fill(150, 100).unwrap();
     s.fill(50, 300).unwrap();
     s.fill(9_990, 100).unwrap();
-    assert_eq!(s.read, 300 + 10);
-    assert_eq!(s.filled, [(50, 350), (9_990, 10_000)]);
-    assert_eq!(&s.bytes[50..350], &file[50..350]);
-    assert!(s.bytes[350..9_990].iter().all(|b| *b == 0));
+    assert_eq!(s.read(), 300 + 10);
+    assert_eq!(s.data.filled_ranges(), [(50, 350), (9_990, 10_000)]);
+    assert_eq!(s.data.allocated_bytes(), 300 + 10);
+    assert_eq!(s.source().get(50, 300).as_deref(), Some(&file[50..350]));
+    assert!(
+        s.source()
+            .get(350, 9_990 - 350)
+            .is_some_and(|zeros| zeros.iter().all(|b| *b == 0))
+    );
+}
+
+#[test]
+fn large_sparse_file_reads_preview_without_allocating_file_size() {
+    use std::io::{Read, Seek, SeekFrom};
+
+    struct SparseReader {
+        len: u64,
+        pos: u64,
+        regions: Vec<(u64, Vec<u8>)>,
+    }
+    impl Read for SparseReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos >= self.len || buf.is_empty() {
+                return Ok(0);
+            }
+            let n = (self.len - self.pos).min(buf.len() as u64) as usize;
+            buf[..n].fill(0);
+            let start = self.pos;
+            let end = start + n as u64;
+            for (r_start, r_data) in &self.regions {
+                let r_end = *r_start + r_data.len() as u64;
+                let copy_start = start.max(*r_start);
+                let copy_end = end.min(r_end);
+                if copy_start < copy_end {
+                    let count = (copy_end - copy_start) as usize;
+                    let dst_off = (copy_start - start) as usize;
+                    let src_off = (copy_start - *r_start) as usize;
+                    buf[dst_off..dst_off + count]
+                        .copy_from_slice(&r_data[src_off..src_off + count]);
+                }
+            }
+            self.pos = end;
+            Ok(n)
+        }
+    }
+    impl Seek for SparseReader {
+        fn seek(&mut self, style: SeekFrom) -> std::io::Result<u64> {
+            let next = match style {
+                SeekFrom::Start(at) => Some(at),
+                SeekFrom::End(off) => self.len.checked_add_signed(off),
+                SeekFrom::Current(off) => self.pos.checked_add_signed(off),
+            }
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "negative seek")
+            })?;
+            self.pos = next;
+            Ok(next)
+        }
+    }
+
+    let mut raw_data = Vec::new();
+    for _ in 0..8 {
+        let x = 1000u64 | 1000 << 12 | 2048 << 24 | 2048 << 36;
+        raw_data.extend(&x.to_le_bytes()[..6]);
+    }
+    let mut head = nef("NIKON D810", 4, 4, 12, 34713, &[], &raw_data);
+    let logical_len = 2u64 << 30;
+    let small = jpeg(640, 424, 40_000);
+    let full = jpeg(4928, 3264, 900_000);
+    let small_at = 512u32 << 20;
+    let full_at = 1u32 << 30;
+    let ifd1_at = (logical_len as u32) - 4096;
+
+    let mut tail = dir(
+        &[
+            long(LE, 513, &[small_at]),
+            long(LE, 514, &[small.len() as u32]),
+        ],
+        ifd1_at,
+        LE,
+    );
+    let ifd2_at = ifd1_at + tail.len() as u32;
+    let d2 = dir(
+        &[
+            long(LE, 513, &[full_at]),
+            long(LE, 514, &[full.len() as u32]),
+        ],
+        ifd2_at,
+        LE,
+    );
+    let tail_link = tail.len() - 4;
+    tail[tail_link..].copy_from_slice(&ifd2_at.to_le_bytes());
+    tail.extend(d2);
+
+    let ifd0 = u32::from_le_bytes(head[4..8].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(head[ifd0..ifd0 + 2].try_into().unwrap()) as usize;
+    let link_at = ifd0 + 2 + 12 * count;
+    head[link_at..link_at + 4].copy_from_slice(&ifd1_at.to_le_bytes());
+
+    let regions = vec![
+        (0, head),
+        (u64::from(small_at), small.clone()),
+        (u64::from(full_at), full),
+        (u64::from(ifd1_at), tail),
+    ];
+
+    let mut probe = SparseReader {
+        len: logical_len,
+        pos: 0,
+        regions: regions.clone(),
+    };
+    let s = Sparse::new(&mut probe).unwrap();
+    assert_eq!(s.len(), logical_len);
+    assert_eq!(s.data.allocated_bytes(), 0);
+
+    let mut reader = SparseReader {
+        len: logical_len,
+        pos: 0,
+        regions,
+    };
+    let partial = preview_from_file(&mut reader, 640).unwrap();
+    assert_eq!(partial.preview, small);
+    assert!(
+        partial.read < 2 << 20,
+        "expected sparse read < 2 MiB on 2 GiB file, read {}",
+        partial.read
+    );
+}
+
+#[test]
+fn sparse_source_refuses_giant_unfilled_materialization_and_handles_straddling_reads() {
+    use crate::io::{MAX_PIECE, Source, SparseData};
+    use std::io::{Read, Seek, SeekFrom};
+
+    let logical_len = 1u64 << 30;
+    let mut data = SparseData::new(logical_len);
+    assert_eq!(data.allocated_bytes(), 0);
+    {
+        let source = Source::Sparse {
+            data: &data,
+            base: 0,
+            len: logical_len,
+        };
+        assert!(source.get(100 << 20, MAX_PIECE + 1).is_none());
+        assert_eq!(source.byte(100 << 20), Some(0));
+    }
+
+    let mut backing = vec![0u8; 200];
+    for (i, b) in backing[100..120].iter_mut().enumerate() {
+        *b = (i as u8) + 1;
+    }
+    backing[130..150].fill(0xaa);
+    backing[135] = 0xff;
+    let mut cur = Cursor::new(backing);
+    data.fill(&mut cur, 100, 20).unwrap();
+    data.fill(&mut cur, 130, 20).unwrap();
+    assert_eq!(data.allocated_bytes(), 40);
+
+    let source = Source::Sparse {
+        data: &data,
+        base: 0,
+        len: logical_len,
+    };
+    let mut expected = vec![0u8; 60];
+    for (i, b) in expected[5..25].iter_mut().enumerate() {
+        *b = (i as u8) + 1;
+    }
+    expected[35..55].fill(0xaa);
+    expected[40] = 0xff;
+
+    assert_eq!(
+        source.array::<60>(95).as_ref().map(<[u8; 60]>::as_slice),
+        Some(expected.as_slice())
+    );
+    assert_eq!(source.get(95, 60).as_deref(), Some(expected.as_slice()));
+    assert!(source.starts_with_at(95, &[0, 0, 0, 0, 0, 1, 2, 3]));
+    assert!(!source.starts_with_at(125, &[1]));
+    assert_eq!(source.find_byte(0, logical_len, 0xff), Some(135));
+
+    let mut r = source.reader();
+    r.seek(SeekFrom::Start(95)).unwrap();
+    let mut buf = [0u8; 60];
+    r.read_exact(&mut buf).unwrap();
+    assert_eq!(buf.as_slice(), expected.as_slice());
+    assert_eq!(r.seek(SeekFrom::Current(-5)).unwrap(), 150);
+    assert_eq!(r.seek(SeekFrom::End(0)).unwrap(), logical_len);
+    assert_eq!(r.read(&mut buf[..1]).unwrap(), 0);
+    assert!(r.seek(SeekFrom::Start(0)).is_ok());
+    assert!(r.seek(SeekFrom::Current(-1)).is_err());
+}
+
+#[test]
+fn checked_formats_match_whole_file_previews_read_in_pieces() {
+    use crate::container::arw::tests::{Value, tiff};
+
+    let small = jpeg(640, 424, 40_000);
+    let large = jpeg(1600, 1060, 80_000);
+    let gap = vec![0x44u8; 2 << 20];
+
+    // DNG with SubIFDs holding JPEG previews past a 2 MiB gap.
+    let dng = tiff(
+        vec![
+            vec![
+                (254, Value::Long(vec![0])),
+                (256, Value::Long(vec![4])),
+                (257, Value::Long(vec![4])),
+                (258, Value::Short(vec![16])),
+                (259, Value::Short(vec![1])),
+                (262, Value::Short(vec![32803])),
+                (273, Value::Blob(0)),
+                (277, Value::Short(vec![1])),
+                (278, Value::Long(vec![4])),
+                (279, Value::Long(vec![32])),
+                (330, Value::Ifd(1)),
+                (33421, Value::Short(vec![2, 2])),
+                (33422, Value::Bytes(1, vec![0, 1, 1, 2])),
+                (50706, Value::Bytes(1, vec![1, 4, 0, 0])),
+            ],
+            vec![
+                (254, Value::Long(vec![1])),
+                (256, Value::Long(vec![640])),
+                (257, Value::Long(vec![424])),
+                (259, Value::Short(vec![7])),
+                (262, Value::Short(vec![6])),
+                (273, Value::Blob(2)),
+                (279, Value::Long(vec![small.len() as u32])),
+                (330, Value::Ifd(2)),
+            ],
+            vec![
+                (254, Value::Long(vec![1])),
+                (256, Value::Long(vec![1600])),
+                (257, Value::Long(vec![1060])),
+                (259, Value::Short(vec![7])),
+                (262, Value::Short(vec![6])),
+                (273, Value::Blob(3)),
+                (279, Value::Long(vec![large.len() as u32])),
+            ],
+        ],
+        vec![vec![0; 32], gap.clone(), small.clone(), large.clone()],
+    );
+
+    // Sony ARW with a SubIFD holding JPEG previews past a 2 MiB gap.
+    let arw = tiff(
+        vec![
+            vec![
+                (271, Value::Ascii("SONY")),
+                (272, Value::Ascii("ILCE-7RM4")),
+                (274, Value::Short(vec![6])),
+                (330, Value::Ifd(1)),
+                (513, Value::Blob(2)),
+                (514, Value::Long(vec![small.len() as u32])),
+            ],
+            vec![
+                (254, Value::Long(vec![0])),
+                (256, Value::Long(vec![4])),
+                (257, Value::Long(vec![4])),
+                (258, Value::Short(vec![14])),
+                (259, Value::Short(vec![1])),
+                (262, Value::Short(vec![32803])),
+                (273, Value::Blob(0)),
+                (279, Value::Long(vec![32])),
+                (33421, Value::Short(vec![2, 2])),
+                (33422, Value::Bytes(1, vec![0, 1, 1, 2])),
+                (330, Value::Ifd(2)),
+            ],
+            vec![
+                (254, Value::Long(vec![1])),
+                (256, Value::Long(vec![1600])),
+                (257, Value::Long(vec![1060])),
+                (513, Value::Blob(3)),
+                (514, Value::Long(vec![large.len() as u32])),
+            ],
+        ],
+        vec![vec![0; 32], gap, small, large],
+    );
+
+    for file in [dng, arw] {
+        let info = crate::open(&file).unwrap();
+        assert!(checked(info.variant));
+        for edge in [640, 1200] {
+            let whole = crate::preview_reaching(&info, &file, edge).unwrap();
+            let partial = preview_from_file(&mut Cursor::new(&file), edge).unwrap();
+            assert_eq!(partial.preview, whole.as_ref());
+            assert_eq!(partial.info.variant, info.variant);
+            assert_eq!(partial.info.flip, info.flip);
+        }
+    }
 }
 
 /// Every RAW in `RAWMAKASE_PARTIAL_FIXTURES` (searched recursively), of any
@@ -752,7 +1035,7 @@ fn real_files_give_the_same_preview_read_in_pieces() {
         match super::header_in_pieces(&mut sparse, |_| true) {
             Some(header) => {
                 header_total += file.len() as u64;
-                header_read += sparse.read;
+                header_read += sparse.read();
                 let (pieces, whole) = (format!("{header:#?}"), format!("{info:#?}"));
                 if pieces == whole {
                     counts[3] += 1;

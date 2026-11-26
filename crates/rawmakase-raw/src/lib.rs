@@ -179,22 +179,35 @@ pub fn preview_reaching<'a>(
 
 fn embedded(
     bytes: &[u8],
-    (at, len): (u64, u64),
+    range: (u64, u64),
 ) -> std::result::Result<std::borrow::Cow<'_, [u8]>, NoPreview> {
-    let range = usize::try_from(at)
-        .ok()
-        .zip(usize::try_from(at.saturating_add(len)).ok());
-    let jpeg = range
-        .and_then(|(start, end)| bytes.get(start..end))
-        .ok_or(NoPreview::Missing)?;
-    Ok(match jpeg {
-        [first, rest @ ..] if *first != 0xff && !preview::is_jpeg_xl(jpeg, 0) => {
+    let slice = slice_range(bytes, range).ok_or(NoPreview::Missing)?;
+    Ok(mend_jpeg(std::borrow::Cow::Borrowed(slice)))
+}
+
+pub(crate) fn embedded_source<'a>(
+    bytes: io::Source<'a>,
+    (at, len): (u64, u64),
+) -> std::result::Result<std::borrow::Cow<'a, [u8]>, NoPreview> {
+    let jpeg = bytes.get(at, len).ok_or(NoPreview::Missing)?;
+    Ok(mend_jpeg(jpeg))
+}
+
+fn slice_range(bytes: &[u8], (at, len): (u64, u64)) -> Option<&[u8]> {
+    let start = usize::try_from(at).ok()?;
+    let end = usize::try_from(at.checked_add(len)?).ok()?;
+    bytes.get(start..end)
+}
+
+fn mend_jpeg<'a>(jpeg: std::borrow::Cow<'a, [u8]>) -> std::borrow::Cow<'a, [u8]> {
+    match jpeg.as_ref() {
+        [first, rest @ ..] if *first != 0xff && !preview::is_jpeg_xl(&jpeg, 0) => {
             let mut mended = vec![0xff];
             mended.extend_from_slice(rest);
             std::borrow::Cow::Owned(mended)
         }
-        _ => std::borrow::Cow::Borrowed(jpeg),
-    })
+        _ => jpeg,
+    }
 }
 
 /// The sensor data of the file `info` was read from; stops with
