@@ -117,9 +117,11 @@ Measured against Lightroom Classic 15.6 (Camera Raw 18.7) on synthetic charts an
 photos: Exposure, Whites, Blacks and their combinations within about 1–2/255 on greys;
 Contrast with `basic_tone::RENDERED_PIVOT_OFFSET`. White balance is a matrix and a clip
 in S1 (`model::white_balance::rendered_white_balance`, see
-[color pipeline](color-pipeline.md)). Known gaps: Highlights/Shadows on very dark or
-bright files, Saturation, Vibrance, Clarity, Dehaze, fully saturated colors at large
-Exposure, and parts of the cool magenta corner of Temp and Tint.
+[color pipeline](color-pipeline.md)). Saturation and Vibrance use rendered-file tables in
+`ColorMixer` (`rendered_sat_vib.bin`, see [color mixer](color-mixer.md#rendered-files)).
+Known gaps: Highlights/Shadows on very dark or bright files, Clarity, Dehaze, fully
+saturated colors at large Exposure, and parts of the cool magenta corner of Temp and
+Tint.
 
 ### Whites and Blacks
 

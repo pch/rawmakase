@@ -569,7 +569,7 @@ impl CurveSet {
         r: &Recipe,
         camera: Camera,
     ) -> (Self, Option<Arc<crate::develop::scene_tone::Measured>>) {
-        let mut lut = Self::new(r);
+        let mut lut = Self::new_for(r, im.metadata.is_rendered());
         let (measures, haze, measured) = cached_photo_measures(im, r, camera);
         let dehazing = haze.as_ref().map(|haze| {
             crate::develop::scene_tone::Dehazing::new(
@@ -605,6 +605,9 @@ impl CurveSet {
         self.scene = crate::develop::scene_tone::SceneTone::new(r, &measures, haze);
     }
     pub(super) fn new(r: &Recipe) -> Self {
+        Self::new_for(r, false)
+    }
+    fn new_for(r: &Recipe, is_rendered: bool) -> Self {
         let photo = crate::develop::basic_tone::PhotoTone {
             contrast_pivot: crate::develop::basic_tone::TYPICAL_PIVOT,
         };
@@ -616,7 +619,7 @@ impl CurveSet {
             basic: basic_tone(r, &photo),
             local: None,
             photo,
-            mixer: crate::develop::color_mixer::ColorMixer::new(r),
+            mixer: crate::develop::color_mixer::ColorMixer::for_source(r, is_rendered),
             gray_grid: r
                 .effects
                 .monochrome
@@ -1519,5 +1522,33 @@ mod tests {
             m_dark.p99,
             m_dark.whites_p99
         );
+    }
+
+    #[test]
+    fn rendered_source_selects_rendered_color_mixer_on_cpu_and_gpu() {
+        let rendered = rendered_fixture(&[[180, 90, 50]; 64]);
+        let mut raw = rendered.clone();
+        raw.metadata.source = rawmakase_model::camera_data::Source::Raw;
+        let r = Recipe {
+            saturation: 0.75,
+            ..Recipe::for_rendered(&rendered.metadata)
+        };
+        let cam_ren = camera_stage(&rendered.metadata, &r);
+        let cam_raw = camera_stage(&raw.metadata, &r);
+        let lut_ren = CurveSet::for_image(Source::new(&rendered), &r, cam_ren, false);
+        let lut_raw = CurveSet::for_image(Source::new(&raw), &r, cam_raw, false);
+        let expected_ren = crate::develop::color_mixer::ColorMixer::for_source(&r, true).unwrap();
+        let expected_raw = crate::develop::color_mixer::ColorMixer::for_source(&r, false).unwrap();
+        assert_eq!(lut_ren.mixer.as_ref().unwrap().delta, expected_ren.delta);
+        assert_eq!(lut_raw.mixer.as_ref().unwrap().delta, expected_raw.delta);
+        assert_ne!(
+            lut_ren.mixer.as_ref().unwrap().delta,
+            lut_raw.mixer.as_ref().unwrap().delta
+        );
+        // GPU pixel_params uploads the same rendered mixer grid and saturation_gray.
+        let gpu_ren = super::pixel_params::pixel_params(Source::new(&rendered), &r).unwrap();
+        let mixer_at = gpu_ren.get(super::pixel_params::slot::MIXER)[0] as usize;
+        let uploaded = &gpu_ren.tables[mixer_at..mixer_at + expected_ren.delta.len() * 3];
+        assert_eq!(uploaded, expected_ren.delta.as_flattened());
     }
 }
