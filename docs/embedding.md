@@ -172,3 +172,10 @@ which CI compares with the code. Each change to them is noted here.
   replaces (their folder, naming, watermark, Send To, and `load` and
   `save` of the desktop's own file) are no longer shown, nor `Format`: an
   export's format is its file's extension.
+- **A photo's metadata and profiles of the library's own**: `Photo::metadata`
+  is the library's `Metadata`, plain values (camera, lens, exposure, the
+  decoded size, whether it is a rendered file or monochrome), and
+  `Photo::profiles` gives `Profile`s, with their names and what kind they
+  are. The decoder's `Metadata` and the model's `CameraProfile`, whose
+  matrices, tables and renderer methods they showed, are no longer
+  re-exported, and `Image::metadata` is gone.

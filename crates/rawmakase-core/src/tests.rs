@@ -38,7 +38,13 @@ fn handles_are_send_and_sync_where_the_docs_say() {
 fn a_photo_opens_with_its_metadata_and_a_valid_starting_recipe() {
     let photo = context().open(chart(), Cancel::NEVER).unwrap();
     assert_eq!(photo.path(), chart());
-    assert!(photo.metadata().width > 0);
+    let m = photo.metadata();
+    let image = photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+    // The decode's own facts, as the photo shows them.
+    assert_eq!(*m, Metadata::of(&image.camera().metadata));
+    assert!(m.width > 0 && m.height > 0 && !m.make.is_empty() && !m.rendered);
+    // Adobe's profiles fit every camera the chart's could be.
+    assert!(photo.profiles().iter().all(|p| !p.name().is_empty()));
     let recipe = photo.starting_recipe().unwrap();
     recipe.validate().unwrap();
     assert_eq!(recipe.exposure, 0.);

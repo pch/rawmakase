@@ -31,7 +31,7 @@ impl Photo {
     /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a value a recipe
     /// may not hold; the recipe is then unchanged.
     pub fn set(&self, recipe: &mut Recipe, parameter: Parameter, value: f32) -> Result<()> {
-        let id = parameter.for_photo(Some(self.metadata()));
+        let id = parameter.for_photo(Some(self.facts()));
         let d = id.descriptor();
         if !value.is_finite() || !d.valid.contains(&value) {
             return Err(Error::of(
@@ -44,7 +44,7 @@ impl Photo {
                 .into(),
             ));
         }
-        change_setting(recipe, id, Some(self.metadata()), |r| {
+        change_setting(recipe, id, Some(self.facts()), |r| {
             *id.value_mut(r) = value;
         });
         Ok(())
@@ -53,12 +53,12 @@ impl Photo {
     /// `parameter`'s value in `recipe`, in the recipe's units, for the setting
     /// it moves on this photo.
     pub fn value(&self, recipe: &Recipe, parameter: Parameter) -> f32 {
-        parameter.for_photo(Some(self.metadata())).value(recipe)
+        parameter.for_photo(Some(self.facts())).value(recipe)
     }
 
     /// `parameter`'s slider for this photo, with its value in `recipe`.
     pub fn control(&self, recipe: &Recipe, parameter: Parameter) -> Control {
-        let mut control = parameter.for_photo(Some(self.metadata())).control(recipe);
+        let mut control = parameter.for_photo(Some(self.facts())).control(recipe);
         // Named as asked: a rendered file's relative Temp is still Temp's.
         control.id = parameter.name();
         control
@@ -78,8 +78,8 @@ impl Photo {
         presets::apply_to_photo(
             preset,
             recipe,
-            self.metadata(),
-            self.profiles(),
+            self.facts(),
+            self.camera_profiles(),
             measures
                 .as_ref()
                 .map(|m| m as &dyn rawmakase_interop::xmp::PhotoMeasures),
@@ -100,7 +100,7 @@ impl Photo {
         recipe
             .validate()
             .map_err(|e| Error::of(rawmakase_model::error::Invalid::from_error(e).into()))?;
-        presets::save_preset(path.as_ref(), recipe, self.metadata()).map_err(Error::of)
+        presets::save_preset(path.as_ref(), recipe, self.facts()).map_err(Error::of)
     }
 
     /// `recipe` with Exposure, Contrast, Highlights, Shadows, Whites, Blacks

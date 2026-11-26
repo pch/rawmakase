@@ -34,8 +34,11 @@ pub enum Decode {
 pub struct Photo {
     ctx: Context,
     path: PathBuf,
+    /// The decoder's facts, which edits are made with.
     metadata: Metadata,
+    info: crate::Metadata,
     profiles: Vec<Arc<CameraProfile>>,
+    shown: Vec<crate::Profile>,
     profile_errors: Vec<String>,
     /// The file as it was opened; `None` when its identity could not be read,
     /// and then every decode is of whatever is there.
@@ -83,7 +86,9 @@ impl Context {
         let photo = Photo {
             ctx: self.clone(),
             path: path.to_path_buf(),
+            info: crate::Metadata::of(&metadata),
             metadata,
+            shown: profiles.iter().cloned().map(crate::Profile).collect(),
             profiles,
             profile_errors: listed.errors,
             identity,
@@ -110,14 +115,22 @@ impl Photo {
         &self.path
     }
 
-    /// What the file says of itself: camera, lens, exposure, size, white
-    /// balance.
-    pub fn metadata(&self) -> &Metadata {
-        &self.metadata
+    /// What the file says of itself: camera, lens, exposure and size.
+    pub fn metadata(&self) -> &crate::Metadata {
+        &self.info
     }
 
     /// The camera profiles that fit this photo, sorted by name.
-    pub fn profiles(&self) -> &[Arc<CameraProfile>] {
+    pub fn profiles(&self) -> &[crate::Profile] {
+        &self.shown
+    }
+
+    /// The decoder's facts, which edits are made with.
+    pub(crate) fn facts(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    pub(crate) fn camera_profiles(&self) -> &[Arc<CameraProfile>] {
         &self.profiles
     }
 

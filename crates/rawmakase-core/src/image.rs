@@ -1,5 +1,5 @@
 //! A decoded image: a photo's pixels, ready to render.
-use rawmakase_model::camera_data::{CameraImage, Metadata};
+use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::recipe::Recipe;
 use rayon::prelude::*;
 use std::path::Path;
@@ -54,11 +54,6 @@ impl Image {
     /// The file this image was decoded from.
     pub fn source(&self) -> &Path {
         &self.source
-    }
-
-    /// The photo's metadata, as the decode carries it.
-    pub fn metadata(&self) -> &Metadata {
-        &self.image.metadata
     }
 
     /// The decode's statistics. The highest level is measured the first time it

@@ -81,6 +81,7 @@ mod error;
 #[cfg(feature = "export")]
 mod export;
 mod image;
+mod info;
 mod mailbox;
 mod photo;
 mod render;
@@ -93,6 +94,7 @@ pub use error::{Error, ErrorKind, Result};
 #[cfg(feature = "export")]
 pub use export::ExportSettings;
 pub use image::{DecodeStats, Image};
+pub use info::{Metadata, Profile};
 pub use mailbox::{Mailbox, Numbered, Shown, Taken};
 pub use photo::{Decode, Photo};
 /// The values an [`ExportSettings`]'s fields take.
@@ -106,8 +108,6 @@ pub use render::{Frame, Renderer, View};
 
 pub use rawmakase_cancel::Cancel;
 pub use rawmakase_interop::raw_defaults::{CameraDefault, DefaultChoice, RawDefaults};
-pub use rawmakase_model::camera_data::Metadata;
-pub use rawmakase_model::camera_profiles::CameraProfile;
 pub use rawmakase_model::color::curve::{Inserted, ToneCurve};
 pub use rawmakase_model::model::recipe::Recipe;
 

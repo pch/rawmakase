@@ -4,7 +4,6 @@
 impl core::clone::Clone for rawmakase_core::Applied
 impl core::clone::Clone for rawmakase_core::CacheLimits
 impl core::clone::Clone for rawmakase_core::CameraDefault
-impl core::clone::Clone for rawmakase_core::CameraProfile
 impl core::clone::Clone for rawmakase_core::Context
 impl core::clone::Clone for rawmakase_core::Control
 impl core::clone::Clone for rawmakase_core::Decode
@@ -22,6 +21,7 @@ impl core::clone::Clone for rawmakase_core::Metadata
 impl core::clone::Clone for rawmakase_core::OutputSpace
 impl core::clone::Clone for rawmakase_core::Parameter
 impl core::clone::Clone for rawmakase_core::Preset
+impl core::clone::Clone for rawmakase_core::Profile
 impl core::clone::Clone for rawmakase_core::RawDefaults
 impl core::clone::Clone for rawmakase_core::Recipe
 impl core::clone::Clone for rawmakase_core::Scale
@@ -45,7 +45,6 @@ impl core::cmp::Eq for rawmakase_core::View
 impl core::cmp::PartialEq for rawmakase_core::Applied
 impl core::cmp::PartialEq for rawmakase_core::CacheLimits
 impl core::cmp::PartialEq for rawmakase_core::CameraDefault
-impl core::cmp::PartialEq for rawmakase_core::CameraProfile
 impl core::cmp::PartialEq for rawmakase_core::Control
 impl core::cmp::PartialEq for rawmakase_core::Decode
 impl core::cmp::PartialEq for rawmakase_core::DecodeStats
@@ -57,6 +56,7 @@ impl core::cmp::PartialEq for rawmakase_core::HdrOutput
 impl core::cmp::PartialEq for rawmakase_core::HdrTransfer
 impl core::cmp::PartialEq for rawmakase_core::Include
 impl core::cmp::PartialEq for rawmakase_core::Inserted
+impl core::cmp::PartialEq for rawmakase_core::Metadata
 impl core::cmp::PartialEq for rawmakase_core::OutputSpace
 impl core::cmp::PartialEq for rawmakase_core::Parameter
 impl core::cmp::PartialEq for rawmakase_core::Preset
@@ -74,7 +74,6 @@ impl core::default::Default for rawmakase_core::HdrGamut
 impl core::default::Default for rawmakase_core::HdrOutput
 impl core::default::Default for rawmakase_core::HdrTransfer
 impl core::default::Default for rawmakase_core::Include
-impl core::default::Default for rawmakase_core::Metadata
 impl core::default::Default for rawmakase_core::OutputSpace
 impl core::default::Default for rawmakase_core::RawDefaults
 impl core::default::Default for rawmakase_core::Recipe
@@ -85,7 +84,6 @@ impl core::error::Error for rawmakase_core::Error
 impl core::fmt::Debug for rawmakase_core::Applied
 impl core::fmt::Debug for rawmakase_core::CacheLimits
 impl core::fmt::Debug for rawmakase_core::CameraDefault
-impl core::fmt::Debug for rawmakase_core::CameraProfile
 impl core::fmt::Debug for rawmakase_core::Context
 impl core::fmt::Debug for rawmakase_core::ContextBuilder
 impl core::fmt::Debug for rawmakase_core::Control
@@ -107,6 +105,7 @@ impl core::fmt::Debug for rawmakase_core::OutputSpace
 impl core::fmt::Debug for rawmakase_core::Parameter
 impl core::fmt::Debug for rawmakase_core::Photo
 impl core::fmt::Debug for rawmakase_core::Preset
+impl core::fmt::Debug for rawmakase_core::Profile
 impl core::fmt::Debug for rawmakase_core::RawDefaults
 impl core::fmt::Debug for rawmakase_core::Recipe
 impl core::fmt::Debug for rawmakase_core::Renderer
@@ -135,7 +134,6 @@ impl core::marker::Copy for rawmakase_core::View
 impl core::marker::Send for rawmakase_core::Applied
 impl core::marker::Send for rawmakase_core::CacheLimits
 impl core::marker::Send for rawmakase_core::CameraDefault
-impl core::marker::Send for rawmakase_core::CameraProfile
 impl core::marker::Send for rawmakase_core::Context
 impl core::marker::Send for rawmakase_core::ContextBuilder
 impl core::marker::Send for rawmakase_core::Control
@@ -157,6 +155,7 @@ impl core::marker::Send for rawmakase_core::OutputSpace
 impl core::marker::Send for rawmakase_core::Parameter
 impl core::marker::Send for rawmakase_core::Photo
 impl core::marker::Send for rawmakase_core::Preset
+impl core::marker::Send for rawmakase_core::Profile
 impl core::marker::Send for rawmakase_core::RawDefaults
 impl core::marker::Send for rawmakase_core::Recipe
 impl core::marker::Send for rawmakase_core::Renderer
@@ -167,7 +166,6 @@ impl core::marker::Send for rawmakase_core::View
 impl core::marker::Sync for rawmakase_core::Applied
 impl core::marker::Sync for rawmakase_core::CacheLimits
 impl core::marker::Sync for rawmakase_core::CameraDefault
-impl core::marker::Sync for rawmakase_core::CameraProfile
 impl core::marker::Sync for rawmakase_core::Context
 impl core::marker::Sync for rawmakase_core::ContextBuilder
 impl core::marker::Sync for rawmakase_core::Control
@@ -189,6 +187,7 @@ impl core::marker::Sync for rawmakase_core::OutputSpace
 impl core::marker::Sync for rawmakase_core::Parameter
 impl core::marker::Sync for rawmakase_core::Photo
 impl core::marker::Sync for rawmakase_core::Preset
+impl core::marker::Sync for rawmakase_core::Profile
 impl core::marker::Sync for rawmakase_core::RawDefaults
 impl core::marker::Sync for rawmakase_core::Recipe
 impl core::marker::Sync for rawmakase_core::Renderer
@@ -197,14 +196,12 @@ impl core::marker::Sync for rawmakase_core::Shown
 impl core::marker::Sync for rawmakase_core::ToneCurve
 impl core::marker::Sync for rawmakase_core::View
 impl serde_core::ser::Serialize for rawmakase_core::CameraDefault
-impl serde_core::ser::Serialize for rawmakase_core::CameraProfile
 impl serde_core::ser::Serialize for rawmakase_core::Control
 impl serde_core::ser::Serialize for rawmakase_core::DefaultChoice
 impl serde_core::ser::Serialize for rawmakase_core::HdrGamut
 impl serde_core::ser::Serialize for rawmakase_core::HdrOutput
 impl serde_core::ser::Serialize for rawmakase_core::HdrTransfer
 impl serde_core::ser::Serialize for rawmakase_core::Include
-impl serde_core::ser::Serialize for rawmakase_core::Metadata
 impl serde_core::ser::Serialize for rawmakase_core::OutputSpace
 impl serde_core::ser::Serialize for rawmakase_core::RawDefaults
 impl serde_core::ser::Serialize for rawmakase_core::Recipe
@@ -216,13 +213,11 @@ impl<'a> core::marker::Copy for rawmakase_core::Cancel<'a>
 impl<'a> core::marker::Send for rawmakase_core::Cancel<'a>
 impl<'a> core::marker::Sync for rawmakase_core::Cancel<'a>
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::CameraDefault
-impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::CameraProfile
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::DefaultChoice
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrGamut
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrOutput
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrTransfer
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Include
-impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Metadata
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::OutputSpace
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::RawDefaults where rawmakase_core::RawDefaults: core::default::Default
 impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Recipe where rawmakase_core::Recipe: core::default::Default
@@ -265,27 +260,6 @@ pub enum rawmakase_core::Parameter
 pub enum rawmakase_core::Scale
 pub enum rawmakase_core::Taken<T>
 pub enum rawmakase_core::View
-pub fn rawmakase_core::CameraProfile::as_shot_white_balance(&self, m: &rawmakase_core::Metadata) -> core::option::Option<[f32; 2]>
-pub fn rawmakase_core::CameraProfile::at_amount(&self, amount: f32) -> Self
-pub fn rawmakase_core::CameraProfile::black_render(&self) -> rawmakase_model::camera_profiles::BlackRender
-pub fn rawmakase_core::CameraProfile::camera_color(&self, p: [f32; 3], matrix: [[f32; 3]; 3], t: f32) -> [f32; 3]
-pub fn rawmakase_core::CameraProfile::camera_matrix(&self, t: f32) -> [[f32; 3]; 3]
-pub fn rawmakase_core::CameraProfile::camera_matrix_at(&self, temperature: f32, tint: f32) -> [[f32; 3]; 3]
-pub fn rawmakase_core::CameraProfile::camera_matrix_default(m: &rawmakase_core::Metadata) -> core::option::Option<Self>
-pub fn rawmakase_core::CameraProfile::embedded(m: &rawmakase_core::Metadata) -> Self
-pub fn rawmakase_core::CameraProfile::ensure_camera(&self, m: &rawmakase_core::Metadata) -> anyhow::Result<()>
-pub fn rawmakase_core::CameraProfile::exposure(&self) -> f32
-pub fn rawmakase_core::CameraProfile::finish(&self, pro: [f32; 3]) -> [f32; 3]
-pub fn rawmakase_core::CameraProfile::finish_hdr(&self, pro: [f32; 3], tone: &rawmakase_model::camera_profiles::hdr_tone::HdrTone, look: core::option::Option<&rawmakase_model::camera_profiles::hdr_look::LookTone>) -> [f32; 3]
-pub fn rawmakase_core::CameraProfile::for_hdr_light(&self) -> Self
-pub fn rawmakase_core::CameraProfile::gpu_tables(&self, temperature: f32) -> rawmakase_model::camera_profiles::GpuTables<'_>
-pub fn rawmakase_core::CameraProfile::hdr_look(&self) -> core::option::Option<rawmakase_model::camera_profiles::hdr_look::LookTone>
-pub fn rawmakase_core::CameraProfile::hdr_tone(&self) -> anyhow::Result<rawmakase_model::camera_profiles::hdr_tone::HdrTone>
-pub fn rawmakase_core::CameraProfile::is_embedded(&self) -> bool
-pub fn rawmakase_core::CameraProfile::is_hdr(&self) -> bool
-pub fn rawmakase_core::CameraProfile::supports_amount(&self) -> bool
-pub fn rawmakase_core::CameraProfile::validate(&self) -> anyhow::Result<()>
-pub fn rawmakase_core::CameraProfile::white_balance(&self, temperature: f32, tint: f32, m: &rawmakase_core::Metadata) -> core::option::Option<[f32; 3]>
 pub fn rawmakase_core::Cancel::check(self, message: &'static str) -> core::result::Result<(), rawmakase_cancel::Cancelled> [impl<'a> rawmakase_core::Cancel<'a>]
 pub fn rawmakase_core::Cancel::is_cancelled(self) -> bool [impl<'a> rawmakase_core::Cancel<'a>]
 pub fn rawmakase_core::Cancel::new(flag: &'a core::sync::atomic::AtomicBool) -> Self [impl<'a> rawmakase_core::Cancel<'a>]
@@ -324,7 +298,6 @@ pub fn rawmakase_core::HdrOutput::decode(self, signal: [f32; 3]) -> [f32; 3]
 pub fn rawmakase_core::HdrOutput::encode(self, prophoto: [f32; 3], peak: f32) -> [f32; 3]
 pub fn rawmakase_core::HdrTransfer::cicp(self) -> u8
 pub fn rawmakase_core::HdrTransfer::label(self) -> &'static str
-pub fn rawmakase_core::Image::metadata(&self) -> &rawmakase_core::Metadata
 pub fn rawmakase_core::Image::output_size(&self, recipe: &rawmakase_core::Recipe) -> rawmakase_core::Result<(u32, u32)>
 pub fn rawmakase_core::Image::size_in(&self, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View) -> rawmakase_core::Result<(u32, u32)>
 pub fn rawmakase_core::Image::source(&self) -> &std::path::Path
@@ -338,8 +311,6 @@ pub fn rawmakase_core::Mailbox::put(&self, job: T) -> u64 [impl<T> rawmakase_cor
 pub fn rawmakase_core::Mailbox::take(&self) -> core::option::Option<rawmakase_core::Numbered<T>> [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::Mailbox::take_within(&self, quiet: core::time::Duration) -> rawmakase_core::Taken<T> [impl<T> rawmakase_core::Mailbox<T>]
 pub fn rawmakase_core::Mailbox::try_take(&self) -> core::option::Option<rawmakase_core::Numbered<T>> [impl<T> rawmakase_core::Mailbox<T>]
-pub fn rawmakase_core::Metadata::apply_default_crop(&mut self, [left, top, width, height]: [u32; 4])
-pub fn rawmakase_core::Metadata::is_rendered(&self) -> bool
 pub fn rawmakase_core::OutputSpace::decode(self, v: f32) -> f32
 pub fn rawmakase_core::OutputSpace::encode(self, v: f32) -> f32
 pub fn rawmakase_core::OutputSpace::from_linear_srgb(self) -> [[f32; 3]; 3]
@@ -352,7 +323,7 @@ pub fn rawmakase_core::OutputSpace::name(self) -> &'static str
 pub fn rawmakase_core::OutputSpace::needs_sixteen_bits(self) -> bool
 pub fn rawmakase_core::Parameter::control(self, r: &rawmakase_core::Recipe) -> rawmakase_core::Control
 pub fn rawmakase_core::Parameter::descriptor(self) -> &'static rawmakase_model::model::params::Descriptor
-pub fn rawmakase_core::Parameter::for_photo(self, m: core::option::Option<&rawmakase_core::Metadata>) -> Self
+pub fn rawmakase_core::Parameter::for_photo(self, m: core::option::Option<&rawmakase_model::camera_data::Metadata>) -> Self
 pub fn rawmakase_core::Parameter::for_source(self, source: rawmakase_model::camera_data::Source) -> Self
 pub fn rawmakase_core::Parameter::from_shown(self, shown: f32) -> f32
 pub fn rawmakase_core::Parameter::key_stepped(self, value: f32, size: rawmakase_model::model::params::KeyStep, up: bool) -> f32
@@ -371,65 +342,70 @@ pub fn rawmakase_core::Photo::decode(&self, decode: rawmakase_core::Decode, canc
 pub fn rawmakase_core::Photo::metadata(&self) -> &rawmakase_core::Metadata
 pub fn rawmakase_core::Photo::path(&self) -> &std::path::Path
 pub fn rawmakase_core::Photo::profile_errors(&self) -> &[alloc::string::String]
-pub fn rawmakase_core::Photo::profiles(&self) -> &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>]
+pub fn rawmakase_core::Photo::profiles(&self) -> &[rawmakase_core::Profile]
 pub fn rawmakase_core::Photo::save_recipe(&self, recipe: &rawmakase_core::Recipe, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::Photo::set(&self, recipe: &mut rawmakase_core::Recipe, parameter: rawmakase_core::Parameter, value: f32) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::Photo::starting_recipe(&self) -> rawmakase_core::Result<rawmakase_core::Recipe>
 pub fn rawmakase_core::Photo::value(&self, recipe: &rawmakase_core::Recipe, parameter: rawmakase_core::Parameter) -> f32
-pub fn rawmakase_core::Preset::apply(&self, base: &rawmakase_core::Recipe, m: &rawmakase_core::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>], image: core::option::Option<&dyn rawmakase_model::model::measures::PhotoMeasures>, lensfun: &rawmakase_model::lens::lensfun::installed::Handle) -> anyhow::Result<rawmakase_core::Recipe>
-pub fn rawmakase_core::Preset::apply_lenient(&self, base: &rawmakase_core::Recipe, m: &rawmakase_core::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>], image: core::option::Option<&dyn rawmakase_model::model::measures::PhotoMeasures>, lensfun: &rawmakase_model::lens::lensfun::installed::Handle) -> anyhow::Result<(rawmakase_core::Recipe, alloc::vec::Vec<alloc::string::String>)>
-pub fn rawmakase_core::Preset::look_available(&self, m: &rawmakase_core::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>]) -> bool
+pub fn rawmakase_core::Preset::apply(&self, base: &rawmakase_core::Recipe, m: &rawmakase_model::camera_data::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>], image: core::option::Option<&dyn rawmakase_model::model::measures::PhotoMeasures>, lensfun: &rawmakase_model::lens::lensfun::installed::Handle) -> anyhow::Result<rawmakase_core::Recipe>
+pub fn rawmakase_core::Preset::apply_lenient(&self, base: &rawmakase_core::Recipe, m: &rawmakase_model::camera_data::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>], image: core::option::Option<&dyn rawmakase_model::model::measures::PhotoMeasures>, lensfun: &rawmakase_model::lens::lensfun::installed::Handle) -> anyhow::Result<(rawmakase_core::Recipe, alloc::vec::Vec<alloc::string::String>)>
+pub fn rawmakase_core::Preset::look_available(&self, m: &rawmakase_model::camera_data::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>]) -> bool
 pub fn rawmakase_core::Preset::measures_photo(&self) -> bool
-pub fn rawmakase_core::Preset::profile_substitute(&self, m: &rawmakase_core::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>]) -> core::option::Option<(alloc::string::String, alloc::string::String)>
+pub fn rawmakase_core::Preset::profile_substitute(&self, m: &rawmakase_model::camera_data::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>]) -> core::option::Option<(alloc::string::String, alloc::string::String)>
+pub fn rawmakase_core::Profile::camera(&self) -> &str
+pub fn rawmakase_core::Profile::copyright(&self) -> &str
+pub fn rawmakase_core::Profile::is_hdr(&self) -> bool
+pub fn rawmakase_core::Profile::name(&self) -> &str
+pub fn rawmakase_core::Profile::takes_amount(&self) -> bool
 pub fn rawmakase_core::RawDefaults::camera_choice(&self, camera: &str) -> core::option::Option<&rawmakase_core::DefaultChoice>
-pub fn rawmakase_core::RawDefaults::choice_for(&self, m: &rawmakase_core::Metadata) -> &rawmakase_core::DefaultChoice
+pub fn rawmakase_core::RawDefaults::choice_for(&self, m: &rawmakase_model::camera_data::Metadata) -> &rawmakase_core::DefaultChoice
 pub fn rawmakase_core::RawDefaults::rename_preset(&mut self, old: &str, id: &str, name: &str)
 pub fn rawmakase_core::RawDefaults::set_camera(&mut self, camera: &str, choice: rawmakase_core::DefaultChoice)
 pub fn rawmakase_core::Recipe::add_retouch(&mut self, op: rawmakase_model::model::retouch::RetouchOp)
 pub fn rawmakase_core::Recipe::as_rendered(&self) -> alloc::borrow::Cow<'_, rawmakase_core::Recipe>
 pub fn rawmakase_core::Recipe::auto_straighten(&self) -> core::option::Option<rawmakase_model::model::transform::AutoStraighten>
-pub fn rawmakase_core::Recipe::builtin_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
+pub fn rawmakase_core::Recipe::builtin_correction<'a>(&self, m: &'a rawmakase_model::camera_data::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
 pub fn rawmakase_core::Recipe::checked(&self) -> anyhow::Result<rawmakase_model::model::valid::ValidRecipe<'_>>
-pub fn rawmakase_core::Recipe::color_profile(&self, m: &rawmakase_core::Metadata) -> core::option::Option<alloc::borrow::Cow<'_, rawmakase_core::CameraProfile>>
-pub fn rawmakase_core::Recipe::file_lens_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
-pub fn rawmakase_core::Recipe::file_lens_correction_left_out(&self, m: &rawmakase_core::Metadata) -> bool
-pub fn rawmakase_core::Recipe::file_lens_correction_replaced(&self, m: &rawmakase_core::Metadata) -> bool
-pub fn rawmakase_core::Recipe::fixed_lens_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
-pub fn rawmakase_core::Recipe::for_metadata(m: &rawmakase_core::Metadata) -> Self
-pub fn rawmakase_core::Recipe::for_new_rendered(m: &rawmakase_core::Metadata) -> Self
-pub fn rawmakase_core::Recipe::for_rendered(m: &rawmakase_core::Metadata) -> Self
+pub fn rawmakase_core::Recipe::color_profile(&self, m: &rawmakase_model::camera_data::Metadata) -> core::option::Option<alloc::borrow::Cow<'_, rawmakase_model::camera_profiles::CameraProfile>>
+pub fn rawmakase_core::Recipe::file_lens_correction<'a>(&self, m: &'a rawmakase_model::camera_data::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
+pub fn rawmakase_core::Recipe::file_lens_correction_left_out(&self, m: &rawmakase_model::camera_data::Metadata) -> bool
+pub fn rawmakase_core::Recipe::file_lens_correction_replaced(&self, m: &rawmakase_model::camera_data::Metadata) -> bool
+pub fn rawmakase_core::Recipe::fixed_lens_correction<'a>(&self, m: &'a rawmakase_model::camera_data::Metadata) -> core::option::Option<&'a rawmakase_model::optics::LensCorrection>
+pub fn rawmakase_core::Recipe::for_metadata(m: &rawmakase_model::camera_data::Metadata) -> Self
+pub fn rawmakase_core::Recipe::for_new_rendered(m: &rawmakase_model::camera_data::Metadata) -> Self
+pub fn rawmakase_core::Recipe::for_rendered(m: &rawmakase_model::camera_data::Metadata) -> Self
 pub fn rawmakase_core::Recipe::keep_white_balance_and_profile(&mut self, own: &rawmakase_core::Recipe)
-pub fn rawmakase_core::Recipe::lens_amounts(&self, m: &rawmakase_core::Metadata) -> [f32; 2]
-pub fn rawmakase_core::Recipe::lens_correction<'a>(&self, m: &'a rawmakase_core::Metadata) -> core::option::Option<alloc::borrow::Cow<'a, rawmakase_model::optics::LensCorrection>>
-pub fn rawmakase_core::Recipe::lens_profile_in_use<'c, 'p>(self: &'c Self, m: &'p rawmakase_core::Metadata) -> rawmakase_model::lens::choice::Resolved<'c, 'p>
+pub fn rawmakase_core::Recipe::lens_amounts(&self, m: &rawmakase_model::camera_data::Metadata) -> [f32; 2]
+pub fn rawmakase_core::Recipe::lens_correction<'a>(&self, m: &'a rawmakase_model::camera_data::Metadata) -> core::option::Option<alloc::borrow::Cow<'a, rawmakase_model::optics::LensCorrection>>
+pub fn rawmakase_core::Recipe::lens_profile_in_use<'c, 'p>(self: &'c Self, m: &'p rawmakase_model::camera_data::Metadata) -> rawmakase_model::lens::choice::Resolved<'c, 'p>
 pub fn rawmakase_core::Recipe::lensfun_in_use(&self) -> core::option::Option<&rawmakase_model::lens::lensfun::choice::LensfunChoice>
 pub fn rawmakase_core::Recipe::mask_asset_ids(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
-pub fn rawmakase_core::Recipe::missing_lens_profile(&self, m: &rawmakase_core::Metadata) -> core::option::Option<alloc::string::String>
-pub fn rawmakase_core::Recipe::pick_white_balance(&mut self, gains: [f32; 3], m: &rawmakase_core::Metadata)
-pub fn rawmakase_core::Recipe::profile_changed(&mut self, m: &rawmakase_core::Metadata)
-pub fn rawmakase_core::Recipe::reset_white_balance(&mut self, m: &rawmakase_core::Metadata)
-pub fn rawmakase_core::Recipe::resolved(&self, m: &rawmakase_core::Metadata) -> alloc::borrow::Cow<'_, Self>
-pub fn rawmakase_core::Recipe::resolved_hdr(&self, m: &rawmakase_core::Metadata) -> alloc::borrow::Cow<'_, Self>
+pub fn rawmakase_core::Recipe::missing_lens_profile(&self, m: &rawmakase_model::camera_data::Metadata) -> core::option::Option<alloc::string::String>
+pub fn rawmakase_core::Recipe::pick_white_balance(&mut self, gains: [f32; 3], m: &rawmakase_model::camera_data::Metadata)
+pub fn rawmakase_core::Recipe::profile_changed(&mut self, m: &rawmakase_model::camera_data::Metadata)
+pub fn rawmakase_core::Recipe::reset_white_balance(&mut self, m: &rawmakase_model::camera_data::Metadata)
+pub fn rawmakase_core::Recipe::resolved(&self, m: &rawmakase_model::camera_data::Metadata) -> alloc::borrow::Cow<'_, Self>
+pub fn rawmakase_core::Recipe::resolved_hdr(&self, m: &rawmakase_model::camera_data::Metadata) -> alloc::borrow::Cow<'_, Self>
 pub fn rawmakase_core::Recipe::set_auto_straighten(&mut self, measured: core::option::Option<f32>)
 pub fn rawmakase_core::Recipe::set_color_noise_defaults(&mut self)
-pub fn rawmakase_core::Recipe::set_profile_corrections(&mut self, m: &rawmakase_core::Metadata, state: rawmakase_model::model::recipe::ProfileCorrections)
+pub fn rawmakase_core::Recipe::set_profile_corrections(&mut self, m: &rawmakase_model::camera_data::Metadata, state: rawmakase_model::model::recipe::ProfileCorrections)
 pub fn rawmakase_core::Recipe::set_sharpening_defaults(&mut self)
 pub fn rawmakase_core::Recipe::split_local(&self) -> (rawmakase_core::Recipe, rawmakase_model::model::recipe::LocalEdits)
 pub fn rawmakase_core::Recipe::straighten_pending(&self) -> bool
 pub fn rawmakase_core::Recipe::switch_ai_denoise(&mut self, on: bool)
-pub fn rawmakase_core::Recipe::sync_fallback_white_balance_controls(&mut self, m: &rawmakase_core::Metadata)
-pub fn rawmakase_core::Recipe::sync_white_balance_controls(&mut self, m: &rawmakase_core::Metadata)
+pub fn rawmakase_core::Recipe::sync_fallback_white_balance_controls(&mut self, m: &rawmakase_model::camera_data::Metadata)
+pub fn rawmakase_core::Recipe::sync_white_balance_controls(&mut self, m: &rawmakase_model::camera_data::Metadata)
 pub fn rawmakase_core::Recipe::treatment(&self) -> rawmakase_model::model::recipe::Treatment
-pub fn rawmakase_core::Recipe::update_wb(&mut self, m: &rawmakase_core::Metadata)
-pub fn rawmakase_core::Recipe::use_camera_baseline(&mut self, m: &rawmakase_core::Metadata)
+pub fn rawmakase_core::Recipe::update_wb(&mut self, m: &rawmakase_model::camera_data::Metadata)
+pub fn rawmakase_core::Recipe::use_camera_baseline(&mut self, m: &rawmakase_model::camera_data::Metadata)
 pub fn rawmakase_core::Recipe::uses_generated(&self) -> bool
 pub fn rawmakase_core::Recipe::uses_hdr(&self) -> bool
 pub fn rawmakase_core::Recipe::uses_lensfun(&self) -> bool
 pub fn rawmakase_core::Recipe::validate(&self) -> anyhow::Result<()>
 pub fn rawmakase_core::Recipe::with_local(self, local: rawmakase_model::model::recipe::LocalEdits) -> rawmakase_core::Recipe
 pub fn rawmakase_core::Recipe::with_profile_adjustments(&self) -> alloc::borrow::Cow<'_, Self>
-pub fn rawmakase_core::Recipe::with_profile_preference(m: &rawmakase_core::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>], preference: rawmakase_model::model::recipe::ProfilePreference) -> Self
-pub fn rawmakase_core::Recipe::with_profiles(m: &rawmakase_core::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>]) -> Self
+pub fn rawmakase_core::Recipe::with_profile_preference(m: &rawmakase_model::camera_data::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>], preference: rawmakase_model::model::recipe::ProfilePreference) -> Self
+pub fn rawmakase_core::Recipe::with_profiles(m: &rawmakase_model::camera_data::Metadata, profiles: &[alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>]) -> Self
 pub fn rawmakase_core::Renderer::draft_due(&self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View) -> core::option::Option<(u32, u32)>
 pub fn rawmakase_core::Renderer::render(&mut self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
 pub fn rawmakase_core::Renderer::render_draft(&mut self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
@@ -452,10 +428,6 @@ pub rawmakase_core::CacheLimits::ai_denoise: u64
 pub rawmakase_core::CacheLimits::decoded: u64
 pub rawmakase_core::CameraDefault::camera: alloc::string::String
 pub rawmakase_core::CameraDefault::choice: rawmakase_core::DefaultChoice
-pub rawmakase_core::CameraProfile::camera: alloc::string::String
-pub rawmakase_core::CameraProfile::copyright: alloc::string::String
-pub rawmakase_core::CameraProfile::enhanced: core::option::Option<rawmakase_model::camera_profiles::enhanced::Enhanced>
-pub rawmakase_core::CameraProfile::name: alloc::string::String
 pub rawmakase_core::Control::id: &'static str
 pub rawmakase_core::Control::label: &'static str
 pub rawmakase_core::Control::max: f32
@@ -514,58 +486,17 @@ pub rawmakase_core::Include::Custom
 pub rawmakase_core::Inserted::Added(usize)
 pub rawmakase_core::Inserted::Existing(usize)
 pub rawmakase_core::Inserted::Full(usize)
-pub rawmakase_core::Metadata::adobe_names: alloc::vec::Vec<alloc::string::String>
 pub rawmakase_core::Metadata::aperture: f32
-pub rawmakase_core::Metadata::baseline_exposure: core::option::Option<f32>
-pub rawmakase_core::Metadata::cam_xyz: [[f32; 3]; 3]
-pub rawmakase_core::Metadata::camera_crop: core::option::Option<[f32; 4]>
-pub rawmakase_core::Metadata::camera_look: core::option::Option<alloc::string::String>
-pub rawmakase_core::Metadata::coverage: core::option::Option<alloc::rcs::arc::Arc<rawmakase_model::camera_data::Coverage>>
-pub rawmakase_core::Metadata::crop_height: u32
-pub rawmakase_core::Metadata::crop_left: u32
-pub rawmakase_core::Metadata::crop_top: u32
-pub rawmakase_core::Metadata::crop_width: u32
-pub rawmakase_core::Metadata::daylight_wb: [f32; 3]
-pub rawmakase_core::Metadata::dng_analog_balance: core::option::Option<[f32; 3]>
-pub rawmakase_core::Metadata::dng_matrix_profile_signature: core::option::Option<alloc::string::String>
-pub rawmakase_core::Metadata::dng_neutral_calibration: core::option::Option<rawmakase_model::camera_data::NeutralCalibration>
-pub rawmakase_core::Metadata::embedded_dcp: core::option::Option<alloc::rcs::arc::Arc<[u8]>>
-pub rawmakase_core::Metadata::embedded_profile_status: rawmakase_model::camera_data::EmbeddedProfileStatus
-pub rawmakase_core::Metadata::exif_make: alloc::string::String
-pub rawmakase_core::Metadata::exif_model: alloc::string::String
-pub rawmakase_core::Metadata::flip: i32
 pub rawmakase_core::Metadata::focal: f32
-pub rawmakase_core::Metadata::focal_35mm: f32
-pub rawmakase_core::Metadata::focus_distance: f32
-pub rawmakase_core::Metadata::fuji_dynamic_range: u32
-pub rawmakase_core::Metadata::fuji_exposure_shift: core::option::Option<f32>
-pub rawmakase_core::Metadata::hdr_source: core::option::Option<rawmakase_model::camera_data::HdrSource>
 pub rawmakase_core::Metadata::height: u32
-pub rawmakase_core::Metadata::highlight_tone_priority: rawmakase_model::camera_data::HighlightTonePriority
 pub rawmakase_core::Metadata::iso: f32
-pub rawmakase_core::Metadata::lateral_ca: alloc::rcs::arc::Arc<std::sync::once_lock::OnceLock<core::option::Option<[rawmakase_model::optics::Radial; 2]>>>
-pub rawmakase_core::Metadata::lens: core::option::Option<rawmakase_model::optics::LensCorrection>
-pub rawmakase_core::Metadata::lens_id: u32
-pub rawmakase_core::Metadata::lens_info: core::option::Option<[f32; 4]>
-pub rawmakase_core::Metadata::lens_model: alloc::string::String
-pub rawmakase_core::Metadata::lens_profiles: rawmakase_model::optics::lcp::PhotoProfiles
-pub rawmakase_core::Metadata::lens_stand_in: core::option::Option<rawmakase_model::optics::LensCorrection>
-pub rawmakase_core::Metadata::levels: core::option::Option<[u32; 3]>
+pub rawmakase_core::Metadata::lens: alloc::string::String
 pub rawmakase_core::Metadata::make: alloc::string::String
-pub rawmakase_core::Metadata::matrix: [[f32; 3]; 3]
-pub rawmakase_core::Metadata::matrix_source: rawmakase_model::camera_data::MatrixSource
 pub rawmakase_core::Metadata::model: alloc::string::String
 pub rawmakase_core::Metadata::monochrome: bool
-pub rawmakase_core::Metadata::raw_height: u32
-pub rawmakase_core::Metadata::raw_width: u32
-pub rawmakase_core::Metadata::sensor_crop: core::option::Option<f32>
+pub rawmakase_core::Metadata::rendered: bool
 pub rawmakase_core::Metadata::shutter: f32
-pub rawmakase_core::Metadata::source: rawmakase_model::camera_data::Source
-pub rawmakase_core::Metadata::sraw: bool
-pub rawmakase_core::Metadata::wb: [f32; 3]
-pub rawmakase_core::Metadata::wb_presets: rawmakase_model::camera_data::WhiteBalancePresets
 pub rawmakase_core::Metadata::width: u32
-pub rawmakase_core::Metadata::xtrans: bool
 pub rawmakase_core::Numbered::job: T
 pub rawmakase_core::Numbered::number: u64
 pub rawmakase_core::OutputSpace::AdobeRgb
@@ -681,7 +612,7 @@ pub rawmakase_core::Recipe::noise_luma: f32
 pub rawmakase_core::Recipe::panels: rawmakase_model::model::panels::PanelSwitches
 pub rawmakase_core::Recipe::point_colors: alloc::vec::Vec<rawmakase_model::model::point_color::PointColor>
 pub rawmakase_core::Recipe::preset_name: alloc::string::String
-pub rawmakase_core::Recipe::profile: core::option::Option<alloc::rcs::arc::Arc<rawmakase_core::CameraProfile>>
+pub rawmakase_core::Recipe::profile: core::option::Option<alloc::rcs::arc::Arc<rawmakase_model::camera_profiles::CameraProfile>>
 pub rawmakase_core::Recipe::profile_amount: f32
 pub rawmakase_core::Recipe::red_eye: rawmakase_model::model::red_eye::RedEyeList
 pub rawmakase_core::Recipe::retouch: alloc::vec::Vec<rawmakase_model::model::retouch::RetouchOp>
@@ -716,7 +647,6 @@ pub rawmakase_core::View::Region([u32; 4])
 pub struct rawmakase_core::Applied
 pub struct rawmakase_core::CacheLimits
 pub struct rawmakase_core::CameraDefault
-pub struct rawmakase_core::CameraProfile
 pub struct rawmakase_core::Cancel<'a>
 pub struct rawmakase_core::Context
 pub struct rawmakase_core::ContextBuilder
@@ -728,17 +658,17 @@ pub struct rawmakase_core::Frame
 pub struct rawmakase_core::HdrOutput
 pub struct rawmakase_core::Image
 pub struct rawmakase_core::Mailbox<T>
-pub struct rawmakase_core::Metadata
+pub struct rawmakase_core::Metadata #[non_exhaustive]
 pub struct rawmakase_core::Numbered<T>
 pub struct rawmakase_core::Photo
 pub struct rawmakase_core::Preset
+pub struct rawmakase_core::Profile
 pub struct rawmakase_core::RawDefaults
 pub struct rawmakase_core::Recipe
 pub struct rawmakase_core::Renderer
 pub struct rawmakase_core::Shown
 pub struct rawmakase_core::ToneCurve
 pub type rawmakase_core::Result<T, E = rawmakase_core::Error> = core::result::Result<T, E>
-rawmakase_core::CameraProfile has private fields
 rawmakase_core::Cancel has private fields
 rawmakase_core::Cancel is a tuple struct of 1
 rawmakase_core::Context has private fields
@@ -748,5 +678,7 @@ rawmakase_core::Frame has private fields
 rawmakase_core::Image has private fields
 rawmakase_core::Mailbox has private fields
 rawmakase_core::Photo has private fields
+rawmakase_core::Profile has private fields
+rawmakase_core::Profile is a tuple struct of 1
 rawmakase_core::Renderer has private fields
 rawmakase_core::Shown has private fields
