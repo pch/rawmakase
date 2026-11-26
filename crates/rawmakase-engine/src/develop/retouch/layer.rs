@@ -291,11 +291,23 @@ impl RetouchCache {
     }
     /// `source` with Color and luminance noise reduction `d`, reused while neither changes; without
     /// one, `source` itself, and the last result is let go.
+    #[cfg(test)]
     pub(crate) fn denoised(
         &mut self,
         source: &Arc<CameraImage>,
         d: Option<Denoise>,
         cancel: Cancel<'_>,
+    ) -> Result<Arc<CameraImage>> {
+        self.denoised_with(source, d, cancel, None)
+    }
+    /// As [`Self::denoised`], running Color and luminance noise reduction on `backend`'s
+    /// GPU when available and within device limits, falling back to CPU otherwise.
+    pub(crate) fn denoised_with(
+        &mut self,
+        source: &Arc<CameraImage>,
+        d: Option<Denoise>,
+        cancel: Cancel<'_>,
+        backend: Option<&mut crate::develop::preview_renderer::Backend>,
     ) -> Result<Arc<CameraImage>> {
         let Some(d) = d else {
             self.denoised = None;
@@ -313,7 +325,13 @@ impl RetouchCache {
         self.base = None;
         self.image = None;
         self.change = None;
-        let out = d.apply(source, cancel)?;
+        let out = d.apply_with(source, cancel, |base, chroma, luminance| {
+            let b = backend?;
+            if !b.gpu.as_ref().is_some_and(|gpu| gpu.fits_pyramid(base)) {
+                return None;
+            }
+            b.run_resident(cancel, |gpu| gpu.denoise(base, chroma, luminance, cancel))
+        })?;
         self.denoised = Some((source.clone(), d, out.clone()));
         Ok(out)
     }

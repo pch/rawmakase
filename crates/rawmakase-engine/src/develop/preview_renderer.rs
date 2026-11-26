@@ -573,7 +573,13 @@ impl PreviewRenderer {
     ) -> Result<(Arc<CameraImage>, quality::Retouched)> {
         let ai = self.ai.clone();
         self.release_replaced(image, &resolved.recipe, ai.as_ref(), cancel)?;
-        let source = resolved.source(image, ai.as_ref(), cancel, Some(&mut self.retouch))?;
+        let source = resolved.source_with_backend(
+            image,
+            ai.as_ref(),
+            cancel,
+            Some(&mut self.retouch),
+            Some(&mut self.backend),
+        )?;
         match &mut self.pyramid {
             Some(p) if Arc::ptr_eq(p.source(), &source.image) => {}
             Some(p) if self.retouch.changed_from(p.source()).is_some() => {

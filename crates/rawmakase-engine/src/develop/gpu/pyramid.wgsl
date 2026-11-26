@@ -523,6 +523,23 @@ fn luma_writeback(@builtin(global_invocation_id) gid: vec3<u32>) {
 // Texture (per-channel log2 Laplacian pyramid)
 // ============================================================================
 
+// Accurate `log2(x)` for positive finite `x` (within ~0.5 ULP across GPU vendors,
+// avoiding 2-3 ULP hardware `v_log_f32` approximations that jitter Texture's 1/8192 EV
+// quantization boundary).
+fn exact_log2(x: f32) -> f32 {
+    let bits = bitcast<u32>(x);
+    var e = i32((bits >> 23u) & 0xffu) - 127;
+    var m = bitcast<f32>((bits & 0x007fffffu) | 0x3f800000u);
+    if (m >= 1.41421356) {
+        m *= 0.5;
+        e += 1;
+    }
+    let t = (m - 1.0) / (m + 1.0);
+    let t2 = t * t;
+    let poly = t * (2.8853900818 + t2 * (0.9617966939 + t2 * (0.5770780164 + t2 * (0.4121985831 + t2 * 0.3205988980))));
+    return f32(e) + poly;
+}
+
 // Extract `log2(max(clip_at_black(photo)[c], 1e-6))` for channel `u.aux0` into `dst`.
 @compute @workgroup_size(16, 16)
 fn texture_extract(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -533,7 +550,7 @@ fn texture_extract(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p = i * 3u;
     let c = clip_at_black(vec3<f32>(src_a[p], src_a[p + 1u], src_a[p + 2u]));
     let ch = select(select(c.x, c.y, u.aux0 == 1u), c.z, u.aux0 == 2u);
-    dst[i] = log2(max(ch, 1e-6));
+    dst[i] = exact_log2(max(ch, 1e-6));
 }
 
 // Overwrite `dst` (Gaussian level) in-place with compressed weighted detail:

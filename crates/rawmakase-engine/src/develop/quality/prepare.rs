@@ -4,7 +4,7 @@
 //! full-resolution geometry under it, both from the decoded image alone; then the
 //! source the stages sample, once the caller has checked its output against that
 //! geometry and released what a new source replaces.
-use super::{Retouched, retouched};
+use super::{Retouched, retouched_with_backend};
 use crate::camera_data::CameraImage;
 use crate::develop::{self, Geometry};
 use crate::model::{recipe::Recipe, valid::ValidRecipe};
@@ -49,12 +49,24 @@ impl Resolved<'_> {
         cancel: Cancel<'_>,
         cache: Option<&mut develop::retouch::RetouchCache>,
     ) -> Result<Retouched> {
+        self.source_with_backend(image, ai, cancel, cache, None)
+    }
+    /// As [`Self::source`], using `backend`'s shared GPU pyramid runner for noise reduction
+    /// when available.
+    pub(crate) fn source_with_backend(
+        &self,
+        image: &CameraImage,
+        ai: Option<&develop::AiSource>,
+        cancel: Cancel<'_>,
+        cache: Option<&mut develop::retouch::RetouchCache>,
+        backend: Option<&mut develop::preview_renderer::Backend>,
+    ) -> Result<Retouched> {
         if let Some(p) = &self.recipe.profile {
             p.ensure_camera(&image.metadata)?;
         }
         if self.recipe.lens_ca {
             crate::lens::auto_ca::prime(image);
         }
-        retouched(image, &self.recipe, ai, cancel, cache)
+        retouched_with_backend(image, &self.recipe, ai, cancel, cache, backend)
     }
 }

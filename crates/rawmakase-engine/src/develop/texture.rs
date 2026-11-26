@@ -66,7 +66,17 @@ pub(crate) fn level_offset(im: &CameraImage, scale: f32) -> usize {
     (-scale.max(1e-3).log2()).round().max(0.) as usize
 }
 
+/// Quantizes log2 Texture detail into `i16` steps of [`DETAIL_STEP`] (±4 EV).
+pub(crate) fn quantize_detail(data: &[f32]) -> Vec<i16> {
+    data.par_iter()
+        .map(|d| (d / DETAIL_STEP).round().clamp(-32767., 32767.) as i16)
+        .collect()
+}
+
 impl TextureDetail {
+    pub(crate) fn from_channels(channels: [Vec<i16>; 3]) -> Self {
+        Self { channels }
+    }
     /// The detail of `im`, an image `scale` times the full-resolution photo's size;
     /// stops with an error when `cancel` is set.
     pub(crate) fn of(im: &CameraImage, scale: f32, cancel: Cancel<'_>) -> Result<Self> {
@@ -86,11 +96,7 @@ impl TextureDetail {
                     })
                     .collect(),
             };
-            *out = detail(&logs, offset, cancel)?
-                .data
-                .par_iter()
-                .map(|d| (d / DETAIL_STEP).round().clamp(-32767., 32767.) as i16)
-                .collect();
+            *out = quantize_detail(&detail(&logs, offset, cancel)?.data);
         }
         Ok(Self { channels })
     }

@@ -90,6 +90,19 @@ impl Resident {
             parked: None,
         }
     }
+    pub(super) fn photo_buffer(&self, image: &Arc<CameraImage>) -> Option<wgpu::Buffer> {
+        if let Some((kept, buf)) = &self.photo
+            && Arc::ptr_eq(kept, image)
+        {
+            return Some(buf.clone());
+        }
+        if let Some(parked) = &self.parked
+            && Arc::ptr_eq(&parked.photo.0, image)
+        {
+            return Some(parked.photo.1.clone());
+        }
+        None
+    }
     fn release(&mut self) {
         self.photo = None;
         self.coverage = None;
