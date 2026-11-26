@@ -100,6 +100,8 @@ type RenderWithAi = fn(
     &rawmakase_decode::ai::cache::AiEntry,
     Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage>;
+/// Encodes a rendered thumbnail off the cache lock.
+type EncodeThumbnail = fn(&image::RgbImage) -> anyhow::Result<EncodedPreview>;
 /// Where edited preview jobs go, and how fast they are rendered. Dropping it
 /// closes the worker, as [`EditQueue::close`] does.
 pub(in crate::app::library) struct EditQueue(Arc<Shared>);
@@ -343,6 +345,7 @@ pub(super) fn spawn_edited_with_ai(
             results,
             render,
             render_ai,
+            encode: PreviewCache::encode_thumbnail,
         };
         loop {
             match next_step(&renders.results.shared, &renders.wanted, full_renders) {
@@ -388,6 +391,7 @@ struct Renders {
     results: Results,
     render: RenderEdited,
     render_ai: RenderWithAi,
+    encode: EncodeThumbnail,
 }
 /// The preview cache, held while it is read or written.
 fn cache(cache: &Mutex<Option<PreviewCache>>) -> std::sync::MutexGuard<'_, Option<PreviewCache>> {
@@ -520,9 +524,9 @@ impl Renders {
         if Stamp::read(path).ok().as_ref() != Some(stamp) {
             return;
         }
-        let Ok(encoded) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            PreviewCache::encode_thumbnail(image)
-        })) else {
+        let Ok(encoded) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (self.encode)(image)))
+        else {
             return;
         };
         store_encoded_tagged(
@@ -639,13 +643,14 @@ impl Renders {
             path: path.clone(),
         });
         drop(state);
-        let (cache_at, cache_path, wanted, results, render, render_ai) = (
+        let (cache_at, cache_path, wanted, results, render, render_ai, encode) = (
             self.cache.clone(),
             self.cache_path.clone(),
             self.wanted.clone(),
             self.results.clone(),
             self.render,
             self.render_ai,
+            self.encode,
         );
         let task = move || {
             let _finished = Finished(results.shared.clone(), slot);
@@ -668,7 +673,7 @@ impl Renders {
                 if cancel.load(Ordering::Relaxed) {
                     return None;
                 }
-                let encoded = PreviewCache::encode_thumbnail(&image);
+                let encoded = encode(&image);
                 Some((stamp, image, source.preview_tag(shows), encoded))
             }));
             let image = match rendered {

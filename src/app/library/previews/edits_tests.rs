@@ -26,6 +26,7 @@ fn counting(
         },
         render,
         render_ai: render_edited_with_ai,
+        encode: PreviewCache::encode_thumbnail,
     };
     (renders, rx)
 }
@@ -343,6 +344,7 @@ fn off_lock_encode_panic_fails_render_without_reopening_cache() -> anyhow::Resul
         },
         render: invalid_rgb_render,
         render_ai: render_edited_with_ai,
+        encode: PreviewCache::encode_thumbnail,
     };
     renders.start(0);
     assert!(matches!(
@@ -393,6 +395,7 @@ fn stale_source_after_render_skips_store_without_cache_error() -> anyhow::Result
         },
         render: rewriting_render,
         render_ai: render_edited_with_ai,
+        encode: PreviewCache::encode_thumbnail,
     };
     renders.start(0);
     assert!(matches!(
@@ -459,6 +462,7 @@ fn valid_cached_preview_touches_last_used_only_after_off_lock_decode() -> anyhow
 #[test]
 fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
     static HANDSHAKE: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
+    static ENCODE_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     fn cancelling_render(
         _: &Path,
         _: &EditSource,
@@ -468,8 +472,12 @@ fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
         let _ = entered_tx.send(());
         let _ = proceed_rx.recv();
         // Return an image even though cancel flipped, exercising the post-render
-        // pre-encode and pre-store cancellation guards.
+        // pre-encode cancellation guard.
         Ok(image::RgbImage::new(8, 8))
+    }
+    fn counting_encode(image: &image::RgbImage) -> anyhow::Result<EncodedPreview> {
+        ENCODE_CALLS.fetch_add(1, Ordering::SeqCst);
+        PreviewCache::encode_thumbnail(image)
     }
 
     let directory = tempfile::tempdir()?;
@@ -484,6 +492,7 @@ fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
     let (entered_tx, entered_rx) = mpsc::channel();
     let (proceed_tx, proceed_rx) = mpsc::channel();
     *HANDSHAKE.lock().unwrap() = Some((entered_tx, proceed_rx));
+    ENCODE_CALLS.store(0, Ordering::SeqCst);
 
     let shared = Arc::<Shared>::default();
     shared.lock().jobs.push(Queued {
@@ -491,12 +500,12 @@ fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
         missed: false,
         dropped: false,
     });
-    let cache = PreviewCache::open(&cache_path)?;
+    let cache_handle = PreviewCache::open(&cache_path)?;
     let (tx, rx) = mpsc::channel();
     let renders = Renders {
         background: None,
         full: None,
-        cache: Arc::new(Mutex::new(Some(cache))),
+        cache: Arc::new(Mutex::new(Some(cache_handle))),
         cache_path: cache_path.clone(),
         wanted: Wanted::default(),
         results: Results {
@@ -506,6 +515,7 @@ fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
         },
         render: cancelling_render,
         render_ai: render_edited_with_ai,
+        encode: counting_encode,
     };
     renders.start(0);
     entered_rx.recv_timeout(std::time::Duration::from_secs(5))?;
@@ -519,23 +529,43 @@ fn cancelled_render_skips_encode_and_cache_write() -> anyhow::Result<()> {
         EditResult::Skipped(PhotoId(1), 1)
     ));
     assert!(rx.try_recv().is_err());
+    assert_eq!(ENCODE_CALLS.load(Ordering::SeqCst), 0);
 
-    // Even if encoding already finished before cancellation, store_encoded_tagged
-    // skips writing once cancel is set under the cache lock.
+    // Verify the post-mutex-acquire cancel guard inside `store_encoded_tagged`:
+    // start the store while `cancelled` is false and the cache mutex is held,
+    // then set `cancelled` to true before releasing the lock.
     let stamp = Stamp::read(&path)?;
     let encoded = Ok(PreviewCache::encode_thumbnail(&image::RgbImage::new(8, 8))?);
-    let cancelled = AtomicBool::new(true);
-    store_encoded_tagged(
-        &renders.cache,
-        &renders.cache_path,
-        &renders.results,
-        Some(&cancelled),
-        &path,
-        &family,
-        &tag,
-        &stamp,
-        &encoded,
-    );
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let (store_entered_tx, store_entered_rx) = mpsc::channel();
+    let guard = cache(&renders.cache);
+    let store_thread = std::thread::spawn({
+        let cache_at = renders.cache.clone();
+        let cache_path = renders.cache_path.clone();
+        let results = renders.results.clone();
+        let cancelled = cancelled.clone();
+        let path = path.clone();
+        let tag = tag.clone();
+        move || {
+            let _ = store_entered_tx.send(());
+            store_encoded_tagged(
+                &cache_at,
+                &cache_path,
+                &results,
+                Some(&cancelled),
+                &path,
+                &family,
+                &tag,
+                &stamp,
+                &encoded,
+            );
+        }
+    });
+    store_entered_rx.recv_timeout(std::time::Duration::from_secs(5))?;
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    cancelled.store(true, Ordering::SeqCst);
+    drop(guard);
+    store_thread.join().unwrap();
     assert!(rx.try_recv().is_err());
 
     drop(renders);

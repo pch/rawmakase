@@ -1196,13 +1196,15 @@ fn off_lock_encode_panic_fails_build_without_reopening_cache() {
 
     e.build_previews(&[bad], PreviewKind::Standard).unwrap();
     entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    // Replace the cache path with a directory once the worker already has it
-    // open, so any panic reopen attempt would replace the connection with None.
-    #[cfg(unix)]
-    {
-        std::fs::remove_file(&cache_path).unwrap();
-        std::fs::create_dir_all(&cache_path).unwrap();
-    }
+    // Change the SQLite application_id once the worker already holds the
+    // connection open, so any panic reopen attempt fails `PreviewCache::open`
+    // on every OS and sets `cache` to `None`, while the open connection stays
+    // usable.
+    let db = rusqlite::Connection::open(&cache_path).unwrap();
+    db.busy_timeout(Duration::from_millis(250)).unwrap();
+    db.execute_batch("PRAGMA application_id = 1;").unwrap();
+    drop(db);
+    assert!(PreviewCache::open(&cache_path).is_err());
     proceed_tx.send(()).unwrap();
     settle(&mut e);
 
