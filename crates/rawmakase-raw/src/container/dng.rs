@@ -448,6 +448,10 @@ pub(crate) fn transparency(
     ))
 }
 
+/// Bounded read-ahead window when scanning unread `DNGPrivateData` record
+/// headers so adjacent zero-length records settle in a single round.
+const RECORD_WINDOW: u64 = 64 << 10;
+
 /// Where a DNG keeps Fujifilm's Adobe `DNGPrivateData` records beyond the
 /// initial prefix, as `(offset, len)` pairs in the file: `"Adobe\0"` header,
 /// record headers, and the `RAF ` directory or `MakN` IFD entry table.
@@ -478,7 +482,7 @@ pub(crate) fn header_parts(t: &TiffFile) -> Option<Vec<(u64, u64)>> {
         return Some(parts);
     }
     if private.has_gap(0, 6) {
-        parts.push((base, 6));
+        parts.push((base, tag_len.min(RECORD_WINDOW)));
         return Some(parts);
     }
     if !private.starts_with(b"Adobe\0") {
@@ -489,7 +493,7 @@ pub(crate) fn header_parts(t: &TiffFile) -> Option<Vec<(u64, u64)>> {
     let mut pos = 6u64;
     while pos.checked_add(8).is_some_and(|end| end <= tag_len) {
         if private.has_gap(pos, 8) {
-            parts.push((base + pos, 8));
+            parts.push((base + pos, (tag_len - pos).min(RECORD_WINDOW)));
             break;
         }
         let Some(rec_name) = private.array::<4>(pos) else {
@@ -2667,6 +2671,70 @@ pub(crate) mod tests {
         assert_eq!(whole.fuji_dynamic_range, 400);
         let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
         assert_eq!(partial.info.fuji_dynamic_range, 400);
+    }
+
+    #[test]
+    fn fujifilm_consecutive_all_zero_headers_across_sparse_head_use_bounded_window() {
+        let head = crate::partial::HEAD as usize;
+        let makn = fuji_dynamic_makn_payload(400, 0);
+        let raf = fuji_exposure_raf_payload(256, 511);
+
+        // `MakN` in the loaded prefix followed by 16 consecutive all-zero
+        // record headers starting 8 bytes before `HEAD` (and no `RAF `).
+        let build_makn_only = |noop_len: usize| {
+            let mut private = b"Adobe\0".to_vec();
+            private.extend(b"MakN");
+            private.extend((makn.len() as u32).to_be_bytes());
+            private.extend(&makn);
+            private.extend(b"NOOP");
+            private.extend((noop_len as u32).to_be_bytes());
+            private.resize(private.len() + noop_len, 0);
+            private.resize(private.len() + 16 * 8, 0);
+            private.extend(b"TAIL");
+            private.extend((2u32 << 20).to_be_bytes());
+            private.resize(private.len() + (2 << 20), 0);
+            dng(2, 1, &[(50740, 1, private.len() as u32, private)])
+        };
+        let probe = build_makn_only(0);
+        let tail_at = probe.windows(4).position(|w| w == b"TAIL").unwrap();
+        let first_zero_at = tail_at - 16 * 8;
+        let file = build_makn_only(head - 8 - first_zero_at);
+        assert_eq!(&file[head - 8..head + 8], &[0u8; 16]);
+        let whole = crate::open(&file).unwrap();
+        assert_eq!(whole.fuji_dynamic_range, 400);
+        let partial = crate::header_from_file(&mut std::io::Cursor::new(&file)).unwrap();
+        assert_eq!(partial.info.fuji_dynamic_range, 400);
+        assert!(partial.read < file.len() as u64 / 2);
+
+        // `RAF ` placed past 16 consecutive all-zero record headers across
+        // `HEAD` is also discovered and parsed without exhausting rounds.
+        let build_with_raf = |noop_len: usize| {
+            let mut private = b"Adobe\0".to_vec();
+            private.extend(b"NOOP");
+            private.extend((noop_len as u32).to_be_bytes());
+            private.resize(private.len() + noop_len, 0);
+            private.resize(private.len() + 16 * 8, 0);
+            private.extend(b"RAF ");
+            private.extend((raf.len() as u32).to_be_bytes());
+            private.extend(&raf);
+            private.extend(b"TAIL");
+            private.extend((2u32 << 20).to_be_bytes());
+            private.resize(private.len() + (2 << 20), 0);
+            dng(2, 1, &[(50740, 1, private.len() as u32, private)])
+        };
+        let probe_raf = build_with_raf(0);
+        let raf_at = probe_raf.windows(4).position(|w| w == b"RAF ").unwrap();
+        let first_zero_raf_at = raf_at - 16 * 8;
+        let file_raf = build_with_raf(head - 8 - first_zero_raf_at);
+        assert_eq!(&file_raf[head - 8..head + 8], &[0u8; 16]);
+        let whole_raf = crate::open(&file_raf).unwrap();
+        assert_eq!(whole_raf.fuji_exposure_shift, 0.50097847);
+        let partial_raf = crate::header_from_file(&mut std::io::Cursor::new(&file_raf)).unwrap();
+        assert_eq!(
+            partial_raf.info.fuji_exposure_shift,
+            whole_raf.fuji_exposure_shift
+        );
+        assert!(partial_raf.read < file_raf.len() as u64 / 2);
     }
 
     /// AsShotWhiteXY's neutral: the calibration (here an identity
