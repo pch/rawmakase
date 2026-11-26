@@ -507,6 +507,34 @@ mod export {
         assert!(wide.is_file());
     }
 
+    /// An export reads the cache and leaves it as it was, as the desktop's
+    /// does: only a decode for showing is kept.
+    #[test]
+    fn an_export_keeps_nothing_in_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Context::builder()
+            .cache(dir.path().join("cache"), CacheLimits::default(), "test")
+            .build()
+            .unwrap();
+        let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+        let recipe = photo.starting_recipe().unwrap();
+        let out = dir.path().join("out.jpg");
+        ctx.export(
+            &photo,
+            &recipe,
+            &ExportSettings::default(),
+            &out,
+            false,
+            Cancel::NEVER,
+            |_| {},
+        )
+        .unwrap();
+        let kept = |dir: &Path| std::fs::read_dir(dir).map_or(0, |d| d.count());
+        assert_eq!(kept(&dir.path().join("cache/decoded")), 0);
+        photo.decode(Decode::Full, Cancel::NEVER).unwrap();
+        assert_eq!(kept(&dir.path().join("cache/decoded")), 1);
+    }
+
     #[test]
     fn exports_refuse_what_they_cannot_write() {
         let dir = tempfile::tempdir().unwrap();
