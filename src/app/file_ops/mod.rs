@@ -65,6 +65,15 @@ impl Trash for Unavailable {
     }
 }
 
+/// What a worker planned for a file operation's question: the plan asked
+/// about, Delete's Move to Trash beside it, and Delete Permanently… for
+/// photos on a drive with no Trash.
+pub(crate) struct Planned {
+    plan: Plan,
+    trash: Option<Plan>,
+    permanent: Option<Plan>,
+}
+
 /// What an operation does, for what is said about it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::app) enum Verb {
@@ -77,6 +86,9 @@ pub(in crate::app) enum Verb {
     },
     /// Move to Trash alone (⌘⌥⇧Delete).
     Trash,
+    /// Deletes photos' files outright, on a drive with no Trash (#1273):
+    /// asked on its own, after Delete's or Move to Trash's question.
+    DeletePermanently,
     /// Renames photos; `one`'s old and new names when one is renamed.
     Rename {
         one: Option<(String, String)>,
@@ -130,6 +142,7 @@ impl Verb {
             Self::Remove
             | Self::Delete { .. }
             | Self::Trash
+            | Self::DeletePermanently
             | Self::MoveFolder { .. }
             | Self::TrashFolder { .. }
             | Self::RenameFolder { .. } => "Stopping after the photo under way…",
@@ -141,6 +154,7 @@ impl Verb {
         match self {
             Self::Remove | Self::Delete { .. } => "nothing was removed",
             Self::Trash | Self::TrashFolder { .. } => "nothing was moved to the Trash",
+            Self::DeletePermanently => "nothing was deleted",
             Self::Rename { .. } | Self::RenameFolder { .. } => "nothing was renamed",
             Self::MoveFolder { .. } => "nothing was moved",
             Self::Move { .. } => "nothing was moved",
@@ -152,6 +166,7 @@ impl Verb {
         match self {
             Self::Remove | Self::Delete { .. } => "Nothing to remove",
             Self::Trash | Self::TrashFolder { .. } => "Nothing to move to the Trash",
+            Self::DeletePermanently => "Nothing to delete",
             Self::Rename { .. } | Self::RenameFolder { .. } => "Nothing to rename",
             Self::MoveFolder { .. } => "Nothing to move",
             Self::Move { .. } | Self::Create { moving: true, .. } => "Nothing to move",
@@ -162,6 +177,7 @@ impl Verb {
     fn failed(&self) -> &'static str {
         match self {
             Self::Remove | Self::Delete { .. } | Self::Trash => "Photos not removed",
+            Self::DeletePermanently => "Photos not deleted",
             Self::Rename { .. } => "Photos not renamed",
             Self::RenameFolder { .. } => "Folder not renamed",
             Self::MoveFolder { .. } => "Folder not moved",
@@ -237,10 +253,12 @@ enum State {
     /// planned: a catalog read again since may have given its photos' ids
     /// to others, and the plan is not run.
     /// `trash` is Delete's other choice, Move to Trash, when any of its
-    /// photos' files can go there.
+    /// photos' files can go there; `permanent`, Delete's or Move to
+    /// Trash's Delete Permanently…, when any are on a drive with no Trash.
     Confirming {
         plan: Box<Plan>,
         trash: Option<Box<Plan>>,
+        permanent: Option<Box<Plan>>,
         catalog: CatalogLocation,
         generation: u64,
         verb: Verb,
@@ -380,8 +398,29 @@ impl FileOps {
     pub(in crate::app) fn question(&self) -> Option<(String, Vec<String>, Vec<&'static str>)> {
         match &self.state {
             State::Confirming {
-                plan, trash, verb, ..
-            } => Some(question(plan, trash.as_deref(), verb)),
+                plan,
+                trash,
+                permanent,
+                verb,
+                ..
+            } => {
+                let q = question(plan, trash.as_deref(), permanent.as_deref(), verb);
+                Some((q.title, q.lines, q.actions.iter().map(|a| a.0).collect()))
+            }
+            _ => None,
+        }
+    }
+    /// The open confirmation's warning, shown in the danger color.
+    #[cfg(test)]
+    pub(in crate::app) fn warning(&self) -> Option<&'static str> {
+        match &self.state {
+            State::Confirming {
+                plan,
+                trash,
+                permanent,
+                verb,
+                ..
+            } => question(plan, trash.as_deref(), permanent.as_deref(), verb).warning,
             _ => None,
         }
     }
@@ -426,15 +465,56 @@ fn names_line(names: &[String]) -> String {
     }
 }
 
-/// The confirmation's question, what it says below it and its actions
-/// after Cancel. Delete asks whether to move the files to the Trash or
-/// just remove the photos, when `trash` can take any of them.
-fn question(
-    plan: &Plan,
-    trash: Option<&Plan>,
-    verb: &Verb,
-) -> (String, Vec<String>, Vec<&'static str>) {
-    match (verb, trash) {
+/// Which plan a confirmation's action runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Choice {
+    /// The plan asked about.
+    Plan,
+    /// Delete's Move to Trash.
+    Trash,
+    /// Delete Permanently…, which asks again on its own.
+    Permanent,
+}
+
+/// A confirmation: its question, a warning in the danger color, what it
+/// says below and its actions after Cancel, the last the primary one.
+struct Question {
+    title: String,
+    warning: Option<&'static str>,
+    lines: Vec<String>,
+    actions: Vec<(&'static str, Choice)>,
+}
+
+/// What Delete Permanently's own question warns first.
+const PERMANENT_WARNING: &str = "This can't be undone. The files don't go to the Trash: they are deleted from their drive right away, and nothing can bring them back.";
+
+/// The confirmation's question. Delete asks whether to move the files to
+/// the Trash or just remove the photos, when `trash` can take any of them;
+/// Delete and Move to Trash offer Delete Permanently… when `permanent` has
+/// photos on a drive with no Trash, which asks again before anything is
+/// deleted.
+fn question(plan: &Plan, trash: Option<&Plan>, permanent: Option<&Plan>, verb: &Verb) -> Question {
+    let mut q = delete_or(plan, trash, permanent, verb);
+    if let (Some(p), Verb::Delete { .. } | Verb::Trash) = (permanent, verb) {
+        let n = p.summary().files;
+        q.lines.push(format!(
+            "Delete Permanently… deletes the {} on a drive with no Trash for good, once you confirm.",
+            match n {
+                1 => "file of the 1 photo".to_string(),
+                n => format!("files of the {n} photos"),
+            }
+        ));
+        // Never the primary action.
+        let at = q.actions.len().saturating_sub(1);
+        q.actions
+            .insert(at, ("Delete Permanently…", Choice::Permanent));
+    }
+    q
+}
+
+/// [`question`] before Delete Permanently… is offered.
+fn delete_or(plan: &Plan, trash: Option<&Plan>, permanent: Option<&Plan>, verb: &Verb) -> Question {
+    let (title, lines, actions) = match (verb, trash) {
         (Verb::Delete { rejected }, Some(trash)) => {
             let (s, t) = (plan.summary(), trash.summary());
             let mut lines = Vec::new();
@@ -493,16 +573,52 @@ fn question(
                     if names.len() == 1 { "it" } else { "them" }
                 ),
             };
-            (title, lines, vec!["Remove from Catalog", "Move to Trash"])
+            (
+                title,
+                lines,
+                vec![
+                    ("Remove from Catalog", Choice::Plan),
+                    ("Move to Trash", Choice::Trash),
+                ],
+            )
+        }
+        // None of the files can go to the Trash, and some can only be
+        // deleted permanently.
+        (Verb::Delete { rejected }, None) if permanent.is_some() => {
+            let (_, lines, action) = question_of(plan, &Verb::Remove);
+            let s = plan.summary();
+            let title = match s.names.as_slice() {
+                [one] if !rejected => {
+                    format!("Remove “{one}” from the catalog, or delete it permanently?")
+                }
+                names => format!(
+                    "Remove the {} {} from the catalog, or delete {} permanently?",
+                    names.len(),
+                    match (rejected, names.len()) {
+                        (true, 1) => "rejected photo",
+                        (true, _) => "rejected photos",
+                        (false, 1) => "selected photo",
+                        (false, _) => "selected photos",
+                    },
+                    if names.len() == 1 { "it" } else { "them" }
+                ),
+            };
+            (title, lines, vec![(action, Choice::Plan)])
         }
         (Verb::Delete { .. }, None) => {
             let (title, lines, action) = question_of(plan, &Verb::Remove);
-            (title, lines, vec![action])
+            (title, lines, vec![(action, Choice::Plan)])
         }
         _ => {
             let (title, lines, action) = question_of(plan, verb);
-            (title, lines, vec![action])
+            (title, lines, vec![(action, Choice::Plan)])
         }
+    };
+    Question {
+        title,
+        warning: (*verb == Verb::DeletePermanently).then_some(PERMANENT_WARNING),
+        lines,
+        actions,
     }
 }
 
@@ -650,7 +766,7 @@ fn question_of(plan: &Plan, verb: &Verb) -> (String, Vec<String>, &'static str) 
     };
     let (title, action) = match verb {
         Verb::Remove | Verb::Delete { .. } => {
-            lines.push("The files stay on disk.".into());
+            lines.push("Remove from Catalog leaves the files on disk.".into());
             if s.copies > 0 {
                 lines.push(format!(
                     "{} removed with {}.",
@@ -695,6 +811,42 @@ fn question_of(plan: &Plan, verb: &Verb) -> (String, Vec<String>, &'static str) 
                 ),
             };
             (title, "Move to Trash")
+        }
+        Verb::DeletePermanently => {
+            lines.push(format!(
+                "{} will be deleted from disk.",
+                files_and_sidecars(s.files, s.companions)
+            ));
+            if s.copies > 0 {
+                lines.push(format!(
+                    "{} removed with {}.",
+                    widgets::plural(s.copies, "virtual copy is", "virtual copies are"),
+                    if s.copies == 1 {
+                        "its photo"
+                    } else {
+                        "their photos"
+                    }
+                ));
+            }
+            if s.edited > 0 {
+                lines.push(format!(
+                    "{} edits in RAWmakase; they are deleted too.",
+                    widgets::plural(s.edited, "photo has", "photos have")
+                ));
+            }
+            shared_line(&mut lines, s);
+            if s.other_computers {
+                lines.push("Other computers using this catalog lose these photos too.".into());
+            }
+            left(&mut lines, ("left as it is", "left as they are"));
+            let title = match s.names.as_slice() {
+                [one] => format!("Delete “{one}” permanently?"),
+                names => format!(
+                    "Delete {} permanently?",
+                    widgets::plural(names.len(), "photo", "photos")
+                ),
+            };
+            (title, "Delete Permanently")
         }
         Verb::TrashFolder { name, .. } => {
             let tree = s.tree.clone().unwrap_or_default();
@@ -775,6 +927,7 @@ fn question_of(plan: &Plan, verb: &Verb) -> (String, Vec<String>, &'static str) 
                 Verb::Remove
                 | Verb::Delete { .. }
                 | Verb::Trash
+                | Verb::DeletePermanently
                 | Verb::Rename { .. }
                 | Verb::RenameFolder { .. }
                 | Verb::MoveFolder { .. }
@@ -955,6 +1108,7 @@ fn summary_of(outcome: &Outcome, verb: &Verb) -> String {
     let moved = count(|r| matches!(r, ItemResult::Moved { .. }));
     let created = count(|r| matches!(r, ItemResult::Created { .. })) > 0;
     let trashed = count(|r| *r == ItemResult::Trashed);
+    let deleted = count(|r| *r == ItemResult::Deleted);
     let renamed: Vec<&str> = outcome
         .items
         .iter()
@@ -998,6 +1152,10 @@ fn summary_of(outcome: &Outcome, verb: &Verb) -> String {
             "Moved {} to the Trash",
             widgets::plural(trashed, "photo", "photos")
         ),
+        Verb::DeletePermanently => format!(
+            "Deleted {} permanently",
+            widgets::plural(deleted, "photo", "photos")
+        ),
         Verb::Remove | Verb::Delete { .. } => format!(
             "Removed {} from the catalog",
             widgets::plural(removed, "photo", "photos")
@@ -1022,6 +1180,7 @@ fn summary_of(outcome: &Outcome, verb: &Verb) -> String {
             ItemResult::Removed
             | ItemResult::Moved { .. }
             | ItemResult::Trashed
+            | ItemResult::Deleted
             | ItemResult::Renamed { .. }
             | ItemResult::FolderRenamed
             | ItemResult::FolderMoved
@@ -1088,9 +1247,13 @@ impl Editor {
             let trash = FileOp::TrashPhotos {
                 photos: photos.clone(),
             };
-            self.request_file_op(
+            let permanent = FileOp::DeletePhotos {
+                photos: photos.clone(),
+            };
+            self.request_file_op_or(
                 FileOp::RemoveFromCatalog { photos },
                 Some(trash),
+                Some(permanent),
                 Verb::Delete { rejected },
             );
         }
@@ -1120,10 +1283,19 @@ impl Editor {
         );
     }
 
-    /// Move to Trash for `photos` (⌘⌥⇧Delete).
+    /// Move to Trash for `photos` (⌘⌥⇧Delete), offering Delete
+    /// Permanently… for those on a drive with no Trash.
     pub(in crate::app) fn request_photo_trash(&mut self, photos: Vec<PhotoId>) {
         if !photos.is_empty() {
-            self.request_file_op(FileOp::TrashPhotos { photos }, None, Verb::Trash);
+            let permanent = FileOp::DeletePhotos {
+                photos: photos.clone(),
+            };
+            self.request_file_op_or(
+                FileOp::TrashPhotos { photos },
+                None,
+                Some(permanent),
+                Verb::Trash,
+            );
         }
     }
 
@@ -1181,6 +1353,18 @@ impl Editor {
     /// keeps the catalog quiet and plans them on a worker, then asks.
     /// Nothing is held when the save fails.
     fn request_file_op(&mut self, op: FileOp, trash: Option<FileOp>, verb: Verb) {
+        self.request_file_op_or(op, trash, None, verb);
+    }
+
+    /// [`Self::request_file_op`], with `permanent` planned beside too: the
+    /// Delete Permanently… Delete and Move to Trash offer.
+    fn request_file_op_or(
+        &mut self,
+        op: FileOp,
+        trash: Option<FileOp>,
+        permanent: Option<FileOp>,
+        verb: Verb,
+    ) {
         // A dialog that led here holds nothing.
         if matches!(
             self.file_ops.state,
@@ -1230,14 +1414,20 @@ impl Editor {
                 let planned = crate::catalog::Catalog::open(&location)
                     .map_err(|e| format!("{e:#}"))
                     .and_then(|catalog| {
-                        // The Trash runs put files in, which a folder's
-                        // Trash asks whether its drive has one.
-                        let plan = file_ops::plan_with_trash(&catalog, op, &*system_trash)
-                            .map_err(|e| e.to_string())?;
-                        let trash = trash
-                            .map(|op| file_ops::plan(&catalog, op).map_err(|e| e.to_string()))
-                            .transpose()?;
-                        Ok((plan, trash))
+                        // The Trash runs put files in, which is asked
+                        // which drives have none.
+                        let planned = |op| {
+                            file_ops::plan_with_trash(&catalog, op, &*system_trash)
+                                .map_err(|e| e.to_string())
+                        };
+                        let plan = planned(op)?;
+                        let trash = trash.map(planned).transpose()?;
+                        let permanent = permanent.map(planned).transpose()?;
+                        Ok(Planned {
+                            plan,
+                            trash,
+                            permanent,
+                        })
                     });
                 let _ = tx.send(crate::app::worker::Event::FileOpPlanned(Box::new(planned)));
             },
@@ -1296,10 +1486,7 @@ impl Editor {
     /// The plan came back: it is asked about, or nothing is to be done. A
     /// folder made with nothing moving into it was asked for already, by
     /// New Folder Inside…'s Create.
-    pub(in crate::app) fn file_op_planned(
-        &mut self,
-        planned: Result<(Plan, Option<Plan>), String>,
-    ) {
+    pub(in crate::app) fn file_op_planned(&mut self, planned: Result<Planned, String>) {
         let State::Planning { catalog, verb } = std::mem::take(&mut self.file_ops.state) else {
             return;
         };
@@ -1307,8 +1494,32 @@ impl Editor {
             self.release_files();
             return;
         }
+        let planned = planned.map(|p| Planned {
+            permanent: p.permanent.filter(|p| !p.is_empty()),
+            ..p
+        });
+        // Nothing can go to the Trash, and some can only be deleted
+        // permanently: that question is asked instead.
+        let (planned, verb) = match (planned, verb) {
+            (
+                Ok(Planned {
+                    plan,
+                    permanent: Some(permanent),
+                    ..
+                }),
+                Verb::Trash,
+            ) if plan.is_empty() => (
+                Ok(Planned {
+                    plan: permanent,
+                    trash: None,
+                    permanent: None,
+                }),
+                Verb::DeletePermanently,
+            ),
+            other => other,
+        };
         match planned {
-            Ok((plan, _)) if plan.is_empty() => {
+            Ok(Planned { plan, .. }) if plan.is_empty() => {
                 let text: String = match plan.skipped().first() {
                     Some(s) => format!("{}: {}", verb.nothing_to(), s.reason),
                     None => verb.nothing_to().into(),
@@ -1316,7 +1527,11 @@ impl Editor {
                 self.messages.warn(text);
                 self.release_files();
             }
-            Ok((plan, trash)) => {
+            Ok(Planned {
+                plan,
+                trash,
+                permanent,
+            }) => {
                 let generation = self.library.as_ref().map_or(0, |l| l.session.generation());
                 // Asked already: by Create, or by Rename Folder…'s Rename.
                 let asked = matches!(
@@ -1327,6 +1542,7 @@ impl Editor {
                     plan: Box::new(plan),
                     // None of the files can go: Remove from Catalog alone.
                     trash: trash.filter(|t| !t.is_empty()).map(Box::new),
+                    permanent: permanent.map(Box::new),
                     catalog,
                     generation,
                     verb,
@@ -1356,32 +1572,65 @@ impl Editor {
             _ => {}
         }
         let State::Confirming {
-            plan, trash, verb, ..
+            plan,
+            trash,
+            permanent,
+            verb,
+            ..
         } = &self.file_ops.state
         else {
             return;
         };
-        let (title, lines, actions) = question(plan, trash.as_deref(), verb);
+        let q = question(plan, trash.as_deref(), permanent.as_deref(), verb);
         let id = match verb {
             Verb::Remove => "remove-photos",
             Verb::Delete { .. } => "delete-photos",
             Verb::Trash => "trash-photos",
+            Verb::DeletePermanently => "delete-permanently",
             Verb::Move { .. } | Verb::Create { .. } => "move-photos",
             Verb::Rename { .. } | Verb::RenameFolder { .. } => "rename",
             Verb::MoveFolder { .. } => "move-folder",
             Verb::TrashFolder { .. } => "trash-folder",
         };
-        // Delete's second action is Move to Trash.
-        let trashing = trash.is_some();
-        match widgets::destructive_choice(ctx, id, &title, &lines, "Cancel", &actions) {
+        let labels: Vec<&str> = q.actions.iter().map(|a| a.0).collect();
+        let chosen = widgets::destructive_choice_warned(
+            ctx, id, &q.title, q.warning, &q.lines, "Cancel", &labels,
+        );
+        match chosen {
             None => {}
-            Some(Some(1)) if trashing => self.confirm_file_op_with(true),
-            Some(Some(_)) => self.confirm_file_op_with(false),
+            Some(Some(i)) => match q.actions.get(i).map(|a| a.1) {
+                Some(Choice::Trash) => self.confirm_file_op_with(true),
+                Some(Choice::Permanent) => self.ask_delete_permanently(),
+                Some(Choice::Plan) | None => self.confirm_file_op_with(false),
+            },
             Some(None) => {
                 self.file_ops.state = State::Idle;
                 self.release_files();
             }
         }
+    }
+
+    /// Delete Permanently…: its own question, for the photos on a drive
+    /// with no Trash, from the plan made with Delete's. Nothing is deleted
+    /// until it is confirmed.
+    pub(in crate::app) fn ask_delete_permanently(&mut self) {
+        let State::Confirming {
+            permanent: Some(permanent),
+            catalog,
+            generation,
+            ..
+        } = std::mem::take(&mut self.file_ops.state)
+        else {
+            return;
+        };
+        self.file_ops.state = State::Confirming {
+            plan: permanent,
+            trash: None,
+            permanent: None,
+            catalog,
+            generation,
+            verb: Verb::DeletePermanently,
+        };
     }
 
     /// The confirmation's action: runs the plan on a worker.
@@ -1398,6 +1647,7 @@ impl Editor {
             catalog,
             generation,
             verb,
+            ..
         } = std::mem::take(&mut self.file_ops.state)
         else {
             return;
@@ -1580,7 +1830,12 @@ impl Editor {
                 .flat_map(|i| i.photos.iter().copied())
                 .collect()
         };
-        let removed = ids(|r| matches!(r, ItemResult::Removed | ItemResult::Trashed));
+        let removed = ids(|r| {
+            matches!(
+                r,
+                ItemResult::Removed | ItemResult::Trashed | ItemResult::Deleted
+            )
+        });
         // A folder renamed, moved or put in the Trash (by a run, recovery
         // or the user's choice) is read again, photos in it or not.
         let folder_changed = outcome.items.iter().any(|i| {
@@ -1740,6 +1995,10 @@ impl Editor {
                         Verb::Trash => {
                             let at = (progress.done + 1).min(progress.steps);
                             format!("Moving {at} of {} to the Trash…", progress.steps)
+                        }
+                        Verb::DeletePermanently => {
+                            let at = (progress.done + 1).min(progress.steps);
+                            format!("Deleting {at} of {}…", progress.steps)
                         }
                         Verb::Rename { .. } => {
                             let at = (progress.done + 1).min(progress.steps);

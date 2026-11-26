@@ -1,18 +1,22 @@
 //! Move to Trash in the app: Delete asking whether to trash the files or
 //! only remove the photos, ⌘⌥⇧Delete, Delete Rejected Photos, and a volume
-//! with no Trash; driven by keys and frames, with a Trash that moves files
-//! into a temporary folder.
+//! with no Trash, whose photos Delete Permanently… deletes once confirmed
+//! again; driven by keys and frames, with a Trash that moves files into a
+//! temporary folder.
 use super::tests::{frame, ids_left, select, settle, tap};
 use super::*;
 use crate::app::Editor;
 use crate::app::testing::editor_with_catalog;
 use crate::catalog::PhotoId;
+use crate::catalog::file_ops::TrashSupport;
 use eframe::egui::{Key, Modifiers};
 use std::path::PathBuf;
 
-/// A Trash that moves files into `dir`, or has none.
+/// A Trash that moves files into `dir`, or has none; `support` is what it
+/// says, asked whether it takes a file.
 struct TestTrash {
     dir: Option<PathBuf>,
+    support: TrashSupport,
 }
 
 impl Trash for TestTrash {
@@ -24,6 +28,9 @@ impl Trash for TestTrash {
         std::fs::rename(path, &location).map_err(|e| TrashError::Failed(e.to_string()))?;
         Ok(TrashReceipt { location })
     }
+    fn supports(&self, _: &Path) -> TrashSupport {
+        self.support
+    }
 }
 
 /// An editor on a catalog of `names`, whose Trash is `trash/` beside it.
@@ -33,6 +40,7 @@ fn editor(names: &[&str]) -> anyhow::Result<(tempfile::TempDir, Editor, PathBuf)
     std::fs::create_dir(&trash)?;
     e.file_ops.trash = Arc::new(TestTrash {
         dir: Some(trash.clone()),
+        support: TrashSupport::Unknown,
     });
     Ok((d, e, trash))
 }
@@ -227,7 +235,10 @@ fn delete_rejected_with_none_rejected_says_so() -> anyhow::Result<()> {
 #[test]
 fn a_volume_with_no_trash_keeps_the_file_and_the_photo() -> anyhow::Result<()> {
     let (d, mut e, _trash) = editor(&["a.RAF", "b.RAF"])?;
-    e.file_ops.trash = Arc::new(TestTrash { dir: None });
+    e.file_ops.trash = Arc::new(TestTrash {
+        dir: None,
+        support: TrashSupport::Unknown,
+    });
     let a = id(&e, "a.RAF");
     select(&mut e, &[a]);
     tap(&mut e, Key::Delete, TRASH_KEYS);
@@ -348,5 +359,229 @@ fn the_loupe_shows_the_next_photo_after_its_photo_is_trashed() -> anyhow::Result
     let library = e.library.as_ref().unwrap();
     assert!(library.loupe_open(), "the Loupe stays open");
     assert_eq!(library.selected(), Some(a));
+    Ok(())
+}
+
+/// An editor whose photos are on a drive the Trash says it can't take
+/// (#1273).
+fn editor_without_trash(names: &[&str]) -> anyhow::Result<(tempfile::TempDir, Editor)> {
+    let (d, mut e, _) = editor(names)?;
+    e.file_ops.trash = Arc::new(TestTrash {
+        dir: None,
+        support: TrashSupport::No,
+    });
+    Ok((d, e))
+}
+
+#[test]
+fn delete_on_a_drive_without_a_trash_asks_twice_before_deleting_permanently() -> anyhow::Result<()>
+{
+    let (d, mut e) = editor_without_trash(&["a.RAF", "b.RAF"])?;
+    std::fs::write(d.path().join("photos/a.RAF.xmp"), b"sidecar")?;
+    let (a, b) = (id(&e, "a.RAF"), id(&e, "b.RAF"));
+    select(&mut e, &[a]);
+    tap(&mut e, Key::Delete, Modifiers::NONE);
+    settle(&mut e);
+    let (title, lines, actions) = e.file_ops.question().expect("it asks");
+    assert_eq!(
+        title,
+        "Remove “a.RAF” from the catalog, or delete it permanently?"
+    );
+    // Remove from Catalog, which loses no file, stays the primary action.
+    assert_eq!(actions, ["Delete Permanently…", "Remove from Catalog"]);
+    assert!(
+        lines.iter().any(|l| l
+            == "Delete Permanently… deletes the file of the 1 photo on a drive with no Trash for good, once you confirm."),
+        "{lines:?}"
+    );
+    // Delete Permanently… only asks again.
+    tap(&mut e, Key::Tab, Modifiers::NONE);
+    tap(&mut e, Key::Enter, Modifiers::NONE);
+    settle(&mut e);
+    let (title, lines, actions) = e.file_ops.question().expect("it asks again");
+    assert_eq!(title, "Delete “a.RAF” permanently?");
+    assert_eq!(actions, ["Delete Permanently"]);
+    assert_eq!(e.file_ops.warning(), Some(PERMANENT_WARNING));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l == "1 file (and 1 sidecar file) will be deleted from disk."),
+        "{lines:?}"
+    );
+    assert!(d.path().join("photos/a.RAF").is_file());
+    // Return alone cancels it too: Cancel has the focus.
+    tap(&mut e, Key::Enter, Modifiers::NONE);
+    settle(&mut e);
+    assert!(!e.file_ops.confirming());
+    assert!(d.path().join("photos/a.RAF").is_file());
+    assert_eq!(ids_left(&e).len(), 2);
+    // Confirmed twice, it is deleted, with its sidecar.
+    tap(&mut e, Key::Delete, Modifiers::NONE);
+    settle(&mut e);
+    tap(&mut e, Key::Tab, Modifiers::NONE);
+    tap(&mut e, Key::Enter, Modifiers::NONE);
+    settle(&mut e);
+    tap(&mut e, Key::Tab, Modifiers::NONE);
+    tap(&mut e, Key::Enter, Modifiers::NONE);
+    settle(&mut e);
+    assert!(!e.activity.is_busy());
+    assert!(!d.path().join("photos/a.RAF").exists());
+    assert!(!d.path().join("photos/a.RAF.xmp").exists());
+    assert!(d.path().join("photos/b.RAF").is_file());
+    assert_eq!(ids_left(&e), vec![b]);
+    assert_eq!(e.messages.line(), "Deleted 1 photo permanently");
+    Ok(())
+}
+
+#[test]
+fn delete_on_a_drive_without_a_trash_can_still_only_remove_from_the_catalog() -> anyhow::Result<()>
+{
+    let (d, mut e) = editor_without_trash(&["a.RAF", "b.RAF"])?;
+    let a = id(&e, "a.RAF");
+    select(&mut e, &[a]);
+    tap(&mut e, Key::Delete, Modifiers::NONE);
+    settle(&mut e);
+    tap(&mut e, Key::Tab, Modifiers::NONE);
+    tap(&mut e, Key::Tab, Modifiers::NONE);
+    tap(&mut e, Key::Enter, Modifiers::NONE);
+    settle(&mut e);
+    assert!(d.path().join("photos/a.RAF").is_file(), "the file stays");
+    assert_eq!(ids_left(&e), vec![id(&e, "b.RAF")]);
+    assert_eq!(e.messages.line(), "Removed 1 photo from the catalog");
+    Ok(())
+}
+
+#[test]
+fn move_to_trash_on_a_drive_without_a_trash_asks_to_delete_permanently() -> anyhow::Result<()> {
+    let (d, mut e) = editor_without_trash(&["a.RAF", "b.RAF"])?;
+    let (a, b) = (id(&e, "a.RAF"), id(&e, "b.RAF"));
+    select(&mut e, &[a, b]);
+    tap(&mut e, Key::Delete, TRASH_KEYS);
+    settle(&mut e);
+    let (title, _, actions) = e.file_ops.question().expect("it asks");
+    assert_eq!(title, "Delete 2 photos permanently?");
+    assert_eq!(actions, ["Delete Permanently"]);
+    assert_eq!(e.file_ops.warning(), Some(PERMANENT_WARNING));
+    tap(&mut e, Key::Tab, Modifiers::NONE);
+    tap(&mut e, Key::Enter, Modifiers::NONE);
+    settle(&mut e);
+    assert!(!d.path().join("photos/a.RAF").exists());
+    assert!(!d.path().join("photos/b.RAF").exists());
+    assert!(ids_left(&e).is_empty());
+    assert_eq!(e.messages.line(), "Deleted 2 photos permanently");
+    Ok(())
+}
+
+#[test]
+fn photos_a_trash_takes_are_never_offered_for_deleting_permanently() -> anyhow::Result<()> {
+    let (_d, mut e, _trash) = editor(&["a.RAF"])?;
+    let a = id(&e, "a.RAF");
+    select(&mut e, &[a]);
+    for keys in [Modifiers::NONE, TRASH_KEYS] {
+        tap(&mut e, Key::Delete, keys);
+        settle(&mut e);
+        let (_, _, actions) = e.file_ops.question().expect("it asks");
+        assert!(!actions.contains(&"Delete Permanently…"), "{actions:?}");
+        assert_eq!(e.file_ops.warning(), None);
+        tap(&mut e, Key::Escape, Modifiers::NONE);
+        settle(&mut e);
+    }
+    Ok(())
+}
+
+/// Delete's question for photos on a drive with no Trash, and Delete
+/// Permanently's own, for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_delete_permanently() -> anyhow::Result<()> {
+    let d = tempfile::tempdir()?;
+    let photos = d.path().join("photos");
+    std::fs::create_dir_all(&photos)?;
+    let names = [
+        "DSCF0001.RAF",
+        "DSCF0002.RAF",
+        "DSCF0003.RAF",
+        "DSCF0004.RAF",
+    ];
+    for name in names {
+        std::fs::write(photos.join(name), format!("fixture {name}"))?;
+    }
+    std::fs::write(photos.join("DSCF0001.xmp"), b"sidecar")?;
+    let path = d.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
+    let no_trash = TestTrash {
+        dir: None,
+        support: TrashSupport::No,
+    };
+    type Ask = fn(Vec<PhotoId>) -> (Option<FileOp>, FileOp, Option<FileOp>, Verb);
+    let cases: [(&str, usize, Ask); 3] = [
+        ("delete-no-trash-one", 1, |photos| {
+            (
+                None,
+                FileOp::RemoveFromCatalog {
+                    photos: photos.clone(),
+                },
+                Some(FileOp::DeletePhotos { photos }),
+                Verb::Delete { rejected: false },
+            )
+        }),
+        ("delete-no-trash-rejected", 4, |photos| {
+            (
+                None,
+                FileOp::RemoveFromCatalog {
+                    photos: photos.clone(),
+                },
+                Some(FileOp::DeletePhotos { photos }),
+                Verb::Delete { rejected: true },
+            )
+        }),
+        ("delete-permanently", 4, |photos| {
+            (
+                None,
+                FileOp::DeletePhotos { photos },
+                None,
+                Verb::DeletePermanently,
+            )
+        }),
+    ];
+    for (name, n, ask) in cases {
+        let path = path.clone();
+        let trash = Arc::new(TestTrash {
+            dir: None,
+            support: no_trash.support,
+        });
+        crate::app::ui::shots::shot(
+            &format!("file-ops-{name}"),
+            eframe::egui::vec2(900., 560.),
+            move |e, ctx| {
+                let library = crate::app::library::Library::load(&path, ctx.clone()).unwrap();
+                let ids: Vec<_> = library
+                    .session
+                    .photos()
+                    .iter()
+                    .map(|p| p.id)
+                    .take(n)
+                    .collect();
+                let catalog = library.session.catalog();
+                let (trash_op, op, permanent, verb) = ask(ids);
+                let planned = |op| file_ops::plan_with_trash(catalog, op, &*trash).unwrap();
+                let plan = planned(op);
+                let trash_plan = trash_op.map(planned);
+                let permanent = permanent.map(planned);
+                let location = catalog.location().clone();
+                let generation = library.session.generation();
+                e.library = Some(Box::new(library));
+                e.module = crate::app::Module::Library;
+                e.file_ops.state = State::Confirming {
+                    plan: Box::new(plan),
+                    trash: trash_plan.map(Box::new),
+                    permanent: permanent.map(Box::new),
+                    catalog: location,
+                    generation,
+                    verb,
+                };
+            },
+            |e, ctx| e.file_op_window(ctx),
+        );
+    }
     Ok(())
 }

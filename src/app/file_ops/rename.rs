@@ -701,6 +701,7 @@ impl Editor {
         self.file_ops.state = State::Confirming {
             plan: Box::new(plan),
             trash: None,
+            permanent: None,
             catalog: r.catalog,
             generation: r.generation,
             verb,

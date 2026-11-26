@@ -2341,6 +2341,20 @@ pub(in crate::app) fn destructive_choice(
     cancel: &str,
     actions: &[&str],
 ) -> Option<Option<usize>> {
+    destructive_choice_warned(ctx, id, title, None, lines, cancel, actions)
+}
+
+/// [`destructive_choice`], with `warning` below the title in the danger
+/// color, for what can't be undone.
+pub(in crate::app) fn destructive_choice_warned(
+    ctx: &egui::Context,
+    id: &str,
+    title: &str,
+    warning: Option<&str>,
+    lines: &[String],
+    cancel: &str,
+    actions: &[&str],
+) -> Option<Option<usize>> {
     /// The keys down when the dialog first showed, until all are released.
     #[derive(Clone, Default)]
     struct Opened {
@@ -2375,6 +2389,15 @@ pub(in crate::app) fn destructive_choice(
                     .color(palette.tone(Tone::STRONG)),
             );
             ui.add_space(space::S);
+            if let Some(warning) = warning {
+                ui.label(
+                    egui::RichText::new(warning)
+                        .size(text::LABEL)
+                        .strong()
+                        .color(palette.danger()),
+                );
+                ui.add_space(space::S);
+            }
             for line in lines {
                 ui.label(
                     egui::RichText::new(line)

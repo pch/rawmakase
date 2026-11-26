@@ -694,6 +694,7 @@ impl Editor {
                         self.messages.done("Added the folder to the catalog")
                     }
                     ItemResult::Removed => self.messages.done("Removed from the catalog"),
+                    ItemResult::Deleted => self.messages.done("Deleted permanently"),
                     ItemResult::NeedsRecovery(why) => {
                         self.messages.fail(format!("Still unfinished: {why}"))
                     }
