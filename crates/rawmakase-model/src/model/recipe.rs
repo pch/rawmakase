@@ -20,6 +20,14 @@ pub struct Recipe {
     /// recipes, which therefore render without it.
     #[serde(default)]
     pub lens_builtin: bool,
+    /// Apply the lens correction the file always carries
+    /// ([`Self::fixed_lens_correction`]: a DNG's opcodes, the makers' `default_on`
+    /// data). On by default and saved only when off, so every edit made before the
+    /// switch existed renders as it did. Off, the photo renders and is measured
+    /// without it; corrections that follow Enable Profile Corrections are not
+    /// affected.
+    #[serde(skip_serializing_if = "is_true")]
+    pub lens_file_correction: bool,
     /// Lightroom's Enable Profile Corrections: use an imported Adobe lens profile that
     /// matches the lens, in place of the built-in correction.
     #[serde(default)]
@@ -200,6 +208,7 @@ impl Default for Recipe {
     fn default() -> Self {
         Self {
             lens_builtin: true,
+            lens_file_correction: true,
             lens_profile: false,
             lens_profile_choice: Default::default(),
             lens_distortion: 1.,
@@ -721,7 +730,10 @@ impl Recipe {
         let resolved = self.lens_profile_in_use(m);
         // The profile the RAW carries renders as its built-in correction.
         if let Some(id) = self.lens_profile_choice.adobe().filter(|id| id.embedded) {
-            return self.builtin_correction(m).is_none().then(|| {
+            // The file's own correction switched off is not a missing one.
+            let none =
+                self.builtin_correction(m).is_none() && !self.file_lens_correction_left_out(m);
+            return none.then(|| {
                 format!(
                     "Lens profile \"{}\" comes with the camera, but this file has none; no lens correction",
                     id.label()
@@ -782,7 +794,9 @@ impl Recipe {
     /// The built-in correction this edit renders when no Adobe profile is in use: with
     /// Enable Profile Corrections on, the camera's fuller data where it has some (Sony's
     /// tables, standing in for the Adobe profile Lightroom would use), else what the
-    /// camera applies; none with built-in corrections off.
+    /// camera applies; none with built-in corrections off. The file's always-on
+    /// correction renders only while [`Self::lens_file_correction`] is on; a stand-in
+    /// takes the place of a profile, so it renders either way, as it did before.
     pub fn builtin_correction<'a>(
         &self,
         m: &'a Metadata,
@@ -792,7 +806,43 @@ impl Recipe {
         }
         (m.lens_stand_in.as_ref())
             .filter(|_| self.lens_profile)
-            .or(m.lens.as_ref())
+            .or(m
+                .lens
+                .as_ref()
+                .filter(|l| !l.default_on || self.lens_file_correction))
+    }
+    /// The file's always-on correction this edit applies unless
+    /// [`Self::lens_file_correction`] is off: the switch's subject, whatever else
+    /// Enable Profile Corrections would use. None for a correction that follows that
+    /// switch, or one an edit saved before `lens_builtin` existed keeps off.
+    pub fn file_lens_correction<'a>(
+        &self,
+        m: &'a Metadata,
+    ) -> Option<&'a crate::optics::LensCorrection> {
+        m.lens
+            .as_ref()
+            .filter(|l| l.default_on && self.lens_builtin)
+    }
+    /// Whether something else renders in place of the file's own correction now, so
+    /// [`Self::lens_file_correction`] changes nothing: Enable Profile Corrections on
+    /// with an imported profile or a Lensfun lens that corrects this photo, or with
+    /// the camera's fuller data standing in for a profile (Sony's tables), which
+    /// holds the file's correction.
+    pub fn file_lens_correction_replaced(&self, m: &Metadata) -> bool {
+        self.lens_profile
+            && (self.lens_profile_in_use(m).used.is_some()
+                || self
+                    .lensfun_in_use()
+                    .is_some_and(|l| l.apply(m).correction.is_some())
+                || (self.lens_builtin && m.lens_stand_in.is_some()))
+    }
+    /// Whether the render leaves the file's own correction out because
+    /// [`Self::lens_file_correction`] is off; the photo's measures leave it out
+    /// then too (`pipeline::measurement_source` in the engine).
+    pub fn file_lens_correction_left_out(&self, m: &Metadata) -> bool {
+        !self.lens_file_correction
+            && self.file_lens_correction(m).is_some()
+            && !self.file_lens_correction_replaced(m)
     }
     /// The correction stored in the file that renders whether Enable Profile
     /// Corrections is on or off, and whatever the profile amounts say: the file's
@@ -801,7 +851,7 @@ impl Recipe {
     /// switch is on. Corrections that follow the switch
     /// (Nikon's optional profile, Canon's, Sony's tables beyond the lateral CA) are
     /// never it, nor is a correction an edit saved before `lens_builtin` existed
-    /// keeps off.
+    /// keeps off. It is returned whichever way [`Self::lens_file_correction`] is set.
     pub fn fixed_lens_correction<'a>(
         &self,
         m: &'a Metadata,
@@ -1177,6 +1227,9 @@ pub enum ProfileCorrections {
     On,
     Off,
 }
+fn is_true(on: &bool) -> bool {
+    *on
+}
 fn one() -> f32 {
     1.
 }
@@ -1317,6 +1370,7 @@ mod tests {
         let stored = serde_json::json!({
             "lens_profile_choice": {"setup": "Custom"},
             "lens_vignetting": 0.5,
+            "lens_file_correction": false,
             "lens_manual_distortion": 0.25,
             "profile_amount": 0.5,
             "incremental_temperature": 12.0,
@@ -1443,6 +1497,104 @@ mod tests {
         r.lens_builtin = false;
         r.set_profile_corrections(&m, ProfileCorrections::On);
         assert!(r.lens_correction(&m).is_none());
+    }
+
+    /// The file's own lens correction has a switch: on by default and in every edit
+    /// saved before it existed, saved only when off, and off it turns off only what
+    /// the file always applies. A Sony stand-in, which takes a profile's place with
+    /// Enable Profile Corrections on, still renders, scaled by the amounts in full;
+    /// corrections that follow Enable Profile Corrections keep following it (#1289).
+    #[test]
+    fn the_files_own_lens_correction_switches_off_alone() {
+        use crate::optics::{LensCorrection, Radial};
+        let opcodes = LensCorrection {
+            source: LensCorrection::DNG_OPCODES.into(),
+            default_on: true,
+            distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+            ..Default::default()
+        };
+        let dng = Metadata {
+            lens: Some(opcodes.clone()),
+            ..Default::default()
+        };
+        let mut r = Recipe::for_metadata(&dng);
+        assert!(r.lens_file_correction && Recipe::default().lens_file_correction);
+        let saved = serde_json::to_value(&r).unwrap();
+        assert!(saved.get("lens_file_correction").is_none(), "{saved}");
+        let old: Recipe = serde_json::from_str(r#"{"lens_builtin": true}"#).unwrap();
+        assert!(old.lens_file_correction);
+        assert!(r.lens_correction(&dng).is_some());
+        r.lens_file_correction = false;
+        let saved = serde_json::to_value(&r).unwrap();
+        assert_eq!(saved["lens_file_correction"], serde_json::json!(false));
+        let read: Recipe = serde_json::from_value(saved).unwrap();
+        assert_eq!(read, r);
+        for on in [ProfileCorrections::Off, ProfileCorrections::On] {
+            r.set_profile_corrections(&dng, on);
+            assert!(r.lens_correction(&dng).is_none());
+            assert!(!r.lens_file_correction);
+            // The switch governs this correction whichever way it is set.
+            assert!(r.fixed_lens_correction(&dng).is_some());
+        }
+        // A switched-off panel renders its defaults: the correction is on again.
+        let mut panel_off = r.clone();
+        panel_off.panels.set(
+            crate::model::panels::Panel::LensCorrections,
+            crate::model::panels::PanelState::Off,
+        );
+        assert!(panel_off.resolved(&dng).lens_correction(&dng).is_some());
+        // Nikon's optional correction follows Enable Profile Corrections, not it.
+        let optional = Metadata {
+            lens: Some(LensCorrection {
+                default_on: false,
+                ..opcodes
+            }),
+            ..Default::default()
+        };
+        let mut nikon = Recipe {
+            lens_file_correction: false,
+            ..Recipe::for_metadata(&optional)
+        };
+        assert!(nikon.fixed_lens_correction(&optional).is_none());
+        nikon.set_profile_corrections(&optional, ProfileCorrections::On);
+        assert!(nikon.lens_correction(&optional).is_some());
+        // Sony: the CA it always applies goes; the stand-in still renders with
+        // Enable Profile Corrections on, exactly as with the switch on.
+        let ca = Radial::new(vec![0., 1.], vec![1., 1.001]).unwrap();
+        let full = LensCorrection {
+            source: LensCorrection::SONY_BUILTIN.into(),
+            default_on: true,
+            vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
+            distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+            chromatic: Some([ca.clone(), ca]),
+            ..Default::default()
+        };
+        let sony = Metadata {
+            lens: Some(LensCorrection {
+                vignetting: None,
+                ..full.clone()
+            }),
+            lens_stand_in: Some(full),
+            ..Default::default()
+        };
+        let mut r = Recipe {
+            lens_file_correction: false,
+            lens_distortion: 0.5,
+            lens_vignetting: 0.25,
+            ..Recipe::for_metadata(&sony)
+        };
+        assert!(r.lens_correction(&sony).is_none());
+        assert!(r.file_lens_correction_left_out(&sony));
+        r.set_profile_corrections(&sony, ProfileCorrections::On);
+        assert_eq!(
+            r.lens_correction(&sony).as_deref(),
+            sony.lens_stand_in.as_ref()
+        );
+        assert!(r.file_lens_correction_replaced(&sony));
+        assert!(!r.file_lens_correction_left_out(&sony));
+        assert_eq!(r.lens_amounts(&sony), [1., 0.25]);
+        r.lens_file_correction = true;
+        assert_eq!(r.lens_amounts(&sony), [1., 0.25]);
     }
 
     /// As Camera Raw 18.7 writes it: Denoise on sets manual noise reduction to 0, off

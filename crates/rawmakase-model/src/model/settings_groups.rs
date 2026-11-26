@@ -322,6 +322,7 @@ impl SettingGroup {
             }
             LensProfileCorrections => {
                 to.lens_builtin = from.lens_builtin;
+                to.lens_file_correction = from.lens_file_correction;
                 to.lens_profile = from.lens_profile;
                 to.lens_profile_choice = from.lens_profile_choice.clone();
                 to.lens_distortion = from.lens_distortion;
@@ -711,6 +712,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
     use SettingGroup::*;
     let Recipe {
         lens_builtin: _,
+        lens_file_correction: _,
         lens_profile: _,
         lens_profile_choice: _,
         lens_distortion: _,
@@ -802,6 +804,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
     } = effects;
     vec![
         ("lens_builtin", Group(LensProfileCorrections)),
+        ("lens_file_correction", Group(LensProfileCorrections)),
         ("lens_profile", Group(LensProfileCorrections)),
         ("lens_profile_choice", Group(LensProfileCorrections)),
         ("lens_distortion", Group(LensProfileCorrections)),

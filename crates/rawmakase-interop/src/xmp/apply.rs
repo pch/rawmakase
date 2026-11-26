@@ -1054,6 +1054,10 @@ impl Preset {
             };
             r.set_profile_corrections(m, state);
         }
+        settings.seen.insert(super::FILE_LENS_CORRECTION_KEY.into());
+        if let Some(on) = boolean(v, super::FILE_LENS_CORRECTION_KEY)? {
+            r.lens_file_correction = on;
+        }
         settings.assign(
             crs::LENS_MANUAL_DISTORTION_AMOUNT,
             &mut r.lens_manual_distortion,

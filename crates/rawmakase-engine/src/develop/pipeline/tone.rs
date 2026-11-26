@@ -379,7 +379,7 @@ impl CurveSet {
     /// Highlights).
     pub(super) fn for_image(im: Source, r: &Recipe, camera: Camera, local_tone: bool) -> Self {
         let (mut lut, measured) = Self::measured(im, r, camera);
-        let small = measured_copy(im);
+        let small = measured_copy(im, r);
         let sliders = crate::develop::local_tone::Sliders::of(r);
         // The base reads what the measures read, and Exposure.
         let base =
@@ -743,7 +743,7 @@ pub(super) fn photo_measures(
     r: &Recipe,
     camera: Camera,
 ) -> crate::develop::scene_tone::PhotoMeasures {
-    let small = measured_copy(im);
+    let small = measured_copy(im, r);
     let base = Recipe {
         exposure: 0.,
         ..r.clone()
@@ -909,7 +909,7 @@ pub(super) fn photo_haze(
     r: &Recipe,
     camera: Camera,
 ) -> crate::develop::scene_tone::Haze {
-    let small = measured_copy(im);
+    let small = measured_copy(im, r);
     let base = Recipe {
         exposure: 0.,
         ..r.clone()
@@ -1037,12 +1037,13 @@ pub(crate) fn measures_contrast_pivot(r: &Recipe) -> bool {
 }
 /// The photo reduced for measuring it, without the measured Texture: a user
 /// adjustment that depends on the preview size.
-fn measured_copy(im: Source<'_>) -> std::borrow::Cow<'_, CameraImage> {
+fn measured_copy<'a>(im: Source<'a>, r: &Recipe) -> std::borrow::Cow<'a, CameraImage> {
     match im.measured {
         Some(copy) => std::borrow::Cow::Borrowed(copy.as_ref()),
         None => std::borrow::Cow::Owned(super::measurement_source(
             Source::new(im.untextured.unwrap_or(im.image)),
             crate::develop::local_tone::MAP_EDGE,
+            !r.file_lens_correction_left_out(&im.metadata),
         )),
     }
 }
@@ -1057,7 +1058,7 @@ pub(super) fn contrast_pivot(
     measures: &crate::develop::scene_tone::PhotoMeasures,
     haze: Option<Arc<crate::develop::scene_tone::Haze>>,
 ) -> f32 {
-    let small = measured_copy(im);
+    let small = measured_copy(im, r);
     // Measured on the SDR rendering, HDR or not, as Camera Raw measures it.
     let mut default = Recipe {
         exposure: 0.,

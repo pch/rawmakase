@@ -1028,7 +1028,7 @@ fn measurement_copies_carry_the_gain_map() {
         }),
         ..Default::default()
     });
-    let copy = measurement_source((&im).into(), 4);
+    let copy = measurement_source((&im).into(), 4, true);
     let (w, row) = (copy.width as usize, copy.width as usize);
     let (left, right) = (copy.pixels[row], copy.pixels[row + w - 1]);
     assert!(
@@ -1038,7 +1038,7 @@ fn measurement_copies_carry_the_gain_map() {
     // Without a GainMap the copy is the photo reduced.
     im.metadata.lens = None;
     assert_eq!(
-        measurement_source((&im).into(), 4).pixels,
+        measurement_source((&im).into(), 4, true).pixels,
         preview_source((&im).into(), 4).pixels
     );
 }
@@ -1060,7 +1060,7 @@ fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
         ..Default::default()
     };
     im.metadata.lens = Some(lens.clone());
-    let copy = measurement_source((&im).into(), 4);
+    let copy = measurement_source((&im).into(), 4, true);
     let (w, h) = (copy.width as usize, copy.height as usize);
     let half = (w as f32).hypot(h as f32) * 0.5;
     for (i, p) in copy.pixels.iter().enumerate() {
@@ -1078,7 +1078,7 @@ fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
         ..Default::default()
     });
     im.metadata.lens = Some(both);
-    let doubled = measurement_source((&im).into(), 4);
+    let doubled = measurement_source((&im).into(), 4, true);
     for (p, q) in doubled.pixels.iter().zip(&copy.pixels) {
         assert!((p[1] - 2. * q[1]).abs() < 1e-6);
     }
@@ -1087,9 +1087,30 @@ fn measurement_copies_carry_a_dngs_opcode_list3_vignette() {
         ..lens
     });
     assert_eq!(
-        measurement_source((&im).into(), 4).pixels,
+        measurement_source((&im).into(), 4, true).pixels,
         preview_source((&im).into(), 4).pixels
     );
+}
+/// The file's own correction switched off (`Recipe::lens_file_correction`) leaves
+/// it off the measurement copy too: the copy is the photo's without it.
+#[test]
+fn measurement_copies_leave_the_files_correction_out_when_it_is_off() {
+    use crate::optics::{GainGrid, LensCorrection, Radial};
+    let mut im = fixture();
+    im.metadata.lens = Some(LensCorrection {
+        source: LensCorrection::DNG_OPCODES.into(),
+        default_on: true,
+        vignetting: Radial::new(vec![0., 2.], vec![1., 3.]),
+        vignetting_measured: true,
+        gain_map: Some(GainGrid {
+            gains: vec![2.],
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let plain = preview_source((&im).into(), 4).pixels;
+    assert_ne!(measurement_source((&im).into(), 4, true).pixels, plain);
+    assert_eq!(measurement_source((&im).into(), 4, false).pixels, plain);
 }
 /// Optical black corners that a camera's built-in barrel-distortion correction crops
 /// away must not pollute the measurement copy (or drag Shadows/Highlights' dark floor
@@ -1133,7 +1154,7 @@ fn measurement_copies_clamp_corners_cropped_by_builtin_distortion() {
         hdr: Default::default(),
         recovered: Default::default(),
     };
-    let copy = measurement_source((&im).into(), 64);
+    let copy = measurement_source((&im).into(), 64, true);
     assert!(
         copy.pixels[0][1] > 0.15,
         "optical black corner was not clamped away: {:?}",
@@ -1175,7 +1196,7 @@ fn measurement_copies_clamp_optical_black_outside_default_crop() {
         recovered: Default::default(),
     };
     for max in [64, 32] {
-        let copy = measurement_source((&im).into(), max);
+        let copy = measurement_source((&im).into(), max, true);
         for p in copy.pixels.iter() {
             assert!(
                 (p[1] - 0.25).abs() < 1e-6,
@@ -1213,7 +1234,7 @@ fn measurement_copies_clamp_optical_black_outside_default_crop() {
         hdr: Default::default(),
         recovered: Default::default(),
     };
-    let copy_np = measurement_source((&non_pow2).into(), 512);
+    let copy_np = measurement_source((&non_pow2).into(), 512, true);
     assert!(
         copy_np.pixels.iter().all(|p| (p[1] - 0.25).abs() < 1e-6),
         "optical black leaked on non-power-of-two default crop"
@@ -1284,7 +1305,7 @@ fn measurement_copies_preserve_illuminated_outer_borders_and_sony_camera_crop() 
         hdr: Default::default(),
         recovered: Default::default(),
     };
-    let copy = measurement_source((&im).into(), 64);
+    let copy = measurement_source((&im).into(), 64, true);
     assert_eq!(copy.pixels[0], [0.35; 3]);
     assert_eq!(copy.pixels[(24 * w + 2) as usize], [0.35; 3]);
 }
@@ -1304,7 +1325,7 @@ fn zero_metadata_dimensions_do_not_panic_in_crop_helpers() {
         recovered: Default::default(),
     };
     assert_eq!(crate::develop::local_tone::active_crop_rect(&im), None);
-    let copy = measurement_source((&im).into(), 16);
+    let copy = measurement_source((&im).into(), 16, true);
     assert_eq!((copy.width, copy.height), (16, 12));
 }
 /// Cached (`PreviewRenderer`) and uncached (`develop::render`) renders must agree on a

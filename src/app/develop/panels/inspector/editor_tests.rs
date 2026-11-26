@@ -441,10 +441,14 @@ fn lens_photo(lens: crate::optics::LensCorrection) -> Metadata {
 }
 
 /// Draws the Lens Corrections panel for photo `m`, with Enable Profile Corrections
-/// `on`, as `<name>.png` ([`crate::app::ui::shots`]).
-fn lens_corrections_shot(name: &str, m: Metadata, on: bool) {
+/// `on` and the file's own correction `file`, as `<name>.png`
+/// ([`crate::app::ui::shots`]).
+fn lens_corrections_shot(name: &str, m: Metadata, on: bool, file: bool) {
     use crate::model::recipe::{ProfileCorrections, Recipe};
-    let mut recipe = Recipe::for_metadata(&m);
+    let mut recipe = Recipe {
+        lens_file_correction: file,
+        ..Recipe::for_metadata(&m)
+    };
     let state = if on {
         ProfileCorrections::On
     } else {
@@ -486,10 +490,12 @@ fn lens_corrections_shot(name: &str, m: Metadata, on: bool) {
     );
 }
 
-/// Lens Corrections for a phone DNG whose warp the file stores (#1289): the panel
-/// says it always applies, with Enable Profile Corrections off and on; a Nikon
-/// optional profile, which follows the switch, gets no such note; Sony's lateral
-/// CA is said to be only part of it.
+/// Lens Corrections for a phone DNG whose warp the file stores (#1289): the switch
+/// for the file's own correction, on and off, with Enable Profile Corrections off
+/// and on; a Nikon optional profile, which follows Enable Profile Corrections, gets
+/// no switch and no note; Sony's lateral CA is only part of the file's data, and
+/// with Enable Profile Corrections on its stand-in renders whatever the switch says,
+/// so the switch is disabled.
 #[test]
 fn shots_of_lens_corrections_stored_in_the_file() {
     use crate::optics::{LensCorrection, Radial};
@@ -500,25 +506,121 @@ fn shots_of_lens_corrections_stored_in_the_file() {
         ..Default::default()
     };
     let dng = lens_photo(warp(LensCorrection::DNG_OPCODES, true));
-    lens_corrections_shot("lens-corrections-dng-off", dng.clone(), false);
-    lens_corrections_shot("lens-corrections-dng-on", dng, true);
+    for (name, on, file) in [
+        ("lens-corrections-dng-off", false, true),
+        ("lens-corrections-dng-on", true, true),
+        ("lens-corrections-dng-file-off", false, false),
+        ("lens-corrections-dng-file-off-profile-on", true, false),
+    ] {
+        lens_corrections_shot(name, dng.clone(), on, file);
+    }
     let nikon = Metadata {
         make: "Nikon".into(),
         model: "Z 8".into(),
         lens_model: "NIKKOR Z 14-24mm f/2.8 S".into(),
         ..lens_photo(warp("Nikon built-in", false))
     };
-    lens_corrections_shot("lens-corrections-nikon-optional-off", nikon.clone(), false);
-    lens_corrections_shot("lens-corrections-nikon-optional-on", nikon, true);
-    let sony = Metadata {
+    lens_corrections_shot(
+        "lens-corrections-nikon-optional-off",
+        nikon.clone(),
+        false,
+        true,
+    );
+    lens_corrections_shot("lens-corrections-nikon-optional-on", nikon, true, true);
+    let sony = sony_photo();
+    lens_corrections_shot("lens-corrections-sony-off", sony.clone(), false, true);
+    lens_corrections_shot("lens-corrections-sony-file-off", sony.clone(), false, false);
+    lens_corrections_shot("lens-corrections-sony-on", sony, true, true);
+}
+
+/// A Sony photo whose lateral CA always applies and whose fuller tables stand in
+/// for a profile.
+fn sony_photo() -> Metadata {
+    use crate::optics::{LensCorrection, Radial};
+    let ca = LensCorrection {
+        source: LensCorrection::SONY_BUILTIN.into(),
+        default_on: true,
+        distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+        ..Default::default()
+    };
+    Metadata {
         make: "Sony".into(),
         model: "ILCE-7M3".into(),
         lens_model: "FE 55mm F1.8 ZA".into(),
         lens_stand_in: Some(LensCorrection {
             vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
-            ..warp(LensCorrection::SONY_BUILTIN, true)
+            ..ca.clone()
         }),
-        ..lens_photo(warp(LensCorrection::SONY_BUILTIN, true))
+        ..lens_photo(ca)
+    }
+}
+
+/// The switch for the file's own lens correction, as a click reaches it: shown for
+/// a correction the file always applies and turning it off and on again; not shown
+/// for one that follows Enable Profile Corrections; disabled while a stand-in renders
+/// it anyway (#1289).
+#[test]
+fn the_files_lens_correction_switch_turns_it_off_and_on() {
+    use crate::model::recipe::{ProfileCorrections, Recipe};
+    use crate::optics::{LensCorrection, Radial};
+    use egui_kittest::kittest::Queryable;
+    const LABEL: &str = "Lens correction stored in the file";
+    let harness = |m: Metadata, profile: bool| {
+        let mut recipe = Recipe::for_metadata(&m);
+        if profile {
+            recipe.set_profile_corrections(&m, ProfileCorrections::On);
+        }
+        let mut step = crate::app::develop::step_name::StepName::default();
+        let mut view = crate::app::develop::state::ViewState::default();
+        let lensfun = super::lensfun::View {
+            db: None,
+            running: None,
+            progress: None,
+            failure: None,
+            suggest: false,
+        };
+        egui_kittest::Harness::builder()
+            .with_size(Vec2::new(360., 720.))
+            .build_ui_state(
+                move |ui, r: &mut Recipe| {
+                    let palette = crate::app::ui::theme::palette(ui.ctx());
+                    super::panels::lens_corrections::show(
+                        ui,
+                        &mut step,
+                        r,
+                        &mut view,
+                        Some(&m),
+                        &lensfun,
+                        &palette,
+                    );
+                },
+                recipe,
+            )
     };
-    lens_corrections_shot("lens-corrections-sony-on", sony, true);
+    let warp = |default_on| LensCorrection {
+        source: LensCorrection::DNG_OPCODES.into(),
+        default_on,
+        distortion: Radial::new(vec![0., 1.], vec![1., 1.02]),
+        ..Default::default()
+    };
+    let mut dng = harness(lens_photo(warp(true)), false);
+    dng.run();
+    assert!(dng.state().lens_file_correction);
+    dng.get_by_label(LABEL).click();
+    dng.run();
+    assert!(!dng.state().lens_file_correction);
+    dng.get_by_label(LABEL).click();
+    dng.run();
+    assert!(dng.state().lens_file_correction);
+    let mut optional = harness(lens_photo(warp(false)), true);
+    optional.run();
+    assert!(optional.query_by_label(LABEL).is_none());
+    let mut sony = harness(sony_photo(), true);
+    sony.run();
+    sony.get_by_label(LABEL).click();
+    sony.run();
+    assert!(
+        sony.state().lens_file_correction,
+        "disabled while the stand-in renders"
+    );
 }

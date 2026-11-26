@@ -26,6 +26,11 @@ pub(crate) const LENSFUN_KEYS: [&str; 7] = [
     "rawmakase:LensfunName",
     "rawmakase:LensfunDatabase",
 ];
+/// Whether the edit applies the lens correction the file always carries
+/// ([`Recipe::lens_file_correction`](crate::model::recipe::Recipe::lens_file_correction)):
+/// "1" or "0", written only as "0" outside presets. RAWmakase's own: no key of
+/// the `crs:` namespace means it, and none is reused for it.
+pub(crate) const FILE_LENS_CORRECTION_KEY: &str = "rawmakase:FileLensCorrection";
 /// A fitted camera look carried whole (`camera_profiles::fitted::carried`): no
 /// other application can rebuild it from its name.
 pub(crate) const FITTED_PROFILE_KEY: &str = "rawmakase:FittedProfile";

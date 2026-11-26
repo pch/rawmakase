@@ -1106,6 +1106,33 @@ fn checkbox_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R
     let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.), Sense::hover());
     row_contents(ui, row, add)
 }
+/// The slot a panel switch is drawn in.
+const SWITCH: Vec2 = Vec2::new(26., 20.);
+/// The space between the slot's ends and the 20 pt track drawn in it.
+const SWITCH_TRACK_INSET: f32 = 3.;
+
+/// An on/off option as a caption with a switch at the row's end.
+fn switch_row(ui: &mut egui::Ui, on: &mut bool, label: &str, tip: &str) {
+    let (row, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.), Sense::click());
+    ui.painter().text(
+        row.left_center(),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(crate::app::ui::design::text::SMALL),
+        theme::palette(ui.ctx()).tone(Tone::SOFT),
+    );
+    let slot = Rect::from_center_size(
+        row.right_center() - Vec2::new(SWITCH.x / 2. - SWITCH_TRACK_INSET, 0.),
+        SWITCH,
+    );
+    let switch =
+        crate::app::ui::widgets::switch_in(ui, slot, response.id.with("switch"), *on, label);
+    if response.on_hover_text(tip).clicked() || switch.clicked() {
+        *on = !*on;
+    }
+}
+
 /// A labelled control row aligned with the adjustment labels. Long control
 /// text is truncated so profile and lens names cannot widen the panel.
 fn control_row<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {

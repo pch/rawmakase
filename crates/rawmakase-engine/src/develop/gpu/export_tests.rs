@@ -1236,6 +1236,52 @@ fn gpu_export_matches_cpu_export_across_all_output_spaces_and_features() -> Resu
     Ok(())
 }
 
+/// A file's own always-on lens correction (a DNG's warp, vignette and gain map)
+/// exports alike on the GPU and the CPU with its switch on and off
+/// (`Recipe::lens_file_correction`), measures included (#1289).
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn gpu_export_matches_cpu_with_the_files_lens_correction_on_and_off() -> Result<()> {
+    use crate::optics::{GainGrid, LensCorrection, Radial};
+    let mut im = synthetic_photo(256, 192);
+    im.metadata.lens = Some(LensCorrection {
+        source: LensCorrection::DNG_OPCODES.into(),
+        default_on: true,
+        vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
+        vignetting_measured: true,
+        distortion: Radial::new(vec![0., 1.], vec![1., 0.96]),
+        gain_map: Some(GainGrid {
+            points: [2, 2],
+            spacing: [1., 1.],
+            planes: 3,
+            gains: vec![1., 1.2, 1.1, 1.3, 1., 1., 1.4, 1.1, 1., 1.2, 1., 1.5],
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let backend = ExportBackend::new(ExportBackendPolicy::Auto);
+    for on in [true, false] {
+        let edit = Recipe {
+            lens_file_correction: on,
+            shadows: 0.4,
+            effects: crate::model::effects::Effects {
+                clarity: 0.3,
+                ..Default::default()
+            },
+            ..profiled_recipe(&im)
+        };
+        let r = edit.checked()?;
+        let space = OutputSpace::ALL[0];
+        let cpu = crate::develop::render_export(&im, &r, None, 0, space, Cancel::NEVER)?;
+        let gpu =
+            backend.render_export(&im, &r, None, 0, space, ExportFormat::F32, Cancel::NEVER)?;
+        assert_eq!(backend.status().cpu_renders, 0, "fell back to the CPU");
+        let rms = rms_f32_diff(gpu.pixels(), cpu.pixels());
+        assert!(rms <= 1e-4, "switch {on}: f32 RMS {rms} > 1e-4");
+    }
+    Ok(())
+}
+
 /// GPU Export vs. Develop 100% Preview parity (sRGB, monitor profile = identity):
 /// guarantees what the user sees at 100% in Develop matches what exports (`<= 1/255`).
 #[test]

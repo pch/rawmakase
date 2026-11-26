@@ -1931,6 +1931,95 @@ fn lens_profile_identity_round_trips() -> Result<()> {
     );
     Ok(())
 }
+/// The file's own lens correction switched off goes into XMP as RAWmakase's own
+/// setting, never a `crs:` key, written only while off so every other edit's
+/// settings stay as they were; reading settings without it keeps the photo's.
+/// Presets of the lens profile group carry it either way, so applying one sets it
+/// as the preset's source had it (#1289).
+#[test]
+fn the_files_own_lens_correction_travels_as_rawmakases_setting() -> Result<()> {
+    use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
+    let m = Metadata {
+        width: 3000,
+        height: 2000,
+        wb: [2., 1., 1.5],
+        daylight_wb: [2., 1., 1.5],
+        lens: Some(crate::optics::LensCorrection {
+            source: crate::optics::LensCorrection::DNG_OPCODES.into(),
+            default_on: true,
+            distortion: crate::optics::Radial::new(vec![0., 1.], vec![1., 1.02]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let photo = crate::xmp::write::Photo {
+        raw_name: "IMG.DNG".into(),
+        settings: true,
+        format: "image/jpeg".into(),
+        ..Default::default()
+    };
+    let on = Recipe::with_profiles(&m, &[]);
+    assert!(on.lens_file_correction);
+    let packet = write::packet(&on, &m, &photo);
+    assert!(!packet.contains("FileLensCorrection"), "{packet}");
+    let off = Recipe {
+        lens_file_correction: false,
+        ..on.clone()
+    };
+    let packet = write::packet(&off, &m, &photo);
+    assert!(
+        packet.contains(r#"rawmakase:FileLensCorrection="0""#),
+        "{packet}"
+    );
+    assert!(packet.contains(r#"xmlns:rawmakase=""#), "{packet}");
+    // The `crs:` lens keys say what they said before.
+    assert!(packet.contains(r#"crs:LensProfileEnable="0""#), "{packet}");
+    let read = parse(Path::new("IMG.xmp"), &packet)?.apply(&on, &m, &[], None)?;
+    assert!(!read.lens_file_correction);
+    assert!(read.lens_correction(&m).is_none());
+    // Settings without the key leave the photo's as it was.
+    let plain = write::packet(&on, &m, &photo);
+    let kept = parse(Path::new("IMG.xmp"), &plain)?.apply(&off, &m, &[], None)?;
+    assert!(!kept.lens_file_correction);
+    // Presets of the group carry it on and off; of other groups, not at all.
+    let info = crate::xmp::preset_write::PresetInfo::new("Lens", "Mine");
+    let lens_group = {
+        let mut g = GroupSelection::none();
+        g.set(
+            SettingGroup::LensProfileCorrections,
+            GroupInclusion::Included,
+        );
+        g
+    };
+    let preset_on = crate::xmp::preset_write::preset(&on, &m, &info, &lens_group);
+    assert!(
+        preset_on.contains(r#"rawmakase:FileLensCorrection="1""#),
+        "{preset_on}"
+    );
+    let back = parse(Path::new("lens.xmp"), &preset_on)?.apply(&off, &m, &[], None)?;
+    assert!(back.lens_file_correction);
+    let preset_off = crate::xmp::preset_write::preset(&off, &m, &info, &lens_group);
+    let back = parse(Path::new("lens.xmp"), &preset_off)?.apply(&on, &m, &[], None)?;
+    assert!(!back.lens_file_correction);
+    let mut others = GroupSelection::all();
+    others.set(
+        SettingGroup::LensProfileCorrections,
+        GroupInclusion::Excluded,
+    );
+    let preset = crate::xmp::preset_write::preset(&off, &m, &info, &others);
+    assert!(!preset.contains("FileLensCorrection"), "{preset}");
+    // A value that isn't a flag is refused, as other flags are.
+    let bad = packet.replace(
+        r#"rawmakase:FileLensCorrection="0""#,
+        r#"rawmakase:FileLensCorrection="maybe""#,
+    );
+    assert!(
+        parse(Path::new("IMG.xmp"), &bad)?
+            .apply(&on, &m, &[], None)
+            .is_err()
+    );
+    Ok(())
+}
 /// A Lensfun lens goes into XMP (sidecars, exports, presets) by its identity in
 /// RAWmakase's namespace, with Lightroom's Setup at Auto and no Adobe profile, never
 /// its calibration; reading it back resolves it against the installed database,

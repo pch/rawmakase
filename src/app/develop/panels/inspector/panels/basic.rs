@@ -1,7 +1,8 @@
 //! The Basic panel: Auto, Treatment, Profile (with its imports, the community
 //! profile offer and Fit Camera Look), White Balance, Tone and Presence.
 use super::super::{
-    basic_control, eyedropper_icon, profile_menu, profile_offer, stacked_control, subheading,
+    SWITCH, SWITCH_TRACK_INSET, basic_control, eyedropper_icon, profile_menu, profile_offer,
+    stacked_control, subheading, switch_row,
 };
 use super::Action;
 use crate::app::develop::panels::basic_keys;
@@ -603,33 +604,6 @@ fn labelled_switch(
     );
     let switch = crate::app::ui::widgets::switch_in(ui, slot, id.with("switch"), on, label);
     response.clicked() || switch.clicked()
-}
-
-/// The slot a panel switch is drawn in.
-const SWITCH: Vec2 = Vec2::new(26., 20.);
-/// The space between the slot's ends and the 20 pt track drawn in it.
-const SWITCH_TRACK_INSET: f32 = 3.;
-
-/// A view option as a caption with a switch at the row's end.
-fn switch_row(ui: &mut egui::Ui, on: &mut bool, label: &str, tip: &str) {
-    let (row, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.), Sense::click());
-    ui.painter().text(
-        row.left_center(),
-        egui::Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(crate::app::ui::design::text::SMALL),
-        theme::palette(ui.ctx()).tone(Tone::SOFT),
-    );
-    let slot = Rect::from_center_size(
-        row.right_center() - Vec2::new(SWITCH.x / 2. - SWITCH_TRACK_INSET, 0.),
-        SWITCH,
-    );
-    let switch =
-        crate::app::ui::widgets::switch_in(ui, slot, response.id.with("switch"), *on, label);
-    if response.on_hover_text(tip).clicked() || switch.clicked() {
-        *on = !*on;
-    }
 }
 
 /// What the side beside the edit shows (`second`), named, unless neither side is in

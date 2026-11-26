@@ -1904,6 +1904,50 @@ fn a_transparency_mask_renders_white_on_the_gpu_as_on_the_cpu() -> Result<()> {
     })
 }
 
+/// A DNG's always-on correction (warp, vignette and gain map) switched off
+/// (`Recipe::lens_file_correction`) renders alike on the CPU and the GPU: neither
+/// applies any of it, and the measures leave it out on both (#1289).
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn the_files_own_correction_switched_off_matches_cpu() -> Result<()> {
+    use crate::{
+        camera_data::Metadata,
+        optics::{GainGrid, LensCorrection, Radial},
+    };
+    let lens = LensCorrection {
+        source: LensCorrection::DNG_OPCODES.into(),
+        default_on: true,
+        vignetting: Radial::new(vec![0., 1.], vec![1., 1.8]),
+        vignetting_measured: true,
+        distortion: Radial::new(vec![0., 1.], vec![1., 0.96]),
+        gain_map: Some(GainGrid {
+            points: [2, 2],
+            spacing: [1., 1.],
+            planes: 3,
+            gains: vec![1., 1.2, 1.1, 1.3, 1., 1., 1.4, 1.1, 1., 1.2, 1., 1.5],
+            ..Default::default()
+        }),
+        centre: [0.52, 0.48],
+        ..Default::default()
+    };
+    assert!(lens.validate());
+    for on in [true, false] {
+        let metadata = Metadata {
+            make: "Synthetic".into(),
+            width: 150,
+            height: 100,
+            lens: Some(lens.clone()),
+            ..Default::default()
+        };
+        check_lens_render(metadata, None, &|r: &mut Recipe| {
+            r.lens_builtin = true;
+            r.lens_profile = false;
+            r.lens_file_correction = on;
+        })?;
+    }
+    Ok(())
+}
+
 /// A Lensfun-style correction (see `optics::lensfun`): tables of more knots than the
 /// 64 the GPU search once allowed, and lateral CA as a function of green's source
 /// radius, render alike on the CPU and the GPU at Distortion amounts 0, 100% and
@@ -1991,8 +2035,8 @@ fn check_lens_render(
     };
     tweak(&mut recipe);
     assert!(
-        recipe.lens_correction(&metadata).is_some(),
-        "profile must be active"
+        recipe.lens_correction(&metadata).is_some() || !recipe.lens_file_correction,
+        "a correction must be active, unless the file's own is switched off"
     );
     let image = CameraImage {
         width: w,

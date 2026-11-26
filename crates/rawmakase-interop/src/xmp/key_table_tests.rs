@@ -450,6 +450,7 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
         "ColorNoiseReductionSomething",
         "LensProfileSomething",
         "rawmakase:LensfunSomething",
+        "rawmakase:FileLensCorrection",
         "DefringeSomething",
         "UprightSomething",
         "PerspectiveSomething",

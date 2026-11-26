@@ -560,7 +560,7 @@ impl ExportBackend {
         };
         ensure!(!cancel.is_cancelled(), "Render superseded");
 
-        let (measured, unretouched) = quality::measurement_copies(&source, None, cancel)?;
+        let (measured, unretouched) = quality::measurement_copies(&source, &base, None, cancel)?;
         let toned = Toned {
             image: textured_img,
             scale,
