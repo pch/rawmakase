@@ -425,37 +425,8 @@ impl DecodeCache {
             n > 0 && n <= MAX_PIXELS && image.pixels.len() as u64 == n,
             "Invalid decode cache size"
         );
-        let change = |i: usize| Change {
-            index: i as u32,
-            value: recovered.pixels[i],
-        };
-        // Images that hold one buffer between them list the pixels that differ;
-        // images with a buffer each are compared, bit by bit as recovery in place
-        // lists them, so an entry is the same whichever way its image is held.
-        let changes: Vec<Change> = if image.pixels.shares_buffer(&recovered.pixels) {
-            image.pixels.differing().map(change).collect()
-        } else {
-            const CHUNK: usize = 1 << 20;
-            let total = image.pixels.len();
-            (0..total.div_ceil(CHUNK))
-                .into_par_iter()
-                .flat_map_iter(|chunk_idx| {
-                    let start = chunk_idx * CHUNK;
-                    let end = (start + CHUNK).min(total);
-                    let a = image.pixels.range(start..end);
-                    let b = recovered.pixels.range(start..end);
-                    a.iter()
-                        .zip(b.iter())
-                        .enumerate()
-                        .filter(|(_, (pa, pb))| pa.map(f32::to_bits) != pb.map(f32::to_bits))
-                        .map(|(offset, (_, pb))| Change {
-                            index: (start + offset) as u32,
-                            value: *pb,
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect()
-        };
+        // Pass 1: count recovery changes without allocating a full delta buffer.
+        let recovered_count = count_changes(&image.pixels, &recovered.pixels);
         let header = serde_json::to_vec(&Header {
             key: key.into(),
             width: image.width,
@@ -465,11 +436,11 @@ impl DecodeCache {
             scale_clipped: image.scale_clipped,
             stripe_pixels: STRIPE_PIXELS as u32,
             stripe_changes: STRIPE_CHANGES as u32,
-            recovered: changes.len() as u64,
+            recovered: recovered_count as u64,
         })?;
         ensure!(header.len() < 1 << 16, "Invalid decode cache header");
         let pixel_stripe_count = (n as usize).div_ceil(STRIPE_PIXELS);
-        let change_stripe_count = changes.len().div_ceil(STRIPE_CHANGES);
+        let change_stripe_count = recovered_count.div_ceil(STRIPE_CHANGES);
         ensure!(
             pixel_stripe_count as u64 <= MAX_STRIPES && change_stripe_count as u64 <= MAX_STRIPES,
             "Too many decode cache stripes"
@@ -479,7 +450,10 @@ impl DecodeCache {
         let dir = self.location();
         dir.create()?;
         let mut file = tempfile::NamedTempFile::new_in(&dir.path)?;
-        let mut stripe_lengths = Vec::with_capacity(total_stripes);
+        let mut stripe_lengths = Vec::new();
+        stripe_lengths
+            .try_reserve_exact(total_stripes)
+            .context("Decode cache table allocation failed")?;
         {
             let mut out = std::io::BufWriter::new(file.as_file_mut());
             out.write_all(MAGIC)?;
@@ -504,21 +478,34 @@ impl DecodeCache {
                     out.write_all(&stripe)?;
                 }
             }
-            for batch in changes.chunks(STRIPE_CHANGES * WRITE_BATCH_STRIPES) {
-                let compressed_batch: Vec<Vec<u8>> = batch
-                    .par_chunks(STRIPE_CHANGES)
-                    .map(|chunk| compress_block(&shuffle_changes(chunk)))
-                    .collect::<Result<Vec<_>>>()?;
-                for chunk in compressed_batch {
-                    let len = u32::try_from(chunk.len())
-                        .context("Compressed change stripe exceeds u32")?;
-                    stripe_lengths.push(len);
-                    out.write_all(&chunk)?;
-                }
-            }
+            // Pass 2: stream recovery deltas in bounded batches so dense 150 MP
+            // images never allocate a full `Vec<Change>` upfront.
+            collect_and_write_change_batches(
+                &image.pixels,
+                &recovered.pixels,
+                recovered_count,
+                STRIPE_CHANGES,
+                WRITE_BATCH_STRIPES,
+                |batch| {
+                    let compressed_batch: Vec<Vec<u8>> = batch
+                        .par_chunks(STRIPE_CHANGES)
+                        .map(|chunk| compress_block(&shuffle_changes(chunk)))
+                        .collect::<Result<Vec<_>>>()?;
+                    for chunk in compressed_batch {
+                        let len = u32::try_from(chunk.len())
+                            .context("Compressed change stripe exceeds u32")?;
+                        stripe_lengths.push(len);
+                        out.write_all(&chunk)?;
+                    }
+                    Ok(())
+                },
+            )?;
             out.flush()?;
         }
-        debug_assert_eq!(stripe_lengths.len(), total_stripes);
+        ensure!(
+            stripe_lengths.len() == total_stripes,
+            "Decode cache stripe count mismatch"
+        );
         let mut table_bytes = Vec::with_capacity(total_stripes * 4);
         for len in stripe_lengths {
             table_bytes.extend_from_slice(&len.to_le_bytes());
@@ -582,6 +569,112 @@ pub(crate) fn purge(dir: &Path, extension: &str) -> usize {
         .filter(|e| fs::remove_file(e.path()).is_ok())
         .count()
 }
+fn count_changes(pixels: &Pixels, recovered: &Pixels) -> usize {
+    if pixels.shares_buffer(recovered) {
+        return pixels.differing().count();
+    }
+    const CHUNK: usize = 1 << 20;
+    let total = pixels.len();
+    (0..total.div_ceil(CHUNK))
+        .into_par_iter()
+        .map(|chunk_idx| {
+            let start = chunk_idx * CHUNK;
+            let end = (start + CHUNK).min(total);
+            let a = pixels.range(start..end);
+            let b = recovered.range(start..end);
+            a.iter()
+                .zip(b.iter())
+                .filter(|(pa, pb)| pa.map(f32::to_bits) != pb.map(f32::to_bits))
+                .count()
+        })
+        .sum()
+}
+
+fn collect_and_write_change_batches(
+    pixels: &Pixels,
+    recovered: &Pixels,
+    recovered_count: usize,
+    stripe_changes: usize,
+    batch_stripes: usize,
+    mut on_batch: impl FnMut(&[Change]) -> Result<()>,
+) -> Result<usize> {
+    if recovered_count == 0 {
+        return Ok(0);
+    }
+    let batch_cap = stripe_changes
+        .checked_mul(batch_stripes)
+        .context("Decode cache change batch overflow")?;
+    ensure!(batch_cap > 0, "Invalid decode cache change batch");
+    let mut pending = Vec::new();
+    pending
+        .try_reserve_exact(batch_cap.min(recovered_count))
+        .context("Decode cache recovery staging allocation failed")?;
+    let mut emitted = 0usize;
+    if pixels.shares_buffer(recovered) {
+        for i in pixels.differing() {
+            let index = u32::try_from(i).context("Decode cache pixel index exceeds u32")?;
+            pending.push(Change {
+                index,
+                value: recovered[i],
+            });
+            if pending.len() == batch_cap {
+                on_batch(&pending)?;
+                emitted += pending.len();
+                pending.clear();
+            }
+        }
+    } else {
+        let total = pixels.len();
+        let sub_chunk = stripe_changes.max(1);
+        for w_start in (0..total).step_by(batch_cap) {
+            let w_end = (w_start + batch_cap).min(total);
+            let sub_count = (w_end - w_start).div_ceil(sub_chunk);
+            let window_chunks: Vec<Vec<Change>> = (0..sub_count)
+                .into_par_iter()
+                .map(|k| -> Result<Vec<Change>> {
+                    let s_start = w_start + k * sub_chunk;
+                    let s_end = (s_start + sub_chunk).min(w_end);
+                    let a = pixels.range(s_start..s_end);
+                    let b = recovered.range(s_start..s_end);
+                    let mut local = Vec::new();
+                    for (offset, (pa, pb)) in a.iter().zip(b.iter()).enumerate() {
+                        if pa.map(f32::to_bits) != pb.map(f32::to_bits) {
+                            let index = u32::try_from(s_start + offset)
+                                .context("Decode cache pixel index exceeds u32")?;
+                            local.push(Change { index, value: *pb });
+                        }
+                    }
+                    Ok(local)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            for local in window_chunks {
+                let mut slice = local.as_slice();
+                while !slice.is_empty() {
+                    let space = batch_cap - pending.len();
+                    let take = space.min(slice.len());
+                    pending.extend_from_slice(&slice[..take]);
+                    slice = &slice[take..];
+                    if pending.len() == batch_cap {
+                        on_batch(&pending)?;
+                        emitted += pending.len();
+                        pending.clear();
+                    }
+                }
+            }
+        }
+    }
+    if !pending.is_empty() {
+        on_batch(&pending)?;
+        emitted += pending.len();
+        pending.clear();
+    }
+    ensure!(
+        emitted == recovered_count,
+        "Decode cache recovery count mismatch"
+    );
+    Ok(emitted)
+}
+
 fn max_compressed_len(raw_bytes: u64) -> u64 {
     raw_bytes
         .saturating_add(raw_bytes / 64)
@@ -1681,6 +1774,136 @@ mod tests {
             );
             assert_eq!(allocs_order, 0);
             assert!(pixels_order.iter().all(|p| *p == [0.0; 3]));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_change_batching_roundtrips_shared_and_separate_buffers() -> Result<()> {
+        let total = 200usize;
+        let mut base_vec: Vec<[f32; 3]> =
+            (0..total).map(|i| [i as f32 * 0.25, -0.0, 1.0]).collect();
+        base_vec[10] = [f32::NAN, 0.5, 0.25];
+        let mut rec_vec = base_vec.clone();
+        // 17 changed indices across the image, including -0.0 -> +0.0 on pixel 0.
+        let changed_indices = [
+            0usize, 1, 2, 3, 7, 15, 22, 31, 40, 55, 63, 64, 99, 120, 150, 180, 199,
+        ];
+        for &idx in &changed_indices {
+            rec_vec[idx] = [0.0, idx as f32 + 0.5, 2.0];
+        }
+        let separate_base = Pixels::from(base_vec.clone());
+        let separate_rec = Pixels::from(rec_vec.clone());
+        let (shared_base, shared_rec) = Pixels::pair(
+            rec_vec.clone(),
+            changed_indices.iter().map(|&idx| (idx, base_vec[idx])),
+        )
+        .context("valid pair")?;
+        assert!(shared_base.shares_buffer(&shared_rec));
+
+        assert_eq!(count_changes(&separate_base, &separate_rec), 17);
+        assert_eq!(count_changes(&shared_base, &shared_rec), 17);
+
+        let collect_batches =
+            |pixels: &Pixels, recovered: &Pixels| -> Result<(Vec<usize>, Vec<Change>)> {
+                let count = count_changes(pixels, recovered);
+                let mut batch_sizes = Vec::new();
+                let mut all = Vec::new();
+                let emitted =
+                    collect_and_write_change_batches(pixels, recovered, count, 4, 2, |batch| {
+                        assert!(batch.len() <= 8);
+                        batch_sizes.push(batch.len());
+                        all.extend_from_slice(batch);
+                        Ok(())
+                    })?;
+                assert_eq!(emitted, count);
+                Ok((batch_sizes, all))
+            };
+
+        let (sep_sizes, sep_changes) = collect_batches(&separate_base, &separate_rec)?;
+        let (shr_sizes, shr_changes) = collect_batches(&shared_base, &shared_rec)?;
+        assert_eq!(sep_sizes, vec![8, 8, 1]);
+        assert_eq!(shr_sizes, vec![8, 8, 1]);
+        assert_eq!(sep_changes.len(), shr_changes.len());
+        for (a, b) in sep_changes.iter().zip(shr_changes.iter()) {
+            assert_eq!(a.index, b.index);
+            assert_eq!(a.value.map(f32::to_bits), b.value.map(f32::to_bits));
+        }
+
+        // Applying collected changes reconstructs both base and recovered bit-for-bit.
+        let mut rebuilt_rec = base_vec;
+        for ch in &shr_changes {
+            rebuilt_rec[ch.index as usize] = ch.value;
+        }
+        for (a, b) in rebuilt_rec.iter().zip(rec_vec.iter()) {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+
+        // Also verify full DecodeCache::store + load round-trips bit-identically across
+        // multiple change stripes (> STRIPE_CHANGES) for both shared and separate buffers.
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let width = 300u32;
+        let height = 300u32;
+        let img_total = (width * height) as usize;
+        let img_base: Vec<[f32; 3]> = vec![[-0.0, 0.25, 0.5]; img_total];
+        let mut img_rec = img_base.clone();
+        for (i, px) in img_rec.iter_mut().take(70_000).enumerate() {
+            *px = [0.0, f32::from_bits((i as u32) | 1), 1.0 + i as f32 * 0.001];
+        }
+        let separate_img = CameraImage {
+            recovered: Default::default(),
+            width,
+            height,
+            pixels: img_base.clone().into(),
+            metadata: Metadata::default(),
+            fast: false,
+            scale_factor: 1.0,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let mut separate_rec_img = separate_img.clone();
+        separate_rec_img.pixels = img_rec.clone().into();
+        let _ = separate_img.recovered.set(Arc::new(separate_rec_img));
+
+        let (paired_base, paired_rec) =
+            Pixels::pair(img_rec, (0..70_000).map(|i| (i, img_base[i])))
+                .context("valid image pair")?;
+        let mut shared_img = separate_img.clone();
+        shared_img.recovered = Default::default();
+        shared_img.pixels = paired_base;
+        let mut shared_rec_img = shared_img.clone();
+        shared_rec_img.pixels = paired_rec;
+        let _ = shared_img.recovered.set(Arc::new(shared_rec_img));
+
+        cache.store("separate", &separate_img)?;
+        cache.store("shared", &shared_img)?;
+        let loaded_sep = cache
+            .load("separate", &Metadata::default())
+            .context("miss")?;
+        let loaded_shr = cache.load("shared", &Metadata::default()).context("miss")?;
+        assert!(
+            loaded_shr
+                .pixels
+                .shares_buffer(&loaded_shr.recovered.get().unwrap().pixels)
+        );
+        for (a, b) in loaded_shr
+            .pixels
+            .range(0..img_total)
+            .iter()
+            .zip(loaded_sep.pixels.range(0..img_total).iter())
+        {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
+        }
+        for (a, b) in loaded_shr
+            .recovered
+            .get()
+            .unwrap()
+            .pixels
+            .iter()
+            .zip(loaded_sep.recovered.get().unwrap().pixels.iter())
+        {
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits));
         }
         Ok(())
     }

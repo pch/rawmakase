@@ -475,11 +475,13 @@ its subfolder is created only while the folder exists, so an unplugged drive is 
 recreated on the system disk, and photos are just not cached until it returns.
 Develop, prefetch, Reference View, export and preview builds share the app's cache,
 so they all follow the choice without restarting.
-An entry is the image's size in 32-bit floats: 278 MB for the X100F, 697 MB for the
-A7CR. RAW files, sidecars and catalogs are not touched.
+Entries use a v2 striped byte-shuffled zlib format storing bit-exact 32-bit float
+base pixels and highlight-recovery deltas (replacing the earlier uncompressed v1
+format, where an entry was the image's size in 32-bit floats: 278 MB for the
+X100F, 697 MB for the A7CR). RAW files, sidecars and catalogs are not touched.
 
-Measured with `preview_benchmark` (store, then open from a warm cache) on the loaded
-machine:
+Measured on the earlier uncompressed v1 format with `preview_benchmark` (store, then
+open from a warm cache) on the loaded machine:
 
 | Photo | Decode | Highlight recovery | Store | Open from cache |
 | --- | ---: | ---: | ---: | ---: |
@@ -540,8 +542,9 @@ The pair is made where a decode is owned, before it is shared:
   (tested). The loader's full-size decode, the prefetch, Reference View, exports
   and the Library previews built from a full-size decode (`export::job::decode_full`)
   go through it, so decoding no longer allocates the second buffer at all.
-- The decode cache loads an entry as a pair. Its format is unchanged: the pixels as
-  decoded, then the changed pixels' recovered values.
+- The decode cache loads an entry directly as a `Pixels` pair. Its v2 striped format
+  stores the base pixels as decoded and the highlight-recovery deltas, compressed
+  bit-exactly with byte-plane shuffling and zlib.
 - A rendered file opens with pixels its recovered image shares (`Pixels::share`).
 
 A decode that is only borrowed when it is first rendered is recovered into a second

@@ -199,20 +199,22 @@ impl Pixels {
         if differs.len() != buffer.len().div_ceil(64) || past_end != 0 {
             return None;
         }
-        let mut before = Vec::with_capacity(differs.len() + 1);
-        let mut count = 0;
-        for word in &differs {
-            before.push(count);
-            count += word.count_ones() as usize;
-        }
-        before.push(count);
-        if count != values.len() {
+        let total_changed: usize = differs.iter().map(|word| word.count_ones() as usize).sum();
+        if total_changed != values.len() {
             return None;
         }
         let base = Arc::new(buffer);
         if values.is_empty() {
             return Some((Self(Repr::Shared(base.clone())), Self(Repr::Shared(base))));
         }
+        let mut before = Vec::new();
+        before.try_reserve_exact(differs.len() + 1).ok()?;
+        let mut count = 0;
+        for word in &differs {
+            before.push(count);
+            count += word.count_ones() as usize;
+        }
+        before.push(count);
         values.shrink_to_fit();
         let patch = Patch {
             base: base.clone(),
