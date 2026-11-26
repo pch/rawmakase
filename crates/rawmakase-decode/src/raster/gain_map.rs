@@ -81,15 +81,19 @@ impl Channel {
         })
     }
 
-    /// The alternate rendition of linear base value `base`, where the map's sample
-    /// is `sample` (0–1), at the map's full weight.
-    fn apply(&self, base: f32, sample: f32) -> f32 {
+    #[inline]
+    fn gain(&self, sample: f32) -> f32 {
         let mut v = sample.clamp(0., 1.);
         if self.gamma != 1. {
             v = v.powf(1. / self.gamma);
         }
-        let stops = self.min + (self.max - self.min) * v;
-        (base + self.base_offset) * stops.exp2() - self.alternate_offset
+        (self.min + (self.max - self.min) * v).exp2()
+    }
+
+    /// The alternate rendition of linear base value `base`, where the map's sample
+    /// is `sample` (0–1), at the map's full weight.
+    fn apply(&self, base: f32, sample: f32) -> f32 {
+        (base + self.base_offset) * self.gain(sample) - self.alternate_offset
     }
 }
 
@@ -888,21 +892,24 @@ pub(super) enum Formula {
 }
 
 impl Formula {
+    #[inline]
+    fn apple_gain(headroom: f32, sample: f32) -> f32 {
+        let v = sample.clamp(0., 1.);
+        // BT.709's OETF inverted.
+        let linear = if v < 0.081 {
+            v / 4.5
+        } else {
+            ((v + 0.099) / 1.099).powf(1. / 0.45)
+        };
+        1. + (headroom - 1.) * linear
+    }
+
     /// Channel `c` of the alternate of linear base value `base`, where the map's
     /// sample is `sample` (0–1).
     fn apply(&self, c: usize, base: f32, sample: f32) -> f32 {
         match self {
             Self::Iso(m) => m.channels[c].apply(base, sample),
-            Self::Apple { headroom } => {
-                let v = sample.clamp(0., 1.);
-                // BT.709's OETF inverted.
-                let linear = if v < 0.081 {
-                    v / 4.5
-                } else {
-                    ((v + 0.099) / 1.099).powf(1. / 0.45)
-                };
-                base * (1. + (headroom - 1.) * linear)
-            }
+            Self::Apple { headroom } => base * Self::apple_gain(*headroom, sample),
         }
     }
 }
@@ -944,15 +951,57 @@ pub(super) fn reconstruct(
         base.len() == width as usize * height as usize,
         "The gain map's base has the wrong size"
     );
+    let same_iso_gain = match formula {
+        Formula::Iso(metadata) => {
+            let ch0 = metadata.channels[0];
+            metadata.channels[1..]
+                .iter()
+                .all(|c| c.min == ch0.min && c.max == ch0.max && c.gamma == ch0.gamma)
+        }
+        Formula::Apple { .. } => false,
+    };
     out.par_chunks_mut(width as usize)
         .zip(base.par_chunks(width as usize))
         .enumerate()
         .try_for_each(|(y, (to, from))| {
             anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
-            for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
-                for c in 0..3 {
-                    let sample = map.at(x as u32, y as u32, width, height, c);
-                    to[c] = formula.apply(c, from[c], sample);
+            match (formula, map.channels == 1) {
+                (Formula::Iso(metadata), true) if same_iso_gain => {
+                    let ch0 = metadata.channels[0];
+                    for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
+                        let gain = ch0.gain(map.at(x as u32, y as u32, width, height, 0));
+                        for c in 0..3 {
+                            let ch = metadata.channels[c];
+                            to[c] = (from[c] + ch.base_offset) * gain - ch.alternate_offset;
+                        }
+                    }
+                }
+                (Formula::Iso(metadata), true) => {
+                    for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
+                        let sample = map.at(x as u32, y as u32, width, height, 0);
+                        for c in 0..3 {
+                            to[c] = metadata.channels[c].apply(from[c], sample);
+                        }
+                    }
+                }
+                (Formula::Apple { headroom }, true) => {
+                    for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
+                        let gain = Formula::apple_gain(
+                            *headroom,
+                            map.at(x as u32, y as u32, width, height, 0),
+                        );
+                        for c in 0..3 {
+                            to[c] = from[c] * gain;
+                        }
+                    }
+                }
+                (_, false) => {
+                    for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
+                        for c in 0..3 {
+                            let sample = map.at(x as u32, y as u32, width, height, c);
+                            to[c] = formula.apply(c, from[c], sample);
+                        }
+                    }
                 }
             }
             Ok(())
@@ -1678,5 +1727,134 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn reconstruct_fast_paths_match_naive_formula_bit_exactly() {
+        let width = 12u32;
+        let height = 8u32;
+        let base: Vec<[f32; 3]> = (0..width * height)
+            .map(|i| {
+                let f = i as f32 / (width * height) as f32;
+                [f * 0.9, (1. - f) * 0.8, 0.1 + 0.5 * ((i % 7) as f32 / 6.)]
+            })
+            .collect();
+        let map_1ch_full = Samples {
+            width,
+            height,
+            channels: 1,
+            data: (0..width * height)
+                .map(|i| (i * 29 % 101) as f32 / 100.)
+                .collect(),
+        };
+        let map_1ch_half = Samples {
+            width: width / 2,
+            height: height / 2,
+            channels: 1,
+            data: (0..(width / 2) * (height / 2))
+                .map(|i| (i * 19 % 53) as f32 / 52.)
+                .collect(),
+        };
+        let map_3ch_half = Samples {
+            width: width / 2,
+            height: height / 2,
+            channels: 3,
+            data: (0..(width / 2) * (height / 2) * 3)
+                .map(|i| (i * 17 % 71) as f32 / 70.)
+                .collect(),
+        };
+        let iso_same_offsets = Formula::Iso(Metadata {
+            channels: [Channel {
+                min: -0.5,
+                max: 2.5,
+                gamma: 1.4,
+                base_offset: 0.015625,
+                alternate_offset: 0.03125,
+            }; 3],
+            base_colour_space: true,
+        });
+        let iso_same_gain_diff_offsets = Formula::Iso(Metadata {
+            channels: [
+                Channel {
+                    min: -0.25,
+                    max: 3.0,
+                    gamma: 1.2,
+                    base_offset: 0.01,
+                    alternate_offset: 0.02,
+                },
+                Channel {
+                    min: -0.25,
+                    max: 3.0,
+                    gamma: 1.2,
+                    base_offset: 0.03,
+                    alternate_offset: 0.04,
+                },
+                Channel {
+                    min: -0.25,
+                    max: 3.0,
+                    gamma: 1.2,
+                    base_offset: 0.05,
+                    alternate_offset: 0.06,
+                },
+            ],
+            base_colour_space: true,
+        });
+        let iso_diff_gains = Formula::Iso(Metadata {
+            channels: [
+                Channel {
+                    min: 0.0,
+                    max: 2.0,
+                    gamma: 1.0,
+                    base_offset: 0.01,
+                    alternate_offset: 0.01,
+                },
+                Channel {
+                    min: -0.5,
+                    max: 2.5,
+                    gamma: 1.5,
+                    base_offset: 0.02,
+                    alternate_offset: 0.02,
+                },
+                Channel {
+                    min: 0.25,
+                    max: 3.0,
+                    gamma: 2.0,
+                    base_offset: 0.03,
+                    alternate_offset: 0.03,
+                },
+            ],
+            base_colour_space: true,
+        });
+        let apple = Formula::Apple { headroom: 4.5 };
+
+        for map in [&map_1ch_full, &map_1ch_half, &map_3ch_half] {
+            for formula in [
+                iso_same_offsets,
+                iso_same_gain_diff_offsets,
+                iso_diff_gains,
+                apple,
+            ] {
+                let got = reconstruct(
+                    &base,
+                    width,
+                    height,
+                    map,
+                    &formula,
+                    rawmakase_cancel::Cancel::NEVER,
+                )
+                .unwrap();
+                assert_eq!(got.len(), base.len());
+                for y in 0..height {
+                    for x in 0..width {
+                        let idx = (y * width + x) as usize;
+                        for c in 0..3 {
+                            let sample = map.at(x, y, width, height, c);
+                            let want = formula.apply(c, base[idx][c], sample);
+                            assert_eq!(got[idx][c].to_bits(), want.to_bits());
+                        }
+                    }
+                }
+            }
+        }
     }
 }

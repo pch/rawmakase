@@ -146,6 +146,9 @@ pub struct ModelOutput<'a> {
 /// For each packed pixel, the share of the plain image near clipped samples: 1 within
 /// [`CLIPPED_RADIUS`] sensor pixels of one, fading to 0 over as many again.
 fn plain_share(layout: &Layout, clipped: &[bool]) -> Vec<f32> {
+    if !clipped.iter().any(|&c| c) {
+        return Vec::new();
+    }
     let (w, h) = (layout.packed_width, layout.packed_height);
     // Chessboard distance to the nearest clipped packed pixel, two passes.
     let far = u32::MAX / 2;
@@ -219,7 +222,9 @@ pub fn assemble(
         "The AI Denoise result has the wrong size"
     );
     let mut share = plain_share(&layout, output.clipped);
-    if let Some(done) = output.done {
+    if !share.is_empty()
+        && let Some(done) = output.done
+    {
         for (s, d) in share.iter_mut().zip(done) {
             if !d {
                 *s = 1.;
@@ -232,12 +237,30 @@ pub fn assemble(
     let mut pixels = vec![[0f32; 3]; w * h];
     pixels.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
         let oy = y + ay;
+        if share.is_empty() && output.done.is_none() {
+            for (x, p) in row.iter_mut().enumerate() {
+                let i = oy * ow + x + ax;
+                *p = [
+                    (output.rgb[i] * wb[0]).max(0.),
+                    (output.rgb[plane + i] * wb[1]).max(0.),
+                    (output.rgb[2 * plane + i] * wb[2]).max(0.),
+                ];
+            }
+            return;
+        }
         // A row at a time: a decode kept as its recovered image's buffer is
         // never copied out whole.
         let plain_row = plain.pixels.range(y * w..(y + 1) * w);
         for (x, (p, q)) in row.iter_mut().zip(plain_row.iter()).enumerate() {
             let ox = x + ax;
-            let s = share[(oy / 2) * pw + ox / 2];
+            let packed_idx = (oy / 2) * pw + ox / 2;
+            let s = if !share.is_empty() {
+                share[packed_idx]
+            } else if output.done.is_some_and(|done| !done[packed_idx]) {
+                1.
+            } else {
+                0.
+            };
             let i = oy * ow + ox;
             if s == 1. {
                 *p = *q;
@@ -577,5 +600,85 @@ mod tests {
             panic!("refused nothing");
         };
         assert_eq!(error.to_string(), "no AI Denoise here");
+    }
+
+    #[test]
+    fn unclipped_fast_and_partial_paths_match_reference_bit_exactly() {
+        use rawmakase_engine::develop::quality::with_recovered;
+        let (width, height) = (17, 13);
+        let wb = [1.8, 1., 1.4];
+        let mut base = plain(width, height, wb);
+        for p in base.pixels.iter_mut().step_by(3) {
+            *p = [0.95, 0.5, 0.25];
+        }
+        let shared = with_recovered(base.clone(), Cancel::NEVER).unwrap();
+        let recovered = shared.recovered.get().unwrap();
+        assert!(shared.pixels.shares_buffer(&recovered.pixels));
+
+        for pad in [[0, 0], [1, 1]] {
+            let layout = Layout::new(width, height, pad);
+            let packed = layout.packed_width * layout.packed_height;
+            // Include negative outputs to verify clamping to 0.
+            let rgb = output(&layout, |x, y, c| {
+                ((x * 31 + y * 17 + c * 7) % 19) as f32 * 0.05 - 0.15
+            });
+            let unclipped = vec![false; packed];
+            let mut partial = vec![true; packed];
+            partial[0] = false;
+            partial[packed - 1] = false;
+            partial[packed / 2] = false;
+
+            let expected_for = |done: Option<&[bool]>| -> Vec<[f32; 3]> {
+                let (pw, ph) = (layout.packed_width, layout.packed_height);
+                let (ow, plane) = (2 * pw, 4 * pw * ph);
+                let mut out = vec![[0f32; 3]; width * height];
+                for y in 0..height {
+                    for x in 0..width {
+                        let (ox, oy) = (x + pad[0], y + pad[1]);
+                        let packed_idx = (oy / 2) * pw + ox / 2;
+                        let unfinished = done.is_some_and(|d| !d[packed_idx]);
+                        if unfinished {
+                            out[y * width + x] = base.pixels[y * width + x];
+                        } else {
+                            let i = oy * ow + ox;
+                            out[y * width + x] = [
+                                (rgb[i] * wb[0]).max(0.),
+                                (rgb[plane + i] * wb[1]).max(0.),
+                                (rgb[2 * plane + i] * wb[2]).max(0.),
+                            ];
+                        }
+                    }
+                }
+                out
+            };
+
+            for done in [None, Some(partial.as_slice())] {
+                let got = assemble(
+                    &ModelOutput {
+                        layout,
+                        rgb: &rgb,
+                        done,
+                        clipped: &unclipped,
+                    },
+                    &shared,
+                    Cancel::NEVER,
+                )
+                .unwrap();
+                let want = expected_for(done);
+                assert_eq!(got.pixels.len(), want.len());
+                for (g, w) in got.pixels.iter().zip(&want) {
+                    for c in 0..3 {
+                        assert_eq!(
+                            g[c].to_bits(),
+                            w[c].to_bits(),
+                            "pad={pad:?} done={}",
+                            done.is_some()
+                        );
+                    }
+                }
+            }
+            // Neither unclipped path materialised the shared decode buffer.
+            assert!(shared.pixels.shares_buffer(&recovered.pixels));
+        }
     }
 }

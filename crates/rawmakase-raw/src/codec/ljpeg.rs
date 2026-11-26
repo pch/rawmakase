@@ -249,8 +249,8 @@ pub(crate) fn decode_into(
 }
 
 /// What reading a stream left: the bits of its data not consumed, whether
-/// it read past them, and, read as T.81 says, how many differences of
-/// length 16 it had.
+/// it read past them, and, when not consumed exactly as T.81 says, how many
+/// differences of length 16 it had.
 #[derive(Clone, Copy)]
 struct Read {
     unread: u64,
@@ -322,7 +322,11 @@ fn decode_with(
     let scan = &data[h.scan.min(data.len())..];
     let (unread, overrun) = differences(h, scan, &tables, sixteen, cancel, out)?;
     // As T.81 reads them, only a difference of length 16 is 32768.
-    let sixteens = out.iter().filter(|&&d| d == 0x8000).count() as u64;
+    let sixteens = if !sixteen && !(unread < 8 && !overrun) {
+        out.iter().filter(|&&d| d == 0x8000).count() as u64
+    } else {
+        0
+    };
     let shift = u32::from(h.point_transform);
     let initial = 1i32 << (u32::from(h.precision) - shift - 1);
     let mask = (1i32 << h.precision) - 1;

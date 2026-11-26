@@ -295,41 +295,58 @@ fn visible_rows<'a, T>(data: &'a [T], s: &rawmakase_raw::Sensor, area: [usize; 4
 /// channel `channel(y, x)` plus its position's in the black pattern.
 fn visible(s: &rawmakase_raw::Sensor, channel: impl Fn(usize, usize) -> usize + Sync) -> Vec<f32> {
     let [left, top, w, h] = s.area.map(|v| v as usize);
+    if w == 0 || h == 0 {
+        return Vec::new();
+    }
     let (rows, cols, ref values) = s.black_pattern;
-    let pattern_black = |y: usize, x: usize| {
-        if rows > 0 && cols > 0 {
-            values
-                .get((y % rows as usize) * cols as usize + x % cols as usize)
-                .copied()
-                .unwrap_or(0)
-        } else {
-            0
-        }
-    };
     let white = s.white as f32;
+    let black_f = s.black.map(|b| b as f32);
+    let range = black_f.map(|b| (white - b).max(1.));
     let mut data = vec![0f32; w * h];
-    let level = |y: usize, x: usize, v: f32| {
-        let mut black = s.black[channel(y, x)] as f32;
-        black += pattern_black(y, x) as f32;
-        (v - black) / (white - black).max(1.)
-    };
-    data.par_chunks_mut(w.max(1))
-        .enumerate()
-        .for_each(|(y, row)| {
-            let at = (y + top) * s.width as usize + left;
+    let stride = s.width as usize;
+    if rows > 0 && cols > 0 {
+        let (rows, cols) = (rows as usize, cols as usize);
+        data.par_chunks_mut(w).enumerate().for_each(|(y, dst_row)| {
+            let at = (y + top) * stride + left;
+            let pat_y = (y % rows) * cols;
+            let normalize = |x: usize, v: f32| {
+                let c = channel(y, x);
+                let pat = values.get(pat_y + x % cols).copied().unwrap_or(0);
+                let black = black_f[c] + pat as f32;
+                (v - black) / (white - black).max(1.)
+            };
             match &s.data {
                 SensorData::U16(d) => {
-                    for (x, (dst, &v)) in row.iter_mut().zip(&d[at..at + w]).enumerate() {
-                        *dst = level(y, x, f32::from(v));
+                    for (x, (dst, &v)) in dst_row.iter_mut().zip(&d[at..at + w]).enumerate() {
+                        *dst = normalize(x, f32::from(v));
                     }
                 }
                 SensorData::F32(d) => {
-                    for (x, (dst, &v)) in row.iter_mut().zip(&d[at..at + w]).enumerate() {
-                        *dst = level(y, x, v);
+                    for (x, (dst, &v)) in dst_row.iter_mut().zip(&d[at..at + w]).enumerate() {
+                        *dst = normalize(x, v);
                     }
                 }
             }
         });
+    } else {
+        data.par_chunks_mut(w).enumerate().for_each(|(y, dst_row)| {
+            let at = (y + top) * stride + left;
+            match &s.data {
+                SensorData::U16(d) => {
+                    for (x, (dst, &v)) in dst_row.iter_mut().zip(&d[at..at + w]).enumerate() {
+                        let c = channel(y, x);
+                        *dst = (f32::from(v) - black_f[c]) / range[c];
+                    }
+                }
+                SensorData::F32(d) => {
+                    for (x, (dst, &v)) in dst_row.iter_mut().zip(&d[at..at + w]).enumerate() {
+                        let c = channel(y, x);
+                        *dst = (v - black_f[c]) / range[c];
+                    }
+                }
+            }
+        });
+    }
     data
 }
 
@@ -731,5 +748,91 @@ mod tests {
         );
         let error = format!("{:#}", developed.err().unwrap());
         assert!(error.contains("impossible shape"), "{error}");
+    }
+
+    #[test]
+    fn visible_normalizes_u16_and_f32_bit_exactly_with_and_without_black_pattern() {
+        let reference =
+            |s: &rawmakase_raw::Sensor, ch: &dyn Fn(usize, usize) -> usize| -> Vec<f32> {
+                let [left, top, w, h] = s.area.map(|v| v as usize);
+                let (rows, cols, ref values) = s.black_pattern;
+                let white = s.white as f32;
+                let mut out = Vec::with_capacity(w * h);
+                for y in 0..h {
+                    let at = (y + top) * s.width as usize + left;
+                    for x in 0..w {
+                        let pat = if rows > 0 && cols > 0 {
+                            values
+                                .get((y % rows as usize) * cols as usize + x % cols as usize)
+                                .copied()
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        let mut black = s.black[ch(y, x)] as f32;
+                        black += pat as f32;
+                        let v = match &s.data {
+                            rawmakase_raw::SensorData::U16(d) => f32::from(d[at + x]),
+                            rawmakase_raw::SensorData::F32(d) => d[at + x],
+                        };
+                        out.push((v - black) / (white - black).max(1.));
+                    }
+                }
+                out
+            };
+        let ch = |y: usize, x: usize| (y % 2) * 2 + (x % 2);
+        let u16_vals: Vec<u16> = (0..10 * 8).map(|i| ((i * 257) % 16384) as u16).collect();
+        let f32_vals: Vec<f32> = (0..10 * 8).map(|i| (i as f32) * 213.5 - 50.25).collect();
+        for data in [
+            rawmakase_raw::SensorData::U16(u16_vals),
+            rawmakase_raw::SensorData::F32(f32_vals),
+        ] {
+            for black_pattern in [
+                (0, 0, Vec::new()),
+                (2, 3, vec![0, 5, 11, 7, 13, 19]),
+                // Short pattern slice exercises the unwrap_or(0) fallback.
+                (3, 3, vec![4, 9]),
+            ] {
+                for white in [16383u32, 100] {
+                    let sensor = rawmakase_raw::Sensor {
+                        width: 10,
+                        height: 8,
+                        channels: 1,
+                        data: match &data {
+                            rawmakase_raw::SensorData::U16(v) => {
+                                rawmakase_raw::SensorData::U16(v.clone())
+                            }
+                            rawmakase_raw::SensorData::F32(v) => {
+                                rawmakase_raw::SensorData::F32(v.clone())
+                            }
+                        },
+                        area: [2, 1, 7, 6],
+                        black: [128, 130, 129, 131],
+                        black_pattern: black_pattern.clone(),
+                        white,
+                        linear_white: [0; 4],
+                    };
+                    let got = super::visible(&sensor, ch);
+                    let want = reference(&sensor, &ch);
+                    assert_eq!(got.len(), want.len());
+                    for (g, w) in got.iter().zip(&want) {
+                        assert_eq!(g.to_bits(), w.to_bits());
+                    }
+                }
+            }
+        }
+        // Empty visible area returns empty without panicking.
+        let empty = rawmakase_raw::Sensor {
+            width: 4,
+            height: 4,
+            channels: 1,
+            data: rawmakase_raw::SensorData::U16(vec![0; 16]),
+            area: [0, 0, 0, 4],
+            black: [0; 4],
+            black_pattern: (0, 0, Vec::new()),
+            white: 4095,
+            linear_white: [0; 4],
+        };
+        assert!(super::visible(&empty, ch).is_empty());
     }
 }

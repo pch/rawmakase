@@ -26,6 +26,7 @@ use moxcms::{
     ToneReprCurve, TransformOptions,
 };
 use rawmakase_model::color::OutputSpace;
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -80,6 +81,10 @@ pub fn display_transform(path: &Path, data: &mut [u8]) -> Result<()> {
     ensure!(data.len().is_multiple_of(3), "Invalid RGB buffer");
     let transform = cached(path)
         .with_context(|| format!("Cannot use monitor ICC profile {}", path.display()))?;
+    if transform.in_place_infallible() {
+        transform.apply(data)?;
+        return Ok(());
+    }
     let mut out = data.to_vec();
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| transform.apply(&mut out)))
         .map_err(|_| anyhow::anyhow!("Cannot use monitor ICC profile {}", path.display()))??;
@@ -119,7 +124,7 @@ const LUT_XYZ: f64 = 65535. / 32768.;
 
 /// sRGB to a monitor, built from its profile.
 struct Transform {
-    srgb: Curves,
+    decode: [[f64; 256]; 3],
     /// sRGB to XYZ (D50), the sRGB profile's colorants, and back.
     to_xyz: Mat3,
     from_xyz: Mat3,
@@ -130,12 +135,18 @@ struct Transform {
 }
 
 enum Monitor {
-    /// XYZ to the monitor's linear RGB, and its tone curves.
-    Matrix { from_xyz: Mat3, curves: Curves },
+    /// XYZ to the monitor's linear RGB, and the inverses of its tone curves.
+    Matrix {
+        from_xyz: Mat3,
+        inverse: [Inverse; 3],
+    },
     /// A lut8/lut16 table from XYZ to the monitor's RGB.
     XyzLut(Table),
-    /// moxcms's transform from sRGB.
-    Lut(Arc<moxcms::TransformF32Executor>),
+    /// moxcms's transform from sRGB, with sRGB's inverse tone curves.
+    Lut {
+        forward: Arc<moxcms::TransformF32Executor>,
+        srgb_inverse: [Inverse; 3],
+    },
 }
 
 impl Transform {
@@ -146,6 +157,9 @@ impl Transform {
         let to_xyz = colorants(&srgb);
         let from_xyz = invert(to_xyz).context("Singular sRGB colorants")?;
         let srgb_curves = Curves::of(&srgb)?;
+        let decode: [[f64; 256]; 3] = std::array::from_fn(|c| {
+            std::array::from_fn(|v| eval(&srgb_curves.0[c], v as f64 / 255.))
+        });
         let colorimetric =
             dst.lut_b_to_a_colorimetric.is_some() || dst.lut_a_to_b_colorimetric.is_some();
         let perceptual = dst.lut_b_to_a_perceptual.is_some();
@@ -162,7 +176,7 @@ impl Transform {
             (
                 Monitor::Matrix {
                     from_xyz: inverse,
-                    curves,
+                    inverse: curves.inverses(),
                 },
                 mul(m, device_black),
             )
@@ -191,10 +205,12 @@ impl Transform {
             };
             let monitor = match xyz_table(dst.lut_b_to_a_colorimetric.as_ref()) {
                 Some(t) => Monitor::XyzLut(Table::of(&t, true)?),
-                None => Monitor::Lut(
-                    srgb.create_transform_f32(Layout::Rgb, &dst, Layout::Rgb, options)
+                None => Monitor::Lut {
+                    forward: srgb
+                        .create_transform_f32(Layout::Rgb, &dst, Layout::Rgb, options)
                         .map_err(error)?,
-                ),
+                    srgb_inverse: srgb_curves.inverses(),
+                },
             };
             // The device black through the colorimetric table, to XYZ (through
             // linear sRGB when moxcms applies it); with only perceptual
@@ -223,7 +239,7 @@ impl Transform {
             "Implausible monitor black"
         );
         Ok(Self {
-            srgb: srgb_curves,
+            decode,
             to_xyz,
             from_xyz,
             black,
@@ -231,51 +247,62 @@ impl Transform {
         })
     }
 
+    fn in_place_infallible(&self) -> bool {
+        !matches!(self.monitor, Monitor::Lut { .. })
+    }
+
     fn apply(&self, data: &mut [u8]) -> Result<()> {
-        let decode: [Vec<f64>; 3] = std::array::from_fn(|c| {
-            (0..256)
-                .map(|v| eval(&self.srgb.0[c], v as f64 / 255.))
-                .collect()
-        });
+        const CHUNK: usize = 3 * 4096;
         // XYZ after black-point compensation, per pixel.
         let compensated = |p: &[u8]| -> [f64; 3] {
             let xyz = mul(
                 self.to_xyz,
-                std::array::from_fn(|c| decode[c][usize::from(p[c])]),
+                std::array::from_fn(|c| self.decode[c][usize::from(p[c])]),
             );
             std::array::from_fn(|c| xyz[c] * (1. - self.black[c] / D50[c]) + self.black[c])
         };
         match &self.monitor {
-            Monitor::Matrix { from_xyz, curves } => {
-                let inverse = curves.inverses();
-                for p in data.as_chunks_mut::<3>().0 {
-                    let rgb = mul(*from_xyz, compensated(p));
-                    for c in 0..3 {
-                        p[c] = quantize(inverse[c].apply(rgb[c]));
+            Monitor::Matrix { from_xyz, inverse } => {
+                data.par_chunks_mut(CHUNK).for_each(|chunk| {
+                    for p in chunk.as_chunks_mut::<3>().0 {
+                        let rgb = mul(*from_xyz, compensated(p));
+                        for c in 0..3 {
+                            p[c] = quantize(inverse[c].apply(rgb[c]));
+                        }
                     }
-                }
+                });
             }
             Monitor::XyzLut(table) => {
-                for p in data.as_chunks_mut::<3>().0 {
-                    let rgb = table.apply(compensated(p).map(|v| v / LUT_XYZ));
-                    for c in 0..3 {
-                        p[c] = quantize(rgb[c]);
+                data.par_chunks_mut(CHUNK).for_each(|chunk| {
+                    for p in chunk.as_chunks_mut::<3>().0 {
+                        let rgb = table.apply(compensated(p).map(|v| v / LUT_XYZ));
+                        for c in 0..3 {
+                            p[c] = quantize(rgb[c]);
+                        }
                     }
-                }
+                });
             }
-            Monitor::Lut(forward) => {
+            Monitor::Lut {
+                forward,
+                srgb_inverse,
+            } => {
                 // Back to encoded sRGB, which moxcms's transform takes.
-                let inverse = self.srgb.inverses();
-                let mut src = Vec::with_capacity(data.len());
-                for p in data.as_chunks::<3>().0 {
-                    let rgb = mul(self.from_xyz, compensated(p));
-                    src.extend((0..3).map(|c| inverse[c].apply(rgb[c]) as f32));
-                }
-                let mut out = vec![0f32; src.len()];
-                forward.transform(&src, &mut out).map_err(error)?;
-                for (d, v) in data.iter_mut().zip(out) {
-                    *d = quantize(f64::from(v));
-                }
+                data.par_chunks_mut(CHUNK).try_for_each_init(
+                    || (Vec::with_capacity(CHUNK), Vec::with_capacity(CHUNK)),
+                    |(src, out), chunk| -> Result<()> {
+                        src.clear();
+                        for p in chunk.as_chunks::<3>().0 {
+                            let rgb = mul(self.from_xyz, compensated(p));
+                            src.extend((0..3).map(|c| srgb_inverse[c].apply(rgb[c]) as f32));
+                        }
+                        out.resize(src.len(), 0.);
+                        forward.transform(src, out).map_err(error)?;
+                        for (d, &v) in chunk.iter_mut().zip(out.iter()) {
+                            *d = quantize(f64::from(v));
+                        }
+                        Ok(())
+                    },
+                )?;
             }
         }
         Ok(())
@@ -996,6 +1023,39 @@ mod tests {
                 .max()
                 .unwrap();
             assert!(worst <= 1, "{name}: up to {worst} code values off");
+        }
+    }
+
+    /// Multi-chunk buffers spanning more than one Rayon chunk (4096 pixels) produce
+    /// identical bytes to transforming the same pixels individually, for Matrix,
+    /// XyzLut, and moxcms Lut monitor profiles.
+    #[test]
+    fn parallel_chunked_display_transform_is_exact_across_all_monitor_paths() {
+        let pixels = grid(); // 18^3 = 5832 pixels (> 4096 chunk size)
+        assert!(pixels.len() > 3 * 4096);
+        let probe_indices = [0usize, 1, 2047, 4095, 4096, 4097, 5831];
+        for name in [
+            "display-p3-v4",
+            "raised-black-matrix-v4",
+            "raised-black-lut-v2",
+            "raised-black-lut-v4",
+        ] {
+            let path = fixture(&format!("{name}.icc"));
+            let mut bulk = pixels.clone();
+            super::display_transform(&path, &mut bulk).unwrap();
+            // A second call hits the cached Transform with precomputed tables.
+            let mut cached_again = pixels.clone();
+            super::display_transform(&path, &mut cached_again).unwrap();
+            assert_eq!(bulk, cached_again, "{name}: cached transform diverged");
+            for idx in probe_indices {
+                let mut single = pixels[idx * 3..idx * 3 + 3].to_vec();
+                super::display_transform(&path, &mut single).unwrap();
+                assert_eq!(
+                    &bulk[idx * 3..idx * 3 + 3],
+                    single.as_slice(),
+                    "{name}: pixel {idx}"
+                );
+            }
         }
     }
 }
