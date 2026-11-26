@@ -63,6 +63,7 @@ check: check-python check-tools check-msrv
 	python3 scripts/deps.py check
 	scripts/crate-closures.sh
 	python3 scripts/public-api.py check
+	python3 scripts/test_public_api.py
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks

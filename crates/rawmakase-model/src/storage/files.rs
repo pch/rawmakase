@@ -61,7 +61,14 @@ pub fn persist(staged: NamedTempFile, path: &Path, replace: Replace) -> Result<(
         Replace::Overwrite => staged.persist(path),
         Replace::NoClobber => persist_noclobber(staged, path),
     }
-    .map_err(|e| e.error)?;
+    .map_err(|e| match e.error.kind() {
+        // Another writer took the name since the caller looked: the
+        // destination exists, as it would have when the caller looked.
+        io::ErrorKind::AlreadyExists if replace == Replace::NoClobber => {
+            crate::error::Exists::from_error(e.error.into()).into()
+        }
+        _ => anyhow::Error::from(e.error),
+    })?;
     sync_dir(parent_dir(path))
 }
 /// [`NamedTempFile::persist_noclobber`], also on drives that support neither
@@ -230,6 +237,19 @@ pub fn parent_dir(path: &Path) -> &Path {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A file another writer put at the name before a staged one is kept is
+    /// left alone, and the refusal says the destination exists.
+    #[test]
+    fn keeping_a_file_where_one_appeared_meanwhile_is_refused_as_existing() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("out.jpg");
+        let staged = staging_file(dir.path())?;
+        fs::write(&path, b"theirs")?;
+        let e = persist(staged, &path, Replace::NoClobber).unwrap_err();
+        assert!(e.is::<crate::error::Exists>(), "{e:#}");
+        assert_eq!(fs::read(&path)?, b"theirs");
+        Ok(())
+    }
     #[test]
     fn a_raw_is_known_by_its_extension_in_any_case_unless_hidden() {
         for name in ["A.NEF", "a.nef", "A.Nef", "dir.x/B.DNG", "C.cr3", "D.X3F"] {

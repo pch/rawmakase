@@ -1,0 +1,34 @@
+const rawmakase_fixture_core::Run::LIMIT: usize
+fn rawmakase_fixture_core::Run::ready(&self) -> bool { default }
+fn rawmakase_fixture_core::Run::run(&self, x: T) -> <Self as rawmakase_fixture_core::Run>::Output
+impl core::marker::Send for rawmakase_fixture_core::Error
+impl core::marker::Send for rawmakase_fixture_core::Rich
+impl core::marker::Send for rawmakase_fixture_core::Shown
+impl core::marker::Sync for rawmakase_fixture_core::Error
+impl core::marker::Sync for rawmakase_fixture_core::Rich
+impl core::marker::Sync for rawmakase_fixture_core::Shown
+impl<T> core::marker::Send for rawmakase_fixture_core::Holder<T> where T: core::marker::Send
+impl<T> core::marker::Sync for rawmakase_fixture_core::Holder<T> where T: core::marker::Sync
+pub async fn rawmakase_fixture_core::Holder::wait(&self) [impl<T: core::clone::Clone> rawmakase_fixture_core::Holder<T>]
+pub enum rawmakase_fixture_core::Rich #[non_exhaustive]
+pub fn rawmakase_fixture_core::Holder::with<U>(&self, _u: U) -> T where U: core::convert::Into<alloc::string::String> [impl<T: core::clone::Clone> rawmakase_fixture_core::Holder<T>]
+pub fn rawmakase_fixture_core::Shown::kept(&self) -> u8
+pub fn rawmakase_fixture_core::takes(shown: &rawmakase_fixture_core::Shown) -> core::option::Option<&rawmakase_fixture_core::Shown>
+pub mod rawmakase_fixture_core::variants
+pub rawmakase_fixture_core::Holder::t: T
+pub rawmakase_fixture_core::Rich::Ext { c: u8 } #[non_exhaustive]
+pub rawmakase_fixture_core::Rich::Struct { a: i32, b: bool }
+pub rawmakase_fixture_core::Rich::Tuple(u32, alloc::string::String)
+pub rawmakase_fixture_core::Rich::Unit
+pub rawmakase_fixture_core::Shown::value: u8
+pub struct rawmakase_fixture_core::Error
+pub struct rawmakase_fixture_core::Holder<T = u32> #[non_exhaustive]
+pub struct rawmakase_fixture_core::Shown
+pub trait rawmakase_fixture_core::Run<T>: core::marker::Send
+pub type rawmakase_fixture_core::Result<T, E = rawmakase_fixture_core::Error> = core::result::Result<T, E>
+pub use rawmakase_fixture_core::variants::Ext = rawmakase_fixture_core::Rich::Ext
+pub use rawmakase_fixture_core::variants::Struct = rawmakase_fixture_core::Rich::Struct
+pub use rawmakase_fixture_core::variants::Tuple = rawmakase_fixture_core::Rich::Tuple
+pub use rawmakase_fixture_core::variants::Unit = rawmakase_fixture_core::Rich::Unit
+rawmakase_fixture_core::Shown has private fields
+type rawmakase_fixture_core::Run::Output

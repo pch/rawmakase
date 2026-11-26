@@ -89,13 +89,6 @@ change a result, is listed in the plan
 ([What stays process-wide](embedding-plan.md#what-stays-process-wide)) and
 moves here as each part is built.
 
-## The `workspace` module
-
-`rawmakase_core::workspace` hands RAWmakase's own app the crates' handles on
-what a context holds (its decode cache), which its workers pass to the crates
-under the library. An app outside the repository has no use for it: it names
-types the library doesn't show, and may change or go without notice.
-
 ## Changes
 
 The library's public items are listed in

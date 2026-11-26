@@ -15,6 +15,7 @@ point only down:
 ```mermaid
 flowchart TD
     app["rawmakase (app, CLI)"]
+    core["rawmakase-core (the library)"]
     export[rawmakase-export]
     decode[rawmakase-decode]
     catalog[rawmakase-catalog]
@@ -42,7 +43,8 @@ flowchart TD
     hdrmerge[rawmakase-hdr-merge]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & denoise & fs & exthost & hdrmerge
+    app --> ctl & denoise & fs & exthost & hdrmerge & core
+    core --> decode
     denoise --> decode & inference & modelinstall
     export --> decode & engine & interop
     hdrmerge --> decode & interop & model & cancel

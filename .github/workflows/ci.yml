@@ -403,14 +403,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source-ref || github.sha }}
+      # The default toolchain is the one the cache is keyed by.
       - name: Rust
         run: |
           toolchain=$(sed -n 's/^TOOLCHAIN = "\(.*\)"$/\1/p' scripts/public-api.py)
+          test -n "$toolchain" || { echo "scripts/public-api.py names no TOOLCHAIN"; exit 1; }
           rustup toolchain install "$toolchain" --profile minimal
+          rustup default "$toolchain"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          workspaces: ". -> target/public-api"
           save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
       - run: python3 scripts/public-api.py check
+      # The script's own test, on the fixture crates beside it.
+      - run: python3 scripts/test_public_api.py
 
   postgres:
     name: Portable catalog SQL

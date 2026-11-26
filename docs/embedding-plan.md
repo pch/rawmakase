@@ -851,15 +851,24 @@ so the design is proved on one path before it is spread.
    join with the change that first reads them, so the context never offers
    a setting the crates under it still look up for themselves (the
    prototype's context recorded folders it couldn't honor). The build id is
-   required and stored, and keys the caches from step 4's first change. The
-   crates' cache handles, which the app's workers need, are in a
-   `workspace` module the guide marks as RAWmakase's own rather than on
-   `Context`, since they name types the library doesn't show. The app's
+   required and stored, and keys the caches from step 4's first change. The app's
    `Editor` holds the context and reads its decode cache from it; the
    command line's AI Denoise cache comes from the same `environment`
    module. The listing is read from rustdoc's JSON with a pinned nightly
-   (`scripts/public-api.py`), in a CI job of its own, and follows
-   re-exports into the workspace's crates.
+   (`scripts/public-api.py`, tested on fixture crates beside it), in a CI
+   job of its own, and follows re-exports into the workspace's crates,
+   naming a re-exported type by the library's path. The crates' cache
+   handles the app's workers need are in a `workspace` module behind a
+   feature of that name, which only the app turns on, so they are no part
+   of the surface; the library's own conversion from the crates' errors is
+   private to it, so `anyhow` isn't either. The error kinds also read the
+   crates' existing typed causes (a missing mask raster, patch or catalog
+   asset; AI Denoise's `Unsupported`), keep a cancelled job cancelled
+   whatever else its chain says, and keep their own kind through an
+   `anyhow` error and back; "already exists" from the system is not taken
+   for an existing destination, which is typed where it is refused (a
+   destination taken between a check and a write among them). The map's
+   tiles take the context's cache folder too.
 4. Explicit inputs for the path one photo takes, one change each, each call
    site passing from the context. First the caches' build id and the
    default folder they return to: the key comes from `current_exe`
@@ -875,7 +884,10 @@ so the design is proved on one path before it is spread.
    default destination and the keyword sets' Lightroom folder, the last
    uses of `directories`.
 5. The library's operations: opening, with a `Cancel`, since opening a
-   rendered file decodes it; decoding and its statistics, the photo handle
+   rendered file decodes it, and a RAW the decoders don't support refused
+   as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`
+   and `NotRaw` into a typed cause, as it does its `Cancelled`); decoding
+   and its statistics, the photo handle
    opening its file again for each decode; starting recipes from the
    context's raw defaults; presets with measures, Auto; changing a recipe
    by parameter, with what that needs of the model: a name for each

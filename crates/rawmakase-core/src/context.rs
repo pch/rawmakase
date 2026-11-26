@@ -49,7 +49,11 @@ struct Inner {
 struct Cache {
     dir: PathBuf,
     build_id: String,
+    // Read by the operations that decode (step 5 of docs/embedding-plan.md),
+    // and today by RAWmakase's app through `workspace`.
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     decoded: DecodeCache,
+    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     ai_denoise: AiCache,
 }
 
@@ -119,9 +123,11 @@ impl Context {
 }
 
 /// The crates' own handles on what a [`Context`] holds, for RAWmakase's own
-/// app, whose workers pass them to the crates under the library. An app outside
-/// the workspace has no use for them: they name types the library doesn't
-/// show, and may change or go without notice.
+/// app, whose workers pass them to the crates under the library. Only with the
+/// `workspace` feature, which the app turns on: they name types the library
+/// doesn't show, and are no part of its surface.
+#[cfg(feature = "workspace")]
+#[doc(hidden)]
 pub mod workspace {
     use super::Context;
     use rawmakase_decode::ai::cache::AiCache;
@@ -143,7 +149,6 @@ pub mod workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use workspace::{ai_denoise_cache, decode_cache};
 
     fn root() -> PathBuf {
         std::env::temp_dir().join("rawmakase-core-context-test")
@@ -161,15 +166,21 @@ mod tests {
             .unwrap();
         assert_eq!(ctx.cache_dir(), Some(root().as_path()));
         assert_eq!(ctx.build_id(), Some("build-1"));
-        let decoded = decode_cache(&ctx).unwrap();
+        let decoded = &ctx.inner.cache.as_ref().unwrap().decoded;
         assert_eq!(decoded.dir(), root().join("decoded"));
         assert_eq!(decoded.limit(), 7);
-        let ai = ai_denoise_cache(&ctx).unwrap();
+        let ai = &ctx.inner.cache.as_ref().unwrap().ai_denoise;
         assert_eq!(ai.dir(), root().join("ai-denoise"));
         assert_eq!(ai.limit(), 9);
         // A clone is the same context: a limit changed through one is the other's.
-        decode_cache(&ctx.clone()).unwrap().set_limit(11);
-        assert_eq!(decode_cache(&ctx).unwrap().limit(), 11);
+        ctx.clone()
+            .inner
+            .cache
+            .as_ref()
+            .unwrap()
+            .decoded
+            .set_limit(11);
+        assert_eq!(ctx.inner.cache.as_ref().unwrap().decoded.limit(), 11);
     }
 
     #[test]
@@ -186,7 +197,7 @@ mod tests {
     #[test]
     fn a_context_without_a_cache_has_none() {
         let ctx = Context::builder().build().unwrap();
-        assert!(decode_cache(&ctx).is_none() && ctx.build_id().is_none());
+        assert!(ctx.cache_dir().is_none() && ctx.build_id().is_none());
     }
 
     #[test]

@@ -44,5 +44,7 @@
 mod context;
 mod error;
 
-pub use context::{CacheLimits, Context, ContextBuilder, workspace};
+#[cfg(feature = "workspace")]
+pub use context::workspace;
+pub use context::{CacheLimits, Context, ContextBuilder};
 pub use error::{Error, ErrorKind, Result};

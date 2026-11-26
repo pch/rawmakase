@@ -108,7 +108,9 @@ struct View {
 pub(in crate::app::library) struct Map {
     source: Option<Source>,
     fetcher: Option<Fetcher>,
-    root: PathBuf,
+    /// Where fetched tiles are kept: the context's cache folder's
+    /// `map-tiles`, once the editor gives it. Without one no tile is fetched.
+    root: Option<PathBuf>,
     net: Net,
     textures: HashMap<TileId, egui::TextureHandle>,
     order: VecDeque<TileId>,
@@ -117,12 +119,13 @@ pub(in crate::app::library) struct Map {
 }
 impl Map {
     pub(in crate::app::library) fn new() -> Self {
-        Self::at(
-            crate::decode_cache::cache_dir().join("map-tiles"),
-            Net::default(),
-        )
+        Self::at(None, Net::default())
     }
-    fn at(root: PathBuf, net: Net) -> Self {
+    /// Keeps fetched tiles in `map-tiles` of the cache folder `cache`.
+    pub(in crate::app::library) fn keep_tiles_in(&mut self, cache: Option<&std::path::Path>) {
+        self.root = cache.map(|c| c.join("map-tiles"));
+    }
+    fn at(root: Option<PathBuf>, net: Net) -> Self {
         Self {
             source: None,
             fetcher: None,
@@ -137,7 +140,7 @@ impl Map {
     /// Tiles kept in `root`, fetched from a plain HTTP server, for tests.
     #[cfg(test)]
     pub(in crate::app) fn for_tests(root: PathBuf) -> Self {
-        Self::at(root, Net { https_only: false })
+        Self::at(Some(root), Net { https_only: false })
     }
     /// Shows the map from `source` from now on, or none; the workspace sets it
     /// every frame. Tiles of another server are dropped, and arrive no more.
@@ -272,9 +275,11 @@ impl Map {
             // while nothing else repaints.
             ui.ctx().request_repaint_after(RETRY);
         }
-        if !missing.is_empty() {
+        if !missing.is_empty()
+            && let Some(root) = &self.root
+        {
             let fetcher = self.fetcher.get_or_insert_with(|| {
-                Fetcher::new(self.root.clone(), self.net.clone(), ui.ctx().clone())
+                Fetcher::new(root.clone(), self.net.clone(), ui.ctx().clone())
             });
             fetcher.want(&source.template, missing);
         }

@@ -6,19 +6,26 @@ crates").
     python3 scripts/public-api.py check   # what CI runs
     python3 scripts/public-api.py write   # rewrite the listing from the code
 
-It reads rustdoc's JSON for `rawmakase-core`, which needs a nightly toolchain
-(TOOLCHAIN below; `rustup toolchain install` it once), and lists every item an
-app can name: the library's own, and what it re-exports from the workspace's
-crates, followed into those crates so a re-exported type's fields, methods and
-trait implementations are listed under the library's path too. One line per
-item, sorted, in `crates/rawmakase-core/public-api.txt`. `check` fails when the
-code and the listing differ; a change to the surface rewrites the listing in
-the same commit and says so in docs/embedding.md's list of changes.
+It reads rustdoc's JSON for `rawmakase-core` with its default features, which
+needs a nightly toolchain (TOOLCHAIN below; `rustup toolchain install` it once),
+and lists every item an app can name: the library's own, and what it re-exports
+from the workspace's crates, followed into those crates so a re-exported type's
+fields, methods and trait implementations are listed under the library's path
+too. One line per item, sorted, in `crates/rawmakase-core/public-api.txt`.
+`check` fails when the code and the listing differ; a change to the surface
+rewrites the listing in the same commit and says so in docs/embedding.md's list
+of changes.
+
+Each line carries what a change to would break an app: a function's
+qualifiers, generics with their bounds and defaults, `where` clauses,
+parameters and result; a type's generics and `#[non_exhaustive]`; each enum
+variant's fields; a trait's supertraits and items; each implementation's
+generics and the type it is for. A type is named by the path an app names it
+by, so a re-exported item reads as the library's wherever it appears.
 
 Blanket implementations (`impl<T> From<T> for T`), auto traits other than
 `Send` and `Sync`, and `StructuralPartialEq` are left out: they say nothing an
-app relies on. A type is named by the path an app names it by, so a re-exported
-item reads as the library's.
+app relies on. Items hidden from the documentation are left out by rustdoc.
 """
 import json
 import subprocess
@@ -36,13 +43,13 @@ KEPT_AUTO = {"Send", "Sync"}
 LEFT_OUT = {"StructuralPartialEq"}
 
 
-def rustdoc(package):
-    """rustdoc's JSON for one workspace package's library."""
+def rustdoc(package, workspace=ROOT):
+    """rustdoc's JSON for the library of `package` in `workspace`."""
     target = ROOT / "target" / "public-api"
     out = subprocess.run(
         ["cargo", f"+{TOOLCHAIN}", "rustdoc", "--locked", "-q", "-p", package, "--lib",
          "--target-dir", str(target), "--", "-Zunstable-options", "--output-format", "json"],
-        cwd=ROOT, capture_output=True, text=True,
+        cwd=workspace, capture_output=True, text=True,
     )
     if out.returncode:
         sys.exit(f"rustdoc failed for {package} (is {TOOLCHAIN} installed?):\n{out.stderr}")
@@ -53,23 +60,34 @@ def rustdoc(package):
 
 
 class Crate:
-    """One crate's rustdoc JSON, with a renderer for its types."""
+    """One crate's rustdoc JSON, rendered with the listing's shared names."""
 
-    def __init__(self, doc):
+    def __init__(self, doc, public):
         self.doc = doc
         self.index = doc["index"]
         self.paths = doc["paths"]
-        # The library's path of each item it shows, set as the listing walks.
-        self.public = {}
+        self.name = self.index[str(doc["root"])]["name"]
+        # The library's path of each item it shows, by (crate, its own path),
+        # shared by every crate the listing reads.
+        self.public = public
 
     def item(self, id_):
-        return self.index.get(str(id_))
+        return self.index.get(str(id_)) if id_ is not None else None
+
+    def canonical(self, id_):
+        """(crate, path) of an item this crate refers to by `id_`."""
+        entry = self.paths.get(str(id_))
+        if entry is None:
+            return None
+        crate = self.name if entry["crate_id"] == 0 else \
+            self.doc["external_crates"][str(entry["crate_id"])]["name"]
+        return crate, tuple(entry["path"])
 
     def path_of(self, id_, fallback):
-        if str(id_) in self.public:
-            return self.public[str(id_)]
-        entry = self.paths.get(str(id_))
-        return "::".join(entry["path"]) if entry else fallback
+        key = self.canonical(id_)
+        if key is None:
+            return fallback
+        return self.public.get(key, "::".join(key[1]))
 
     def ty(self, t):
         if t is None:
@@ -93,18 +111,20 @@ class Crate:
         if kind == "impl_trait":
             return "impl " + " + ".join(self.bound(b) for b in v)
         if kind == "dyn_trait":
-            traits = [self.path_of(p["trait"]["id"], p["trait"]["path"]) + self.args(p["trait"].get("args"))
-                      for p in v["traits"]]
+            traits = [self.trait_path(p["trait"]) for p in v["traits"]]
             return "dyn " + " + ".join(traits + ([v["lifetime"]] if v.get("lifetime") else []))
         if kind == "qualified_path":
             trait = v.get("trait")
-            base = f"<{self.ty(v['self_type'])} as {self.path_of(trait['id'], trait['path'])}>" if trait \
+            base = f"<{self.ty(v['self_type'])} as {self.trait_path(trait)}>" if trait \
                 else self.ty(v["self_type"])
             return f"{base}::{v['name']}"
         if kind == "function_pointer":
             sig = v["sig"]
             return "fn(" + ", ".join(self.ty(x) for _, x in sig["inputs"]) + ")" + self.ret(sig["output"])
         return kind
+
+    def trait_path(self, t):
+        return self.path_of(t["id"], t["path"]) + self.args(t.get("args"))
 
     def args(self, a):
         if not a:
@@ -117,9 +137,12 @@ class Crate:
                              v.get("expr", "_") if k == "const" else "_")
             for c in a["angle_bracketed"].get("constraints", []):
                 binding = c["binding"]
-                rhs = self.ty(binding["equality"]["type"]) if "equality" in binding and "type" in binding["equality"] \
-                    else " + ".join(self.bound(b) for b in binding.get("constraint", []))
-                parts.append(f"{c['name']} = {rhs}")
+                if "equality" in binding:
+                    term = binding["equality"]
+                    rhs = self.ty(term["type"]) if "type" in term else term.get("constant", {}).get("expr", "_")
+                    parts.append(f"{c['name']} = {rhs}")
+                else:
+                    parts.append(f"{c['name']}: " + " + ".join(self.bound(b) for b in binding["constraint"]))
             return f"<{', '.join(parts)}>" if parts else ""
         if "parenthesized" in a:
             p = a["parenthesized"]
@@ -131,121 +154,227 @@ class Crate:
 
     def bound(self, b):
         if "trait_bound" in b:
-            t = b["trait_bound"]["trait"]
-            modifier = "?" if b["trait_bound"].get("modifier") == "maybe" else ""
-            return modifier + self.path_of(t["id"], t["path"]) + self.args(t.get("args"))
+            t = b["trait_bound"]
+            modifier = {"maybe": "?", "maybe_const": "~const "}.get(t.get("modifier"), "")
+            lifetimes = self.binder(t.get("generic_params", []))
+            return lifetimes + modifier + self.trait_path(t["trait"])
         if "outlives" in b:
             return b["outlives"]
+        if "use" in b:
+            return "use<" + ", ".join(p.get("lifetime", p.get("param", "_")) if isinstance(p, dict) else p
+                                      for p in b["use"]) + ">"
         return "_"
+
+    def binder(self, params):
+        names = [p["name"] for p in params]
+        return f"for<{', '.join(names)}> " if names else ""
 
     def generics(self, g):
         params = []
         for p in g["params"]:
             kind = p["kind"]
             if "type" in kind:
-                if kind["type"].get("is_synthetic"):
+                k = kind["type"]
+                if k.get("is_synthetic"):
                     continue
-                bounds = " + ".join(self.bound(b) for b in kind["type"]["bounds"])
-                params.append(p["name"] + (f": {bounds}" if bounds else ""))
+                text = p["name"]
+                if k["bounds"]:
+                    text += ": " + " + ".join(self.bound(b) for b in k["bounds"])
+                if k.get("default") is not None:
+                    text += f" = {self.ty(k['default'])}"
+                params.append(text)
             elif "lifetime" in kind:
-                params.append(p["name"])
+                outlives = kind["lifetime"].get("outlives", [])
+                params.append(p["name"] + (f": {' + '.join(outlives)}" if outlives else ""))
             elif "const" in kind:
-                params.append(f"const {p['name']}: {self.ty(kind['const']['type'])}")
+                k = kind["const"]
+                text = f"const {p['name']}: {self.ty(k['type'])}"
+                if k.get("default") is not None:
+                    text += f" = {k['default']}"
+                params.append(text)
         return f"<{', '.join(params)}>" if params else ""
+
+    def where(self, g):
+        clauses = []
+        for w in g.get("where_predicates", []):
+            if "bound_predicate" in w:
+                b = w["bound_predicate"]
+                clauses.append(self.binder(b.get("generic_params", [])) + self.ty(b["type"]) + ": "
+                               + " + ".join(self.bound(x) for x in b["bounds"]))
+            elif "lifetime_predicate" in w:
+                lp = w["lifetime_predicate"]
+                clauses.append(f"{lp['lifetime']}: {' + '.join(lp['outlives'])}")
+            elif "eq_predicate" in w:
+                e = w["eq_predicate"]
+                rhs = e["rhs"]
+                clauses.append(f"{self.ty(e['lhs'])} = " + (self.ty(rhs["type"]) if "type" in rhs else "_"))
+        return f" where {', '.join(clauses)}" if clauses else ""
+
+
+def non_exhaustive(item):
+    return " #[non_exhaustive]" if any("non_exhaustive" in str(a) for a in item.get("attrs", [])) else ""
 
 
 class Lister:
-    def __init__(self, crates):
+    def __init__(self, crates, public, workspace):
         self.crates = crates
+        self.public = public
+        self.workspace = workspace
         self.lines = set()
 
-    def external(self, crate_id, crate):
-        """The workspace crate an external id belongs to, or None for std's and
-        third parties' (which are named, not followed)."""
-        name = crate.doc["external_crates"][str(crate_id)]["name"]
-        if not name.startswith("rawmakase_"):
+    def other(self, crate_name):
+        """A workspace crate's documentation, read once; None for std's and
+        third parties' crates, whose items are named, not followed."""
+        if not crate_name.startswith("rawmakase_"):
             return None
-        key = name
-        if key not in self.crates:
-            self.crates[key] = Crate(rustdoc(name.replace("_", "-")))
-        return self.crates[key]
+        if crate_name not in self.crates:
+            doc = rustdoc(crate_name.replace("_", "-"), self.workspace)
+            self.crates[crate_name] = Crate(doc, self.public)
+        return self.crates[crate_name]
+
+    def name(self, crate, item, path):
+        """Records that `item` of `crate` is named `path` by an app."""
+        key = crate.canonical(item["id"])
+        if key is not None:
+            self.public.setdefault(key, path)
 
     def walk_module(self, crate, item, prefix):
         for child in item["inner"]["module"]["items"]:
             self.walk(crate, crate.item(child), prefix)
 
-    def walk(self, crate, item, prefix):
+    def walk(self, crate, item, prefix, name=None):
         if item is None or item["visibility"] != "public":
             return
         (kind, v), = item["inner"].items()
         if kind == "use":
             self.walk_use(crate, v, prefix)
             return
-        name = item["name"]
-        path = f"{prefix}::{name}"
-        crate.public.setdefault(str(item["id"]), path)
+        path = f"{prefix}::{name or item['name']}"
+        self.name(crate, item, path)
         if kind == "module":
             self.lines.add(f"pub mod {path}")
             self.walk_module(crate, item, path)
         elif kind == "struct":
-            self.lines.add(f"pub struct {path}{crate.generics(v['generics'])}")
-            fields = v["kind"].get("plain", {}).get("fields", []) if isinstance(v["kind"], dict) else []
-            tuple_fields = v["kind"].get("tuple", []) if isinstance(v["kind"], dict) else []
-            for f in fields:
-                field = crate.item(f)
-                if field and field["visibility"] == "public":
-                    self.lines.add(f"pub {path}::{field['name']}: {crate.ty(field['inner']['struct_field'])}")
-            for i, f in enumerate(tuple_fields):
-                field = crate.item(f) if f is not None else None
-                if field and field["visibility"] == "public":
-                    self.lines.add(f"pub {path}::{i}: {crate.ty(field['inner']['struct_field'])}")
+            g = v["generics"]
+            self.lines.add(f"pub struct {path}{crate.generics(g)}{crate.where(g)}{non_exhaustive(item)}")
+            shape = v["kind"]
+            if isinstance(shape, dict) and "plain" in shape:
+                self.fields(crate, shape["plain"]["fields"], path)
+                if shape["plain"].get("has_stripped_fields"):
+                    self.lines.add(f"{path} has private fields")
+            elif isinstance(shape, dict) and "tuple" in shape:
+                for i, f in enumerate(shape["tuple"]):
+                    field = crate.item(f)
+                    if field and field["visibility"] == "public":
+                        self.lines.add(f"pub {path}::{i}: {crate.ty(field['inner']['struct_field'])}")
+            self.impls(crate, v["impls"], path)
+        elif kind == "union":
+            self.lines.add(f"pub union {path}{crate.generics(v['generics'])}")
+            self.fields(crate, v["fields"], path)
             self.impls(crate, v["impls"], path)
         elif kind == "enum":
-            attrs = " ".join(a for a in item.get("attrs", []) if "non_exhaustive" in str(a))
-            self.lines.add(f"pub enum {path}{crate.generics(v['generics'])}{' #[non_exhaustive]' if attrs else ''}")
-            for variant in v["variants"]:
-                self.lines.add(f"pub {path}::{crate.item(variant)['name']}")
+            g = v["generics"]
+            self.lines.add(f"pub enum {path}{crate.generics(g)}{crate.where(g)}{non_exhaustive(item)}")
+            for variant_id in v["variants"]:
+                self.variant(crate, crate.item(variant_id), path)
             self.impls(crate, v["impls"], path)
         elif kind == "function":
             self.lines.add(self.function(crate, item, path))
-        elif kind in ("constant", "static"):
-            t = v["type"] if kind == "constant" else v["type"]
-            self.lines.add(f"pub {'const' if kind == 'constant' else 'static'} {path}: {crate.ty(t)}")
+        elif kind == "constant":
+            self.lines.add(f"pub const {path}: {crate.ty(v['type'])}")
+        elif kind == "static":
+            self.lines.add(f"pub static {'mut ' if v.get('is_mutable') else ''}{path}: {crate.ty(v['type'])}")
         elif kind == "type_alias":
-            self.lines.add(f"pub type {path}{crate.generics(v['generics'])} = {crate.ty(v['type'])}")
+            g = v["generics"]
+            self.lines.add(f"pub type {path}{crate.generics(g)}{crate.where(g)} = {crate.ty(v['type'])}")
         elif kind == "trait":
-            self.lines.add(f"pub trait {path}")
+            self.trait(crate, item, v, path)
         else:
             self.lines.add(f"pub {kind} {path}")
 
+    def fields(self, crate, ids, path):
+        for f in ids:
+            field = crate.item(f)
+            if field and field["visibility"] == "public":
+                self.lines.add(f"pub {path}::{field['name']}: {crate.ty(field['inner']['struct_field'])}")
+
+    def variant(self, crate, item, path):
+        v = item["inner"]["variant"]
+        shape = v["kind"]
+        line = f"pub {path}::{item['name']}"
+        if isinstance(shape, dict) and "tuple" in shape:
+            types = [crate.ty(crate.item(f)["inner"]["struct_field"]) if f is not None else "_"
+                     for f in shape["tuple"]]
+            line += f"({', '.join(types)})"
+        elif isinstance(shape, dict) and "struct" in shape:
+            fields = [crate.item(f) for f in shape["struct"]["fields"]]
+            body = [f"{f['name']}: {crate.ty(f['inner']['struct_field'])}" for f in fields if f]
+            if shape["struct"].get("has_stripped_fields"):
+                body.append("..")
+            line += " { " + ", ".join(body) + " }"
+        if v.get("discriminant"):
+            line += f" = {v['discriminant'].get('expr', v['discriminant'].get('value'))}"
+        self.lines.add(line + non_exhaustive(item))
+
+    def trait(self, crate, item, v, path):
+        g = v["generics"]
+        supertraits = " + ".join(crate.bound(b) for b in v.get("bounds", []))
+        quals = ("unsafe " if v.get("is_unsafe") else "") + ("auto " if v.get("is_auto") else "")
+        self.lines.add(f"pub {quals}trait {path}{crate.generics(g)}"
+                       f"{': ' + supertraits if supertraits else ''}{crate.where(g)}")
+        for member_id in v["items"]:
+            member = crate.item(member_id)
+            if member is None:
+                continue
+            (mkind, m), = member["inner"].items()
+            mpath = f"{path}::{member['name']}"
+            if mkind == "function":
+                self.lines.add(self.function(crate, member, mpath, public=False))
+            elif mkind == "assoc_type":
+                bounds = " + ".join(crate.bound(b) for b in m.get("bounds", []))
+                default = f" = {crate.ty(m['type'])}" if m.get("type") else ""
+                self.lines.add(f"type {mpath}{crate.generics(m['generics'])}"
+                               f"{': ' + bounds if bounds else ''}{default}")
+            elif mkind == "assoc_const":
+                default = f" = {m['value']}" if m.get("value") else ""
+                self.lines.add(f"const {mpath}: {crate.ty(m['type'])}{default}")
+
     def walk_use(self, crate, use, prefix):
-        target = crate.item(use["id"]) if use.get("id") is not None else None
+        target = crate.item(use.get("id"))
         if target is not None:
-            if use["is_glob"]:
-                self.walk_module(crate, target, prefix)
-            else:
-                self.walk(crate, {**target, "name": use["name"]}, prefix)
+            self.walk_target(crate, target, use, prefix)
             return
-        entry = crate.paths.get(str(use["id"])) if use.get("id") is not None else None
+        key = crate.canonical(use.get("id")) if use.get("id") is not None else None
         path = f"{prefix}::{use['name']}"
-        if entry is None:
+        if key is None:
             self.lines.add(f"pub use {path} = {use['source']}")
             return
-        other = self.external(entry["crate_id"], crate)
-        if other is None:
-            self.lines.add(f"pub use {path} = {'::'.join(entry['path'])}")
+        other = self.other(key[0])
+        found = None
+        if other is not None:
+            # The same item in its own crate's documentation, found by its path.
+            found = next((other.item(i) for i, e in other.paths.items()
+                          if e["crate_id"] == 0 and tuple(e["path"]) == key[1] and other.item(i)), None)
+        if found is None:
+            self.public.setdefault(key, path)
+            self.lines.add(f"pub use {path} = {'::'.join(key[1])}")
             return
-        # The same item in its own crate's documentation, found by its path.
-        wanted = entry["path"]
-        for id_, e in other.paths.items():
-            if e["crate_id"] == 0 and e["path"] == wanted and other.item(id_):
-                found = other.item(id_)
-                if use["is_glob"]:
-                    self.walk_module(other, found, prefix)
-                else:
-                    self.walk(other, {**found, "name": use["name"]}, prefix)
-                return
-        self.lines.add(f"pub use {path} = {'::'.join(wanted)}")
+        self.walk_target(other, found, use, prefix)
+
+    def walk_target(self, crate, target, use, prefix):
+        (kind, _), = target["inner"].items()
+        if not use["is_glob"]:
+            self.walk(crate, target, prefix, name=use["name"])
+        elif kind == "module":
+            self.walk_module(crate, target, prefix)
+        elif kind == "enum":
+            # `pub use Enum::*`: the variants by their own names.
+            for variant_id in target["inner"]["enum"]["variants"]:
+                variant = crate.item(variant_id)
+                self.lines.add(f"pub use {prefix}::{variant['name']} = "
+                               f"{crate.path_of(target['id'], target['name'])}::{variant['name']}")
+        else:
+            self.lines.add(f"pub use {prefix}::* = {crate.path_of(target['id'], target['name'])}::*")
 
     def impls(self, crate, ids, path):
         for id_ in ids:
@@ -255,46 +384,69 @@ class Lister:
             v = imp["inner"]["impl"]
             if v.get("blanket_impl") is not None:
                 continue
+            g = v["generics"]
+            header = crate.generics(g)
+            target = crate.ty(v["for"])
             trait = v.get("trait")
             if trait is None:
+                # An inherent impl's generics and target go on each method, as
+                # an app sees them where it calls one.
+                context = f" [impl{header} {target}{crate.where(g)}]" if header or g.get("where_predicates") else ""
                 for m in v["items"]:
-                    method = crate.item(m)
-                    if method and method["visibility"] == "public" and "function" in method["inner"]:
-                        self.lines.add(self.function(crate, method, f"{path}::{method['name']}"))
-                    elif method and method["visibility"] == "public" and "assoc_const" in method["inner"]:
-                        c = method["inner"]["assoc_const"]
-                        self.lines.add(f"pub const {path}::{method['name']}: {crate.ty(c['type'])}")
+                    member = crate.item(m)
+                    if not member or member["visibility"] != "public":
+                        continue
+                    if "function" in member["inner"]:
+                        self.lines.add(self.function(crate, member, f"{path}::{member['name']}") + context)
+                    elif "assoc_const" in member["inner"]:
+                        c = member["inner"]["assoc_const"]
+                        self.lines.add(f"pub const {path}::{member['name']}: {crate.ty(c['type'])}{context}")
                 continue
             name = trait["path"].split("::")[-1]
             if (v.get("is_synthetic") and name not in KEPT_AUTO) or name in LEFT_OUT:
                 continue
             negative = "!" if v.get("is_negative") else ""
-            full = crate.path_of(trait["id"], trait["path"]) + crate.args(trait.get("args"))
-            self.lines.add(f"impl {negative}{full} for {path}")
+            unsafe = "unsafe " if v.get("is_unsafe") else ""
+            self.lines.add(f"{unsafe}impl{header} {negative}{crate.trait_path(trait)} for {target}{crate.where(g)}")
 
-    def function(self, crate, item, path):
+    def function(self, crate, item, path, public=True):
         f = item["inner"]["function"]
         sig = f["sig"]
         inputs = []
         for name, t in sig["inputs"]:
             if name == "self":
                 rendered = crate.ty(t)
-                inputs.append({"Self": "self", "&Self": "&self", "&mut Self": "&mut self"}.get(rendered, f"self: {rendered}"))
+                inputs.append({"Self": "self", "&Self": "&self", "&mut Self": "&mut self"}
+                              .get(rendered, f"self: {rendered}"))
             else:
                 inputs.append(f"{name}: {crate.ty(t)}")
+        if sig.get("is_c_variadic"):
+            inputs.append("...")
         header = f["header"]
-        quals = ("const " if header.get("is_const") else "") + ("unsafe " if header.get("is_unsafe") else "")
-        return f"pub {quals}fn {path}{crate.generics(f['generics'])}({', '.join(inputs)}){crate.ret(sig['output'])}"
+        abi = header.get("abi", "Rust")
+        quals = "".join([
+            "const " if header.get("is_const") else "",
+            "async " if header.get("is_async") else "",
+            "unsafe " if header.get("is_unsafe") else "",
+            "" if abi == "Rust" else f'extern "{next(iter(abi)) if isinstance(abi, dict) else abi}" ',
+        ])
+        g = f["generics"]
+        body = "" if public else ("" if f.get("has_body") is False else " { default }")
+        visibility = "pub " if public else ""
+        return (f"{visibility}{quals}fn {path}{crate.generics(g)}({', '.join(inputs)})"
+                f"{crate.ret(sig['output'])}{crate.where(g)}{body}")
 
 
-def listing():
-    core = Crate(rustdoc(CRATE))
+def listing(package=CRATE, workspace=ROOT):
+    """The public items of `package`, sorted, as the listing has them."""
+    public = {}
+    core = Crate(rustdoc(package, workspace), public)
+    crates = {core.name: core}
     root = core.item(core.doc["root"])
     # Twice: the first walk learns each item's public path, which the second
     # names it by wherever it appears.
-    crates = {0: core}
     for _ in range(2):
-        lister = Lister(crates)
+        lister = Lister(crates, public, workspace)
         lister.walk_module(core, root, root["name"])
     return sorted(lister.lines)
 

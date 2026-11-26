@@ -61,7 +61,8 @@ wgpu = { version = "30", default-features = false, features = ["wgsl"] }
 
 [dependencies]
 rawmakase-cancel = { path = "crates/rawmakase-cancel", version = "0.1.0" }
-rawmakase-core = { path = "crates/rawmakase-core", version = "0.1.0" }
+# The library; the app also takes the crates' handles on what its context holds.
+rawmakase-core = { path = "crates/rawmakase-core", version = "0.1.0", features = ["workspace"] }
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
 # AI Denoise's service and model pack, shared by the app and the command line.

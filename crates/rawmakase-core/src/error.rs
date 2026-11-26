@@ -58,25 +58,44 @@ impl Error {
     }
 }
 
-/// An error from a crate under the library, of the kind its typed causes say.
-///
-/// The crates mark each kind with a type somewhere in the chain
-/// (`rawmakase_cancel::Cancelled`, `rawmakase_model::error`'s four,
-/// `rawmakase_decode::raster::Unsupported`); a missing file is the system's
-/// "not found". The first cause in the chain that has a kind gives it, so a
-/// failure is the kind of what went wrong, not of a cause it was handled from.
-impl From<anyhow::Error> for Error {
-    fn from(cause: anyhow::Error) -> Self {
-        let kind = cause.chain().find_map(kind_of).unwrap_or(ErrorKind::Other);
+impl Error {
+    /// An error from a crate under the library, of the kind its typed causes
+    /// say.
+    ///
+    /// The crates mark each kind with a type somewhere in the chain
+    /// (`rawmakase_cancel::Cancelled`, `rawmakase_model::error`'s four, a
+    /// missing mask raster or catalog asset, the decoders' and AI Denoise's
+    /// `Unsupported`); a missing file is the system's "not found". Work that
+    /// was cancelled is cancelled whatever else its chain says. Otherwise the
+    /// first cause in the chain that has a kind gives it, so a failure is the
+    /// kind of what went wrong, not of a cause it was handled from.
+    #[allow(
+        dead_code,
+        reason = "the operations that return the crates' errors join in step 5"
+    )]
+    pub(crate) fn of(cause: anyhow::Error) -> Self {
+        let cancelled = cause.chain().any(|c| {
+            c.is::<rawmakase_cancel::Cancelled>()
+                || c.downcast_ref::<Error>().is_some_and(Error::is_cancelled)
+        });
+        let kind = if cancelled {
+            ErrorKind::Cancelled
+        } else {
+            cause.chain().find_map(kind_of).unwrap_or(ErrorKind::Other)
+        };
         Self { kind, cause }
     }
 }
 
+#[allow(dead_code, reason = "read by `Error::of`")]
 fn kind_of(cause: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
     use rawmakase_model::error::{Changed, Exists, Invalid, Missing};
-    if cause.is::<rawmakase_cancel::Cancelled>() {
-        Some(ErrorKind::Cancelled)
-    } else if cause.is::<rawmakase_decode::raster::Unsupported>() {
+    use rawmakase_model::storage::{mask_assets, recipe_assets};
+    if let Some(e) = cause.downcast_ref::<Error>() {
+        Some(e.kind)
+    } else if cause.is::<rawmakase_decode::raster::Unsupported>()
+        || cause.is::<rawmakase_decode::ai::denoise::Unsupported>()
+    {
         Some(ErrorKind::Unsupported)
     } else if cause.is::<Missing>() {
         Some(ErrorKind::Missing)
@@ -86,13 +105,17 @@ fn kind_of(cause: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
         Some(ErrorKind::Exists)
     } else if cause.is::<Invalid>() {
         Some(ErrorKind::Invalid)
+    } else if let Some(e) = cause.downcast_ref::<mask_assets::AssetError>() {
+        use mask_assets::AssetError::{Missing, PatchMissing};
+        matches!(e, Missing(_) | PatchMissing(_)).then_some(ErrorKind::Missing)
+    } else if let Some(e) = cause.downcast_ref::<recipe_assets::AssetError>() {
+        matches!(e, recipe_assets::AssetError::Missing(..)).then_some(ErrorKind::Missing)
     } else {
+        // Only "not found": "already exists" from the system names no
+        // destination (a cache folder blocked by a file says it too), so a
+        // destination that exists is typed where it is refused.
         let io = cause.downcast_ref::<std::io::Error>()?;
-        match io.kind() {
-            std::io::ErrorKind::NotFound => Some(ErrorKind::Missing),
-            std::io::ErrorKind::AlreadyExists => Some(ErrorKind::Exists),
-            _ => None,
-        }
+        (io.kind() == std::io::ErrorKind::NotFound).then_some(ErrorKind::Missing)
     }
 }
 
@@ -124,7 +147,7 @@ mod tests {
     use rawmakase_model::error::{Changed, Exists, Invalid, Missing};
 
     fn kind(e: anyhow::Error) -> ErrorKind {
-        Error::from(e).kind()
+        Error::of(e).kind()
     }
 
     #[test]
@@ -147,7 +170,48 @@ mod tests {
         }
         let gone = std::io::Error::from(std::io::ErrorKind::NotFound);
         assert_eq!(kind(under(gone.into())), ErrorKind::Missing);
+        let taken = rawmakase_model::error::Exists::from_error(
+            std::io::Error::from(std::io::ErrorKind::AlreadyExists).into(),
+        );
+        assert_eq!(kind(under(anyhow::Error::new(taken))), ErrorKind::Exists);
         assert_eq!(kind(anyhow::anyhow!("anything")), ErrorKind::Other);
+    }
+
+    #[test]
+    fn existing_typed_causes_give_their_kinds() {
+        use rawmakase_model::storage::{mask_assets, recipe_assets};
+        let raster = mask_assets::AssetError::Missing("abc".into());
+        assert_eq!(kind(anyhow::Error::new(raster)), ErrorKind::Missing);
+        let patch = mask_assets::AssetError::PatchMissing("abc".into());
+        assert_eq!(kind(anyhow::Error::new(patch)), ErrorKind::Missing);
+        let damaged = mask_assets::AssetError::Corrupt("abc".into(), "short".into());
+        assert_eq!(kind(anyhow::Error::new(damaged)), ErrorKind::Other);
+        let asset = recipe_assets::AssetError::NoSource;
+        assert_eq!(kind(anyhow::Error::new(asset)), ErrorKind::Other);
+        let ai = rawmakase_decode::ai::denoise::Unsupported("a mosaic AI Denoise can't read");
+        assert_eq!(kind(anyhow::Error::new(ai)), ErrorKind::Unsupported);
+        // "Already exists" from the system is no destination's.
+        let blocked = std::io::Error::from(std::io::ErrorKind::AlreadyExists);
+        assert_eq!(kind(blocked.into()), ErrorKind::Other);
+    }
+
+    #[test]
+    fn cancelled_work_is_cancelled_whatever_else_it_says() {
+        let cancelled = || anyhow::Error::new(rawmakase_cancel::Cancelled::new("Cancelled"));
+        let over = anyhow::Error::new(Invalid::over("Invalid preset", cancelled()));
+        assert_eq!(kind(over), ErrorKind::Cancelled);
+    }
+
+    #[test]
+    fn the_library_s_own_error_keeps_its_kind_through_anyhow() {
+        let invalid = Error::new(ErrorKind::Invalid, "A cache needs a build id");
+        let back = Error::of(anyhow::Error::new(invalid).context("Starting"));
+        assert_eq!(back.kind(), ErrorKind::Invalid);
+        let cancelled = Error::of(anyhow::Error::new(rawmakase_cancel::Cancelled::new("c")));
+        assert_eq!(
+            Error::of(anyhow::Error::new(cancelled)).kind(),
+            ErrorKind::Cancelled
+        );
     }
 
     #[test]
@@ -165,7 +229,7 @@ mod tests {
                 .context("Loading the recipe")
                 .unwrap_err()
         };
-        let e = Error::from(cause());
+        let e = Error::of(cause());
         assert_eq!(e.to_string(), cause().to_string());
         assert_eq!(format!("{e:#}"), format!("{:#}", cause()));
         assert_eq!(

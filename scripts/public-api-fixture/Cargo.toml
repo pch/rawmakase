@@ -1,0 +1,6 @@
+# Two crates whose public items test scripts/public-api.py
+# (scripts/test_public_api.py): a library that re-exports a type of another
+# workspace crate from a private module, as rawmakase-core does the model's.
+[workspace]
+members = ["core", "sub"]
+resolver = "3"
