@@ -43,10 +43,27 @@ fn read_whole(path: &Path) -> std::io::Result<Arc<Vec<u8>>> {
     Ok(Arc::new(bytes))
 }
 
+/// The decoders' error as the crates above this adapter type it: a cancelled
+/// decode as [`rawmakase_cancel::Cancelled`], a file the decoders don't read
+/// (not a RAW, or a variant of one they don't decode) as
+/// [`super::Unsupported`], both with the decoders' own wording, and the rest
+/// as it is.
+pub(super) fn typed(e: rawmakase_raw::Error) -> anyhow::Error {
+    match e {
+        rawmakase_raw::Error::Cancelled => {
+            anyhow::Error::new(rawmakase_cancel::Cancelled::new("Decoding cancelled"))
+        }
+        e @ (rawmakase_raw::Error::NotRaw | rawmakase_raw::Error::Unsupported(_)) => {
+            anyhow::Error::new(super::Unsupported(e))
+        }
+        e => e.into(),
+    }
+}
+
 impl Own {
     pub(super) fn open(path: &Path) -> Result<(Self, Header)> {
         let bytes = read_whole(path)?;
-        let info = rawmakase_raw::open(&bytes)?;
+        let info = rawmakase_raw::open(&bytes).map_err(typed)?;
         let header = header(&info);
         Ok((Self { bytes, info }, header))
     }
@@ -106,14 +123,7 @@ impl Own {
         Ok(rawmakase_raw::preview_reaching(&self.info, &self.bytes, edge)?.to_vec())
     }
     fn decode(&self, cancel: Cancel<'_>) -> Result<rawmakase_raw::Sensor> {
-        // A cancelled decode is the typed [`rawmakase_cancel::Cancelled`] above this
-        // adapter, with the decoders' own wording.
-        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel).map_err(|e| match e {
-            rawmakase_raw::Error::Cancelled => {
-                anyhow::Error::new(rawmakase_cancel::Cancelled::new("Decoding cancelled"))
-            }
-            e => e.into(),
-        })?;
+        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel).map_err(typed)?;
         let [left, top, w, h] = s.area;
         ensure!(
             s.channels > 0

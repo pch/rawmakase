@@ -16,6 +16,18 @@ use crate::camera_data::{
 };
 #[doc(hidden)]
 pub use own::whole_file_reads;
+
+/// A file RAWmakase's decoders don't read: not a RAW file they recognise, or
+/// a variant of one (an encoding, a layout, a sensor) they don't decode. It
+/// says what the decoders say.
+#[derive(Debug)]
+pub struct Unsupported(rawmakase_raw::Error);
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+impl std::error::Error for Unsupported {}
 /// The version of the decoder photos open with.
 pub fn version() -> String {
     rawmakase_raw::VERSION.to_string()
@@ -826,6 +838,19 @@ fn preview_image(bytes: Vec<u8>, flip: i32) -> anyhow::Result<image::RgbImage> {
 #[cfg(test)]
 mod tests {
     use rawmakase_cancel::Cancel;
+
+    /// A file the decoders don't recognise is refused as unsupported, with
+    /// their wording, so the library can tell it from a damaged RAW.
+    #[test]
+    fn a_file_the_decoders_do_not_read_is_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.CR2");
+        std::fs::write(&path, b"not a raw file at all, only text").unwrap();
+        let error = super::Raw::open_file(&path).err().unwrap();
+        let typed = error.downcast_ref::<super::Unsupported>().unwrap();
+        assert_eq!(typed.to_string(), rawmakase_raw::Error::NotRaw.to_string());
+        assert_eq!(error.to_string(), "Unsupported file format or not RAW file");
+    }
     /// A JPEG XL preview (Lightroom's DNGs embed one, of 1024 pixels, beside
     /// a 256-pixel JPEG) decodes, turned by the RAW's orientation:
     /// `rawmakase-raw`'s 8 × 4 lossless test codestream, whose pixel (x, y)

@@ -1033,6 +1033,11 @@ so the design is proved on one path before it is spread.
    `node_modules/` with it, and this step, the first to add an example
    workspace, fixes that.
 
+   Built so far: a RAW the decoders don't read. The RAW adapter types
+   `rawmakase_raw`'s `NotRaw` and `Unsupported` as `raw::Unsupported`,
+   with the decoders' wording, and the library's error gives it
+   `ErrorKind::Unsupported`.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in

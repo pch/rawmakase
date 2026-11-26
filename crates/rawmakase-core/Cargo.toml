@@ -14,6 +14,9 @@ rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
 rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
 anyhow.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [features]
 # The crates' handles on what a context holds, for RAWmakase's own app
 # (`workspace`, no part of the library's surface).

@@ -64,8 +64,8 @@ impl Error {
     ///
     /// The crates mark each kind with a type somewhere in the chain
     /// (`rawmakase_cancel::Cancelled`, `rawmakase_model::error`'s four, a
-    /// missing mask raster or catalog asset, the decoders' and AI Denoise's
-    /// `Unsupported`); a missing file is the system's "not found". Work that
+    /// missing mask raster or catalog asset, the raster and RAW decoders' and
+    /// AI Denoise's `Unsupported`); a missing file is the system's "not found". Work that
     /// was cancelled is cancelled whatever else its chain says. Otherwise the
     /// first cause in the chain that has a kind gives it, so a failure is the
     /// kind of what went wrong, not of a cause it was handled from.
@@ -94,6 +94,7 @@ fn kind_of(cause: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
     if let Some(e) = cause.downcast_ref::<Error>() {
         Some(e.kind)
     } else if cause.is::<rawmakase_decode::raster::Unsupported>()
+        || cause.is::<rawmakase_decode::raw::Unsupported>()
         || cause.is::<rawmakase_decode::ai::denoise::Unsupported>()
     {
         Some(ErrorKind::Unsupported)
@@ -190,6 +191,13 @@ mod tests {
         assert_eq!(kind(anyhow::Error::new(asset)), ErrorKind::Other);
         let ai = rawmakase_decode::ai::denoise::Unsupported("a mosaic AI Denoise can't read");
         assert_eq!(kind(anyhow::Error::new(ai)), ErrorKind::Unsupported);
+        let dir = tempfile::tempdir().unwrap();
+        let not_raw = dir.path().join("notes.CR2");
+        std::fs::write(&not_raw, b"text").unwrap();
+        let refused = rawmakase_decode::raw::Raw::open_file(&not_raw)
+            .err()
+            .unwrap();
+        assert_eq!(kind(refused), ErrorKind::Unsupported);
         // "Already exists" from the system is no destination's.
         let blocked = std::io::Error::from(std::io::ErrorKind::AlreadyExists);
         assert_eq!(kind(blocked.into()), ErrorKind::Other);
