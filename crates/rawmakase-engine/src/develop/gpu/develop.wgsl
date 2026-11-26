@@ -1028,19 +1028,33 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
     let jy = min(iy + 1u, h - 1u);
     let tx = fx - f32(ix);
     let ty = fy - f32(iy);
-    var coef = vec2(0.0);
-    for (var k = 0u; k < 2u; k++) {
-        let base = u32(offset(P_LOCAL_A + k));
-        let top = grid[base + iy * w + ix] * (1.0 - tx) + grid[base + iy * w + jx] * tx;
-        let bottom = grid[base + jy * w + ix] * (1.0 - tx) + grid[base + jy * w + jx] * tx;
-        coef[k] = top * (1.0 - ty) + bottom * ty;
-    }
-    // `LocalToneMap::base`: the map's local Laplacian level (coef.y) as far as the pixel
-    // sits at the map's own level (coef.x), the pixel's own level as it departs from it,
-    // on the same pre-mask basis as the map.
+    // `LocalToneMap::base`: 2×2 joint bilateral upsampling of the map's local Laplacian
+    // level guided by its log2 luminance, padding any weight shortfall below
+    // `JBU_SELF_FLOOR` with the pixel's own level, followed by the `LAPLACIAN_SIGMA`
+    // remapping on the same pre-mask basis as the map.
+    let logs_base = u32(offset(P_LOCAL_A));
+    let lap_base = u32(offset(P_LOCAL_A + 1u));
     let own = log2(min(max(clarity_lum, LOCAL_FLOOR), 1e12));
-    let off = (own - coef.x) / LAPLACIAN_SIGMA;
-    let base = own + exp(-0.5 * off * off) * (coef.y - own);
+    let b_indices = vec4(iy * w + ix, iy * w + jx, jy * w + ix, jy * w + jx);
+    let b_spatial = vec4((1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty);
+    var w_sum = 0.0;
+    var g_sum = 0.0;
+    var v_sum = 0.0;
+    for (var k = 0u; k < 4u; k++) {
+        let idx = b_indices[k];
+        let g = grid[logs_base + idx];
+        let d = (own - g) / JBU_RANGE_SIGMA;
+        let weight = b_spatial[k] * exp(-0.5 * d * d);
+        w_sum += weight;
+        g_sum += weight * g;
+        v_sum += weight * grid[lap_base + idx];
+    }
+    let pad = max(JBU_SELF_FLOOR - w_sum, 0.0);
+    let w_tot = w_sum + pad;
+    let j_logs = (g_sum + pad * own) / w_tot;
+    let j_lap = (v_sum + pad * own) / w_tot;
+    let off = (own - j_logs) / LAPLACIAN_SIGMA;
+    let base = own + exp(-0.5 * off * off) * (j_lap - own);
     // Joint bilateral upsampling of the calibrated Clarity gains. Fine luminance
     // selects neighbouring gains without extrapolating new contrast.
     var clarity = 0.0;
@@ -1064,11 +1078,16 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
     var cbase = base;
     let cm = offset(P_CLARITY_MAP);
     if cm >= 0 {
+        // `LocalToneMap::clarity_base`: bilinear-remapped full-depth (`1×1`) base.
+        let l_top = grid[logs_base + iy * w + ix] * (1.0 - tx) + grid[logs_base + iy * w + jx] * tx;
+        let l_bot = grid[logs_base + jy * w + ix] * (1.0 - tx) + grid[logs_base + jy * w + jx] * tx;
+        let b_logs = l_top * (1.0 - ty) + l_bot * ty;
+        let c_off = (own - b_logs) / LAPLACIAN_SIGMA;
         let g = u32(cm);
         let c_top = grid[g + iy * w + ix] * (1.0 - tx) + grid[g + iy * w + jx] * tx;
         let c_bot = grid[g + jy * w + ix] * (1.0 - tx) + grid[g + jy * w + jx] * tx;
         let clap = c_top * (1.0 - ty) + c_bot * ty;
-        cbase = own + exp(-0.5 * off * off) * (clap - own);
+        cbase = own + exp(-0.5 * c_off * c_off) * (clap - own);
     }
     clarity += local_curve(P_CLARITY_BASE, cbase) + local_curve(P_CLARITY_PIX, own);
     if (V_MASKS && masked) && (delta[L_SHADOWS] != 0.0 || delta[L_HIGHLIGHTS] != 0.0) {

@@ -167,11 +167,14 @@ pub(crate) fn wgsl_prelude() -> String {
              const SCENE_S: vec3<f32> = vec3(-1.0, {SLIDER_STEP:?}, {SLIDERS}.0);\n\
              const MASK_VALUES = array<f32, {}>({});\n\
              const LOCAL_FLOOR: f32 = {:?};\nconst LAPLACIAN_SIGMA: f32 = {:?};\n\
+             const JBU_RANGE_SIGMA: f32 = {:?};\nconst JBU_SELF_FLOOR: f32 = {:?};\n\
              const PAIR_SAME_POWER: f32 = {:?};\nconst PAIR_OPPOSITE_RATE: f32 = {:?};\n",
             MASK_VALUES.len(),
             MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
             crate::develop::local_tone::FLOOR,
             crate::develop::local_tone::LAPLACIAN_SIGMA,
+            crate::develop::local_tone::JBU_RANGE_SIGMA,
+            crate::develop::local_tone::JBU_SELF_FLOOR,
             crate::develop::local_tone_rule::PAIR_SAME_POWER,
             crate::develop::local_tone_rule::PAIR_OPPOSITE_RATE
         )
