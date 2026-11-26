@@ -236,10 +236,10 @@ The rule was measured with Camera Raw 18.7 on the synthetic chart and seven synt
 |---|---|---|
 | Look table | Hue shifts and saturation/value scales grow in proportion to the Amount, also above 100%, within the amount bounds a version 2 table stores. A version 1 table stays at 100% at any Amount. | Same; the table is scaled when the recipe is resolved, so the CPU and GPU paths read one table. |
 | Look curve | Up to 100% a blend of no change and the curve; above, the curve is applied a second time at the excess (200% is the curve applied twice). | Same, and the same for the look's channel curves. |
-| Internal settings (Shadows, Highlights, Contrast, Blacks, Clarity) | In proportion up to 100%, half as fast above: +40 Shadows is +60 at 200%, matching Camera Raw's render with user sliders at +60 within ΔE00 0.14. | Same, added to the user's sliders without moving them. |
+| Internal settings (Shadows, Highlights, Contrast, Blacks, Clarity) | Linear up to 100%; above 100%, every normalized slider `v ∈ [−1, 1]` follows the odds curve `a·v / (1 + (a − 1)·|v|)` (+40 Shadows is +57 at 200%, +20 is +33, +60 is +75, matching Camera Raw's rounded direct sliders within 0.004/255 in gamma-1.8 ProPhoto RGB). | Same, added to the user's sliders without moving them. |
 | Black & white | A B&W look stays black and white at 0%. | Same. |
 
-The look goes in the same place as at 100%: the table after the camera profile's tables, the curve after its tone curve, the internal settings with the user's. On the chart the `amount-*` cases sit at mean ΔE00 0.7–1.4 from Camera Raw for the table, B&W and internal-settings looks at 50%, and 1.3–2.8 at 200% (RAWmakase's default render is 0.9). What remains comes from existing operators rather than the Amount: RAWmakase's Shadows lifts a gray ramp less than Camera Raw's (+25 Shadows raises middle gray by 13 levels in Camera Raw and 2 here), and its Clarity has no global part; Contrast with Blacks (`amount-contrast-*`) is now 1.0 off at 50% and 1.6 at 200%. A look combining a curve with internal Shadows and Clarity is therefore 2.8 off at 100% and 4.7 at 200%.
+The look goes in the same place as at 100%: the table after the camera profile's tables, the curve after its tone curve, the internal settings with the user's. On the synthetic chart (`synthetic-d65`, default render 0.25 mean ΔE00), the `amount-*` cases sit at mean ΔE00 0.18–0.81 at 50% and 0.15–2.35 at 200%: Contrast with Blacks (`amount-contrast-*`) is 0.30 at 50% and 0.46 at 200%, the combined table + curve + Shadows/Clarity look (`amount-look-*`) is 0.57 at 100%, 0.80 at 150% and 0.96 at 200%, and `amount-tones-200` (Shadows +40, Highlights −40 on flat patches) is 2.35.
 
 ## RGB tables
 
@@ -349,17 +349,17 @@ chart only. This is a limit on claiming complete Camera Raw parity.
 
 Vintage 07 and Modern 03 and 04 carry develop settings besides their tables: Exposure, Saturation, color mixer bands, the parametric curve, split toning and a post-crop vignette. RAWmakase renders them with the user's settings without moving the user's sliders. Measured with Camera Raw 18.7 on synthetic looks (`synthetic-color`, `-split`, `-parametric`, `-exposure` and `-vignette`) at 50, 100 and 200%:
 
-| Setting | With the user's | Amount | `look-*` cases, mean ΔE00 |
+| Setting | With the user's | Amount | `look-*` cases, mean ΔE00 (50 / 100 / 200%) |
 |---|---|---|---|
-| Exposure, Saturation, color mixer, parametric curve | Added to the user's sliders | As the tone adjustments: in proportion up to 100%, half as fast above | color 1.0/1.2/1.4, exposure 1.2/1.5/2.6, parametric 1.7/2.8/4.9 |
-| Split toning | Tones the shadows or highlights the user doesn't tone (`look-split-grading-shadows-h30` 3.5, against 4.9 when the user's toning replaced the look's and 5.3 when the look's replaced the user's) | Saturations scale, hues stay | 1.6/2.6/3.5 |
-| Post-crop vignette | Replaces the user's: Camera Raw renders a look vignette with the user's −20 exactly as without it | Amount scales | 1.0/1.2/1.5 |
+| Exposure, Saturation, color mixer, parametric curve | Exposure, Saturation and color mixer add to the user's sliders; the parametric curve runs as a second pass after the user's | Linear up to 100%; above 100%, `a·v / (1 + (a − 1)·|v|)` (Exposure normalized by 5 EV, so +0.50 EV at 200% is +0.91 EV) | color 0.56 / 0.81 / 1.02, exposure 0.27 / 0.28 / 0.32, parametric 0.23 / 0.24 / 0.25 |
+| Split toning | Second grading pass after the user's at Blending 100 (`look-split-grading-shadows-h30` 1.50) | Saturations scale by the same curve; hues and balance stay fixed | 0.33 / 0.39 / 0.78 |
+| Post-crop vignette | Replaces the user's: Camera Raw renders a look vignette with the user's −20 exactly as without it | Amount scales by the same curve; midpoint, feather, roundness, highlights and style stay fixed | 0.36 / 0.53 / 0.72 |
 
 Third-party looks such as Really Nice Images' film profiles ([#949](https://github.com/pch/rawmakase/issues/949)) list every Basic, Calibration, Detail and Effects setting, mostly at their defaults. Measured the same way, with a synthetic look holding one setting against the user's slider on the synthetic chart and a crop of a CC0 photo:
 
-| Setting | With the user's | Amount | Look against the user's slider, mean ΔE00 |
+| Setting | With the user's | Amount | Look against the user's slider |
 |---|---|---|---|
-| Whites, Vibrance, Texture, Calibration's red, green and blue Hue and Saturation, Shadows Tint | Added to the user's sliders | As the tone adjustments | 0.00 at 100% and 50%; at 200% 0.07–0.36 from 1.5× the value (0.55–3.7 from 2×); a look's value with half of it on the user's slider 0.10–0.47 from 1.5× |
+| Whites, Vibrance, Texture, Calibration's red, green and blue Hue and Saturation, Shadows Tint | Added to the user's sliders | As the tone adjustments (`a·v / (1 + (a − 1)·|v|)` above 100%) | 0.00 ΔE00 at 50% and 100%; at 150% and 200% matches Camera Raw's odds curve across all tested sliders (see [parity gaps](records/parity-gaps.md#look-profile-amount--100-odds-scaling-2026-11-26)) |
 | Sharpening (Amount, Radius, Detail, Masking) and Grain | Ignored: the render is the same as without them (0.00), with or without the user's own sharpening | — | — |
 | `OverrideLookVignette` | Ignored, true or false: the look's vignette still replaces the user's | — | — |
 
@@ -367,7 +367,7 @@ RAWmakase reads the first row and accepts the others without applying them, as C
 
 Six such looks (RNI All Films 5's demo profiles: color, black and white and infrared, with Whites, Vibrance, sharpening and grain among their settings) were rendered over Adobe Standard on the 12 CC0 photos of [Parity with Camera Raw](#parity-with-camera-raw) at 50, 100 and 200%, against Camera Raw 18.7 at 1024 px: median of per-photo median ΔE00 1.66, 1.54 and 2.04 (216 pairs), where the same photos without a look are at 2.09. Each look's error follows its photo's error without one (a street scene 14–21 with every look, at 16.4 without). The one look with a non-zero new setting, Vibrance −10, is at 1.59 at 100% and 1.81 at 200% with it read, 2.01 and 2.92 without. The looks and references are private.
 
-The half rate above 100% matched best for the color, exposure and vignette looks (at 200%, color 1.4 against 2.3 for full rate, vignette 1.5 against 1.8), and was even for split toning; the parametric look was closer at full rate (4.0 against 4.9), but RAWmakase's parametric curve is already 2.8 off at 100%, as it is for the user's own parametric sliders. The remaining error is that of the existing operators: parametric curve (user Lights −50: 3.7), split toning (user shadows 210°: 2.6) and Exposure above +0.5.
+An earlier approximation scaled all look sliders at half the rate above 100% (1.5× at 200%), which happened to sit near the odds curve for values around ±30–40 (`2·0.33 / 1.33 = 0.50`, 1.5×) but undershot smaller sliders such as Exposure +0.50 (`look-exposure-200`: 1.88 → 0.32 mean ΔE00) and parametric curves (`look-parametric-200`: 0.74 → 0.25) and overshot larger ones (`look-split-200`: 1.11 → 0.78). The multi-value Camera Raw 18.7 sweep ([2026-11-26](records/parity-gaps.md#look-profile-amount--100-odds-scaling-2026-11-26)) superseded the half-rate rule with the exact odds curve across every look slider.
 
 ## Channel curves in looks
 

@@ -210,28 +210,49 @@ impl LookSettings {
     pub fn is_default(&self) -> bool {
         *self == Self::default()
     }
-    /// These settings at `strength` of their effect. At 0 the look's split toning
-    /// and vignette are left out, so they don't replace the user's either.
-    pub(super) fn scaled(&self, strength: f32) -> Self {
-        let present = strength != 0.;
+    /// Scales a look slider `value` (normalized to `[-1, 1]`, or `[0, 1]`) by Profile
+    /// Amount `amount` (`0..=2`, where `1` is 100%), as Camera Raw 18.7 renders it:
+    /// linearly up to 100%, and via `a * v / (1 + (a - 1) * |v|)` above 100%.
+    ///
+    /// Measured in Camera Raw 18.7 across Contrast (10–100), Exposure (±0.25–±5 EV,
+    /// normalized by 5 EV), Parametric regions, Split Toning saturations, Vignette,
+    /// Shadows, Highlights, Whites, Blacks, Clarity, Texture, Vibrance, Saturation,
+    /// HSL and Calibration at Amounts 100–200% (matching Camera Raw's 1-unit / 0.01-EV
+    /// rounded direct sliders within 0.004 out of 255 MAE in gamma-1.8 ProPhoto RGB).
+    pub(super) fn scale_slider(value: f32, amount: f32) -> f32 {
+        if amount > 1. {
+            let v = value.clamp(-1., 1.);
+            amount * v / (1. + (amount - 1.) * v.abs())
+        } else {
+            value * amount
+        }
+    }
+    /// These settings at Profile Amount `amount` (`0..=2`, where `1` is 100%). At 0
+    /// the look's split toning and vignette are left out, so they don't replace the
+    /// user's either.
+    pub(super) fn scaled(&self, amount: f32) -> Self {
+        let present = amount != 0.;
+        let s = |v: f32| Self::scale_slider(v, amount);
         Self {
-            exposure: self.exposure * strength,
-            saturation: self.saturation * strength,
-            whites: self.whites * strength,
-            vibrance: self.vibrance * strength,
-            texture: self.texture * strength,
-            calibration: self.calibration.map(|p| p.map(|v| v * strength)),
-            shadow_tint: self.shadow_tint * strength,
-            hsl: self.hsl.map(|band| band.map(|v| v * strength)),
-            parametric: self.parametric.map(|v| v * strength),
+            // Exposure's slider range is ±5 EV; normalize by 5 before applying the
+            // shared Amount > 100% curve (measured exact at +0.25..+5.0 and -2.0 EV).
+            exposure: 5. * s(self.exposure / 5.),
+            saturation: s(self.saturation),
+            whites: s(self.whites),
+            vibrance: s(self.vibrance),
+            texture: s(self.texture),
+            calibration: self.calibration.map(|p| p.map(s)),
+            shadow_tint: s(self.shadow_tint),
+            hsl: self.hsl.map(|band| band.map(s)),
+            parametric: self.parametric.map(s),
             splits: self.splits,
             toning: self.toning.filter(|_| present).map(|t| Toning {
-                shadows: [t.shadows[0], (t.shadows[1] * strength).min(1.)],
-                highlights: [t.highlights[0], (t.highlights[1] * strength).min(1.)],
+                shadows: [t.shadows[0], s(t.shadows[1]).clamp(0., 1.)],
+                highlights: [t.highlights[0], s(t.highlights[1]).clamp(0., 1.)],
                 balance: t.balance,
             }),
             vignette: self.vignette.filter(|_| present).map(|v| Vignette {
-                amount: v.amount * strength,
+                amount: s(v.amount),
                 ..v
             }),
         }
@@ -248,7 +269,9 @@ impl LookSettings {
             }),
             "Invalid profile split toning"
         );
-        // The amount may reach ±2 at a Profile Amount of 200%; it renders clamped.
+        // Unscaled looks stay within ±1 (±5 EV for Exposure) even at 200% under the
+        // odds curve; the wider ±2 / ±10 bounds stay for compatibility with recipes
+        // stored by earlier releases.
         ensure!(
             self.vignette.is_none_or(|v| within(v.amount, -2., 2.)
                 && [v.midpoint, v.feather, v.highlights]
@@ -387,11 +410,12 @@ mod tests {
         let r = user.with_profile_adjustments();
         assert!((r.saturation - 0.).abs() < 1e-6);
         assert_eq!(r.effects.vignette, -0.05);
-        // Strong toning at 200% stays a valid saturation.
+        // Strong toning at 200% follows Camera Raw's odds curve and stays valid.
         let mut toned = vintage();
         toned.toning.as_mut().unwrap().highlights[1] = 0.9;
-        let scaled = toned.scaled(1.5);
-        assert_eq!(scaled.toning.unwrap().highlights[1], 1.);
+        let scaled = toned.scaled(2.);
+        assert!((scaled.toning.unwrap().highlights[1] - 1.8 / 1.9).abs() < 1e-6);
+        assert_eq!(scaled.toning.unwrap().balance, 0.4);
         assert!(scaled.validate().is_ok());
         // At 0% the look leaves the user's vignette alone.
         user.profile_amount = 0.;
@@ -451,12 +475,12 @@ mod tests {
         assert!((r.effects.calibration[1][0] - -0.3).abs() < 1e-6);
         assert!((r.effects.calibration[2][1] - 0.2).abs() < 1e-6);
         assert!((r.effects.shadow_tint - 0.4).abs() < 1e-6);
-        // At 50% half as strong; at 200% half again (Camera Raw's 200% is 1.5×
-        // within ΔE00 0.12–0.36, 2× is 0.55–3.7 off).
+        // At 50% half as strong; above 100% Camera Raw's odds curve scales
+        // `a * v / (1 + (a - 1) * |v|)` (+60 Texture at 200% is +75, not +90).
         user.profile_amount = 0.5;
         assert!((user.with_profile_adjustments().effects.texture - 0.3).abs() < 1e-6);
         user.profile_amount = 2.;
-        assert!((user.with_profile_adjustments().effects.texture - 0.9).abs() < 1e-6);
+        assert!((user.with_profile_adjustments().effects.texture - 0.75).abs() < 1e-6);
         // Saved and read back; a look without them saves as before.
         let copy: LookSettings = serde_json::from_value(serde_json::to_value(&s)?)?;
         assert_eq!(copy, s);
@@ -470,6 +494,74 @@ mod tests {
         ] {
             assert!(old.get(key).is_none(), "{key}");
         }
+        Ok(())
+    }
+
+    /// Above 100% Profile Amount, Camera Raw 18.7 scales every look slider via
+    /// `a * v / (1 + (a - 1) * |v|)` over its full range (`[-1, 1]`, or `[-5, 5]` EV
+    /// for Exposure), while keeping parametric splits, split-toning hues/balance and
+    /// vignette geometry fixed.
+    #[test]
+    fn amount_above_100_scales_sliders_by_camera_raw_odds_curve() -> Result<()> {
+        // Continuity at 100%, linearity below, exact values above, symmetry and bounds.
+        for v in [-1., -0.6, -0.3, -0.1, 0., 0.1, 0.3, 0.6, 1.] {
+            assert!((LookSettings::scale_slider(v, 0.)).abs() < 1e-6);
+            assert!((LookSettings::scale_slider(v, 0.5) - 0.5 * v).abs() < 1e-6);
+            assert!((LookSettings::scale_slider(v, 1.) - v).abs() < 1e-6);
+            let at_150 = LookSettings::scale_slider(v, 1.5);
+            let at_200 = LookSettings::scale_slider(v, 2.);
+            assert!((at_150 + LookSettings::scale_slider(-v, 1.5)).abs() < 1e-6);
+            assert!((at_200 + LookSettings::scale_slider(-v, 2.)).abs() < 1e-6);
+            assert!(at_200.abs() <= 1. + 1e-6);
+            if v > 0. {
+                assert!(v <= at_150 && at_150 <= at_200);
+            }
+        }
+        // Measured Camera Raw 18.7 checkpoints (Exposure normalized by 5 EV,
+        // parametric combo D-15/L-20/H-33, split toning sh=40/hi=30/bal=+20, vignette -30).
+        let s = parse(&[
+            ("Exposure2012", "+0.50"),
+            ("ParametricDarks", "-15"),
+            ("ParametricLights", "-20"),
+            ("ParametricHighlights", "-33"),
+            ("ParametricShadowSplit", "20"),
+            ("ParametricMidtoneSplit", "45"),
+            ("ParametricHighlightSplit", "80"),
+            ("SplitToningShadowHue", "210"),
+            ("SplitToningShadowSaturation", "40"),
+            ("SplitToningHighlightHue", "50"),
+            ("SplitToningHighlightSaturation", "30"),
+            ("SplitToningBalance", "+20"),
+            ("PostCropVignetteAmount", "-30"),
+            ("PostCropVignetteMidpoint", "40"),
+        ])?;
+        let at_150 = s.scaled(1.5);
+        assert!((at_150.exposure - 0.75 / 1.05).abs() < 1e-5);
+        assert!((at_150.parametric[1] - (-0.225 / 1.075)).abs() < 1e-5);
+        assert!((at_150.parametric[2] - (-0.30 / 1.10)).abs() < 1e-5);
+        assert!((at_150.parametric[3] - (-0.495 / 1.165)).abs() < 1e-5);
+        let at_200 = s.scaled(2.);
+        assert!((at_200.exposure - 1. / 1.1).abs() < 1e-5);
+        assert!((at_200.parametric[1] - (-0.30 / 1.15)).abs() < 1e-5);
+        assert!((at_200.parametric[2] - (-0.40 / 1.20)).abs() < 1e-5);
+        assert!((at_200.parametric[3] - (-0.66 / 1.33)).abs() < 1e-5);
+        assert_eq!(at_200.splits, [0.20, 0.45, 0.80]);
+        let t = at_200.toning.unwrap();
+        assert!((t.shadows[1] - 0.80 / 1.40).abs() < 1e-5);
+        assert!((t.highlights[1] - 0.60 / 1.30).abs() < 1e-5);
+        assert_eq!(
+            (t.shadows[0], t.highlights[0], t.balance),
+            (210. / 360., 50. / 360., 0.2)
+        );
+        let v = at_200.vignette.unwrap();
+        assert!((v.amount - (-0.60 / 1.30)).abs() < 1e-5);
+        assert_eq!(v.midpoint, 0.40);
+        // Exposure +2.0 EV at 150% -> +2.50 EV exactly; +5.0 EV at 200% -> +5.00 EV.
+        let exp2 = parse(&[("Exposure2012", "+2.00")])?;
+        assert!((exp2.scaled(1.5).exposure - 2.5).abs() < 1e-5);
+        assert!((exp2.scaled(2.).exposure - 4. / 1.4).abs() < 1e-5);
+        let exp5 = parse(&[("Exposure2012", "+5.00")])?;
+        assert!((exp5.scaled(2.).exposure - 5.).abs() < 1e-5);
         Ok(())
     }
 

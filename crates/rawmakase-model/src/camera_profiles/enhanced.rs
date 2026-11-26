@@ -199,11 +199,12 @@ impl Enhanced {
     }
     /// The look at a Profile Amount (1 is 100%), as Camera Raw 18.7 renders it. Up to
     /// 100% the table's shifts and scales, the curve's change and the internal
-    /// adjustments grow from none. Above, the table's shifts keep growing (within the
-    /// bounds its table stores), the curve is applied again at the excess, and the
-    /// adjustments grow at half the rate (+40 Shadows is +60 at 200%). An RGB table
-    /// applies at the Profile Amount times the look's own amount, within its bounds.
-    /// A look without an Amount stays at 100%.
+    /// adjustments grow linearly from none. Above 100%, the table's shifts keep growing
+    /// (within the bounds its table stores), the curve is applied again at the excess,
+    /// and every internal slider `v` (normalized to `[-1, 1]`, or `[-5, 5]` EV for
+    /// Exposure) scales via `a * v / (1 + (a - 1) * |v|)`. An RGB table applies at the
+    /// Profile Amount times the look's own amount, within its bounds. A look without an
+    /// Amount stays at 100%.
     pub fn at_amount(&self, amount: f32) -> Self {
         let Some(range) = self.amount.filter(|_| amount != 1.) else {
             return self.clone();
@@ -214,11 +215,6 @@ impl Enhanced {
             amount: t.table.amount(t.look_amount, amount),
             ..t.clone()
         });
-        let adjustment = if amount > 1. {
-            1. + (amount - 1.) * 0.5
-        } else {
-            amount
-        };
         // A look's curve at the Profile Amount: up to 100% a blend of no change and the
         // curve; above, the curve applied again at the excess.
         let scaled = |curve: &CurveLut| {
@@ -232,13 +228,14 @@ impl Enhanced {
                 }
             })
         };
+        let slider = |v: f32| LookSettings::scale_slider(v, amount);
         Self {
-            highlights: self.highlights * adjustment,
-            shadows: self.shadows * adjustment,
-            clarity: self.clarity * adjustment,
-            contrast: self.contrast * adjustment,
-            blacks: self.blacks * adjustment,
-            settings: self.settings.scaled(adjustment),
+            highlights: slider(self.highlights),
+            shadows: slider(self.shadows),
+            clarity: slider(self.clarity),
+            contrast: slider(self.contrast),
+            blacks: slider(self.blacks),
+            settings: self.settings.scaled(amount),
             table,
             rgb,
             curve: Box::new(scaled(&self.curve)),
@@ -973,11 +970,13 @@ pub(super) mod tests {
         let half = look.at_amount(0.5);
         assert_eq!(half.table.unwrap().data[0], [60., 1., 1.]);
         assert_eq!(half.shadows, 0.2);
-        // Above 100% the internal adjustments grow at half the rate, the table's
-        // shifts keep growing and the curve is applied again.
+        // Above 100% internal sliders follow Camera Raw's odds curve
+        // `a * v / (1 + (a - 1) * |v|)`, the table's shifts keep growing and the
+        // curve is applied again.
         let double = look.at_amount(2.);
         assert_eq!(double.table.as_ref().unwrap().data[0], [240., 1., 1.]);
-        assert!((double.shadows - 0.6).abs() < 1e-6);
+        assert!((double.shadows - 0.8 / 1.4).abs() < 1e-6);
+        assert!((double.contrast - (-0.4 / 1.2)).abs() < 1e-6);
         let mid = 2048;
         let once = look.curve.values()[mid];
         let twice = look.curve.values()[(once * 4096.).round() as usize];
