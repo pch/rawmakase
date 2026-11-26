@@ -902,10 +902,13 @@ so the design is proved on one path before it is spread.
    app's workers take it from the context when they are made or a job is
    captured; the Library gets it beside its AI Denoise cache, before
    anything is shown; the command line from the `environment` module's
-   context. Merge to HDR, AI Denoise, a photo's info and the AI Denoise
-   benchmark open photos with no imported profiles, since nothing they
-   read or write depends on which one fits (so AI Denoise's later step
-   needs nothing more here).
+   context. Opening a photo also names a lens a RAW gives only by its id
+   (Pentax's, an older Nikon's) after the profile of that id, so a photo's
+   info is read with the context's profiles too: the catalog session holds
+   them, given with the Library's, and so do the naming and import readers.
+   Merge to HDR, AI Denoise and its benchmark open photos with no imported
+   profiles: they read the sensor data and the camera's EXIF, and take a
+   lens name from the decoder only when a frame's EXIF can't be read.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

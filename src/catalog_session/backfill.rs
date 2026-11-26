@@ -171,6 +171,10 @@ impl CatalogSession {
     /// (see [`crate::catalog::Catalog::photos_to_read_info`]), of those
     /// `available` says are online; asked while reading, it reads again once
     /// done.
+    /// Photo info is read with `lenses` from now on.
+    pub(crate) fn set_lens_profiles(&mut self, lenses: crate::photo::LensProfiles) {
+        self.lenses = lenses;
+    }
     pub(crate) fn start_photo_info(&mut self, available: impl Fn(&Path) -> bool) {
         if self.backfill.info.is_some() {
             self.backfill.info_again = true;
@@ -187,11 +191,10 @@ impl CatalogSession {
             .map(|p| (p.id, p.path.clone()))
             .collect();
         if !todo.is_empty() {
-            self.backfill.info = Some(Reader::start(
-                todo,
-                self.wake.clone(),
-                read_info_and_sequence,
-            ));
+            let lenses = self.lenses.clone();
+            self.backfill.info = Some(Reader::start(todo, self.wake.clone(), move |path| {
+                read_info_and_sequence(path, &lenses)
+            }));
         }
     }
     /// Whether photo info is being read.
@@ -313,8 +316,8 @@ struct InfoRead {
 
 /// The file's info and sequence, read in one pass over new photos; `None`
 /// when the file cannot be read now.
-fn read_info_and_sequence(path: &Path) -> Option<InfoRead> {
-    let info = read_info(path)?;
+fn read_info_and_sequence(path: &Path, lenses: &crate::photo::LensProfiles) -> Option<InfoRead> {
+    let info = read_info(path, lenses)?;
     Some(InfoRead {
         info,
         sequence: read_sequence(path, crate::exif::sequence),
@@ -339,7 +342,13 @@ pub(crate) fn read_sequence(
 
 /// The file's info: `None` when it cannot be read now, `Some(None)` when it
 /// has none.
-pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
+/// The file's info, read with `lenses`: a RAW that names its lens only by an id
+/// (Pentax's, an older Nikon's) has it named by the imported profile of that
+/// id, as opening it does.
+pub(crate) fn read_info(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+) -> Option<Option<PhotoInfo>> {
     if !can_read(path) {
         return None;
     }
@@ -354,15 +363,12 @@ pub(crate) fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
         // the info. When that can't be read, from the file opened whole. A RAW
         // that cannot be opened now (still copying, a network error) is tried
         // again later.
-        // A photo's info is its camera's: which imported lens profile fits it
-        // changes none of it, so none are read.
-        let none = crate::photo::LensProfiles::none();
         let header = crate::platform::preview_reads::in_pieces()
-            .then(|| crate::photo::header_metadata(path, &none).ok())
+            .then(|| crate::photo::header_metadata(path, lenses).ok())
             .flatten();
         let metadata = match header {
             Some(metadata) => metadata,
-            None => crate::photo::open(path, &none).ok()?.metadata,
+            None => crate::photo::open(path, lenses).ok()?.metadata,
         };
         Some(PhotoInfo::from_metadata(&metadata))
     } else {
@@ -388,7 +394,9 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = crate::platform::preview_reads::fixture::dng(dir.path());
         let before = crate::raw::whole_file_reads();
-        let info = read_info(&path).flatten().expect("the header's info");
+        let info = read_info(&path, &crate::photo::LensProfiles::none())
+            .flatten()
+            .expect("the header's info");
         assert_eq!(crate::raw::whole_file_reads(), before, "read whole");
         assert_eq!(info.exposure_text().as_deref(), Some("1/250 sec at f/2.8"));
         assert_eq!(info.iso_text().as_deref(), Some("ISO 200"));
@@ -402,7 +410,7 @@ mod tests {
         let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/corpus/charts/synthetic-d65.dng");
         let before = crate::raw::whole_file_reads();
-        assert!(read_info(&chart).is_some());
+        assert!(read_info(&chart, &crate::photo::LensProfiles::none()).is_some());
         assert_eq!(crate::raw::whole_file_reads(), before + 1);
     }
 
@@ -415,7 +423,9 @@ mod tests {
         let path = dir.path().join("IMG_1.CR2");
         image::RgbImage::new(8, 4).save_with_format(&path, image::ImageFormat::Jpeg)?;
         let before = crate::raw::whole_file_reads();
-        let info = read_info(&path).expect("read now").expect("its info");
+        let info = read_info(&path, &crate::photo::LensProfiles::none())
+            .expect("read now")
+            .expect("its info");
         assert_eq!(info.dimensions, Some((8, 4)));
         assert_eq!(crate::raw::whole_file_reads(), before, "read as a RAW");
         Ok(())
@@ -445,7 +455,9 @@ mod tests {
             gps: Vec::new(),
         };
         std::fs::write(&quattro, camera_raw(Container::X3f, camera))?;
-        let info = read_info(&quattro).flatten().expect("the preview's info");
+        let info = read_info(&quattro, &crate::photo::LensProfiles::none())
+            .flatten()
+            .expect("the preview's info");
         assert_eq!(info.camera.as_deref(), Some("SIGMA dp2 Quattro"));
         assert_eq!(info.lens.as_deref(), Some("30mm F2.8"));
         assert_eq!(info.exposure_text().as_deref(), Some("1/250 sec at f/2.8"));
@@ -464,7 +476,9 @@ mod tests {
                 ("FLENGTH", "53"),
             ]),
         )?;
-        let info = read_info(&sd9).flatten().expect("the property list's info");
+        let info = read_info(&sd9, &crate::photo::LensProfiles::none())
+            .flatten()
+            .expect("the property list's info");
         assert_eq!(info.camera.as_deref(), Some("SIGMA SD9"));
         assert_eq!(info.lens, None);
         assert_eq!(info.exposure_text().as_deref(), Some("1/24 sec at f/5.2"));
@@ -474,10 +488,10 @@ mod tests {
         // tried again later, not kept as a photo without info.
         let blank = dir.path().join("blank.X3F");
         std::fs::write(&blank, x3f_with_properties(&[]))?;
-        assert_eq!(read_info(&blank), None);
+        assert_eq!(read_info(&blank, &crate::photo::LensProfiles::none()), None);
         // Gone, it is tried again later.
         std::fs::remove_file(&sd9)?;
-        assert_eq!(read_info(&sd9), None);
+        assert_eq!(read_info(&sd9, &crate::photo::LensProfiles::none()), None);
         Ok(())
     }
     #[test]

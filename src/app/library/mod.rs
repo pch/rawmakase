@@ -1783,6 +1783,7 @@ impl Library {
     pub(in crate::app) fn set_lens_profiles(&mut self, lenses: &crate::photo::LensProfiles) {
         self.cache.edit_tx.set_lens_profiles(lenses.clone());
         self.screen.set_lens_profiles(lenses);
+        self.session.set_lens_profiles(lenses.clone());
     }
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does

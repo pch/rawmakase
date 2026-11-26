@@ -58,6 +58,8 @@ pub(in crate::app) struct ToRead {
     /// The catalog lacks some of its title, caption, copyright and creator,
     /// which the file then gives.
     pub descriptive: bool,
+    /// The imported lens profiles a standalone photo's info is read with.
+    pub lenses: crate::photo::LensProfiles,
 }
 
 /// Reads one photo's file: what it gave, or why it can't be read (a file
@@ -354,7 +356,8 @@ fn read_file(photo: &ToRead) -> Result<FileFields, String> {
         return Err(unreadable());
     }
     let (captured, info) = if photo.standalone {
-        let info = crate::catalog_session::file_photo_info(path).ok_or_else(unreadable)?;
+        let info =
+            crate::catalog_session::file_photo_info(path, &photo.lenses).ok_or_else(unreadable)?;
         (crate::catalog_session::file_capture_time(path), info)
     } else {
         (None, None)
@@ -389,11 +392,15 @@ fn read_file(photo: &ToRead) -> Result<FileFields, String> {
 /// backfill reads it (EXIF, else the RAW container) and its photo info. A
 /// file that can't be opened now is an error; one whose info can't be made
 /// out still gives the rest, as Add Folder still adds it.
-pub(in crate::app) fn read_new_photo(path: &std::path::Path) -> Result<NameFields, String> {
+pub(in crate::app) fn read_new_photo(
+    path: &std::path::Path,
+    lenses: &crate::photo::LensProfiles,
+) -> Result<NameFields, String> {
     let read = read_file(&ToRead {
         path: path.to_path_buf(),
         standalone: false,
         descriptive: true,
+        lenses: lenses.clone(),
     })?;
     let mut fields = NameFields::default();
     fill(&mut fields, read, false);
@@ -414,7 +421,7 @@ pub(in crate::app) fn read_new_photo(path: &std::path::Path) -> Result<NameField
         fields.keywords = keywords.join(", ");
     }
     fields.captured = crate::catalog_session::file_capture_time(path);
-    fields.info = crate::catalog_session::file_photo_info(path)
+    fields.info = crate::catalog_session::file_photo_info(path, lenses)
         .flatten()
         .unwrap_or_default();
     Ok(fields)
@@ -434,7 +441,8 @@ mod new_photo_tests {
 <dc:subject><rdf:Bag><rdf:li>Zebra</rdf:li><rdf:li>apple</rdf:li></rdf:Bag></dc:subject>
 </rdf:Description></rdf:RDF></x:xmpmeta>"#,
         )?;
-        let fields = super::read_new_photo(&photo).map_err(anyhow::Error::msg)?;
+        let fields = super::read_new_photo(&photo, &crate::photo::LensProfiles::none())
+            .map_err(anyhow::Error::msg)?;
         assert_eq!(fields.rating, 5);
         assert_eq!(fields.label, "Red");
         assert_eq!(fields.keywords, "apple, Zebra");
@@ -452,6 +460,7 @@ pub(in crate::app) fn read_path(
         path: path.to_path_buf(),
         standalone,
         descriptive: true,
+        lenses: crate::photo::LensProfiles::none(),
     })
 }
 
@@ -481,6 +490,7 @@ mod tests {
             path: PathBuf::from("a.ARW"),
             standalone: false,
             descriptive: false,
+            lenses: crate::photo::LensProfiles::none(),
         };
         let mut first = NameRead::default();
         first.set_reader(Arc::new(|_: &ToRead| Ok(FileFields::default())));

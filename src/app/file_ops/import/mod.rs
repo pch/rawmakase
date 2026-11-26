@@ -1922,7 +1922,7 @@ impl Editor {
         if let Some(reader) = &self.file_ops.import_reader {
             return reader.clone();
         }
-        scan::file_reader()
+        scan::file_reader(self.lens_profiles().clone())
     }
 
     /// The top bar's text while an import runs; `None` when none does.

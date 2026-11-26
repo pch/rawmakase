@@ -436,6 +436,7 @@ impl Editor {
                         path: p.source.clone(),
                         standalone: p.id.is_none(),
                         descriptive: p.fields.lacks_descriptive(),
+                        lenses: self.lens_profiles().clone(),
                     })
                     .collect();
                 self.exports

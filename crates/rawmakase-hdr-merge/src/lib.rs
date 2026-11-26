@@ -241,9 +241,10 @@ pub fn merge(
         .iter()
         .map(|input| {
             cancelled()?;
-            // The bracket's facts and pixels are its camera's: which imported lens
-            // profile fits a frame changes nothing the merge reads or writes, so
-            // none are read.
+            // The bracket's facts and pixels are its camera's, and its lens is
+            // the EXIF's: no imported lens profile is read. (Only a frame whose
+            // EXIF can't be read takes the decoder's lens name, which for a lens
+            // named by its id alone is then unnamed.)
             let none = photo::LensProfiles::none();
             photo::header_metadata(&input.path, &none)
                 .or_else(|_| photo::open(&input.path, &none).map(|raw| raw.metadata))
