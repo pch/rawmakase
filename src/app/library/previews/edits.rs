@@ -100,6 +100,9 @@ type RenderWithAi = fn(
     &rawmakase_decode::ai::cache::AiEntry,
     Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage>;
+/// Reads the profile library's fingerprint as it is now
+/// (`camera_profiles::library_fingerprint`).
+type ProfileLibrary = fn() -> String;
 /// Where edited preview jobs go, and how fast they are rendered. Dropping it
 /// closes the worker, as [`EditQueue::close`] does.
 pub(in crate::app::library) struct EditQueue(Arc<Shared>);
@@ -324,6 +327,23 @@ pub(super) fn spawn_edited_with_ai(
     render: RenderEdited,
     render_ai: RenderWithAi,
 ) -> Worker<EditQueue, EditResult> {
+    spawn_edited_with_profiles(
+        cache_path,
+        wanted,
+        ctx,
+        render,
+        render_ai,
+        crate::camera_profiles::library_fingerprint,
+    )
+}
+pub(super) fn spawn_edited_with_profiles(
+    cache_path: PathBuf,
+    wanted: Wanted,
+    ctx: egui::Context,
+    render: RenderEdited,
+    render_ai: RenderWithAi,
+    profiles: ProfileLibrary,
+) -> Worker<EditQueue, EditResult> {
     let shared = Arc::<Shared>::default();
     let (tx, result_rx) = mpsc::channel();
     let results = Results {
@@ -343,6 +363,7 @@ pub(super) fn spawn_edited_with_ai(
             results,
             render,
             render_ai,
+            profiles,
         };
         loop {
             match next_step(&renders.results.shared, &renders.wanted, full_renders) {
@@ -388,6 +409,7 @@ struct Renders {
     results: Results,
     render: RenderEdited,
     render_ai: RenderWithAi,
+    profiles: ProfileLibrary,
 }
 /// The preview cache, held while it is read or written.
 fn cache(cache: &Mutex<Option<PreviewCache>>) -> std::sync::MutexGuard<'_, Option<PreviewCache>> {
@@ -530,13 +552,14 @@ impl Renders {
             path: path.clone(),
         });
         drop(state);
-        let (cache_at, cache_path, wanted, results, render, render_ai) = (
+        let (cache_at, cache_path, wanted, results, render, render_ai, profiles) = (
             self.cache.clone(),
             self.cache_path.clone(),
             self.wanted.clone(),
             self.results.clone(),
             self.render,
             self.render_ai,
+            self.profiles,
         );
         let task = move || {
             let _finished = Finished(results.shared.clone(), slot);
@@ -547,6 +570,17 @@ impl Renders {
                     return None;
                 }
                 let stamp = Stamp::read(&path).ok()?;
+                // The defaults resolve against the profile library as it is when
+                // the render reads it, which their request named as it was then.
+                // A render made while the library differs, before or after
+                // profiles were imported or removed, is shown but not kept, so
+                // the request's identity never finds pixels of another library.
+                let as_named = || {
+                    source
+                        .profile_library()
+                        .is_none_or(|named| profiles() == named)
+                };
+                let named_before = as_named();
                 let (image, shows) = match finished_entry(&path, &source, ai.as_ref()) {
                     Some((file, entry)) => (
                         render_ai(&path, &file, &source, &entry, Cancel::new(&cancel)).ok()?,
@@ -557,7 +591,9 @@ impl Renders {
                         plain_of(&source),
                     ),
                 };
-                if let Some(cache) = &mut *cache(&cache_at)
+                if named_before
+                    && as_named()
+                    && let Some(cache) = &mut *cache(&cache_at)
                     && let Err(error) = cache.store_tagged(
                         &path,
                         &source.tag(),

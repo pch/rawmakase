@@ -125,7 +125,8 @@ fn bare_dng(folder: &Path) -> PathBuf {
 }
 
 /// A Library of the folder `make` writes its photo into, its previews kept in
-/// a cache of its own.
+/// a cache of its own, and given the defaults with the profile library as it
+/// is, as the app gives them once it has loaded a catalog.
 fn library_with(make: impl FnOnce(&Path) -> PathBuf) -> Result<(tempfile::TempDir, Library)> {
     let directory = tempfile::tempdir()?;
     let folder = directory.path().join("photos");
@@ -136,6 +137,10 @@ fn library_with(make: impl FnOnce(&Path) -> PathBuf) -> Result<(tempfile::TempDi
     let mut library = Library::load(&path, egui::Context::default())?;
     library.cache =
         textures::PreviewTextures::with_cache(&library.ctx, directory.path().join("previews"));
+    library.set_defaults(PreviewDefaults {
+        develop: Default::default(),
+        profiles: crate::camera_profiles::library_fingerprint().into(),
+    });
     Ok((directory, library))
 }
 

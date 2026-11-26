@@ -121,6 +121,15 @@ impl EditSource {
             PreviewAi::Finished => format!("{tag}-fit-ai-{model}"),
         }
     }
+    /// The profile library this source's identity names, which a render must be
+    /// resolved against to be kept under [`Self::tag`]: the defaults', as the
+    /// app last read it. A saved or Lightroom edit names its profile itself.
+    pub(in crate::app) fn profile_library(&self) -> Option<&str> {
+        match self {
+            Self::Defaults(defaults) => Some(&defaults.profiles),
+            Self::Recipe(_) | Self::Unreadable(_) | Self::Lightroom(_) => None,
+        }
+    }
     /// Whether this edit renders AI Denoise, as far as the Library tells without
     /// opening the file: a RAWmakase edit with it on. A Lightroom edit or the
     /// defaults render without it here, as they did before.
