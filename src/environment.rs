@@ -289,7 +289,7 @@ fn build_id() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     /// The Desktop and Pictures folders, printed for
     /// [`desktop_and_pictures_are_the_xdg_user_folders`], which runs this
@@ -308,6 +308,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn desktop_and_pictures_are_the_xdg_user_folders() -> anyhow::Result<()> {
+        use std::path::Path;
         let home = tempfile::tempdir()?;
         let config = home.path().join("config");
         let folders = |config: &Path| -> anyhow::Result<(String, String)> {
