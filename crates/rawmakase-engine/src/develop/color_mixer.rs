@@ -128,6 +128,39 @@ fn add_rendered_slider(
     }
 }
 
+/// Adds a RAW SDR render's Saturation grid for `s > 0.5`, transitioning smoothly
+/// from the legacy photo `+50` grid (`CHART` table 49) at `+50` to
+/// `rendered_sat_vib.bin`'s `+75` and `+100` knots. Interpolates the linear
+/// saturation factor `2^ds` between knots and stays continuous at `+50`.
+fn add_raw_high_saturation(grid: &mut [[f32; 3]], s: f32) {
+    const RENDERED_SAT_75: usize = 5;
+    const RENDERED_SAT_100: usize = 6;
+    debug_assert_eq!(RENDERED_SAT_KNOTS[RENDERED_SAT_75], 0.75);
+    debug_assert_eq!(RENDERED_SAT_KNOTS[RENDERED_SAT_100], 1.);
+    let s = s.clamp(0.5, 1.);
+    if s <= 0.75 {
+        let t = (s - 0.5) / 0.25;
+        for (cell, d) in grid.iter_mut().enumerate() {
+            d[0] += (1. - t) * value(49, 0, cell) + t * rendered_value(RENDERED_SAT_75, 0, cell);
+            let s0 = value(49, 1, cell);
+            let s1 = rendered_value(RENDERED_SAT_75, 1, cell);
+            d[1] += ((1. - t) * s0.exp2() + t * s1.exp2()).max(1e-3).log2();
+            d[2] += (1. - t) * value(49, 2, cell) + t * rendered_value(RENDERED_SAT_75, 2, cell);
+        }
+    } else {
+        let t = (s - 0.75) / 0.25;
+        for (cell, d) in grid.iter_mut().enumerate() {
+            d[0] += (1. - t) * rendered_value(RENDERED_SAT_75, 0, cell)
+                + t * rendered_value(RENDERED_SAT_100, 0, cell);
+            let s0 = rendered_value(RENDERED_SAT_75, 1, cell);
+            let s1 = rendered_value(RENDERED_SAT_100, 1, cell);
+            d[1] += ((1. - t) * s0.exp2() + t * s1.exp2()).max(1e-3).log2();
+            d[2] += (1. - t) * rendered_value(RENDERED_SAT_75, 2, cell)
+                + t * rendered_value(RENDERED_SAT_100, 2, cell);
+        }
+    }
+}
+
 fn vibrance_value(knot: usize, channel: usize, cell: usize) -> f32 {
     let i = 2 * (knot * TABLE + channel * CELLS + cell);
     i16::from_le_bytes([VIBRANCE_CHART[i], VIBRANCE_CHART[i + 1]]) as f32 * SCALE
@@ -300,8 +333,10 @@ impl ColorMixer {
 
     /// Builds the combined mixer grid for a RAW (`is_rendered == false`) or rendered
     /// file (`is_rendered == true`). SDR rendered files use [`RENDERED_SAT_VIB`] for
-    /// Saturation and Vibrance; RAW files and HDR masters keep the RAW path
-    /// bit-identical.
+    /// Saturation and Vibrance; RAW SDR files also use [`RENDERED_SAT_VIB`] for
+    /// positive Vibrance (`+1..+100`) and transition smoothly from the legacy photo
+    /// `+50` table to [`RENDERED_SAT_VIB`] at Saturation `+75` and `+100`. RAW SDR
+    /// Saturation `<= +50`, negative Vibrance, and HDR masters keep the legacy tables.
     pub(crate) fn for_source(r: &Recipe, is_rendered: bool) -> Option<Self> {
         debug_assert_eq!(CHART.len(), TABLES * TABLE * 2);
         let mut active: Vec<(usize, f32)> = Vec::new();
@@ -355,18 +390,35 @@ impl ColorMixer {
                 hdr: None,
             });
         }
-        let saturation = r.saturation.max(GRAY_FROM);
-        // Up to ±50 Vibrance is the photo tables, scaled; beyond, the chart's grids.
-        let chart_vibrance = r.vibrance.abs() > 0.5;
-        let vibrance = if chart_vibrance { 0. } else { r.vibrance };
-        // Measured at ±50: positions beyond extrapolate linearly.
+        // RAW SDR positive Vibrance uses the dense ProPhoto-HSV knots directly, and
+        // RAW SDR Saturation above +50 transitions from the photo +50 table to the
+        // measured +75/+100 knots; HDR masters keep the legacy tables bit-identical.
+        let rendered_pos_vibrance = !r.hdr.is_active() && r.vibrance > 0.;
+        let high_saturation = !r.hdr.is_active() && r.saturation > 0.5;
+        if rendered_pos_vibrance || high_saturation {
+            debug_assert_eq!(RENDERED_SAT_VIB.len(), RENDERED_TABLES * TABLE * 2);
+        }
+        let saturation = if high_saturation {
+            0.
+        } else {
+            r.saturation.max(GRAY_FROM)
+        };
+        // Up to ±50 (negative in SDR, both signs in HDR) Vibrance is the photo tables,
+        // scaled; beyond, `vibrance_chart.bin`.
+        let chart_vibrance = !rendered_pos_vibrance && r.vibrance.abs() > 0.5;
+        let vibrance = if rendered_pos_vibrance || chart_vibrance {
+            0.
+        } else {
+            r.vibrance
+        };
+        // Measured at ±50: positions beyond extrapolate linearly (HDR Saturation).
         for (i, s) in [saturation, vibrance].into_iter().enumerate() {
             if s != 0. {
                 active.push((48 + i * 2 + usize::from(s > 0.), (s.abs() * 2.).min(2.)));
             }
         }
         let saturation_gray = ((GRAY_FROM - r.saturation) / (1. + GRAY_FROM)).clamp(0., 1.);
-        if active.is_empty() && !chart_vibrance {
+        if active.is_empty() && !chart_vibrance && !rendered_pos_vibrance && !high_saturation {
             return None;
         }
         // While colors fade to gray, the other sliders still set its brightness.
@@ -376,12 +428,21 @@ impl ColorMixer {
             .filter(|(t, _)| *t != 48 && *t != 49)
             .collect();
         let with_vibrance = |mut g: Vec<[f32; 3]>| {
-            if chart_vibrance {
+            if rendered_pos_vibrance {
+                add_rendered_slider(
+                    &mut g,
+                    &VIBRANCE_KNOTS,
+                    RENDERED_SAT_KNOTS.len(),
+                    r.vibrance,
+                    false,
+                );
+            } else if chart_vibrance {
                 add_vibrance(&mut g, r.vibrance);
             }
             g
         };
-        let gray_source = (saturation_gray > 0. && (!others.is_empty() || chart_vibrance))
+        let gray_source = (saturation_gray > 0.
+            && (!others.is_empty() || chart_vibrance || rendered_pos_vibrance))
             .then(|| with_vibrance(grid(&others)));
         // Vibrance's value factors, which fade above white, and band Luminance's, which
         // fade by each channel's level.
@@ -409,8 +470,12 @@ impl ColorMixer {
             .hdr
             .is_active()
             .then(|| [fading(&active), fading(&others)]);
+        let mut delta = grid(&active);
+        if high_saturation {
+            add_raw_high_saturation(&mut delta, r.saturation);
+        }
         Some(Self {
-            delta: with_vibrance(grid(&active)),
+            delta: with_vibrance(delta),
             saturation_gray,
             gray_source,
             hdr,
@@ -730,13 +795,14 @@ mod tests {
                 .iter()
                 .all(|v| (v - 0.2).abs() < 2e-3)
         );
-        // Up to ±50 it is the photo tables, scaled linearly.
-        let (full, half) = (at(0.5).delta, at(0.25).delta);
-        assert!(
-            full.iter()
-                .zip(&half)
-                .all(|(f, h)| (0..3).all(|c| (h[c] - f[c] * 0.5).abs() < 1e-6))
-        );
+        // Negative Vibrance down to −50 keeps the photo tables, scaled linearly in
+        // hue/value and linearly in the saturation factor.
+        let (full, half) = (at(-0.5).delta, at(-0.25).delta);
+        for (f, h) in full.iter().zip(&half) {
+            let expected = (1. + 0.5 * (f[1].exp2() - 1.)).max(1e-3).log2();
+            assert!((h[1] - expected).abs() < 1e-5);
+            assert!((h[0] - f[0] * 0.5).abs() < 1e-6 && (h[2] - f[2] * 0.5).abs() < 1e-6);
+        }
     }
     /// In an HDR master band Luminance changes each channel by its scene level, as
     /// Camera Raw 18.7 renders it (docs/hdr.md#the-color-stage): fully up to
@@ -908,18 +974,94 @@ mod tests {
     }
 
     #[test]
-    fn raw_path_keeps_raw_saturation_and_vibrance_rules() {
-        let r = Recipe {
+    fn raw_sdr_unifies_positive_vibrance_and_high_saturation_while_keeping_legacy_paths() {
+        // RAW Saturation <= +50 and negative Vibrance keep the legacy RAW path (fade from −50).
+        let r_neg = Recipe {
             saturation: -0.75,
-            vibrance: 0.75,
+            vibrance: -0.5,
             ..Default::default()
         };
-        let raw = ColorMixer::for_source(&r, false).unwrap();
-        // RAW Saturation still fades to luminance starting from −50 (0.5 at −75).
-        assert!((raw.saturation_gray - 0.5).abs() < 1e-6);
-        let ren = ColorMixer::for_source(&r, true).unwrap();
-        assert_eq!(ren.saturation_gray, 0.);
-        assert_ne!(raw.delta, ren.delta);
+        let raw_neg = ColorMixer::for_source(&r_neg, false).unwrap();
+        let ren_neg = ColorMixer::for_source(&r_neg, true).unwrap();
+        assert!((raw_neg.saturation_gray - 0.5).abs() < 1e-6);
+        assert_eq!(ren_neg.saturation_gray, 0.);
+        assert_ne!(raw_neg.delta, ren_neg.delta);
+
+        // RAW SDR positive Vibrance matches rendered_sat_vib.bin across the entire positive range.
+        for v in [0.125, 0.25, 0.5, 0.75, 1.0] {
+            let r = Recipe {
+                vibrance: v,
+                ..Default::default()
+            };
+            let raw = ColorMixer::for_source(&r, false).unwrap();
+            let ren = ColorMixer::for_source(&r, true).unwrap();
+            assert_eq!(raw.delta, ren.delta, "vibrance={v}");
+        }
+
+        // RAW SDR Saturation transitions continuously from photo +50 to rendered_sat_vib at +75/+100.
+        let at_raw = |saturation| {
+            ColorMixer::for_source(
+                &Recipe {
+                    saturation,
+                    ..Default::default()
+                },
+                false,
+            )
+            .unwrap()
+        };
+        let at_ren = |saturation| {
+            ColorMixer::for_source(
+                &Recipe {
+                    saturation,
+                    ..Default::default()
+                },
+                true,
+            )
+            .unwrap()
+        };
+        let s50 = at_raw(0.5).delta;
+        let s50_eps = at_raw(0.5 + 1e-4).delta;
+        for (a, b) in s50.iter().zip(&s50_eps) {
+            for c in 0..3 {
+                assert!(
+                    (a[c] - b[c]).abs() < 1e-3,
+                    "discontinuity at +50: {a:?} vs {b:?}"
+                );
+            }
+        }
+        assert_eq!(at_raw(0.75).delta, at_ren(0.75).delta);
+        assert_eq!(at_raw(1.0).delta, at_ren(1.0).delta);
+        // Between +50 and +75, saturation interpolates the linear factor 2^ds.
+        let (k50, k75, mid) = (at_raw(0.5).delta, at_raw(0.75).delta, at_raw(0.625).delta);
+        for ((a, b), m) in k50.iter().zip(&k75).zip(&mid) {
+            let expected = (0.5 * a[1].exp2() + 0.5 * b[1].exp2()).max(1e-3).log2();
+            assert!((m[1] - expected).abs() < 1e-5);
+            assert!((m[0] - 0.5 * (a[0] + b[0])).abs() < 1e-6);
+            assert!((m[2] - 0.5 * (a[2] + b[2])).abs() < 1e-6);
+        }
+
+        // Saturation < −50 combined with positive Vibrance keeps positive Vibrance in gray_source.
+        let orange = [0.6, 0.3, 0.1];
+        let combo = Recipe {
+            saturation: -1.,
+            vibrance: 0.5,
+            ..Default::default()
+        };
+        let toned = ColorMixer::for_source(&combo, false).unwrap().apply(orange);
+        let vib_only = ColorMixer::for_source(
+            &Recipe {
+                vibrance: 0.5,
+                ..Default::default()
+            },
+            false,
+        )
+        .unwrap()
+        .apply(orange);
+        let y_vib = crate::color::luminance(vib_only);
+        assert!(
+            toned.iter().all(|v| (v - y_vib).abs() < 1e-5),
+            "{toned:?} vs {y_vib}"
+        );
     }
 
     #[test]
@@ -968,10 +1110,23 @@ mod tests {
             assert!((m[0] - 0.5 * (a[0] + b[0])).abs() < 1e-6);
             assert!((m[2] - 0.5 * (a[2] + b[2])).abs() < 1e-6);
         }
-        // Rendered Saturation +75 avoids the RAW photo-table linear-log extrapolation
-        // overshoot on a vivid flower color.
+        // Saturation +75 avoids the legacy linear-log extrapolation overshoot on a vivid color.
         let vivid = [0.55, 0.25, 0.12];
         let sat_of = |rgb: [f32; 3]| hsv(mul(crate::camera_profiles::RGB_TO_PRO, rgb)).unwrap()[1];
+        let legacy_extrap = {
+            let mut r = Recipe {
+                saturation: 0.75,
+                ..Default::default()
+            };
+            r.hdr.enabled = true;
+            // HDR uses the legacy linear-log extrapolation table (evaluated at SDR value here).
+            sat_of(tables_in(
+                &ColorMixer::for_source(&r, false).unwrap().delta,
+                vivid,
+                Lookup::Sdr,
+            ))
+        };
+        let ren_s = sat_of(at(0.75).apply(vivid));
         let raw_s = sat_of(
             ColorMixer::for_source(
                 &Recipe {
@@ -983,29 +1138,26 @@ mod tests {
             .unwrap()
             .apply(vivid),
         );
-        let ren_s = sat_of(at(0.75).apply(vivid));
-        assert!(ren_s > sat_of(vivid) && ren_s < raw_s, "{ren_s} vs {raw_s}");
+        assert_eq!(ren_s, raw_s);
+        assert!(
+            ren_s > sat_of(vivid) && ren_s < legacy_extrap,
+            "{ren_s} vs {legacy_extrap}"
+        );
     }
 
     #[test]
-    fn rendered_vibrance_boosts_vivid_blues_and_hdr_keeps_raw_path() {
+    fn positive_vibrance_boosts_vivid_blues_and_hdr_keeps_legacy_path() {
         let mut r = Recipe {
             vibrance: 1.,
             ..Default::default()
         };
         let raw = ColorMixer::for_source(&r, false).unwrap();
         let ren = ColorMixer::for_source(&r, true).unwrap();
+        assert_eq!(raw.delta, ren.delta);
         // Bright saturated ProPhoto blue (hue ~247°, s ~0.80, v ~0.84) where the
-        // RAW chart's photo-table prior undersaturated rendered JPEGs.
+        // legacy vibrance_chart prior undersaturated vivid colors.
         let blue = mul(crate::camera_profiles::PRO_TO_RGB, [0.20, 0.17, 0.84]);
         let sat_of = |rgb: [f32; 3]| hsv(mul(crate::camera_profiles::RGB_TO_PRO, rgb)).unwrap()[1];
-        assert!(
-            sat_of(ren.apply(blue)) > sat_of(raw.apply(blue)) + 0.03,
-            "ren={} raw={}",
-            sat_of(ren.apply(blue)),
-            sat_of(raw.apply(blue))
-        );
-        // HDR masters of HDR rendered files stay on the measured HDR RAW path.
         r.hdr.enabled = true;
         let hdr_ren = ColorMixer::for_source(&r, true).unwrap();
         let hdr_raw = ColorMixer::for_source(&r, false).unwrap();
@@ -1018,5 +1170,34 @@ mod tests {
             assert_eq!(fr[i].vibrance, fw[i].vibrance);
             assert_eq!(fr[i].luminance, fw[i].luminance);
         }
+        // HDR master also keeps legacy Saturation extrapolation bit-identical.
+        let mut r_sat = Recipe {
+            saturation: 1.,
+            ..Default::default()
+        };
+        r_sat.hdr.enabled = true;
+        let hdr_sat_raw = ColorMixer::for_source(&r_sat, false).unwrap();
+        let hdr_sat_ren = ColorMixer::for_source(&r_sat, true).unwrap();
+        assert_eq!(hdr_sat_raw.delta, hdr_sat_ren.delta);
+        assert_ne!(
+            hdr_sat_raw.delta,
+            ColorMixer::for_source(
+                &Recipe {
+                    saturation: 1.,
+                    ..Default::default()
+                },
+                false
+            )
+            .unwrap()
+            .delta
+        );
+        // Confirm positive Vibrance boosts vivid blue more than the legacy HDR/vibrance_chart grid.
+        let legacy_s = sat_of(tables_in(&hdr_raw.delta, blue, Lookup::Sdr));
+        assert!(
+            sat_of(raw.apply(blue)) > legacy_s + 0.03,
+            "raw={} legacy={}",
+            sat_of(raw.apply(blue)),
+            legacy_s
+        );
     }
 }
