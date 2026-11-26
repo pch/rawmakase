@@ -1,0 +1,192 @@
+//! What a front end that renders while its controls move needs beside a
+//! renderer: a single-slot mailbox of edits, and the rules for which frame
+//! is shown.
+//!
+//! An editor keeps one render thread and gives it only the newest edit: the
+//! one waiting is replaced, the one running finishes and shows. Each edit put
+//! in the mailbox is numbered, and a frame carries the number of the edit it
+//! renders, so [`Shown`] can drop a frame older than the one on screen.
+use std::sync::{Condvar, Mutex, PoisonError};
+
+/// A single-slot mailbox: [`Mailbox::put`] replaces what waits, and
+/// [`Mailbox::take`] gives the render thread the newest. `Send` and `Sync`,
+/// to share behind an `Arc`.
+#[derive(Debug)]
+pub struct Mailbox<T> {
+    state: Mutex<State<T>>,
+    wake: Condvar,
+}
+
+#[derive(Debug)]
+struct State<T> {
+    waiting: Option<Numbered<T>>,
+    /// The number the next edit gets: one counter for every photo, so a new
+    /// photo's first frame is numbered after the edits made before it.
+    next: u64,
+    closed: bool,
+}
+
+/// An edit taken from a [`Mailbox`], with its number.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Numbered<T> {
+    /// Its place among the edits put in the mailbox, from 1.
+    pub number: u64,
+    /// The edit.
+    pub job: T,
+}
+
+impl<T> Default for Mailbox<T> {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(State {
+                waiting: None,
+                next: 1,
+                closed: false,
+            }),
+            wake: Condvar::new(),
+        }
+    }
+}
+
+impl<T> Mailbox<T> {
+    /// An empty mailbox.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Puts `job` in the mailbox in place of any waiting, and returns its
+    /// number. Once the mailbox is closed, the job is dropped.
+    pub fn put(&self, job: T) -> u64 {
+        let mut state = self.lock();
+        let number = state.next;
+        state.next += 1;
+        if !state.closed {
+            state.waiting = Some(Numbered { number, job });
+            self.wake.notify_one();
+        }
+        number
+    }
+
+    /// The newest job, waiting until one is put; `None` once the mailbox is
+    /// closed, which ends the render thread's loop.
+    pub fn take(&self) -> Option<Numbered<T>> {
+        let mut state = self.lock();
+        loop {
+            if state.closed {
+                return None;
+            }
+            if let Some(job) = state.waiting.take() {
+                return Some(job);
+            }
+            state = self
+                .wake
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// The newest job, if one waits, without waiting.
+    pub fn try_take(&self) -> Option<Numbered<T>> {
+        self.lock().waiting.take()
+    }
+
+    /// Closes the mailbox: what waits is dropped, and [`Mailbox::take`]
+    /// returns `None` from now on.
+    pub fn close(&self) {
+        let mut state = self.lock();
+        state.closed = true;
+        state.waiting = None;
+        self.wake.notify_all();
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, State<T>> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Which frame a view shows, by the number of the edit it renders
+/// ([`Numbered::number`]): the rules every front end repeats.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Shown {
+    shown: Option<(u64, bool)>,
+}
+
+impl Shown {
+    /// Whether a frame of edit `number` (`draft` for a reduced one) is shown
+    /// in place of the frame on screen, and if so, records it. A frame older
+    /// than the one shown is dropped, and a draft never replaces its own
+    /// edit's full frame; the full frame replaces its draft.
+    pub fn accept(&mut self, number: u64, draft: bool) -> bool {
+        let taken = match self.shown {
+            None => true,
+            Some((shown, _)) if number > shown => true,
+            Some((shown, shown_draft)) if number == shown => shown_draft && !draft,
+            Some(_) => false,
+        };
+        if taken {
+            self.shown = Some((number, draft));
+        }
+        taken
+    }
+
+    /// The number of the edit whose frame is shown, if any.
+    pub fn number(&self) -> Option<u64> {
+        self.shown.map(|(n, _)| n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_newest_edit_replaces_the_one_waiting() {
+        let mailbox = Mailbox::new();
+        assert_eq!(mailbox.put("a"), 1);
+        assert_eq!(mailbox.put("b"), 2);
+        assert_eq!(
+            mailbox.take(),
+            Some(Numbered {
+                number: 2,
+                job: "b"
+            })
+        );
+        assert_eq!(mailbox.try_take(), None);
+        mailbox.put("c");
+        mailbox.close();
+        assert_eq!(mailbox.take(), None, "closed: what waited is dropped");
+        assert_eq!(mailbox.put("d"), 4, "numbers go on, the job is dropped");
+        assert_eq!(mailbox.try_take(), None);
+    }
+
+    #[test]
+    fn a_render_thread_waits_for_an_edit_and_ends_when_closed() {
+        let mailbox = std::sync::Arc::new(Mailbox::new());
+        let worker = {
+            let mailbox = mailbox.clone();
+            std::thread::spawn(move || {
+                let mut seen = Vec::new();
+                while let Some(job) = mailbox.take() {
+                    seen.push(job.job);
+                    if seen.len() == 1 {
+                        mailbox.close();
+                    }
+                }
+                seen
+            })
+        };
+        mailbox.put(7);
+        assert_eq!(worker.join().unwrap(), [7]);
+    }
+
+    #[test]
+    fn stale_frames_and_a_late_draft_are_dropped() {
+        let mut shown = Shown::default();
+        assert!(shown.accept(2, true));
+        assert!(shown.accept(2, false), "the full frame replaces its draft");
+        assert!(!shown.accept(2, true), "a draft never replaces its frame");
+        assert!(!shown.accept(1, false), "an older edit's frame");
+        assert!(shown.accept(3, true));
+        assert_eq!(shown.number(), Some(3));
+    }
+}

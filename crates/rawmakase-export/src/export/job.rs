@@ -35,8 +35,9 @@ pub struct Photo {
     pub watermarks: crate::watermark::Watermarks,
     /// The demosaic for a full-size decode, if `image` is a draft.
     pub demosaic: Demosaic,
-    /// Where a full-size decode is looked up first.
-    pub cache: DecodeCache,
+    /// Where a full-size decode is looked up first, and kept; none to decode
+    /// it each time.
+    pub cache: Option<DecodeCache>,
     /// The imported lens profiles a full-size decode opens the photo with.
     pub lenses: crate::photo::LensProfiles,
     /// Where the AI Denoise source comes from when the edit has AI Denoise on.
@@ -236,7 +237,7 @@ pub fn prepare_with_backend(
         &photo.source,
         &photo.lenses,
         photo.demosaic,
-        &photo.cache,
+        photo.cache.as_ref(),
         cancel,
     )?;
     cancelled()?;
@@ -386,12 +387,19 @@ fn full_size(
     source: &Path,
     lenses: &crate::photo::LensProfiles,
     demosaic: Demosaic,
-    cache: &DecodeCache,
+    cache: Option<&DecodeCache>,
     cancel: Cancel<'_>,
 ) -> Result<Arc<CameraImage>> {
     if !image.fast {
         return Ok(image);
     }
+    let Some(cache) = cache else {
+        return Ok(Arc::new(crate::develop::quality::with_recovered(
+            crate::photo::open(source, lenses)?
+                .develop(crate::camera_data::Decode::Full(demosaic), cancel)?,
+            cancel,
+        )?));
+    };
     let full = FullSize::with_cache(source, demosaic, cache.clone());
     Ok(Arc::new(match full.cached(&image.metadata) {
         Some(cached) => cached,
@@ -480,7 +488,7 @@ mod tests {
             watermark: None,
             watermarks: Default::default(),
             demosaic: Demosaic::default(),
-            cache: DecodeCache::new(cache.to_path_buf(), u64::MAX, "test"),
+            cache: Some(DecodeCache::new(cache.to_path_buf(), u64::MAX, "test")),
             lenses: crate::photo::LensProfiles::none(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
             file: None,
@@ -879,7 +887,7 @@ mod tests {
             &chart,
             &crate::photo::LensProfiles::none(),
             Demosaic::default(),
-            &cache,
+            Some(&cache),
             Cancel::NEVER,
         )?;
         assert_eq!((full.width, full.height), (4, 3));

@@ -650,7 +650,7 @@ impl Editor {
             watermark: None,
             watermarks: self.watermarks(),
             demosaic: self.session.demosaic,
-            cache: self.decode_cache().clone(),
+            cache: Some(self.decode_cache().clone()),
             lenses: self.lens_profiles().clone(),
             ai: self.ai_service(),
             file: self.document.image_file.clone(),

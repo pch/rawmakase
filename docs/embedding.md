@@ -5,10 +5,10 @@ decode, edit, render and export photos as RAWmakase does, without the desktop
 interface. This guide is for the programmer writing that app. How the library
 is being built, and what comes next, is the [library plan](embedding-plan.md).
 
-**Status: being built.** The library has its configuration and its error type.
-Opening, decoding, rendering and exporting a photo join it in the plan's
-steps 4 and 5; until then an app has nothing to do with it but build a
-context. Nothing is stable before 1.0: pin a release tag.
+**Status: being built.** One photo, start to finish: opening it, decoding,
+editing its settings, presets and Auto, rendering a view and exporting a
+file. Catalogs, the edit session, the GPU and AI Denoise come in the plan's
+later steps. Nothing is stable before 1.0: pin a release tag.
 
 ## Depending on it
 
@@ -43,7 +43,8 @@ What the context takes today:
 
 | Value | What for | Default |
 | --- | --- | --- |
-| The data folders, in order | Imported lens profiles are looked for in each one's `lens-profiles` folder | None: no imported lens profile |
+| The data folders, in order | Imported lens profiles, camera profiles and XMP presets are looked for in each one's `lens-profiles`, `camera-profiles` and `xmp-presets`; Lensfun's database and the presets' order are kept in the first | None: only RAWmakase's own profiles and presets |
+| The raw defaults | What a photo without an edit starts from: Adobe Default or a preset, for every camera or for each | Adobe Default |
 | The cache folder, its limits and a build id, given together | Decoded photos and AI Denoise's results are kept there, up to the limits (4 GiB and 10 GiB by default), and Camera Look's fits | No cache |
 
 The build id names the build that made a cache's entries; entries of another
@@ -51,9 +52,45 @@ id are not read. There is no default, since a default would let a newer
 library read an older one's results: give one that changes whenever your app
 or the library changes, such as your app's version and build number.
 
-More values join as the library takes them (the data folders, fonts, the
-GPU, the ONNX Runtime's path); a value is offered only once the library reads
-it from the context.
+More values join as the library takes them (fonts, the GPU, the ONNX
+Runtime's path); a value is offered only once the library reads it from the
+context.
+
+## A photo, start to finish
+
+```rust
+use rawmakase_core::{Cancel, Decode, ExportSettings, Parameter, View};
+
+let photo = ctx.open(path, cancel)?;            // metadata and the profiles that fit
+let mut recipe = photo.starting_recipe()?;      // the context's raw defaults
+photo.set(&mut recipe, Parameter::Temperature, 5200.)?; // white balance follows
+recipe.curve.insert([0.25, 0.2]);               // the point curve, by its methods
+
+let image = photo.decode(Decode::Full, cancel)?; // reads the file again
+let frame = ctx.render(&image, &recipe, View::Fit(2048), cancel)?;
+let rgba = frame.rgba8();
+
+ctx.export(&photo, &recipe, &ExportSettings::default(), "out.jpg", false, cancel, |_| {})?;
+```
+
+- **A photo** keeps its metadata and the camera profiles that fit, not a
+  RAW's bytes: each decode reads the file again, and refuses one changed
+  since it was opened (`Changed`).
+- **A recipe** is the model's `Recipe`, read freely. Change a slider with
+  `Photo::set`, which brings along what depends on it, and draw it from
+  `Photo::control`: its range, step, scale, value and text. Each
+  `Parameter` has a name (`exposure`, `temperature`) for a binding.
+  Presets apply with `Photo::apply_preset`, measuring their Auto settings
+  on a decode, and `Photo::auto_tone` and `auto_white_balance` are the
+  Basic panel's Auto.
+- **A renderer** (`Context::renderer`) is kept by the thread that renders
+  a view: the whole photo at a size, or a region at 100%. Before an edit's
+  frame, `Renderer::draft_due` says whether a reduced draft should be shown
+  first, as the desktop does, and `render_draft` renders it.
+- **An export** develops the photo in full and writes the format its file's
+  extension names, as the desktop's Export settings choose (format,
+  quality, color space, HDR, size). It never replaces a file unless asked,
+  and never the photo's own.
 
 A context is cheap to clone, and a clone is the same context. It is `Send` and
 `Sync`.
@@ -79,8 +116,16 @@ the `rawmakase` command line prints its errors. `ErrorKind` is
 
 ## Threads
 
-The API is synchronous. Long operations will take a `Cancel` and report
-progress through a callback; pixel work runs on rayon's pools.
+The API is synchronous. Long operations take a `Cancel`; an export reports
+progress through a callback; pixel work runs on rayon's pools. The library
+starts no thread of its own.
+
+`Context`, `Photo`, `Image` and `Error` are `Send` and `Sync`; a `Renderer`
+is `Send` and belongs to one thread. An editor that renders while its
+controls move keeps one render thread and gives it only the newest edit,
+through a `Mailbox`: the edit waiting is replaced, the running one finishes.
+`Shown` keeps the rules for what is on screen: a frame older than the one
+shown is dropped, and a draft never replaces its own edit's frame.
 
 ## What is shared in a process
 
@@ -100,3 +145,12 @@ which CI compares with the code. Each change to them is noted here.
   and `ErrorKind`.
 - **Data folders**: `ContextBuilder::data_dirs` and `Context::data_dirs`; the
   cache's build id now keys its entries.
+- **One photo, start to finish**: `ContextBuilder::raw_defaults`;
+  `Context::open`, `presets`, `load_preset`, `renderer`, `render` and
+  `export` (the `export` feature, on by default); `Photo`, `Decode`, `Image`
+  and `DecodeStats`; `Parameter`, `Control`, `Scale`, `Preset` and `Applied`;
+  `Renderer`, `Frame` and `View`; `Mailbox`, `Numbered` and `Shown`; and the
+  model's `Recipe`, `Metadata`, `CameraProfile`, `ToneCurve` and `Inserted`,
+  interop's `RawDefaults` and `ExportSettings`, and `Cancel`, re-exported.
+  `ExportSettings::load` and `save` still read and write the desktop's own
+  file in its data folder; step 15 gives them a path.

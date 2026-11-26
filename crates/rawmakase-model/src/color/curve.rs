@@ -203,6 +203,17 @@ impl ToneCurve {
             self.slope(last - 1)
         }
     }
+    /// The curve at `n` inputs evenly spaced from 0 to 1, for drawing it:
+    /// `[input, output]` each. Fewer than two give the two ends.
+    pub fn sampled(&self, n: usize) -> Vec<[f32; 2]> {
+        let n = n.max(2);
+        (0..n)
+            .map(|i| {
+                let x = i as f32 / (n - 1) as f32;
+                [x, self.evaluate(x)]
+            })
+            .collect()
+    }
     pub fn evaluate(&self, x: f32) -> f32 {
         if self.natural && self.smooth {
             return NaturalSpline::new(&self.points).evaluate(x);
@@ -570,6 +581,16 @@ mod tests {
         assert!(c.remove(1));
         assert_eq!(c.points.len(), 2);
         c.validate()
+    }
+    #[test]
+    fn a_curve_is_sampled_evenly_from_end_to_end() {
+        let mut c = ToneCurve::default();
+        c.insert([0.5, 0.7]);
+        let s = c.sampled(5);
+        assert_eq!(s.len(), 5);
+        assert_eq!((s[0][0], s[4][0]), (0., 1.));
+        assert_eq!(s[2], [0.5, c.evaluate(0.5)]);
+        assert_eq!(c.sampled(0).len(), 2);
     }
     #[test]
     fn a_full_curve_takes_no_point_and_says_so() {

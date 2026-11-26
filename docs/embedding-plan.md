@@ -1059,6 +1059,26 @@ so the design is proved on one path before it is spread.
    it a frame presented on the GPU is finished and one read back is not,
    as it counted before. `draft_edge` sizes a whole-photo draft.
 
+   The library's operations: `ContextBuilder::raw_defaults`, and a photo
+   started from them; `Context::open` (a RAW's metadata and the profiles
+   that fit, its Camera Look fitted through the context's cache, a rendered
+   file decoded) and `Photo::decode`, which keeps no RAW's bytes, reads the
+   file again and refuses one changed since it was opened
+   (`ErrorKind::Changed`); `Image` with its statistics and its size at a
+   view; `Photo::set`, `value` and `control`; `Context::presets`,
+   `load_preset` and `Photo::apply_preset` with the decode's measures;
+   `auto_tone` and `auto_white_balance`; a CPU `Renderer` that keeps the
+   draft rule per view (`draft_due`, `render_draft`); RGBA frames;
+   `ToneCurve::sampled` for drawing the curve; `Mailbox` and `Shown`; and,
+   with the `export` feature (on by default), `Context::export` through
+   the export crate's job, HDR masters and gain maps among what it writes,
+   to the file it is given. The export job's decode cache is now optional
+   (`job::Photo::cache`): the library's context may have none, and the
+   desktop's default is its own folder. The re-exported `ExportSettings`
+   still carries `load` and `save`, which read the desktop's file in the
+   data folder (counted by the ambient check) until step 15 gives them a
+   path.
+
 ### 2. Platforms and the GPU
 
 6. Apple platforms: decoding's ImageIO table and the four switches in

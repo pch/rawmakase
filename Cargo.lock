@@ -4061,10 +4061,14 @@ name = "rawmakase-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "image",
  "rawmakase-cancel",
  "rawmakase-decode",
+ "rawmakase-engine",
+ "rawmakase-export",
  "rawmakase-interop",
  "rawmakase-model",
+ "rayon",
  "tempfile",
 ]
 

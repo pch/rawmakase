@@ -6,6 +6,7 @@ use rawmakase_decode::camera_look::cache::FitCache;
 use rawmakase_decode::decode_cache::{self, DecodeCache};
 use rawmakase_decode::photo::LensProfiles;
 use rawmakase_interop::presets::PresetLibrary;
+use rawmakase_interop::raw_defaults::{DevelopDefaults, RawDefaults};
 use rawmakase_model::camera_profiles::ProfileLibrary;
 use rawmakase_model::lens::lensfun::installed::{self, Handle as LensfunHandle};
 use std::path::{Path, PathBuf};
@@ -49,15 +50,10 @@ pub struct Context {
 #[derive(Debug)]
 struct Inner {
     data_dirs: Vec<PathBuf>,
-    // Read by opening a photo (step 5 of docs/embedding-plan.md), and today by
-    // RAWmakase's app through `workspace`.
-    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     lenses: LensProfiles,
-    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     profiles: ProfileLibrary,
-    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     presets: PresetLibrary,
-    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
+    defaults: Arc<DevelopDefaults>,
     lensfun: LensfunHandle,
     cache: Option<Cache>,
 }
@@ -66,13 +62,9 @@ struct Inner {
 struct Cache {
     dir: PathBuf,
     build_id: String,
-    // Read by the operations that decode (step 5 of docs/embedding-plan.md),
-    // and today by RAWmakase's app through `workspace`.
-    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     decoded: DecodeCache,
     #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     ai_denoise: AiCache,
-    #[cfg_attr(not(feature = "workspace"), allow(dead_code))]
     fits: FitCache,
 }
 
@@ -82,6 +74,7 @@ struct Cache {
 pub struct ContextBuilder {
     data_dirs: Vec<PathBuf>,
     cache: Option<(PathBuf, CacheLimits, String)>,
+    raw_defaults: RawDefaults,
 }
 
 impl ContextBuilder {
@@ -111,6 +104,15 @@ impl ContextBuilder {
         self
     }
 
+    /// The settings a photo without an edit starts from: Adobe Default, or a
+    /// preset, for every camera or for each, as the desktop's Preferences
+    /// choose them. Without them, Adobe Default. A preset they name is read
+    /// as the context is built; one that is gone gives Adobe Default.
+    pub fn raw_defaults(mut self, defaults: RawDefaults) -> Self {
+        self.raw_defaults = defaults;
+        self
+    }
+
     /// The context, or [`ErrorKind::Invalid`] for an empty build id.
     pub fn build(self) -> Result<Context> {
         let cache = match self.cache {
@@ -131,17 +133,20 @@ impl ContextBuilder {
                 })
             }
         };
+        let lensfun = self
+            .data_dirs
+            .first()
+            .map_or_else(LensfunHandle::none, |data| {
+                LensfunHandle::installed_in(installed::dir_in(data))
+            });
+        let defaults = DevelopDefaults::load(self.raw_defaults).with_lensfun(lensfun.clone());
         Ok(Context {
             inner: Arc::new(Inner {
                 lenses: LensProfiles::in_data_dirs(&self.data_dirs),
                 profiles: ProfileLibrary::in_data_dirs(&self.data_dirs),
                 presets: PresetLibrary::in_data_dirs(&self.data_dirs),
-                lensfun: self
-                    .data_dirs
-                    .first()
-                    .map_or_else(LensfunHandle::none, |data| {
-                        LensfunHandle::installed_in(installed::dir_in(data))
-                    }),
+                lensfun,
+                defaults: Arc::new(defaults),
                 data_dirs: self.data_dirs,
                 cache,
             }),
@@ -168,6 +173,34 @@ impl Context {
     /// The build id the cache's entries belong to.
     pub fn build_id(&self) -> Option<&str> {
         self.inner.cache.as_ref().map(|c| c.build_id.as_str())
+    }
+}
+
+/// What the operations read of the context.
+impl Context {
+    pub(crate) fn lenses(&self) -> &LensProfiles {
+        &self.inner.lenses
+    }
+    pub(crate) fn profiles(&self) -> &ProfileLibrary {
+        &self.inner.profiles
+    }
+    pub(crate) fn preset_library(&self) -> &PresetLibrary {
+        &self.inner.presets
+    }
+    pub(crate) fn lensfun(&self) -> &LensfunHandle {
+        &self.inner.lensfun
+    }
+    pub(crate) fn defaults(&self) -> &Arc<DevelopDefaults> {
+        &self.inner.defaults
+    }
+    pub(crate) fn decoded(&self) -> Option<&DecodeCache> {
+        self.inner.cache.as_ref().map(|c| &c.decoded)
+    }
+    pub(crate) fn fits(&self) -> FitCache {
+        self.inner
+            .cache
+            .as_ref()
+            .map_or_else(FitCache::none, |c| c.fits.clone())
     }
 }
 

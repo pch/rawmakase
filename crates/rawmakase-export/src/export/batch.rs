@@ -863,7 +863,7 @@ fn render<'a>(
             watermark: batch.watermark.clone().filter(|_| preset.is_none()),
             watermarks: batch.watermarks.clone(),
             demosaic: batch.demosaic,
-            cache: batch.cache.clone(),
+            cache: Some(batch.cache.clone()),
             lenses: batch.lenses.clone(),
             ai: batch.ai.clone(),
             file,
