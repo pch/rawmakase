@@ -958,6 +958,20 @@ so the design is proved on one path before it is spread.
    capture it. The library has no export operations yet, so the app's
    `environment` module makes it from the context's first data folder
    until step 15 gives the context its own.
+
+   The fonts, with their cache: `watermark::fonts::Fonts`, the system font
+   and the folders installed families are listed from, as given, holding
+   the families once listed and each system face once read (the
+   process-wide `FAMILIES` and system faces are gone); the watermarks
+   carry it. The system font is given as a file, or as a function that
+   finds a weight's face when it is first drawn: the desktop's, in the
+   app's `environment` module, asks `fc-match` on Linux and reads
+   `SystemRoot` on Windows, so the export crate starts no program and
+   reads no environment variable. The app gives the font folders
+   fastframe-fonts finds, which the export crate's copy of that lookup
+   (`watermark/font_dirs.rs`) matched, a test said; the copy is gone, and
+   the export crate with it no longer depends on `directories`. The app
+   makes its watermarks once, so the fonts are listed once, as before.
 5. The library's operations: opening, with a `Cancel`, since opening a
    rendered file decodes it, and a RAW the decoders don't support refused
    as unsupported (the RAW adapter turns `rawmakase_raw`'s `Unsupported`

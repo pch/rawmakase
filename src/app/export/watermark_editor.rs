@@ -61,8 +61,9 @@ impl WatermarkEditor {
         // Installed fonts are listed off the interface thread, which is woken to
         // draw them once they are.
         let ctx = ctx.clone();
+        let fonts = marks.fonts().clone();
         std::thread::spawn(move || {
-            let _ = watermark::fonts::families();
+            let _ = fonts.families();
             ctx.request_repaint();
         });
         let original = (!watermark.name.is_empty()).then(|| watermark.name.clone());
@@ -332,7 +333,7 @@ fn mark_texture(
         Some((key, ready)) if *key == assets => ready.with(&w),
         // An installed font is found once the fonts are listed, off this
         // thread; drawn after that.
-        _ if w.style == Style::Text && watermark::fonts::families_if_listed().is_none() => {
+        _ if w.style == Style::Text && state.marks.fonts().families_if_listed().is_none() => {
             state.notice = Notice::LoadingFonts;
             return None;
         }
@@ -342,7 +343,7 @@ fn mark_texture(
                 (Some(source), Style::Graphic) => {
                     let dir = source.parent()?.to_path_buf();
                     w.image = source.file_name().map(|n| n.to_string_lossy().into_owned());
-                    w.ready_in(&dir)
+                    w.ready_in(&dir, state.marks.fonts())
                 }
                 _ => w.ready(&state.marks),
             };
@@ -547,7 +548,7 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
                 );
             });
             // Installed fonts are still being listed at first: the system default until then.
-            let listed = watermark::fonts::families_if_listed();
+            let listed = state.marks.fonts().families_if_listed();
             let system = [watermark::fonts::system()];
             let families: &[watermark::fonts::Family] = listed.unwrap_or(&system);
             row(ui, "Font", |ui| {

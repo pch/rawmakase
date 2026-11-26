@@ -534,7 +534,7 @@ impl Editor {
 
         section(ui, "Watermarking");
         let presets = self.exports.watermarks.clone();
-        let marks = crate::environment::watermarks(&self.core);
+        let marks = self.watermarks.clone();
         let simple = crate::watermark::SIMPLE_COPYRIGHT;
         let mut edit = None;
         form_row(ui, "", |ui| {

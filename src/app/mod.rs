@@ -46,6 +46,9 @@ pub(crate) struct Editor {
     loader: worker::Loader,
     /// The library's context, which the workers take their caches from.
     core: rawmakase_core::Context,
+    /// The saved watermarks and the fonts they draw with, made from the
+    /// context once, so the fonts are listed once.
+    watermarks: crate::watermark::Watermarks,
     /// AI Denoise's queue, worker and cache, shared with exports.
     ai_denoise: crate::ai_denoise::Service,
     /// AI Denoise's model pack: installed, being installed or removed.
@@ -207,9 +210,9 @@ impl Editor {
     pub(in crate::app) fn libraries(&self) -> crate::environment::Libraries {
         crate::environment::libraries(&self.core)
     }
-    /// The saved watermarks: the context's data folder's.
+    /// The saved watermarks, the context's data folder's, and their fonts.
     pub(in crate::app) fn watermarks(&self) -> crate::watermark::Watermarks {
-        crate::environment::watermarks(&self.core)
+        self.watermarks.clone()
     }
     /// The installed XMP presets and their layout: the context's.
     pub(in crate::app) fn preset_library(&self) -> &crate::presets::PresetLibrary {
@@ -478,6 +481,7 @@ impl Editor {
             tx,
             rx,
             loader,
+            watermarks: crate::environment::watermarks(&core),
             core,
             ai_denoise,
             ai_denoise_model: crate::app::develop::model_installer::Installer::new(),

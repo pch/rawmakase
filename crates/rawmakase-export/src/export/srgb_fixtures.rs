@@ -439,7 +439,7 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
         opacity: 0.7,
         ..crate::watermark::fonts::test_watermark()
     };
-    let ready = mark.ready_in(&images)?;
+    let ready = mark.ready_in(&images, &Default::default())?;
     let image = synthetic(96, 64);
     let mut rendered = crate::develop::ExportImage::srgb(crate::develop::render(
         &image,

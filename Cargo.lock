@@ -4154,7 +4154,6 @@ name = "rawmakase-export"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "directories",
  "image",
  "jixel",
  "jxl-oxide",

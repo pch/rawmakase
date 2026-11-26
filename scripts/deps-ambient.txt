@@ -24,11 +24,6 @@ crates/rawmakase-engine/src/develop/gpu/mod.rs env 1
 crates/rawmakase-engine/src/develop/gpu/mod.rs wgpu-env 9
 crates/rawmakase-engine/src/develop/local_tone_rule.rs env 2
 crates/rawmakase-engine/src/develop/pipeline/tone.rs env 1
-crates/rawmakase-export/src/watermark/font_dirs.rs directories 1
-crates/rawmakase-export/src/watermark/font_dirs.rs env 5
-crates/rawmakase-export/src/watermark/fonts.rs command 1
-crates/rawmakase-export/src/watermark/fonts.rs env 1
-crates/rawmakase-export/src/watermark/fonts.rs temp 1
 crates/rawmakase-inference/src/runtime.rs env 3
 crates/rawmakase-interop/src/export_settings.rs directories 4
 crates/rawmakase-interop/src/export_settings.rs env 1

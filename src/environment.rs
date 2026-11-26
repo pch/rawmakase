@@ -92,15 +92,124 @@ pub fn libraries(ctx: &rawmakase_core::Context) -> Libraries {
     }
 }
 
-/// The saved watermarks of a context: its first data folder's `watermarks`,
-/// or none without a data folder. The app's until the library's export
-/// operations hold them (step 15 of docs/embedding-plan.md).
+/// The saved watermarks of a context, its first data folder's `watermarks`
+/// (none without a data folder), drawing text with this computer's [`fonts`].
+/// The app's until the library's export operations hold them (step 15 of
+/// docs/embedding-plan.md). Made once: its clones share the fonts listed.
 pub fn watermarks(ctx: &rawmakase_core::Context) -> crate::watermark::Watermarks {
-    ctx.data_dirs()
+    let marks = ctx
+        .data_dirs()
         .first()
         .map_or_else(crate::watermark::Watermarks::none, |data| {
             crate::watermark::Watermarks::in_dir(data.join("watermarks"))
-        })
+        });
+    marks.with_fonts(fonts())
+}
+
+/// The fonts text watermarks draw with on this computer: the platform's
+/// system font, looked up when a face is first drawn, and installed fonts
+/// in the folders the interface finds them in.
+pub fn fonts() -> crate::watermark::fonts::Fonts {
+    use crate::watermark::fonts::{Fonts, SystemFont};
+    Fonts::new(
+        SystemFont::Lookup(system_face),
+        fastframe_fonts::system::font_directories(),
+    )
+}
+
+/// The file and collection index of the platform's interface font at
+/// `weight`: San Francisco on macOS, Segoe UI on Windows, and what
+/// fontconfig gives for `system-ui` elsewhere.
+fn system_face(weight: f32) -> anyhow::Result<(std::path::PathBuf, u32)> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::path::PathBuf;
+        let _ = weight;
+        Ok((PathBuf::from("/System/Library/Fonts/SFNS.ttf"), 0))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use anyhow::Context as _;
+        use std::path::PathBuf;
+        let root = std::env::var_os("SystemRoot").context("SystemRoot unavailable")?;
+        let fonts = PathBuf::from(root).join("Fonts");
+        Ok((
+            if fonts.join("SegUIVar.ttf").is_file() {
+                fonts.join("SegUIVar.ttf")
+            } else {
+                fonts.join(if weight >= 650. {
+                    "segoeuib.ttf"
+                } else if weight >= 500. {
+                    "seguisb.ttf"
+                } else {
+                    "segoeui.ttf"
+                })
+            },
+            0,
+        ))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        use anyhow::Context as _;
+        use std::process::{Command, Stdio};
+        let output = tempfile::tempfile()?;
+        let mut child = Command::new("fc-match")
+            .args(["-f", "%{file}\n%{index}", &fontconfig_pattern(weight)])
+            .stdout(output.try_clone()?)
+            .stderr(Stdio::null())
+            .spawn()
+            .context("Cannot resolve system watermark font")?;
+        let start = std::time::Instant::now();
+        loop {
+            if let Some(status) = child.try_wait()? {
+                anyhow::ensure!(status.success(), "System font lookup failed");
+                break;
+            }
+            if start.elapsed() > std::time::Duration::from_secs(1) {
+                let _ = child.kill();
+                let _ = child.wait();
+                anyhow::bail!("System font lookup timed out");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        use std::io::{Read, Seek};
+        let mut output = output;
+        output.rewind()?;
+        let mut text = String::new();
+        output.read_to_string(&mut text)?;
+        parse_fontconfig(&text)
+    }
+}
+
+#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
+fn fontconfig_pattern(weight: f32) -> String {
+    format!(
+        r"system\-ui:weight={}:slant=0",
+        if weight >= 650. {
+            200
+        } else if weight >= 550. {
+            180
+        } else if weight >= 450. {
+            100
+        } else {
+            80
+        }
+    )
+}
+
+#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
+fn parse_fontconfig(text: &str) -> anyhow::Result<(std::path::PathBuf, u32)> {
+    use anyhow::Context as _;
+    let mut lines = text.lines();
+    let path = lines
+        .next()
+        .filter(|s| !s.is_empty())
+        .context("No system font available")?;
+    // Fontconfig stores a variable font's named instance in the upper bits.
+    Ok((
+        std::path::PathBuf::from(path),
+        lines.next().unwrap_or("0").parse::<u32>()? & 0xFFFF,
+    ))
 }
 
 /// Lensfun's database of a context [`context`] made, in the data folder.
@@ -120,6 +229,40 @@ fn build_id() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    #[test]
+    fn fontconfig_system_family_is_escaped() {
+        use super::fontconfig_pattern;
+        assert_eq!(fontconfig_pattern(400.), r"system\-ui:weight=80:slant=0");
+        assert_eq!(fontconfig_pattern(500.), r"system\-ui:weight=100:slant=0");
+        assert_eq!(fontconfig_pattern(600.), r"system\-ui:weight=180:slant=0");
+        assert_eq!(fontconfig_pattern(700.), r"system\-ui:weight=200:slant=0");
+    }
+
+    #[test]
+    fn fontconfig_variable_instances_keep_the_collection_index() {
+        use super::parse_fontconfig;
+        assert_eq!(
+            parse_fontconfig("/fonts/variable.ttf\n589824").unwrap(),
+            (PathBuf::from("/fonts/variable.ttf"), 0)
+        );
+        assert_eq!(
+            parse_fontconfig("/fonts/collection.ttc\n720899").unwrap().1,
+            3
+        );
+        assert!(parse_fontconfig("").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires installed system fonts"]
+    fn system_fonts_render_at_every_weight() {
+        let fonts = super::fonts();
+        for style in ["Regular", "Medium", "SemiBold", "Bold"] {
+            fonts.load(crate::watermark::fonts::SYSTEM, style).unwrap();
+        }
+    }
+
     #[test]
     fn the_context_has_the_platform_s_cache_and_this_build() {
         let ctx = super::context();
