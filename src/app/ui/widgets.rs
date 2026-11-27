@@ -560,8 +560,48 @@ fn paint_switch(painter: &egui::Painter, c: Pos2, state: PanelState, hovered: bo
 #[derive(Clone, Default)]
 struct CurveInteraction {
     selected: Option<usize>,
-    dragging: Option<usize>,
+    dragging: Option<CurveDrag>,
 }
+/// A point being dragged. The point follows the pointer's movement rather than
+/// its position, so Shift and Alt can change how it follows mid-drag without a
+/// jump, and grabbing a point off its centre doesn't snap it to the pointer.
+#[derive(Clone, Copy)]
+struct CurveDrag {
+    point: usize,
+    /// Where the point would be on screen without its neighbours and the well
+    /// holding it back. Kept unclamped during normal drags so dragging past a
+    /// limit and back returns the point to the pointer's offset; re-anchored
+    /// when entering fine mode so pulling back doesn't cross 10× the overshoot.
+    at: Pos2,
+    /// The pointer's position in the frame before.
+    pointer: Pos2,
+    /// Whether Alt/Option fine mode was held in the frame before.
+    fine: bool,
+}
+/// How near a point, in points, a press grabs it.
+const CURVE_POINT_REACH: f32 = 9.;
+/// How much of the pointer's movement an Alt-dragged point follows, as in
+/// Lightroom.
+const CURVE_FINE_DRAG: f32 = 0.1;
+/// What the point curve's right-click menu asked for. The Tone Curve panel
+/// carries it out, since it reaches every channel and the copied curve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum CurveMenuChoice {
+    ResetChannel,
+    ResetAll,
+    Copy,
+    Paste,
+}
+/// What the point curve's right-click menu offers.
+#[derive(Clone, Copy, Default)]
+pub(in crate::app) struct CurveMenu {
+    /// Whether any channel differs from linear, for Reset All Channels.
+    pub(in crate::app) any_changed: bool,
+    /// The channel of the copied curve, for Paste; none before a copy.
+    pub(in crate::app) copied: Option<usize>,
+}
+/// The point curve's channels as its menu and History name them; 0 is RGB.
+pub(in crate::app) const CURVE_CHANNEL_NAMES: [&str; 4] = ["RGB", "Red", "Green", "Blue"];
 /// Corner radius of a curve's well.
 const CURVE_RADIUS: f32 = radius::CONTROL;
 /// A curve's well: a dark field with the photo's histogram behind the curve,
@@ -640,7 +680,7 @@ pub(in crate::app) const CURVE_CHANNELS_WIDTH: f32 = 4. * 22.;
 pub(in crate::app) fn curve_channels(ui: &mut egui::Ui, channel: &mut usize) -> bool {
     let palette = theme::palette(ui.ctx());
     let mut changed = false;
-    for (index, name) in ["RGB", "Red", "Green", "Blue"].into_iter().enumerate() {
+    for (index, name) in CURVE_CHANNEL_NAMES.into_iter().enumerate() {
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(22.), Sense::click());
         let selected = *channel == index;
         let enabled = ui.is_enabled();
@@ -809,12 +849,19 @@ pub(in crate::app) fn parametric_curve_ui(
         ));
     }
 }
+/// The point curve of `channel` (0 is RGB, 1–3 are R, G, B) over `histogram`.
+/// Click adds a point where clicked, or on the line with Alt, and drag shapes
+/// it: with Shift it moves only up and down, with Alt at a tenth of the
+/// pointer's pace, as in Lightroom. Right-click or double-click removes a
+/// point; right-click elsewhere opens the menu `menu` describes, and its choice
+/// is returned.
 pub(in crate::app) fn tone_curve_ui(
     ui: &mut egui::Ui,
     curve: &mut crate::color::curve::ToneCurve,
     histogram: &[[u32; 256]; 3],
     channel: usize,
-) {
+    menu: CurveMenu,
+) -> Option<CurveMenuChoice> {
     let palette = theme::palette(ui.ctx());
     let id = ui.make_persistent_id("tone-curve-editor");
     let mut state = ui
@@ -822,8 +869,12 @@ pub(in crate::app) fn tone_curve_ui(
         .data(|d| d.get_temp::<CurveInteraction>(id))
         .unwrap_or_default();
     state.selected = state.selected.filter(|i| *i < curve.points.len());
+    state.dragging = state.dragging.filter(|d| d.point < curve.points.len());
     let (outer, response) =
         ui.allocate_exact_size(Vec2::splat(ui.available_width()), Sense::click_and_drag());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Other, ui.is_enabled(), "Point curve")
+    });
     let rect = outer.shrink(5.);
     let screen = |p: [f32; 2]| {
         Pos2::new(
@@ -850,48 +901,125 @@ pub(in crate::app) fn tone_curve_ui(
         curve
             .points
             .iter()
-            .position(|q| screen(*q).distance(p) < 9.)
+            .position(|q| screen(*q).distance(p) < CURVE_POINT_REACH)
     });
-    if response.clicked_by(egui::PointerButton::Secondary) {
-        if let Some(i) = hit {
-            curve.remove(i);
-            state.selected = None;
-        }
-    } else if response.drag_started() || response.clicked() {
-        response.request_focus();
-        // Drag origin keeps the same point selected even after a fast initial movement.
-        let origin = if response.drag_started() {
-            ui.input(|i| i.pointer.press_origin()).or(pointer)
-        } else {
-            pointer
-        };
-        if let Some(p) = origin {
-            let i = curve
-                .points
-                .iter()
-                .position(|q| screen(*q).distance(p) < 9.)
-                .unwrap_or_else(|| curve.insert(value(p)));
-            state.selected = Some(i);
-            if response.drag_started() {
-                state.dragging = Some(i);
+    let (vertical, fine, ctrl_context) = ui.input(|i| {
+        (
+            i.modifiers.shift,
+            i.modifiers.alt,
+            cfg!(target_os = "macos") && i.modifiers.ctrl,
+        )
+    });
+    let context = context_clicked(&response);
+    let menu_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+    let primary_drag_started =
+        response.drag_started_by(egui::PointerButton::Primary) && !ctrl_context;
+    // A double-click on a point removes it, as a right-click does. Its first
+    // click selected the point, or added one that the second removes again.
+    // While the curve's menu is open, clicking the well only closes it.
+    let removing = context || (response.double_clicked() && hit.is_some());
+    if !menu_open {
+        if removing {
+            if let Some(i) = hit
+                && curve.remove(i)
+            {
+                state.selected = None;
+                state.dragging = None;
+            }
+        } else if primary_drag_started || response.clicked() {
+            response.request_focus();
+            // The press, not where the pointer is now, picks the point: a fast first
+            // movement still drags the point that was pressed.
+            let origin = if primary_drag_started {
+                ui.input(|i| i.pointer.press_origin()).or(pointer)
+            } else {
+                pointer
+            };
+            if let Some(p) = origin {
+                let hit = curve
+                    .points
+                    .iter()
+                    .position(|q| screen(*q).distance(p) < CURVE_POINT_REACH);
+                let i = hit.unwrap_or_else(|| {
+                    // With Alt, as in Lightroom, the point goes on the line, so
+                    // adding it doesn't bend the curve.
+                    let [x, y] = value(p);
+                    let y = if fine {
+                        let line =
+                            crate::color::curve::CurveLut::new(curve).evaluate(x.clamp(0., 1.));
+                        if snap {
+                            (line * 255.).round() / 255.
+                        } else {
+                            line
+                        }
+                    } else {
+                        y
+                    };
+                    curve.insert([x, y])
+                });
+                state.selected = Some(i);
+                if primary_drag_started {
+                    state.dragging = Some(CurveDrag {
+                        point: i,
+                        at: screen(curve.points[i]),
+                        pointer: p,
+                        fine,
+                    });
+                }
             }
         }
     }
-    if response.dragged()
-        && let (Some(i), Some(p)) = (state.dragging, pointer)
+    if response.dragged_by(egui::PointerButton::Primary)
+        && let (Some(drag), Some(p)) = (state.dragging.as_mut(), pointer)
     {
-        curve.move_point(i, value(p));
+        if fine && !drag.fine {
+            let [vx, vy] = value(drag.at);
+            let [px, py] = curve.points[drag.point];
+            let actual = screen([px, py]);
+            if vx != px {
+                drag.at.x = actual.x;
+            }
+            if vy != py {
+                drag.at.y = actual.y;
+            }
+        }
+        drag.fine = fine;
+        let mut delta = p - drag.pointer;
+        drag.pointer = p;
+        if fine {
+            delta *= CURVE_FINE_DRAG;
+        }
+        if vertical {
+            delta.x = 0.;
+        }
+        drag.at += delta;
+        let [x, y] = value(drag.at);
+        // Shift keeps the input exactly, even where snapping would round it.
+        let x = if vertical {
+            curve.points[drag.point][0]
+        } else {
+            x
+        };
+        curve.move_point(drag.point, [x, y]);
     }
     if response.drag_stopped() {
         state.dragging = None;
     }
-    if response.has_focus()
+    if !menu_open
+        && response.has_focus()
         && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
         && let Some(i) = state.selected
+        && curve.remove(i)
     {
-        curve.remove(i);
         state.selected = None;
+        state.dragging = None;
     }
+    let mut chosen = None;
+    let linear = *curve == crate::color::curve::ToneCurve::default();
+    // A context click on a point removed it; elsewhere it opens the menu.
+    menu_at_pointer(&response, context && hit.is_none(), |ui| {
+        chosen = curve_menu_items(ui, channel, !linear, menu);
+    });
     curve_backdrop(ui, rect, histogram, channel);
     let plot = crate::color::curve::CurveLut::new(curve);
     let color = curve_color(&palette, channel);
@@ -908,7 +1036,7 @@ pub(in crate::app) fn tone_curve_ui(
     for (i, p) in curve.points.iter().enumerate() {
         let p = screen(*p);
         let selected = state.selected == Some(i);
-        let hovered = hit == Some(i) || state.dragging == Some(i);
+        let hovered = hit == Some(i) || state.dragging.is_some_and(|d| d.point == i);
         if hovered {
             ui.painter()
                 .circle_filled(p, 9., color.gamma_multiply(0.18));
@@ -924,7 +1052,7 @@ pub(in crate::app) fn tone_curve_ui(
             Stroke::new(1.5, color),
         );
     }
-    let readout = state.dragging.map(|i| curve.points[i]).or_else(|| {
+    let readout = state.dragging.map(|d| curve.points[d.point]).or_else(|| {
         pointer.filter(|p| rect.contains(*p)).map(|p| {
             let [x, _] = value(p);
             [x, plot.evaluate(x)]
@@ -934,31 +1062,89 @@ pub(in crate::app) fn tone_curve_ui(
         curve_overlay(ui, rect, &format!("{:.0} → {:.0}", x * 255., y * 255.));
     }
     response
-        .on_hover_cursor(if state.dragging.is_some() {
+        .on_hover_cursor(if state.dragging.is_some() && vertical {
+            egui::CursorIcon::ResizeVertical
+        } else if state.dragging.is_some() {
             egui::CursorIcon::Grabbing
         } else if hit.is_some() {
             egui::CursorIcon::Grab
         } else {
             egui::CursorIcon::Crosshair
         })
-        .on_hover_text("Click to add a point, drag to shape it, right-click to remove it");
+        .on_hover_text(CURVE_HINT);
     // The selected point's values, typed. The row stays while none is selected,
     // so selecting one never moves what lies below.
     ui.add_space(space::S);
     let mut point = state.selected.map(|i| curve.points[i].map(|v| v * 255.));
     let changed = ui
-        .horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = space::S;
-            let x = point_field(ui, "Input", point.as_mut().map(|p| &mut p[0]));
-            ui.add_space(space::M);
-            let y = point_field(ui, "Output", point.as_mut().map(|p| &mut p[1]));
-            x || y
-        })
+        .allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), size::CONTROL),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = space::S;
+                let x = point_field(ui, "Input", point.as_mut().map(|p| &mut p[0]));
+                ui.add_space(space::M);
+                let y = point_field(ui, "Output", point.as_mut().map(|p| &mut p[1]));
+                x || y
+            },
+        )
         .inner;
     if changed && let (Some(i), Some(point)) = (state.selected, point) {
         curve.move_point(i, point.map(|v| v / 255.));
     }
     ui.ctx().data_mut(|d| d.insert_temp(id, state));
+    chosen
+}
+/// The point curve's hover tip, with Alt named as the platform's keyboard does.
+const CURVE_HINT: &str = if cfg!(target_os = "macos") {
+    "Click to add a point (Option: on the line) · drag to move it (Shift: up and \
+     down only, Option: finely) · double-click to remove it"
+} else {
+    "Click to add a point (Alt: on the line) · drag to move it (Shift: up and \
+     down only, Alt: finely) · double-click to remove it"
+};
+/// The rows of the point curve's menu for `channel`, `changed` when that channel
+/// differs from linear. Closes the menu on a choice and returns it.
+pub(in crate::app) fn curve_menu_items(
+    ui: &mut egui::Ui,
+    channel: usize,
+    changed: bool,
+    menu: CurveMenu,
+) -> Option<CurveMenuChoice> {
+    let name = CURVE_CHANNEL_NAMES[channel];
+    let paste = match menu.copied {
+        Some(from) => format!("Paste {} Curve", CURVE_CHANNEL_NAMES[from]),
+        None => "Paste Curve".into(),
+    };
+    menu_width(ui, 180.);
+    let mut chosen = None;
+    let mut item = |ui: &mut egui::Ui, label: &str, enabled: bool, choice| {
+        if menu_item(ui, label, "", enabled, false) {
+            chosen = Some(choice);
+            ui.close();
+        }
+    };
+    item(
+        ui,
+        &format!("Reset {name} Channel"),
+        changed,
+        CurveMenuChoice::ResetChannel,
+    );
+    item(
+        ui,
+        "Reset All Channels",
+        menu.any_changed,
+        CurveMenuChoice::ResetAll,
+    );
+    menu_separator(ui);
+    item(
+        ui,
+        &format!("Copy {name} Curve"),
+        true,
+        CurveMenuChoice::Copy,
+    );
+    item(ui, &paste, menu.copied.is_some(), CurveMenuChoice::Paste);
+    chosen
 }
 /// A curve point's Input or Output, 0–255: a quiet caption and a number field,
 /// blank and disabled while no point is selected. Returns whether it changed.
@@ -970,6 +1156,7 @@ fn point_field(ui: &mut egui::Ui, label: &str, value: Option<&mut f32>) -> bool 
             .color(palette.tone(Tone::MUTED)),
     );
     ui.scope(|ui| {
+        ui.spacing_mut().button_padding = Vec2::new(space::XS, 0.);
         let widgets = &mut ui.visuals_mut().widgets;
         for (visuals, fill) in [
             (&mut widgets.inactive, Tone::FIELD),
@@ -2277,9 +2464,15 @@ pub(in crate::app) fn context_clicked(response: &egui::Response) -> bool {
 }
 /// Like `Response::context_menu`, but Control-click also opens it on macOS.
 pub(in crate::app) fn context_menu(response: &egui::Response, add: impl FnOnce(&mut egui::Ui)) {
-    let command = if context_clicked(response) {
+    menu_at_pointer(response, context_clicked(response), add);
+}
+/// A menu at the pointer over `response`, opened when `open` and closed by any
+/// other click on it: [`context_menu`]'s, for a widget where some context
+/// clicks do something else.
+fn menu_at_pointer(response: &egui::Response, open: bool, add: impl FnOnce(&mut egui::Ui)) {
+    let command = if open {
         Some(egui::SetOpenCommand::Bool(true))
-    } else if response.clicked() {
+    } else if response.clicked() || context_clicked(response) {
         Some(egui::SetOpenCommand::Bool(false))
     } else {
         None

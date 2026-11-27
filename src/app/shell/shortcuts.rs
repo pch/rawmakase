@@ -335,7 +335,7 @@ static GENERAL: [Row; 16] = [
     row(&[Keys(&b::PREFERENCES)], "Preferences"),
     row(&[Keys(&b::SHORTCUTS)], "These shortcuts"),
 ];
-static DEVELOP: [Row; 57] = [
+static DEVELOP: [Row; 61] = [
     row(&[Keys(&b::CROP)], "Crop & Straighten"),
     row(&[Keys(&b::FINISH_CROP)], "Finish the crop"),
     row(
@@ -475,6 +475,19 @@ static DEVELOP: [Row; 57] = [
         "Grading wheel: hue or saturation only",
     ),
     row(&[Text("Cmd+drag")], "Grading wheel: fine adjustment"),
+    row(
+        &[Text("Shift+drag")],
+        "Point curve: move a point up or down only",
+    ),
+    row(&[Text("Option+drag")], "Point curve: fine adjustment"),
+    row(
+        &[Text("Option+click")],
+        "Point curve: add a point on the line",
+    ),
+    row(
+        &[Text("right-click")],
+        "Point curve: remove a point (or double-click), or the curve's menu",
+    ),
     row(&[Text("Up / Down")], "Nudge the hovered slider (Shift: 10)"),
     row(
         &[Keys(&b::BASIC_NEXT), Keys(&b::BASIC_PREVIOUS)],
