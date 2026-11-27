@@ -1224,7 +1224,9 @@ mod launch_guard_tests {
 
         let (guard, unclean) = LaunchGuard::enter(&session);
         assert!(!unclean);
-        assert!(!std::fs::read(&lock).unwrap().is_empty());
+        // Check size via metadata while held: Windows LockFileEx blocks reads
+        // through a second handle until the lock is released.
+        assert!(std::fs::metadata(&lock).unwrap().len() > 0);
         guard.unwrap().mark_clean();
         assert!(std::fs::read(&lock).unwrap().is_empty());
 
@@ -1237,10 +1239,12 @@ mod launch_guard_tests {
     fn unclean_exit_is_detected_and_stays_dirty_until_a_clean_shutdown() {
         let dir = tempfile::tempdir().unwrap();
         let session = dir.path().join("session.json");
+        let lock = LaunchGuard::path_for(&session);
 
         let (guard1, unclean1) = LaunchGuard::enter(&session);
         assert!(!unclean1);
         drop(guard1);
+        assert!(!std::fs::read(&lock).unwrap().is_empty());
 
         let (guard2, unclean2) = LaunchGuard::enter(&session);
         assert!(unclean2, "dropped without mark_clean must be detected");
