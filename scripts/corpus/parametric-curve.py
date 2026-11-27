@@ -151,29 +151,47 @@ def fit_curve(default, rendered, layout):
     """The case's curve as changes to the identity at GRID, in gamma-2.2 encoding."""
     groups = np.array([p['group'] for p in layout])
     d, c = np.asarray(default, float), np.asarray(rendered, float)
-    ok = (groups != 'wide') & (c.min(1) > 30) & (c.max(1) < 65500) & (d.min(1) > 30) & (d.max(1) < 65500)
+    ok = (groups != 'wide') & (c.min(1) > 1) & (c.max(1) < 65534) & (d.min(1) > 1) & (d.max(1) < 65534)
     pd, pc = gamma(d[ok]), gamma(c[ok])
+    # Neutral ramp patches sample the 1D curve directly, while saturated patches carry a
+    # small secant offset in Camera Raw; weight ramp patches higher and taper by chroma.
+    is_ramp = groups[ok] == 'ramp'
+    chroma = pd.max(1) - pd.min(1)
+    base_w = np.where(is_ramp, 4.0, 1.0 / (1.0 + (chroma / 0.15) ** 2))
     x = np.r_[pd.max(1), pd.min(1)]
     y = np.r_[pc.max(1), pc.min(1)]
+    bw = np.r_[base_w, base_w]
+
     ramp = groups == 'ramp'
-    level = c[ramp, 1] / 65535
-    clipped = (level >= 0.9995) | (level <= 0.0005)
+    level = c[ramp, 1]
+    # Only truly clipped 16-bit ramp patches (near 0 or 65535) constrain the clipped ends;
+    # dim non-zero sRGB values (e.g. 12–30) are still ~0.006–0.010 in gamma-2.2.
+    clipped = (level >= 65533) | (level <= 2)
     cx = gamma(d[ramp][clipped])[:, 1]
-    cy = np.where(level[clipped] > 0.5, 1., 0.)
+    cy = np.where(level[clipped] > 32768, 1., 0.)
+
     a0, ac = hermite_basis(KNOTS, x), hermite_basis(KNOTS, cx)
-    weight = np.ones(len(x))
+    ag = hermite_basis(KNOTS, GRID)
+    # Regularize curvature across GRID rather than pulling toward the identity, so sparse
+    # clipped shadow/highlight spans do not bulge back toward y = x.
+    d2 = np.diff(ag, n=2, axis=0) * 0.5
+    ridge = np.sqrt(1e-5) * np.eye(a0.shape[1])
+
+    weight = bw.copy()
     active = np.zeros(len(cx), bool)
-    ridge = np.sqrt(1e-4) * np.eye(a0.shape[1])
-    for _ in range(6):
-        a = np.r_[a0 * weight[:, None], ac[active] * 3, ridge]
-        b = np.r_[(y - x) * weight, (cy - cx)[active] * 3, np.zeros(a0.shape[1])]
+    for _ in range(8):
+        a = np.r_[a0 * weight[:, None], ac[active] * 6, d2, ridge]
+        b = np.r_[(y - x) * weight, (cy - cx)[active] * 6, np.zeros(len(d2)), np.zeros(a0.shape[1])]
         p = np.linalg.lstsq(a, b, rcond=None)[0]
-        residual = a0 @ p - (y - x)
-        spread = np.median(np.abs(residual)) * 1.5 + 1e-4
-        weight = (np.abs(residual) < 4 * spread).astype(float)
+        residual = np.abs(a0 @ p - (y - x))
+        # Huber reweighting with a floor prevents an untouched half of the curve (residual ~0)
+        # from collapsing the scale and dropping valid samples in the active region.
+        delta = max(float(np.median(residual)) * 2.0, 0.003)
+        huber = np.where(residual <= delta, 1.0, np.sqrt(delta / residual))
+        weight = bw * huber
         reached = cx + ac @ p
         active |= ((cy == 1) & (reached < 1)) | ((cy == 0) & (reached > 0))
-    return np.clip(GRID + hermite_basis(KNOTS, GRID) @ p, 0, 1)
+    return np.clip(GRID + ag @ p, 0, 1)
 
 
 def fit(refs):

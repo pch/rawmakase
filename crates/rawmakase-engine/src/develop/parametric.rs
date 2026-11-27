@@ -265,6 +265,16 @@ mod tests {
                 d,
                 [[0.1803, 0.0878], [0.4798, 0.5604], [0.8605, 0.9977]],
             ),
+            case(
+                [-1., 0., 0., 0.],
+                d,
+                [[0.1345, 0.0102], [0.1803, 0.0476], [0.2372, 0.1244]],
+            ),
+            case(
+                [-0.5, 0., 0., 0.],
+                [0.1, 0.5, 0.75],
+                [[0.0389, 0.0146], [0.0538, 0.0247], [0.0733, 0.0437]],
+            ),
         ];
         for RampCase {
             regions,
@@ -337,6 +347,21 @@ mod tests {
                         "{regions:?} {splits:?} {x}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn measured_tables_have_no_oscillation_dips() {
+        for i in 0..TABLES {
+            let t = table(i);
+            for k in 0..SAMPLES - 1 {
+                let y0 = (k as f32 / (SAMPLES - 1) as f32 + t[k]).clamp(0., 1.);
+                let y1 = ((k + 1) as f32 / (SAMPLES - 1) as f32 + t[k + 1]).clamp(0., 1.);
+                assert!(
+                    y1 >= y0 - 0.005,
+                    "table {i} drops at sample {k}: {y0:.4} -> {y1:.4}"
+                );
             }
         }
     }
