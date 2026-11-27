@@ -265,6 +265,35 @@ fn a_full_decode_is_kept_in_the_contexts_cache() {
     assert_eq!(render(&context()), decoded, "no cache");
 }
 
+/// A full decode the cache has is read from it without the RAW, which is
+/// read again only through another context, whose lens profiles may differ.
+#[test]
+fn a_cached_full_decode_reads_no_file() {
+    use rawmakase_decode::raw::whole_file_reads;
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = Context::builder()
+        .cache(dir.path(), CacheLimits::default(), "test-1")
+        .build()
+        .unwrap();
+    let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+    let decoded = photo.decode(Decode::Full, Cancel::NEVER).unwrap().stats();
+    let before = whole_file_reads();
+    let cached = photo.decode(Decode::Full, Cancel::NEVER).unwrap().stats();
+    assert_eq!(whole_file_reads(), before, "read from the cache");
+    assert_eq!(cached, decoded);
+    let other = Context::builder()
+        .cache(dir.path(), CacheLimits::default(), "test-1")
+        .build()
+        .unwrap();
+    photo
+        .decode_in(&other, Decode::Full, false, Cancel::NEVER)
+        .unwrap();
+    assert!(
+        whole_file_reads() > before,
+        "another context reads the file"
+    );
+}
+
 /// A full decode an app holds is the next one's, and an export's, through
 /// the same context: nothing is read again, but a file changed since it was
 /// opened is still refused. Another context decodes its own.

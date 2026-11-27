@@ -220,18 +220,29 @@ impl Photo {
         keep: bool,
         cancel: Cancel<'_>,
     ) -> Result<CameraImage> {
+        let demosaic = Demosaic::default();
+        // Keyed by the file as opened, not as it is now.
+        let full = ctx
+            .decoded()
+            .map(|cache| FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone()));
+        // The cache's copy is looked for before the file is read, which it
+        // spares. Its metadata is the photo's as opened, which holds this
+        // context's lens profiles only when it is the one the photo was
+        // opened with.
+        if decode == Decode::Full
+            && ctx.is(&self.ctx)
+            && let Some(image) = full.as_ref().and_then(|full| full.cached(&self.metadata))
+        {
+            cancelled(cancel, "Decoding cancelled")?;
+            return Ok(image);
+        }
         let raw = rawmakase_decode::photo::open(&self.path, ctx.lenses()).map_err(Error::of)?;
         // The file read is still the one opened: one replaced before it was
         // read is neither decoded as this photo nor kept under its key.
         self.still_the_file_opened()?;
-        let demosaic = Demosaic::default();
-        let image = match (decode, ctx.decoded()) {
+        let image = match (decode, full) {
             (Decode::Half, _) => raw.develop(camera_data::Decode::Half, cancel),
-            // Keyed by the file as opened, not as it is now.
-            (Decode::Full, Some(cache)) => {
-                FullSize::of_version(self.identity.as_ref(), demosaic, cache.clone())
-                    .recovered(raw, keep, cancel)
-            }
+            (Decode::Full, Some(full)) => full.recovered(raw, keep, cancel),
             (Decode::Full, None) => raw
                 .develop(camera_data::Decode::Full(demosaic), cancel)
                 .and_then(|image| quality::with_recovered(image, cancel)),
