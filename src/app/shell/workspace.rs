@@ -627,7 +627,7 @@ impl Editor {
     /// Saves the session when the zoom level a click zooms to changed. Called
     /// once a drag ends, so the slider doesn't write it on every frame.
     pub(in crate::app) fn remember_zoom_level(&mut self) {
-        let level = self.view.zoom.level;
+        let level = self.view.zoom.saved_level();
         if self.session.zoom_level.unwrap_or(1.) != level {
             self.session.zoom_level = Some(level);
             let _ = self.save_session();
@@ -1185,7 +1185,7 @@ impl Editor {
         }
         // On the photo's backdrop with Develop's margin, under the toolbar.
         let area = self.backdrop_stage(ui, ui.available_rect_before_wrap());
-        let before = self.view.zoom.on;
+        let before = self.view.zoom;
         let response = ui
             .scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
                 self.viewport_ui(ui)
@@ -1198,7 +1198,7 @@ impl Editor {
         if self.document.opened_from_copy() {
             crate::app::develop::viewport::editable_preview_badge(ui, area);
         }
-        if self.view.zoom.on != before {
+        if self.view.zoom.on != before.on {
             library.loupe_zoom_toggled(before);
         }
         // As in Lightroom, a double-click goes back to the grid; its first
@@ -1207,8 +1207,8 @@ impl Editor {
         // Use the viewport's response so modals, overlapping windows and
         // disabled UI keep their clicks instead of reaching the photo behind.
         let double = response.double_clicked() || response.triple_clicked();
-        if double && let Some(on) = library.loupe_double_click() {
-            self.view.zoom.on = on;
+        if double && let Some(before) = library.loupe_double_click() {
+            self.view.zoom = before;
         }
     }
     fn library_workspace(&mut self, ui: &mut egui::Ui, sidebar: crate::app::library::Action) {
@@ -1649,7 +1649,7 @@ impl Editor {
                 self.step_zoom(-1)
             } else if keys.is(&press, &bindings::ZOOM) || self.space_zooms(&keys, &press) {
                 // Once per press: a held Z must not flicker the zoom.
-                self.view.zoom.on = !self.view.zoom.on
+                self.toggle_zoom()
             } else if keys.is(&press, &bindings::MAGNIFIER) {
                 self.toggle_magnifier()
             } else {

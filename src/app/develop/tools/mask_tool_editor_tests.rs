@@ -818,6 +818,48 @@ fn radial_mask_can_be_drawn_and_edited_outside_a_zoomed_out_photo() {
         Pos2::new(398., 398.),
     );
     editor.document.edit.recipe().validate().unwrap();
+    // Clicking the backdrop while Color Range is armed keeps it armed rather
+    // than cancelling it without creating a mask.
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Color, None)
+    });
+    let masks_before = editor.document.edit.recipe().masks.len();
+    let outside = Pos2::new(10., 10.);
+    frame(
+        &mut editor,
+        vec![egui::Event::PointerMoved(outside), button(outside, true)],
+    );
+    frame(&mut editor, vec![button(outside, false)]);
+    assert!(
+        editor.view.masking.is_placing(),
+        "clicking backdrop must not cancel Color Range"
+    );
+    assert_eq!(editor.document.edit.recipe().masks.len(), masks_before);
+    // A linear gradient dragged far beyond the same ±4 edge does not collapse
+    // to a zero-length gradient, and pin-moving near ±4 translates rigidly.
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Linear, None)
+    });
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(390., 390.),
+        Pos2::new(398., 398.),
+    );
+    let MaskShape::Linear { from, to } = editor
+        .document
+        .edit
+        .recipe()
+        .masks
+        .last()
+        .unwrap()
+        .components[0]
+        .shape
+    else {
+        panic!("expected linear gradient");
+    };
+    assert_ne!(from, to, "clamped linear gradient must not collapse");
+    editor.document.edit.recipe().validate().unwrap();
 }
 
 /// Visual check of a photo zoomed out below Fit with a radial gradient centred

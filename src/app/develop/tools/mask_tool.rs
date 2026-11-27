@@ -537,7 +537,7 @@ impl Editor {
                     original,
                     moved,
                 } => {
-                    let delta = [at[0] - start[0], at[1] - start[1]];
+                    let delta = clamp_delta(original.iter(), [at[0] - start[0], at[1] - start[1]]);
                     *moved = original.iter().map(|s| shifted(s, delta)).collect();
                     let (mask, moved) = (*mask, moved.clone());
                     // `drag_kept` found the mask as last moved this frame.
@@ -647,9 +647,10 @@ impl Editor {
             return;
         }
         if let Some(p) = pending.filter(|p| p.kind == Kind::Color) {
-            if rect.contains(pos)
-                && let Some(lab) = self.developed_lab(pos, rect)
-            {
+            if !rect.contains(pos) {
+                return;
+            }
+            if let Some(lab) = self.developed_lab(pos, rect) {
                 let shape = MaskShape::ColorRange {
                     samples: vec![lab],
                     amount: 0.5,
@@ -1512,6 +1513,52 @@ fn anchor(m: &MaskGroup) -> Option<[f32; 2]> {
 fn clamp_pos(p: [f32; 2]) -> [f32; 2] {
     [p[0].clamp(-4., 4.), p[1].clamp(-4., 4.)]
 }
+/// Bounds `[min_x, min_y, max_x, max_y]` of all movable points in `shapes`,
+/// for clamping a translation delta without distorting any shape.
+fn shape_bounds<'a>(shapes: impl IntoIterator<Item = &'a MaskShape>) -> Option<[f32; 4]> {
+    let mut bounds: Option<[f32; 4]> = None;
+    let mut include = |p: [f32; 2]| {
+        bounds = Some(match bounds {
+            None => [p[0], p[1], p[0], p[1]],
+            Some([x0, y0, x1, y1]) => [x0.min(p[0]), y0.min(p[1]), x1.max(p[0]), y1.max(p[1])],
+        });
+    };
+    for shape in shapes {
+        match shape {
+            MaskShape::Brush { strokes } => {
+                for s in strokes {
+                    for &p in s.points.iter() {
+                        include(p);
+                    }
+                }
+            }
+            MaskShape::Linear { from, to } => {
+                include(*from);
+                include(*to);
+            }
+            MaskShape::Radial { center, .. } => include(*center),
+            _ => {}
+        }
+    }
+    bounds
+}
+/// Clamps a translation `delta` so every movable point in `shapes` stays within
+/// `[-4, 4]` without distorting the shapes.
+fn clamp_delta<'a>(shapes: impl IntoIterator<Item = &'a MaskShape>, delta: [f32; 2]) -> [f32; 2] {
+    let Some([x0, y0, x1, y1]) = shape_bounds(shapes) else {
+        return delta;
+    };
+    let axis = |d: f32, lo: f32, hi: f32| {
+        let min_d = -4. - lo;
+        let max_d = 4. - hi;
+        if min_d <= max_d {
+            d.clamp(min_d, max_d)
+        } else {
+            0.
+        }
+    };
+    [axis(delta[0], x0, x1), axis(delta[1], y0, y1)]
+}
 /// `shape` moved by `delta` (image space); color and tone ranges and bitmaps stay.
 fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
     let shift = |p: [f32; 2]| clamp_pos([p[0] + delta[0], p[1] + delta[1]]);
@@ -1539,7 +1586,8 @@ fn new_shape(kind: Kind, space: Space, start: [f32; 2], end: [f32; 2]) -> MaskSh
         Kind::Linear => MaskShape::Linear {
             from: start,
             to: if start == end {
-                clamp_pos([end[0], end[1] + 0.1])
+                let dy = if end[1] >= 3.9 { -0.1 } else { 0.1 };
+                clamp_pos([end[0], end[1] + dy])
             } else {
                 end
             },
@@ -1614,8 +1662,9 @@ fn move_handle(
             Handle::Start => *from = shift(*from),
             Handle::End => *to = shift(*to),
             _ => {
-                *from = shift(*from);
-                *to = shift(*to);
+                let d = clamp_delta(std::iter::once(original), delta);
+                *from = clamp_pos([from[0] + d[0], from[1] + d[1]]);
+                *to = clamp_pos([to[0] + d[0], to[1] + d[1]]);
             }
         },
         MaskShape::Radial {
@@ -2063,6 +2112,20 @@ mod tests {
         e.view.set_tool(Tool::Mask);
         frame(&mut e, vec![key(egui::Key::Enter)]);
         assert_eq!(names(&e), ["Old"]);
+    }
+    #[test]
+    fn moving_a_gradient_to_the_limit_translates_rigidly() {
+        let shape = MaskShape::Linear {
+            from: [3.2, 3.0],
+            to: [3.6, 3.5],
+        };
+        let delta = clamp_delta(std::iter::once(&shape), [1.0, 2.0]);
+        let MaskShape::Linear { from, to } = shifted(&shape, delta) else {
+            panic!()
+        };
+        assert!((to[0] - 4.0).abs() < 1e-5 && (to[1] - 4.0).abs() < 1e-5);
+        assert!(((to[0] - from[0]) - 0.4).abs() < 1e-5);
+        assert!(((to[1] - from[1]) - 0.5).abs() < 1e-5);
     }
 }
 

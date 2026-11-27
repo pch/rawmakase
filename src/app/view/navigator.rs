@@ -70,12 +70,17 @@ pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::app) struct Zoom {
-    /// Zoomed in rather than fitted.
+    /// Zoomed rather than fitted.
     pub on: bool,
-    /// Screen pixels per image pixel when zoomed in (1 = 100%).
+    /// Screen pixels per image pixel when zoomed (1 = 100%), and the level a
+    /// click or Z toggles to from Fit.
     pub level: f32,
     /// The centre of the view, as a fraction of the photo's width and height.
     pub pan: [f32; 2],
+    /// The click-to-zoom level to restore on returning to Fit after stepping or
+    /// dragging below Fit, so `Cmd+-` then `Cmd+=` does not hijack click-to-zoom
+    /// or overwrite the saved session level.
+    return_level: Option<f32>,
 }
 impl Default for Zoom {
     fn default() -> Self {
@@ -83,6 +88,7 @@ impl Default for Zoom {
             on: false,
             level: 1.,
             pan: [0.5, 0.5],
+            return_level: None,
         }
     }
 }
@@ -97,6 +103,11 @@ impl Zoom {
             level,
             ..Self::default()
         }
+    }
+    /// The click-to-zoom level kept in the session: the restored level while
+    /// temporarily stepped or dragged below Fit, otherwise [`Self::level`].
+    pub(in crate::app) fn saved_level(&self) -> f32 {
+        self.return_level.unwrap_or(self.level)
     }
     /// Screen rectangle of a whole photo of `size` image pixels laid out in `area`:
     /// fitted in Fit, otherwise `level` screen pixels per image pixel around `pan`,
@@ -188,24 +199,51 @@ impl Zoom {
         };
         Some(last.filter(|l| covers(*l)).unwrap_or([gx, gy, gw, gh]))
     }
-    /// Lightroom's click on the photo: from Fit, zooms in keeping `pos` (on the
+    /// Lightroom's click on the photo: from Fit, zooms keeping `pos` (on the
     /// photo drawn at `rect` in `area`, `size` image pixels) under the pointer;
-    /// zoomed in, back to Fit.
+    /// zoomed, back to Fit (restoring any transient return level).
     pub(crate) fn toggle_at(&mut self, pos: Pos2, rect: Rect, area: Rect, size: Vec2, ppp: f32) {
-        if !self.on {
+        if self.on {
+            self.fit();
+        } else {
             let point = (pos - rect.min) / rect.size();
             let size = size * (self.level / ppp);
             let origin = pos - point * size;
             let pan = (area.center() - origin) / size;
             self.pan = [pan.x.clamp(0., 1.), pan.y.clamp(0., 1.)];
+            self.on = true;
         }
-        self.on = !self.on;
     }
-    /// Sets a level; 0 fits.
-    pub(crate) fn set(&mut self, level: f32) {
-        self.on = level > 0.;
-        if self.on {
+    /// Returns to Fit, restoring the prior click-to-zoom level when this zoom
+    /// was entered by stepping or dragging below Fit.
+    pub(crate) fn fit(&mut self) {
+        self.on = false;
+        if let Some(level) = self.return_level.take() {
             self.level = level;
+        }
+    }
+    /// Sets an explicit level (menu pick, `Cmd+0`, `Cmd+1`); 0 fits.
+    pub(crate) fn set(&mut self, level: f32) {
+        if level <= 0. {
+            self.fit();
+        } else {
+            self.on = true;
+            self.level = level;
+            self.return_level = None;
+        }
+    }
+    /// Sets a level chosen by stepping (`Cmd+-`/`Cmd+=`) or dragging the slider.
+    /// Going below `fit` remembers the prior click-to-zoom level so returning to
+    /// Fit restores it instead of making a below-Fit step the click target.
+    pub(crate) fn set_transient(&mut self, level: f32, fit: f32) {
+        if level <= 0. {
+            self.fit();
+        } else if level < fit * (1. - 1e-3) {
+            self.return_level.get_or_insert(self.level);
+            self.on = true;
+            self.level = level;
+        } else {
+            self.set(level);
         }
     }
 }
@@ -837,7 +875,7 @@ mod tests {
             Zoom {
                 on: true,
                 level: 0.0625,
-                pan: [0.5, 0.5],
+                ..Zoom::default()
             },
         )
         .expect("snap to fit");
@@ -858,8 +896,7 @@ mod tests {
         use super::{Glide, PhotoId, Zoom};
         let mut zoom = Zoom {
             on: true,
-            level: 1.,
-            pan: [0.5, 0.5],
+            ..Zoom::default()
         };
         let photo = Some(PhotoId(1));
         let mut glide = Glide::to([0.7, 0.3], zoom.pan, photo);
@@ -900,8 +937,7 @@ mod tests {
         use eframe::egui::Vec2;
         let mut zoom = Zoom {
             on: true,
-            level: 1.,
-            pan: [0.5, 0.5],
+            ..Zoom::default()
         };
         let view = Vec2::new(1000., 600.);
         let region = |zoom: &Zoom, last| zoom.render_region(view, 6000, 4000, last);
@@ -941,7 +977,7 @@ mod tests {
         let half = Zoom {
             on: true,
             level: 0.5,
-            pan: [0.5, 0.5],
+            ..Zoom::default()
         };
         let [x, y, w, h] = half.shown(view, photo).expect("a part in view");
         assert!((w - 0.4).abs() < 1e-5 && (h - 0.4).abs() < 1e-5);
