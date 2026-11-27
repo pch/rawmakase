@@ -701,6 +701,11 @@ impl Editor {
         let negative_view = panels::negative::View {
             decoded: self.document.full().is_some(),
             auto_running: self.document.auto.is_running(),
+            hdr_file: self
+                .document
+                .metadata
+                .as_ref()
+                .is_some_and(|m| m.hdr_source.is_some()),
         };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;

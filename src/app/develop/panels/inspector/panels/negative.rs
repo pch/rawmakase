@@ -21,6 +21,9 @@ pub(in crate::app::develop::panels::inspector) struct View {
     pub decoded: bool,
     /// An Auto estimate is running (any panel's: one runs at a time).
     pub auto_running: bool,
+    /// The photo is an HDR file, whose HDR master renders no conversion
+    /// (`model::hdr::check_hdr_file`).
+    pub hdr_file: bool,
 }
 
 /// The film type as the panel's switch shows it.
@@ -169,6 +172,16 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 }
             });
         });
+        // An HDR file's HDR master applies Exposure to its light before anything
+        // reads it, so it renders no conversion: the photo shows its SDR rendition.
+        if facts.hdr_file && r.hdr.enabled {
+            note(
+                ui,
+                "An HDR file's HDR master doesn't render a conversion yet: \
+                 the photo shows its SDR rendition",
+                palette.warning(),
+            );
+        }
         // Why the picker and Auto are off, said where they are.
         if !facts.decoded {
             note(

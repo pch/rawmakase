@@ -300,6 +300,39 @@ fn negative_auto_clears_its_busy_state_whatever_its_end() {
     assert!(!editor.document.auto.is_running());
 }
 
+/// An HDR file's HDR master doesn't render a conversion: the panel says so, where
+/// the conversion is set, while HDR is on.
+#[test]
+fn the_negative_panel_says_an_hdr_files_master_has_no_conversion() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan(&ctx, false, true);
+    if let Some(m) = editor.document.metadata.as_mut() {
+        m.source = crate::camera_data::Source::Rendered;
+        m.hdr_source = Some(crate::camera_data::HdrSource {
+            transfer: crate::color::hdr_output::HdrTransfer::Pq,
+            gain_map: false,
+            peak: 4.,
+        });
+    }
+    in_edit_frame(&ctx, &mut editor, |e| {
+        let r = e.document.edit.recipe_mut();
+        r.negative = Some(NegativeConversion::new(FilmType::BlackWhite));
+        r.hdr.enabled = true;
+    });
+    let says = |shown: &egui::accesskit::TreeUpdate| {
+        shown.nodes.iter().any(|(_, n)| {
+            n.label()
+                .or(n.value())
+                .is_some_and(|t| t.contains("HDR master"))
+        })
+    };
+    assert!(says(&controls_frame(&ctx, &mut editor, vec![])));
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().hdr.enabled = false
+    });
+    assert!(!says(&controls_frame(&ctx, &mut editor, vec![])));
+}
+
 /// The film base picker and Auto end where the film switch's track ends (its last
 /// segment sits 2 points inside it), and the switch's segments share one row.
 #[test]
@@ -325,7 +358,8 @@ fn the_negative_panel_lines_up_its_rows() {
 /// The Negative panel in each state it is met in, for `RAWMAKASE_UI_SHOTS`
 /// ([`crate::app::ui::shots`]): off; a colour negative nothing has measured yet; a
 /// black & white one picked and levelled; the picker out; the picker after a
-/// clipped click; Auto off before the photo decodes; and while Auto runs.
+/// clipped click; Auto off before the photo decodes; while Auto runs; and an HDR
+/// file with HDR on, whose master renders no conversion.
 #[test]
 fn shots_of_the_negative_panel() {
     use crate::app::develop::state::Tool;
@@ -337,7 +371,7 @@ fn shots_of_the_negative_panel() {
     };
     let colour = Some(NegativeConversion::new(FilmType::Colour));
     type Setup = fn(&mut Editor);
-    let states: [(&str, Option<NegativeConversion>, bool, Setup); 7] = [
+    let states: [(&str, Option<NegativeConversion>, bool, Setup); 8] = [
         ("negative-off", None, true, |_| {}),
         ("negative-colour", colour.clone(), true, |_| {}),
         ("negative-black-white", Some(measured.clone()), true, |_| {}),
@@ -349,8 +383,19 @@ fn shots_of_the_negative_panel() {
             e.view.film_base_refusal = Some(crate::develop::FilmBaseRefusal::Clipped);
         }),
         ("negative-not-decoded", colour, false, |_| {}),
-        ("negative-auto-running", Some(measured), true, |e| {
+        ("negative-auto-running", Some(measured.clone()), true, |e| {
             e.document.auto.start();
+        }),
+        ("negative-hdr-file", Some(measured), true, |e| {
+            if let Some(m) = e.document.metadata.as_mut() {
+                m.source = crate::camera_data::Source::Rendered;
+                m.hdr_source = Some(crate::camera_data::HdrSource {
+                    transfer: crate::color::hdr_output::HdrTransfer::Pq,
+                    gain_map: false,
+                    peak: 4.,
+                });
+            }
+            e.document.edit.setup_mut().hdr.enabled = true;
         }),
     ];
     for (name, negative, decoded, setup) in states {
