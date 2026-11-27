@@ -239,8 +239,10 @@ mod tests {
             &ctx,
             None,
             crate::app::preferences::session::Session::default(),
-            Some(path.clone()),
+            None,
         );
+        // Given after launch, so the editor starts no update check or catalog.
+        editor.session.set_file(Some(path.clone()));
         let image = Arc::new(CameraImage {
             recovered: Default::default(),
             width: 2000,
