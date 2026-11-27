@@ -29,8 +29,8 @@ The original file is never changed: the conversion is part of the photo's edit.
    away. It reads the scan's own values in a 9 × 9 pixel patch; a patch with a
    clipped pixel (the light around the film) or no light is refused, and the panel and
    the status line say why.
-3. Crop to the image, then press **Auto** on the Levels row: it levels the frame
-   inside the crop.
+3. Crop to the image, leaving out the film holder and the clear edge, then press
+   **Auto** on the Levels row: it levels the frame inside the crop.
 4. Finish with Basic (Exposure, Contrast, Whites, Blacks) and white balance, as for
    any photo.
 5. Sync the conversion to the rest of the roll: Copy Settings, Paste and Sync carry
@@ -68,14 +68,17 @@ is the film base, the scene's darkest end.
 side, and any clipped sample. It sets `dmin` and `dmax` from the 0.5th and 99.5th
 percentiles of the densities. A colour negative's white is taken from its densest
 near-neutral tones where it has them, so a coloured highlight doesn't read as a cast.
-No-light samples, such as a sliver of the film holder inside the crop, are left out
-by the frame's own distribution: they sit apart from the frame's densest content,
-with only their blurred edge between, form a region that runs along the crop's edge
-for at least 40% of its length, and let through no light: at most 2<sup>−8</sup> of
-the sensor's white, where camera scans record 0.0005 to 0.002 of it inside a holder
-and film lets through more. A dense area of the frame's own (a window, the sun, a sky
-along an edge) still lets light through and is kept, wherever it is. Auto refuses a
-blank or flat frame.
+Apart from the 3% inset, Auto measures everything inside the crop: a sliver of the
+film holder left in it recorded no light, reads as the densest film there is, and
+makes the levels too dark. Auto can't tell it reliably from a scene's own dense areas
+(a sky along an edge, or dense film over a dark base), so it never leaves anything
+out. When it sees an unlit strip along the crop's edge (samples at most 2<sup>−8</sup>
+of the sensor's white, where camera scans record 0.0005 to 0.002 of it inside a
+holder, running along at least 40% of an edge), the panel says so under Levels: crop
+the holder out and press Auto again. The note goes when the crop changes, when Auto
+runs again without finding one, and with the conversion or the photo; it is not part
+of the edit. On a dark scan it can show for dense film where there is no holder; the
+levels are the same either way. Auto refuses a blank or flat frame.
 
 ## Where it applies
 
