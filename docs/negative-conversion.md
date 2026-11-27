@@ -75,9 +75,10 @@ makes the levels too dark. Auto can't tell it reliably from a scene's own dense 
 out. When it sees an unlit strip along the crop's edge (samples at most 2<sup>−8</sup>
 of the sensor's white, where camera scans record 0.0005 to 0.002 of it inside a
 holder, running along at least 40% of an edge), the panel says so under Levels: crop
-the holder out and press Auto again. The note goes when the crop changes, when Auto
-runs again without finding one, and with the conversion or the photo; it is not part
-of the edit. On a dark scan it can show for dense film where there is no holder; the
+the holder out and press Auto again. The note goes when the crop or the conversion
+changes (another film base, a paste, Off, or undoing that Auto, which redo doesn't
+bring back), when Auto runs again without finding one, and with the photo; it is not
+part of the edit. On a dark scan it can show for dense film where there is no holder; the
 levels are the same either way. Auto refuses a blank or flat frame.
 
 ## Where it applies
