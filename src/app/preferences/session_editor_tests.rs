@@ -234,3 +234,365 @@ fn confirming_copy_settings_saves_its_groups_even_unchanged() -> anyhow::Result<
     assert!(path.exists());
     Ok(())
 }
+
+/// Drains editor events until the catalog finishes opening.
+fn settle_catalog(editor: &mut Editor, ctx: &egui::Context) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while editor.activity.is_busy() && std::time::Instant::now() < deadline {
+        editor.events(ctx);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    editor.events(ctx);
+    assert!(!editor.activity.is_busy(), "catalog did not settle");
+}
+
+/// A catalog on disk with two photos inside `photos/trip`, returning the catalog
+/// path, both photo ids and the subfolder's source key.
+fn two_photo_catalog(
+    dir: &tempfile::TempDir,
+) -> anyhow::Result<(PathBuf, [PhotoId; 2], [PathBuf; 2], String)> {
+    let trip = dir.path().join("photos/trip");
+    std::fs::create_dir_all(&trip)?;
+    let a_path = trip.join("a.RAF");
+    let b_path = trip.join("b.RAF");
+    std::fs::write(&a_path, b"fixture a")?;
+    std::fs::write(&b_path, b"fixture b")?;
+    let catalog = dir.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&catalog)?.add_folder(&trip)?;
+    let opened = crate::app::library::Library::load(&catalog, egui::Context::default())?;
+    let photos = opened.session.photos();
+    let a = photos.iter().find(|p| p.filename == "a.RAF").unwrap().id;
+    let b = photos.iter().find(|p| p.filename == "b.RAF").unwrap().id;
+    let folder_key = format!("root:{}", opened.session.roots()[0].0.0);
+    Ok((catalog, [a, b], [a_path, b_path], folder_key))
+}
+
+/// A clean shutdown restores the last view (Loupe or Develop) and selected photo
+/// on the next launch without any crash notice.
+#[test]
+fn a_clean_shutdown_restores_loupe_and_develop_normally() -> anyhow::Result<()> {
+    use crate::app::preferences::session::{LibraryLayout, Session};
+    for develop in [false, true] {
+        let dir = tempfile::tempdir()?;
+        let (catalog, [_, b], _, folder_key) = two_photo_catalog(&dir)?;
+        let session_file = dir.path().join("session.json");
+        let saved_state = Session {
+            last_path: Some(catalog),
+            library_source: folder_key,
+            selected_photo: Some(b),
+            develop,
+            library_layout: LibraryLayout {
+                view: if develop { "grid" } else { "loupe" }.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let mut first = Editor::with_context(&ctx, None, saved_state, Some(session_file.clone()));
+        settle_catalog(&mut first, &ctx);
+        first.exit_within(std::time::Duration::from_secs(5));
+        drop(first);
+
+        let relaunched_session = saved(&session_file);
+        let mut second = Editor::with_context(&ctx, None, relaunched_session, Some(session_file));
+        settle_catalog(&mut second, &ctx);
+        assert!(
+            !second.messages.has_entry_with("did not close cleanly"),
+            "clean exit must not trigger crash notice"
+        );
+        if develop {
+            assert_eq!(second.module, Module::Develop);
+            assert_eq!(second.document.catalog_photo, Some(b));
+        } else {
+            assert_eq!(second.module, Module::Library);
+            let library = second.library.as_ref().unwrap();
+            assert!(library.loupe_open());
+            assert_eq!(library.selected(), Some(b));
+        }
+        second.exit_within(std::time::Duration::from_secs(5));
+    }
+    Ok(())
+}
+
+/// After an unclean exit (crash in Loupe, Compare or Develop), the next launch
+/// opens the catalog in Library Grid with no photo selected, preserves the
+/// folder source, layout settings and preferences, shows a brief notice, and
+/// returns to normal restore once that recovered session exits cleanly.
+#[test]
+fn an_unclean_exit_opens_in_grid_without_selection_and_recovers_after_clean_exit()
+-> anyhow::Result<()> {
+    use crate::app::preferences::session::{LibraryLayout, Session};
+    use crate::app::shell::workspace::LayoutEdit;
+
+    for (develop, view) in [(false, "loupe"), (false, "compare"), (true, "grid")] {
+        let dir = tempfile::tempdir()?;
+        let (catalog, [a, b], _, folder_key) = two_photo_catalog(&dir)?;
+        let session_file = dir.path().join("session.json");
+        let crashed_session = Session {
+            last_path: Some(catalog.clone()),
+            library_source: folder_key.clone(),
+            selected_photo: Some(b),
+            develop,
+            auto_advance: true,
+            theme: Some("nord.toml".into()),
+            theme_chosen: true,
+            decoded_cache_size_gib: Some(16),
+            library_layout: LibraryLayout {
+                view: view.into(),
+                sort: "file_name".into(),
+                reverse: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        crate::storage::atomic_json(&session_file, &crashed_session)?;
+
+        // Launch 1 starts and dies without calling exit().
+        let ctx = egui::Context::default();
+        let first = Editor::with_context(&ctx, None, crashed_session, Some(session_file.clone()));
+        drop(first);
+
+        // Launch 2 detects the unclean exit and guards session restore.
+        let mut second =
+            Editor::with_context(&ctx, None, saved(&session_file), Some(session_file.clone()));
+        settle_catalog(&mut second, &ctx);
+        assert_eq!(second.module, Module::Library);
+        assert!(second.document.catalog_photo.is_none());
+        let library = second.library.as_ref().unwrap();
+        assert!(!library.loupe_open());
+        assert_eq!(library.layout().view, "grid");
+        assert_eq!(library.selected(), None);
+        assert_eq!(library.source_key(), folder_key);
+        assert_eq!(library.layout().sort, "file_name");
+        assert!(library.layout().reverse);
+        assert!(second.session.auto_advance);
+        assert_eq!(second.decode_cache.limit(), 16 << 30);
+        assert!(
+            second.messages.has_entry_with("did not close cleanly"),
+            "expected recovery warning for develop={develop}, view={view}"
+        );
+        let persisted = saved(&session_file);
+        assert_eq!(persisted.last_path.as_ref(), Some(&catalog));
+        assert_eq!(persisted.selected_photo, None);
+        assert!(!persisted.develop);
+        assert_eq!(persisted.library_layout.view, "grid");
+        assert!(persisted.auto_advance);
+        assert_eq!(persisted.theme.as_deref(), Some("nord.toml"));
+        assert_eq!(persisted.decoded_cache_size_gib, Some(16));
+
+        // User picks a photo in Loupe and exits cleanly: Launch 3 restores normally.
+        let library = second.library.as_mut().unwrap();
+        library.select(Some(a));
+        library.open_loupe();
+        second.remember_place(LayoutEdit::Settled);
+        second.exit_within(std::time::Duration::from_secs(5));
+        drop(second);
+
+        let mut third =
+            Editor::with_context(&ctx, None, saved(&session_file), Some(session_file.clone()));
+        settle_catalog(&mut third, &ctx);
+        assert!(!third.messages.has_entry_with("did not close cleanly"));
+        let library = third.library.as_ref().unwrap();
+        assert!(library.loupe_open());
+        assert_eq!(library.selected(), Some(a));
+        third.exit_within(std::time::Duration::from_secs(5));
+    }
+    Ok(())
+}
+
+/// If a recovered session also crashes before a clean shutdown, the next launch
+/// still guards session restore.
+#[test]
+fn a_second_crash_during_recovery_still_guards_the_next_launch() -> anyhow::Result<()> {
+    use crate::app::preferences::session::{LibraryLayout, Session};
+    use crate::app::shell::workspace::LayoutEdit;
+
+    let dir = tempfile::tempdir()?;
+    let (catalog, [_, b], _, _) = two_photo_catalog(&dir)?;
+    let session_file = dir.path().join("session.json");
+    let session = Session {
+        last_path: Some(catalog),
+        selected_photo: Some(b),
+        library_layout: LibraryLayout {
+            view: "loupe".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    crate::storage::atomic_json(&session_file, &session)?;
+
+    let ctx = egui::Context::default();
+    let first = Editor::with_context(&ctx, None, session, Some(session_file.clone()));
+    drop(first);
+
+    // Recovered session opens Loupe again, then also crashes without exit().
+    let mut second =
+        Editor::with_context(&ctx, None, saved(&session_file), Some(session_file.clone()));
+    settle_catalog(&mut second, &ctx);
+    let library = second.library.as_mut().unwrap();
+    library.select(Some(b));
+    library.open_loupe();
+    second.remember_place(LayoutEdit::Settled);
+    drop(second);
+
+    let mut third =
+        Editor::with_context(&ctx, None, saved(&session_file), Some(session_file.clone()));
+    settle_catalog(&mut third, &ctx);
+    assert!(third.messages.has_entry_with("did not close cleanly"));
+    let library = third.library.as_ref().unwrap();
+    assert!(!library.loupe_open());
+    assert_eq!(library.selected(), None);
+    third.exit_within(std::time::Duration::from_secs(5));
+    Ok(())
+}
+
+/// A second instance started while the first is still running does not mistake
+/// it for a crash, and exiting the second instance does not clear the first's
+/// launch guard.
+#[test]
+fn a_concurrent_instance_does_not_trigger_or_clear_crash_recovery() -> anyhow::Result<()> {
+    use crate::app::preferences::session::{LibraryLayout, Session};
+
+    let dir = tempfile::tempdir()?;
+    let (catalog, [_, b], _, _) = two_photo_catalog(&dir)?;
+    let session_file = dir.path().join("session.json");
+    let loupe_session = || Session {
+        last_path: Some(catalog.clone()),
+        selected_photo: Some(b),
+        library_layout: LibraryLayout {
+            view: "loupe".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let ctx = egui::Context::default();
+    let first = Editor::with_context(&ctx, None, loupe_session(), Some(session_file.clone()));
+
+    let mut second = Editor::with_context(&ctx, None, loupe_session(), Some(session_file.clone()));
+    settle_catalog(&mut second, &ctx);
+    assert!(!second.messages.has_entry_with("did not close cleanly"));
+    assert!(second.library.as_ref().unwrap().loupe_open());
+    assert_eq!(second.library.as_ref().unwrap().selected(), Some(b));
+    second.exit_within(std::time::Duration::from_secs(5));
+    drop(second);
+
+    // First instance now crashes: Launch 3 must still detect the crash.
+    drop(first);
+    let mut third = Editor::with_context(&ctx, None, loupe_session(), Some(session_file));
+    settle_catalog(&mut third, &ctx);
+    assert!(third.messages.has_entry_with("did not close cleanly"));
+    assert!(!third.library.as_ref().unwrap().loupe_open());
+    assert_eq!(third.library.as_ref().unwrap().selected(), None);
+    third.exit_within(std::time::Duration::from_secs(5));
+    Ok(())
+}
+
+/// An unclean exit when nothing was selected or open in Loupe/Develop still
+/// clears the Library's default selection, without showing a misleading notice.
+#[test]
+fn an_unclean_exit_without_saved_photo_or_view_clears_selection_silently() -> anyhow::Result<()> {
+    use crate::app::preferences::session::{LibraryLayout, Session};
+
+    let dir = tempfile::tempdir()?;
+    let (catalog, _, _, _) = two_photo_catalog(&dir)?;
+    let session_file = dir.path().join("session.json");
+    let grid_session = || Session {
+        last_path: Some(catalog.clone()),
+        selected_photo: None,
+        develop: false,
+        library_layout: LibraryLayout {
+            view: "grid".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let ctx = egui::Context::default();
+    let first = Editor::with_context(&ctx, None, grid_session(), Some(session_file.clone()));
+    drop(first);
+
+    let mut second = Editor::with_context(&ctx, None, grid_session(), Some(session_file));
+    settle_catalog(&mut second, &ctx);
+    assert_eq!(second.module, Module::Library);
+    assert_eq!(second.library.as_ref().unwrap().selected(), None);
+    assert!(!second.messages.has_entry_with("did not close cleanly"));
+    second.exit_within(std::time::Duration::from_secs(5));
+    Ok(())
+}
+
+/// Passing an explicit photo on the command line after a crash still opens the
+/// requested photo instead of the crashed one, without a contradictory Grid notice.
+#[test]
+fn an_explicit_cli_photo_still_opens_after_an_unclean_exit() -> anyhow::Result<()> {
+    use crate::app::preferences::session::{LibraryLayout, Session};
+
+    let dir = tempfile::tempdir()?;
+    let (catalog, [a, b], [_, b_path], _) = two_photo_catalog(&dir)?;
+    let session_file = dir.path().join("session.json");
+    let crashed = || Session {
+        last_path: Some(catalog.clone()),
+        selected_photo: Some(a),
+        develop: true,
+        library_layout: LibraryLayout {
+            view: "loupe".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let ctx = egui::Context::default();
+    let first = Editor::with_context(&ctx, None, crashed(), Some(session_file.clone()));
+    drop(first);
+
+    let mut second = Editor::with_context(&ctx, Some(b_path), crashed(), Some(session_file));
+    settle_catalog(&mut second, &ctx);
+    assert_eq!(second.module, Module::Develop);
+    assert_eq!(second.document.catalog_photo, Some(b));
+    assert!(!second.messages.has_entry_with("did not close cleanly"));
+    second.exit_within(std::time::Duration::from_secs(5));
+    Ok(())
+}
+
+/// After an unclean exit whose `last_path` named a standalone photo (no catalog),
+/// recovery skips it, clears it from `session.json` so it does not return on the
+/// next clean launch, and words the notice without claiming Grid view opened.
+#[test]
+fn an_unclean_exit_with_a_standalone_last_photo_clears_it_and_adjusts_notice() -> anyhow::Result<()>
+{
+    use crate::app::preferences::session::Session;
+
+    let dir = tempfile::tempdir()?;
+    let photo = dir.path().join("bad.RAF");
+    std::fs::write(&photo, b"fixture")?;
+    let session_file = dir.path().join("session.json");
+    let crashed = Session {
+        last_path: Some(photo),
+        auto_advance: true,
+        ..Default::default()
+    };
+    crate::storage::atomic_json(&session_file, &crashed)?;
+
+    let ctx = egui::Context::default();
+    let first = Editor::with_context(&ctx, None, crashed, Some(session_file.clone()));
+    drop(first);
+
+    let mut second =
+        Editor::with_context(&ctx, None, saved(&session_file), Some(session_file.clone()));
+    assert!(second.library.is_none());
+    assert!(
+        second
+            .messages
+            .has_entry("RAWmakase did not close cleanly: skipped restoring the last photo")
+    );
+    let persisted = saved(&session_file);
+    assert_eq!(persisted.last_path, None);
+    assert!(persisted.auto_advance);
+
+    second.exit_within(std::time::Duration::from_secs(5));
+    drop(second);
+
+    // Even after saving again before/during clean exit, the standalone photo does not come back.
+    assert_eq!(saved(&session_file).last_path, None);
+    Ok(())
+}

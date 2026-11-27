@@ -70,6 +70,7 @@ impl Editor {
             .spawn(REMOVE_UNFINISHED)
             .ok();
         task::wait_for(vec![task::Stopping::new(removing)], CLEANUP);
+        self.session.mark_clean_exit();
         waited
     }
     /// Every job in progress stops at its next check.

@@ -302,7 +302,21 @@ impl Editor {
             && crate::app::catalog::onboarding::lightroom_here();
         let onboarding_done =
             session.onboarding_done || (session_file.is_some() && !show_onboarding);
-        let place = CatalogPlace::of(&session);
+        let (guard, recovered) = session_file.as_deref().map_or(
+            (None, false),
+            crate::app::preferences::session::LaunchGuard::enter,
+        );
+        let mut place = CatalogPlace::of(&session);
+        let skipped_last_photo = recovered
+            && session
+                .last_path
+                .as_ref()
+                .is_some_and(|p| p.extension().is_none_or(|e| e != "rawmakase"));
+        let skipped_restore = recovered && (session.has_photo_or_view() || skipped_last_photo);
+        if recovered {
+            place.photo = None;
+            place.module = Module::Library;
+        }
         // Only a real session checks GitHub, not an isolated test.
         let updates = crate::app::shell::updates::Updates::new(
             &session,
@@ -319,7 +333,11 @@ impl Editor {
             _ => None,
         };
         let report_issue = crate::app::shell::report_issue::ReportIssue::new(gpu);
-        let last = session.last_path.clone().filter(|p| p.exists());
+        let last = session
+            .last_path
+            .clone()
+            .filter(|p| p.exists())
+            .filter(|p| !recovered || p.extension().is_some_and(|e| e == "rawmakase"));
         // A first launch opens the default catalog. A catalog used before that
         // is missing now (an unplugged drive) is not replaced by it.
         let first_catalog = session.last_path.is_none() && session_file.is_some();
@@ -359,9 +377,11 @@ impl Editor {
         let mut session_state = crate::app::preferences::session::SessionState::new(
             &session,
             session_file,
+            guard,
             place.clone(),
             onboarding_done,
             copy_groups.unwrap_or_default(),
+            recovered,
         );
         let zoom = crate::app::view::navigator::Zoom::from_session(session.zoom_level);
         // The level as read, so a saved level out of reach or unreadable is
@@ -466,7 +486,11 @@ impl Editor {
             editable_builds: Default::default(),
             stand_ins,
             autosave: Default::default(),
-            waiting: crate::app::catalog::Waiting::restoring(place),
+            waiting: if recovered {
+                crate::app::catalog::Waiting::restoring_after_crash(place)
+            } else {
+                crate::app::catalog::Waiting::restoring(place)
+            },
             drop_area: None,
             neighbour_prefetch: Default::default(),
             messages: crate::app::shell::messages::Messages::starting_with(
@@ -523,6 +547,24 @@ impl Editor {
             report_hook: None,
         };
         app.reload_presets(ctx);
+        if skipped_last_photo {
+            let _ = app.save_session();
+        }
+        let opening_cli_photo = path
+            .as_ref()
+            .is_some_and(|p| p.extension().is_none_or(|e| e != "rawmakase"));
+        let opening_catalog = path
+            .as_ref()
+            .is_some_and(|p| p.extension().is_some_and(|e| e == "rawmakase"))
+            || last.is_some()
+            || first_catalog;
+        if skipped_restore && !opening_cli_photo {
+            app.messages.warn(if opening_catalog {
+                "RAWmakase did not close cleanly: opened in Grid view without restoring the last photo"
+            } else {
+                "RAWmakase did not close cleanly: skipped restoring the last photo"
+            });
+        }
         // A catalog passed on the command line opens instead of the last one;
         // a photo passed there is added to the last catalog.
         match path {
