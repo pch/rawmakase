@@ -479,6 +479,44 @@ fn negative_auto_says_when_the_crop_holds_the_holder() {
     ));
 }
 
+/// The note is of the conversion Auto measured, with the conversion still on: undoing
+/// that Auto takes it away, and so does another film base. Redoing the Auto doesn't
+/// bring it back; Auto run again does.
+#[test]
+fn the_holder_note_goes_with_the_conversion_auto_measured() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan(&ctx, false, false);
+    let mut image = (*negative_scan(false)).clone();
+    for (i, p) in image.pixels.iter_mut().enumerate() {
+        if i % 64 < 6 {
+            *p = [0.0005; 3];
+        }
+    }
+    editor.document.set_image(Arc::new(image));
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().negative = Some(NegativeConversion {
+            base: BASE,
+            ..NegativeConversion::new(FilmType::BlackWhite)
+        })
+    });
+    let shown = |editor: &mut Editor| says(&controls_frame(&ctx, editor, vec![]), HOLDER_NOTE);
+    run_negative_auto(&ctx, &mut editor);
+    assert!(shown(&mut editor));
+    // Undone: the conversion is on, unlevelled.
+    editor.undo();
+    assert!(editor.document.edit.recipe().negative.is_some());
+    assert!(!shown(&mut editor));
+    editor.redo();
+    assert!(!shown(&mut editor));
+    run_negative_auto(&ctx, &mut editor);
+    assert!(shown(&mut editor));
+    // Another film base, as the picker sets it.
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().negative.as_mut().unwrap().base = [0.5, 0.4, 0.3]
+    });
+    assert!(!shown(&mut editor));
+}
+
 /// A screen reader hears the picker and Auto as buttons, which are off while the
 /// photo loads, Auto while it measures, and the picker as pressed while it is out.
 #[test]
@@ -591,9 +629,11 @@ fn shots_of_the_negative_panel() {
             Some(measured.clone()),
             true,
             |e| {
+                let r = e.document.edit.recipe();
                 e.view.negative_holder = Some(crate::app::develop::state::NegativeHolder {
                     load: e.document.load_id(),
-                    crop: e.document.edit.recipe().crop,
+                    crop: r.crop,
+                    conversion: r.negative.clone().unwrap(),
                 });
             },
         ),

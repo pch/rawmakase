@@ -124,7 +124,8 @@ impl Editor {
     /// Applies an Auto estimate as one History step. Only the fields Auto sets are
     /// taken, so edits made while it ran are kept. The Negative panel's says, beside
     /// its levels, when the crop seemed to hold part of the film holder
-    /// (`holder_in_crop`), until the crop changes or Auto runs again.
+    /// (`holder_in_crop`), while the photo, crop and conversion stay as Auto measured
+    /// them ([`NegativeHolder::holds`]).
     pub(in crate::app) fn auto_ready(
         &mut self,
         kind: AutoKind,
@@ -173,10 +174,14 @@ impl Editor {
             AutoKind::WhiteBalance => apply_white_balance(&auto, &mut applied),
             AutoKind::Negative => {
                 apply_negative_levels(&auto, &mut applied);
-                self.view.negative_holder = holder_in_crop.then(|| NegativeHolder {
-                    load: self.document.load_id(),
-                    crop: applied.crop,
-                });
+                self.view.negative_holder = holder_in_crop
+                    .then(|| applied.negative.clone())
+                    .flatten()
+                    .map(|conversion| NegativeHolder {
+                        load: self.document.load_id(),
+                        crop: applied.crop,
+                        conversion,
+                    });
             }
         }
         // With Auto Sync on, the other selected photos get an Auto of their own:

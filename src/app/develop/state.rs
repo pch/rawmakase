@@ -409,12 +409,21 @@ pub(in crate::app) enum Tool {
     /// The Targeted Adjustment Tool of the Tone Curve, the Color Mixer or B&W.
     Targeted(crate::develop::targeted::Target),
 }
-/// Where the Negative panel's Auto found part of the film holder: the photo's load
-/// and the crop it measured.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Where the Negative panel's Auto found part of the film holder: the photo's load,
+/// the crop it measured and the conversion it set.
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::app) struct NegativeHolder {
     pub(in crate::app) load: u64,
     pub(in crate::app) crop: [f32; 4],
+    pub(in crate::app) conversion: crate::model::negative::NegativeConversion,
+}
+impl NegativeHolder {
+    /// Whether the note still speaks of the photo loaded as `load`, edited as `r`: the
+    /// same photo, crop and conversion as Auto measured. Undoing that Auto, another
+    /// film base or a pasted conversion ends it.
+    pub(in crate::app) fn holds(&self, load: u64, r: &crate::model::recipe::Recipe) -> bool {
+        self.load == load && self.crop == r.crop && r.negative.as_ref() == Some(&self.conversion)
+    }
 }
 /// The tool open, kept where only [`ViewState`]'s methods reach it, and
 /// how many times a tool was taken up.
@@ -464,8 +473,8 @@ pub(in crate::app) struct ViewState {
     /// the Negative panel says so under it. Any change of tool clears it.
     pub(in crate::app) film_base_refusal: Option<crate::develop::FilmBaseRefusal>,
     /// The Negative panel's last Auto found part of the film holder in the crop: the
-    /// panel says so under Levels while that photo and crop stay. Neither the recipe
-    /// nor History holds it.
+    /// panel says so under Levels while that photo, crop and conversion stay
+    /// ([`NegativeHolder::holds`]). Neither the recipe nor History holds it.
     pub(in crate::app) negative_holder: Option<NegativeHolder>,
     /// A drag on the crop, from the press to the release.
     pub(in crate::app) crop_drag: Option<crate::app::develop::tools::crop_drag::CropDrag>,
