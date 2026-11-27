@@ -67,14 +67,26 @@ first.
   filing an issue first, and describe the problem in it. A new issue is often
   picked up and fixed straight away, so a pull request that follows it can
   duplicate work already done.
-- Open an issue first for a large change whose approach is still open, and say
-  there that you plan to work on it.
+- For a large change whose approach is still open, open a draft pull request, not
+  an issue full of questions. Use the docs and the code to make the design calls
+  yourself, and explain them in the description; we'll discuss the approach on the
+  pull request. If something truly needs a maintainer's answer, ask everything at
+  once rather than over several rounds.
 - One concern per pull request. Say what changed, why, and how you checked it,
   including what you could not check (no GPU, no private corpus).
+- Have the change reviewed before you open the pull request. Run at least one
+  adversarial review round on it, by another person or by a coding agent,
+  preferably from a different model provider than the one that wrote it. Follow
+  the [code review rules in AGENTS.md](AGENTS.md#code-review). Fix what the review
+  finds, and say in the pull request how the change was reviewed. A problem caught
+  before the pull request costs everyone less than one caught after it.
 - Commit only the files you changed. Never commit RAW files, Adobe profiles,
   Lightroom catalogs, private photos or paths from your own machine.
 - Update the docs a change makes wrong in the same pull request: the code map when
   a module moves, the architecture guide when ownership or a dependency changes.
+- We can't promise to merge every pull request, even a good one. A change may not
+  fit where the project is going, may overlap work already under way, or may cost
+  more to maintain than it adds. If we decline one, we'll say why.
 
 ## Licence
 
