@@ -197,12 +197,24 @@ fn fit_white_balance_to(samples: &[[f32; 3]], m: &Metadata, r: &mut Recipe) -> R
 /// correction, as rendering samples them, so areas cropped away do not pull white
 /// balance.
 fn crop_samples(im: &CameraImage, r: &Recipe) -> Vec<[f32; 3]> {
-    crop_grid(im, r, 0.).into_iter().map(|(_, p)| p).collect()
+    crop_grid(im, r, 0.)
+        .samples
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect()
+}
+
+/// The samples of [`crop_grid`]: a grid over the crop, each sample at its cell's
+/// column and row. Cells outside the photo have none.
+pub(super) struct CropGrid {
+    pub(super) columns: u32,
+    pub(super) rows: u32,
+    pub(super) samples: Vec<([u32; 2], [f32; 3])>,
 }
 
 /// [`crop_samples`] leaving out `inset` of the crop's width and height at each side,
-/// each with where it is in that inset crop (0–1 across and down).
-pub(super) fn crop_grid(im: &CameraImage, r: &Recipe, inset: f32) -> Vec<([f32; 2], [f32; 3])> {
+/// each with its cell in the grid over that inset crop.
+pub(super) fn crop_grid(im: &CameraImage, r: &Recipe, inset: f32) -> CropGrid {
     let g = super::Geometry::new(im, r, WHITE_BALANCE_EDGE);
     let lens = super::image_space::LensMap::new(im, r);
     let (columns, rows) = (g.width.max(1), g.height.max(1));
@@ -218,11 +230,18 @@ pub(super) fn crop_grid(im: &CameraImage, r: &Recipe, inset: f32) -> Vec<([f32; 
             let [x, y] = lens.as_ref().map_or([x, y], |l| l.forward(x, y));
             let (x, y) = (x.round(), y.round());
             if x >= 0. && y >= 0. && x < im.width as f32 && y < im.height as f32 {
-                samples.push((at, im.pixels[y as usize * im.width as usize + x as usize]));
+                samples.push((
+                    [column, row],
+                    im.pixels[y as usize * im.width as usize + x as usize],
+                ));
             }
         }
     }
-    samples
+    CropGrid {
+        columns,
+        rows,
+        samples,
+    }
 }
 
 /// Per-channel gains, relative to As Shot and normalised to green, that make the

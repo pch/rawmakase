@@ -341,6 +341,40 @@ fn auto_keeps_a_separate_dense_area_inside_the_frame() {
     );
 }
 
+/// A highlight near the crop's edge, apart from the rest of the frame by a gap in
+/// density, is the photo's own, not a holder: one 20 pixels in from the left edge
+/// of a 256 × 192 frame, and one touching that edge along a short stretch of it, are
+/// kept as the one in the middle is, for either film (the review's case: the one
+/// near the edge was cut as no light, and rendered at 23 times white).
+#[test]
+fn auto_keeps_a_highlight_near_or_briefly_touching_the_edge() {
+    for (film, kind) in [
+        (&BLACK_WHITE, FilmType::BlackWhite),
+        (&COLOUR, FilmType::Colour),
+    ] {
+        let r = unlevelled(film, kind);
+        let highlight = film.density([1.; 3]);
+        for (x0, y0) in [(90, 70), (20, 70), (0, 70)] {
+            let im = image(256, 192, |x, y| {
+                let e = if (x0..x0 + 20).contains(&x) && (y0..y0 + 50).contains(&y) {
+                    1.
+                } else {
+                    // A frame up to 0.3, its own white well below the highlight.
+                    10f32.powf(-2. + 1.48 * x as f32 / 255.)
+                };
+                film.scan([e; 3])
+            });
+            let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
+            for c in 0..3 {
+                assert!(
+                    (got.dmax[c] - highlight[c]).abs() < 0.02,
+                    "{kind:?} at x {x0}: {got:?}, highlight {highlight:?}"
+                );
+            }
+        }
+    }
+}
+
 /// Auto needs a conversion to level, unclipped film inside the crop, and a frame with
 /// a range of densities: a blank frame has none, and its levels would stretch its
 /// noise. A cancelled Auto stops with an error.

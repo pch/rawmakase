@@ -248,9 +248,12 @@ const MIN_SAMPLES: usize = 64;
 /// the camera's mask inside the crop recorded no light and sits apart from it, well
 /// above, with only its blurred edge between. Auto looks for that gap among the
 /// densest [`NO_LIGHT_SHARE`] of the samples: a run of nearly empty bins
-/// [`NO_LIGHT_GAP`] decades long or longer, with samples above it lying mostly along
-/// the crop's edges, where a holder shows. A fixed density cap can't tell them apart: a
-/// thin negative's white is far below a dense one's.
+/// [`NO_LIGHT_GAP`] decades long or longer. What lies above it is left out only where
+/// it is a holder: a connected region that runs along the crop's edge, its outermost
+/// samples, for [`HOLDER_RUN`] of that edge's length or more. A highlight of the
+/// frame's own (a window, the sun), inside the frame or near or briefly touching its
+/// edge, is kept. A fixed density cap can't tell them apart: a thin negative's white
+/// is far below a dense one's.
 const NO_LIGHT_SHARE: f32 = 0.1;
 /// The width of a density bin when looking for the gap, in decades.
 const NO_LIGHT_BIN: f32 = 0.02;
@@ -259,12 +262,11 @@ const NO_LIGHT_GAP: f32 = 0.3;
 /// The most samples a bin of the gap may hold, as a share of all of them: a holder's
 /// blurred edge spreads a few samples across it.
 const NO_LIGHT_SPARSE: f32 = 0.0005;
-/// The band along the crop's edges, as a share of its width and height, where most of
-/// a no-light cluster must lie.
-const NO_LIGHT_EDGE: f32 = 0.15;
-/// The share of a cluster above the gap that must lie in that band for it to be left
-/// out as no light, rather than taken as the frame's own (a window, the sun).
-const NO_LIGHT_EDGE_SHARE: f32 = 0.6;
+/// The share of an edge of the crop a holder runs along, unbroken, at the least.
+const HOLDER_RUN: f32 = 0.4;
+/// How far a holder's blurred edge reaches into the frame, in grid cells: samples in
+/// the gap this close to it are left out with it.
+const HOLDER_EDGE: i64 = 2;
 /// For a colour negative, the share of the frame, by mean density, in which Auto looks
 /// for the dense end's near-neutral tones…
 const DENSE_BAND: f32 = 0.02;
@@ -274,11 +276,11 @@ const NEUTRAL_SHARE: f32 = 0.25;
 /// ranges, for it to count as near neutral.
 const MAX_NEUTRAL_SPREAD: f32 = 0.2;
 
-/// A sample Auto measures: where it is in the crop (0–1 across and down) and its
-/// density above the base in each channel.
+/// A sample Auto measures: its cell in the grid over the crop, and its density above
+/// the base in each channel.
 #[derive(Clone, Copy, Debug)]
 struct Density {
-    at: [f32; 2],
+    cell: [u32; 2],
     d: [f32; 3],
 }
 impl Density {
@@ -319,11 +321,13 @@ pub fn auto_negative(
     let small = super::preview(im, analysis_edge(im, base, WHITE_BALANCE_EDGE));
     check_cancel(cancel)?;
     let inversion = Inversion::new(n, small.metadata.is_rendered());
-    let samples: Vec<Density> = crop_grid(&small, base, AUTO_INSET)
+    let grid = crop_grid(&small, base, AUTO_INSET);
+    let samples: Vec<Density> = grid
+        .samples
         .into_iter()
         .filter(|(_, p)| !clipped(*p, &small.metadata))
-        .map(|(at, p)| Density {
-            at,
+        .map(|(cell, p)| Density {
+            cell,
             d: inversion.density(p),
         })
         .collect();
@@ -331,7 +335,7 @@ pub fn auto_negative(
         samples.len() >= MIN_SAMPLES,
         "Too little of the frame inside the crop is unclipped film to measure"
     );
-    let frame = without_no_light(samples);
+    let frame = without_no_light(samples, [grid.columns, grid.rows]);
     let densities: Vec<[f32; 3]> = frame.iter().map(|s| s.d).collect();
     let (dmin, dmax) = match n.film {
         // Every channel holds the same density already.
@@ -355,9 +359,9 @@ pub fn auto_negative(
     Ok(out)
 }
 
-/// `samples` without a no-light cluster at their dense end, when there is one (see
-/// [`NO_LIGHT_SHARE`]).
-fn without_no_light(mut samples: Vec<Density>) -> Vec<Density> {
+/// `samples` (in a `size` grid of columns and rows) without a film holder's no-light
+/// sliver at their dense end, when there is one (see [`NO_LIGHT_SHARE`]).
+fn without_no_light(mut samples: Vec<Density>, size: [u32; 2]) -> Vec<Density> {
     samples.sort_unstable_by(|a, b| a.mean().total_cmp(&b.mean()));
     let n = samples.len();
     let first = ((n as f32 * (1. - NO_LIGHT_SHARE)) as usize).min(n - 1);
@@ -370,10 +374,6 @@ fn without_no_light(mut samples: Vec<Density>) -> Vec<Density> {
     }
     let sparse = ((n as f32 * NO_LIGHT_SPARSE) as usize).max(1);
     let needed = (NO_LIGHT_GAP / NO_LIGHT_BIN).ceil() as usize;
-    let near_edge = |s: &Density| {
-        s.at.iter()
-            .any(|t| *t < NO_LIGHT_EDGE || *t > 1. - NO_LIGHT_EDGE)
-    };
     // Each run of sparse bins long enough, densest content below it first.
     let mut run = 0;
     for (bin, count) in counts.iter().enumerate() {
@@ -381,12 +381,26 @@ fn without_no_light(mut samples: Vec<Density>) -> Vec<Density> {
             if run >= needed {
                 let start = lo + (bin - run) as f32 * NO_LIGHT_BIN;
                 let end = lo + bin as f32 * NO_LIGHT_BIN;
-                let cut = samples.partition_point(|s| s.mean() < start);
                 let above = samples.partition_point(|s| s.mean() < end);
-                let cluster = &samples[above..];
-                let edge = cluster.iter().filter(|s| near_edge(s)).count();
-                if edge as f32 >= cluster.len() as f32 * NO_LIGHT_EDGE_SHARE {
-                    samples.truncate(cut);
+                let holder = holder_cells(&samples[above..], size);
+                if !holder.is_empty() {
+                    // The holder, and its blurred edge in the gap beside it.
+                    let [columns, rows] = size.map(i64::from);
+                    let mut near = vec![false; (columns * rows) as usize];
+                    for [c, r] in holder {
+                        for dr in -HOLDER_EDGE..=HOLDER_EDGE {
+                            for dc in -HOLDER_EDGE..=HOLDER_EDGE {
+                                let (c, r) = (i64::from(c) + dc, i64::from(r) + dr);
+                                if (0..columns).contains(&c) && (0..rows).contains(&r) {
+                                    near[(r * columns + c) as usize] = true;
+                                }
+                            }
+                        }
+                    }
+                    samples.retain(|s| {
+                        let at = i64::from(s.cell[1]) * columns + i64::from(s.cell[0]);
+                        s.mean() < start || !near[at as usize]
+                    });
                     return samples;
                 }
             }
@@ -396,6 +410,72 @@ fn without_no_light(mut samples: Vec<Density>) -> Vec<Density> {
         }
     }
     samples
+}
+
+/// The cells of `cluster` (in a `size` grid) that make up a film holder: each region
+/// of them, connected side to side, that runs unbroken along one of the grid's
+/// outermost rows or columns for [`HOLDER_RUN`] of its length or more.
+fn holder_cells(cluster: &[Density], size: [u32; 2]) -> Vec<[u32; 2]> {
+    let [columns, rows] = size.map(|v| v as usize);
+    let mut marked = vec![false; columns * rows];
+    for s in cluster {
+        marked[s.cell[1] as usize * columns + s.cell[0] as usize] = true;
+    }
+    // Each marked cell's region, numbered from 1, found by flooding side to side.
+    let mut region = vec![0usize; columns * rows];
+    let mut regions: Vec<Vec<usize>> = Vec::new();
+    for start in 0..columns * rows {
+        if !marked[start] || region[start] != 0 {
+            continue;
+        }
+        let id = regions.len() + 1;
+        region[start] = id;
+        let mut cells = vec![start];
+        let mut i = 0;
+        while i < cells.len() {
+            let at = cells[i];
+            let (c, r) = (at % columns, at / columns);
+            let neighbours = [
+                (c > 0).then(|| at - 1),
+                (c + 1 < columns).then(|| at + 1),
+                (r > 0).then(|| at - columns),
+                (r + 1 < rows).then(|| at + columns),
+            ];
+            for next in neighbours.into_iter().flatten() {
+                if marked[next] && region[next] == 0 {
+                    region[next] = id;
+                    cells.push(next);
+                }
+            }
+            i += 1;
+        }
+        regions.push(cells);
+    }
+    // Whether region `id` runs unbroken along `line` for HOLDER_RUN of its `length`.
+    let along = |line: &mut dyn Iterator<Item = usize>, length: usize, id: usize| {
+        let (mut best, mut run) = (0usize, 0usize);
+        for at in line {
+            run = if region[at] == id { run + 1 } else { 0 };
+            best = best.max(run);
+        }
+        best as f32 >= HOLDER_RUN * length as f32
+    };
+    let mut holder = Vec::new();
+    for (index, cells) in regions.iter().enumerate() {
+        let id = index + 1;
+        let edge = along(&mut (0..columns), columns, id)
+            || along(&mut ((rows - 1) * columns..rows * columns), columns, id)
+            || along(&mut (0..rows).map(|r| r * columns), rows, id)
+            || along(&mut (0..rows).map(|r| r * columns + columns - 1), rows, id);
+        if edge {
+            holder.extend(
+                cells
+                    .iter()
+                    .map(|at| [(at % columns) as u32, (at / columns) as u32]),
+            );
+        }
+    }
+    holder
 }
 
 /// The thin and dense ends of a colour negative's densities (see [`auto_negative`]).
