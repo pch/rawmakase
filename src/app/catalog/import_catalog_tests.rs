@@ -1,4 +1,4 @@
-//! Import from Catalog in the app: what the status line says once it ran,
+//! Import from Another Catalog in the app: what the status line says once it ran,
 //! and the Catalog menu's row.
 use crate::app::Event;
 use crate::app::library::Library;
@@ -67,7 +67,7 @@ fn the_status_line_names_the_photos_left_out_and_why() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The Catalog menu with Import from Catalog… under Import from Lightroom,
+/// The Catalog menu with Import from Another Catalog… under Import from Lightroom,
 /// for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]). The menu opens on a
 /// click, which a shot can't make, so it is drawn on a panel.
 #[test]

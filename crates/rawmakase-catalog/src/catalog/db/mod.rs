@@ -324,7 +324,7 @@ impl Db {
     }
 
     /// Runs `f` in one write with another RAWmakase catalog at `catalog`
-    /// attached as `src`, for Import from Catalog. It is detached again when
+    /// attached as `src`, for Import from Another Catalog. It is detached again when
     /// `f` returns, fails or panics.
     pub(in crate::catalog) fn with_catalog<R>(
         &mut self,

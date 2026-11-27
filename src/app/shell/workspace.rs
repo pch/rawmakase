@@ -913,10 +913,10 @@ impl Editor {
         if menu_row(
             ui,
             Icon::Collection,
-            "Import from Catalog…",
+            "Import from Another Catalog…",
             self.library.is_some(),
         )
-        .on_hover_text("Another RAWmakase catalog's photos, added to this one")
+        .on_hover_text("Adds another RAWmakase catalog's photos to this one")
         .clicked()
         {
             self.catalog_dialog(CatalogDialog::ImportCatalog, ctx);

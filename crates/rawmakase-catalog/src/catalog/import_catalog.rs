@@ -1,4 +1,4 @@
-//! Import from Catalog: the photos of another RAWmakase catalog added to
+//! Import from Another Catalog: the photos of another RAWmakase catalog added to
 //! this one, with everything that catalog holds about them, as Lightroom's
 //! Import from Another Catalog adds them ([`Catalog::import_catalog`]).
 //!

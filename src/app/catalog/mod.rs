@@ -259,10 +259,10 @@ impl Editor {
                 // folders it skipped.
                 let mut report = crate::catalog::SidecarReport::default();
                 let mut conflicts = Vec::new();
-                // What Import from Catalog added and left out.
+                // What Import from Another Catalog added and left out.
                 let mut catalog_import = None;
                 // Create, Open and Import Lightroom open the catalog the user
-                // chose; a folder change or Import from Catalog reads the
+                // chose; a folder change or Import from Another Catalog reads the
                 // open one again.
                 let chosen = !matches!(
                     kind,
@@ -321,7 +321,7 @@ impl Editor {
                             let current =
                                 current.ok_or_else(|| anyhow::anyhow!("Open a catalog first"))?;
                             let Some(source) = catalog_file_dialog()
-                                .set_title("Import from Catalog")
+                                .set_title("Import from Another Catalog")
                                 .pick_file()
                             else {
                                 return Ok(None);
@@ -1131,7 +1131,7 @@ pub(in crate::app) fn upgrade_progress<'a>(
     }
 }
 
-/// Says on the Library's status line what Import from Catalog added from
+/// Says on the Library's status line what Import from Another Catalog added from
 /// catalog `name`, and what it left out and why.
 fn catalog_imported(mut event: Event, name: &str, added: &crate::catalog::CatalogImport) -> Event {
     let Event::CatalogReady(Ok(library)) = &mut event else {

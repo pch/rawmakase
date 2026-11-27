@@ -1,10 +1,10 @@
-//! Import from Catalog: a trip catalog's photos joining the main one.
+//! Import from Another Catalog: a trip catalog's photos joining the main one.
 use super::*;
 use anyhow::Context as _;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-/// What Import from Catalog does with each table of the other catalog.
+/// What Import from Another Catalog does with each table of the other catalog.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Carried {
     /// Copied, every row of the photos added.
@@ -81,7 +81,7 @@ fn every_table_is_carried_or_left_on_purpose() {
     assert_eq!(listed.len(), TABLES.len(), "a table is listed twice");
     assert_eq!(
         schema, listed,
-        "say in TABLES what Import from Catalog does with each table"
+        "say in TABLES what Import from Another Catalog does with each table"
     );
 }
 
