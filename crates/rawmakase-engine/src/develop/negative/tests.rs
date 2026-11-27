@@ -394,6 +394,35 @@ fn auto_refuses_what_it_cannot_level() {
     assert!(auto_negative(&frame, &r, Cancel::new(&flag)).is_err());
 }
 
+/// With a lens's distortion corrected, the picker reads the pixels shown where it is
+/// clicked: the click is mapped through the correction, as rendering maps it. On a
+/// scan that brightens to the right, the shown point maps outward, to brighter
+/// pixels, than the uncorrected geometry alone gives.
+#[test]
+fn the_film_base_picker_reads_through_the_lens_correction() {
+    use crate::optics::{LensCorrection, Radial};
+    let mut im = image(200, 120, |x, _| [0.1 + 0.002 * x as f32; 3]);
+    im.metadata.lens = Some(LensCorrection {
+        source: "test".into(),
+        default_on: true,
+        distortion: Some(Radial {
+            knots: vec![0., 1.],
+            values: vec![1., 0.7],
+        }),
+        ..Default::default()
+    });
+    let r = Recipe::for_metadata(&im.metadata);
+    assert!(r.lens_correction(&im.metadata).is_some());
+    let (u, v) = (0.85, 0.5);
+    let view = crate::develop::ViewMapping::new(&im, &r);
+    let [x, _] = view.frame().to_source(view.to_image(u, v));
+    let shown = 0.1 + 0.002 * x.round();
+    let unmapped = 0.1 + 0.002 * crate::develop::Geometry::new(&im, &r, 0).source(u, v)[0].round();
+    assert!((shown - unmapped).abs() > 0.005, "{shown} {unmapped}");
+    let got = film_base_pick(&im, &r, u, v).unwrap();
+    assert!((got[0] - shown).abs() < 1e-4, "{got:?}, shown {shown}");
+}
+
 /// A scan whose left quarter is the film's clear rebate (the bare base) and the rest a
 /// negative of a ramp.
 fn scan_with_rebate(base: [f32; 3]) -> CameraImage {

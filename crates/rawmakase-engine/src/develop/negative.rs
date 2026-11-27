@@ -192,8 +192,8 @@ pub enum FilmBaseRefusal {
 const PICK_REACH: i64 = 4;
 
 /// The film base at (`u`, `v`) of the photo as rendered, mapped to the decoded image
-/// as the white balance picker maps it ([`crate::develop::neutral_pick`]): the scan's
-/// own values there, averaged over a 9 × 9 patch of whole pixels, before any
+/// as rendering maps it, through the geometry and any lens distortion correction
+/// ([`crate::develop::ViewMapping`]): the scan's own values there, averaged over a 9 × 9 patch of whole pixels, before any
 /// conversion (a rendered file's linear values). A patch with a clipped pixel, or a
 /// channel without light, holds no film base and is refused.
 pub fn film_base_pick(
@@ -202,8 +202,11 @@ pub fn film_base_pick(
     u: f32,
     v: f32,
 ) -> std::result::Result<[f32; 3], FilmBaseRefusal> {
-    let g = super::Geometry::new(im, r, 0);
-    let [x, y] = g.source(u, v).map(|p| p.round() as i64);
+    let view = super::ViewMapping::new(im, r);
+    let [x, y] = view
+        .frame()
+        .to_source(view.to_image(u, v))
+        .map(|p| p.round() as i64);
     let rendered = im.metadata.is_rendered();
     let at = |x: i64, y: i64| {
         let x = x.clamp(0, im.width as i64 - 1) as usize;
