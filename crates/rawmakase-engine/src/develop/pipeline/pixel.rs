@@ -31,7 +31,7 @@ pub(super) fn process_pixel(
     if let Some(hdr) = &lut.hdr {
         return hdr.finish(scene, r, lut, local.map(|l| l.delta));
     }
-    let rgb = profile_stage(scene, r);
+    let rgb = profile_stage(scene, r, lut);
     color_stage(rgb, r, lut, local.map(|l| l.delta))
 }
 /// Camera sample to linear display RGB after the camera profile's look and tone curve,
@@ -45,7 +45,7 @@ pub(super) fn tone_stage(
     local: Option<Local>,
 ) -> [f32; 3] {
     let (scene, clarity_lum) = scene_input(p, r, lut, camera, local);
-    profile_stage(scene_stage(scene, clarity_lum, r, lut, pos, local), r)
+    profile_stage(scene_stage(scene, clarity_lum, r, lut, pos, local), r, lut)
 }
 /// S1/S2 output and the fine luminance on the measurement map's pre-mask basis.
 /// Mask color and Exposure change the rendered pixel, but must not become detail
@@ -190,14 +190,17 @@ fn auto_basis(pro: [f32; 3], r: &Recipe) -> [f32; 3] {
     });
     mul(crate::camera_profiles::RGB_TO_PRO, mul(FROM_2020, wide))
 }
-/// S4: the profile's look tables and tone curve, from linear ProPhoto RGB to linear
-/// sRGB-primaries display RGB. Without a profile, a scene-referred shoulder anchored
-/// at 18% middle gray, on luminance.
-pub(super) fn profile_stage(pro: [f32; 3], r: &Recipe) -> [f32; 3] {
+/// S4: RAW SDR Saturation, the profile's look tables, RAW SDR Vibrance and the
+/// profile's tone curve, from linear ProPhoto RGB to linear sRGB-primaries display
+/// RGB. Without a profile, a scene-referred shoulder anchored at 18% middle gray,
+/// on luminance.
+pub(super) fn profile_stage(pro: [f32; 3], r: &Recipe, lut: &CurveSet) -> [f32; 3] {
+    let pro = crate::develop::color_mixer::apply_raw_saturation(pro, lut.raw_saturation);
+    let vibrance = |p: [f32; 3]| lut.raw_vibrance.as_ref().map_or(p, |v| v.apply(p));
     match &r.profile {
-        Some(profile) => profile.finish(pro),
+        Some(profile) => profile.finish_with(pro, vibrance),
         None => {
-            let rgb = mul(crate::camera_profiles::PRO_TO_RGB, pro);
+            let rgb = mul(crate::camera_profiles::PRO_TO_RGB, vibrance(pro));
             let y = crate::color::luminance(rgb).max(1e-8);
             let x = y.max(0.);
             rgb.map(|v| v * (x / (x + 0.82)) / y)

@@ -44,6 +44,10 @@ pub(crate) mod slot {
         LOOK: 5,
         ENH: 5,
         ENH_CURVE: 1,
+        // RAW SDR Saturation (applied before `LOOK`/`ENH`) and pre-tone-curve Vibrance
+        // grid offset (applied after `LOOK`/`ENH`, before `TONE`), or 0 / -1.
+        RAW_SATURATION: 1,
+        RAW_VIBRANCE: 1,
         // An HDR master's look channel curves (`tone::LookChannels`): their samples,
         // or -1 each.
         ENH_CHANNELS: 3,
@@ -601,6 +605,12 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
         None => -1.,
     };
     p.set(slot::ENH_CURVE, &[curve]);
+    p.set(slot::RAW_SATURATION, &[lut.raw_saturation]);
+    let raw_vibrance = match &lut.raw_vibrance {
+        Some(v) => p.push(v.factors.iter().flatten().copied()),
+        None => -1.,
+    };
+    p.set(slot::RAW_VIBRANCE, &[raw_vibrance]);
     p.set(slot::ENH_CHANNELS, &[-1.; 3]);
     let tone = p.push(t.tone.iter().flatten().copied());
     p.set(slot::TONE, &[tone]);

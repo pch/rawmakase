@@ -12,8 +12,17 @@ pub(super) struct CurveSet {
     pub(super) basic: Option<crate::develop::tone_lut::ToneLut>,
     /// The Shadows/Highlights base level, built per image by `for_image`.
     pub(super) local: Option<crate::develop::local_tone::LocalToneMap>,
-    /// The measured color mixer, Saturation and Vibrance.
+    /// The measured color mixer (HSL on RAW SDR; HSL, Saturation and Vibrance on
+    /// rendered SDR and HDR masters).
     pub(super) mixer: Option<crate::develop::color_mixer::ColorMixer>,
+    /// RAW SDR Saturation amount applied in linear ProPhoto RGB before the profile's
+    /// look tables and tone curve (`color_mixer::apply_raw_saturation`); 0 for rendered
+    /// files and HDR masters.
+    pub(super) raw_saturation: f32,
+    /// RAW SDR Vibrance lookup applied in linear ProPhoto RGB after the profile's look
+    /// tables and before its tone curve (`color_mixer::RawVibrance`); `None` for
+    /// rendered files, HDR masters and Vibrance 0.
+    pub(super) raw_vibrance: Option<crate::develop::color_mixer::RawVibrance>,
     /// The black & white mix's grid (`black_white::gray_grid`), for black & white
     /// renders.
     pub(crate) gray_grid: Option<Vec<[f32; 3]>>,
@@ -625,6 +634,7 @@ impl CurveSet {
             contrast_pivot: crate::develop::basic_tone::TYPICAL_PIVOT,
         };
         let hdr = HdrFinish::new(r);
+        let raw_sdr = !is_rendered && !r.hdr.is_active();
         Self {
             output: PixelOutput::Display,
             space: crate::color::OutputSpace::Srgb,
@@ -633,6 +643,10 @@ impl CurveSet {
             local: None,
             photo,
             mixer: crate::develop::color_mixer::ColorMixer::for_source(r, is_rendered),
+            raw_saturation: if raw_sdr { r.saturation } else { 0. },
+            raw_vibrance: raw_sdr
+                .then(|| crate::develop::color_mixer::RawVibrance::new(r.vibrance))
+                .flatten(),
             gray_grid: r
                 .effects
                 .monochrome
@@ -1076,10 +1090,14 @@ pub(super) fn contrast_pivot(
 ) -> f32 {
     let small = measured_copy(im, r);
     // Measured on the SDR rendering, HDR or not, as Camera Raw measures it.
+    // Saturation and Vibrance apply inside `profile_stage`, so clear them here
+    // to match the cached pivot key (`MeasuresKey` + Dehaze).
     let mut default = Recipe {
         exposure: 0.,
         whites: 0.,
         blacks: 0.,
+        saturation: 0.,
+        vibrance: 0.,
         ..r.clone()
     };
     default.hdr.enabled = false;
@@ -1531,43 +1549,73 @@ mod tests {
     }
 
     #[test]
-    fn rendered_source_selects_rendered_color_mixer_on_cpu_and_gpu() {
+    fn rendered_and_raw_sdr_route_saturation_and_vibrance_to_their_stages_on_cpu_and_gpu() {
         let rendered = rendered_fixture(&[[180, 90, 50]; 64]);
         let mut raw = rendered.clone();
         raw.metadata.source = rawmakase_model::camera_data::Source::Raw;
-        // Negative Saturation (−75) still distinguishes rendered vs RAW mixer grids.
         let r = Recipe {
-            saturation: -0.75,
+            saturation: 0.75,
+            vibrance: -0.5,
             ..Recipe::for_rendered(&rendered.metadata)
         };
         let cam_ren = camera_stage(&rendered.metadata, &r);
         let cam_raw = camera_stage(&raw.metadata, &r);
         let lut_ren = CurveSet::for_image(Source::new(&rendered), &r, cam_ren, false);
         let lut_raw = CurveSet::for_image(Source::new(&raw), &r, cam_raw, false);
+
+        // Rendered SDR puts Saturation and Vibrance in ColorMixer (rendered_sat_vib.bin).
         let expected_ren = crate::develop::color_mixer::ColorMixer::for_source(&r, true).unwrap();
-        let expected_raw = crate::develop::color_mixer::ColorMixer::for_source(&r, false).unwrap();
         assert_eq!(lut_ren.mixer.as_ref().unwrap().delta, expected_ren.delta);
-        assert_eq!(lut_raw.mixer.as_ref().unwrap().delta, expected_raw.delta);
-        assert_ne!(
-            lut_ren.mixer.as_ref().unwrap().delta,
-            lut_raw.mixer.as_ref().unwrap().delta
+        assert_eq!(lut_ren.raw_saturation, 0.);
+        assert!(lut_ren.raw_vibrance.is_none());
+
+        // RAW SDR puts Saturation and Vibrance in profile_stage, leaving ColorMixer for HSL only.
+        assert!(lut_raw.mixer.is_none());
+        assert_eq!(lut_raw.raw_saturation, 0.75);
+        let expected_vib = crate::develop::color_mixer::RawVibrance::new(-0.5).unwrap();
+        assert_eq!(
+            lut_raw.raw_vibrance.as_ref().unwrap().factors,
+            expected_vib.factors
         );
-        // GPU pixel_params uploads the exact same mixer grid for rendered and RAW alike.
+
+        // GPU pixel_params mirrors the exact CPU routing for both rendered and RAW SDR.
         let gpu_ren = super::pixel_params::pixel_params(Source::new(&rendered), &r).unwrap();
         let mixer_at = gpu_ren.get(super::pixel_params::slot::MIXER)[0] as usize;
-        let uploaded = &gpu_ren.tables[mixer_at..mixer_at + expected_ren.delta.len() * 3];
-        assert_eq!(uploaded, expected_ren.delta.as_flattened());
-        // Positive Vibrance and Saturation > +50 unify RAW SDR and rendered grids on CPU and GPU.
-        let r_pos = Recipe {
-            saturation: 0.75,
-            vibrance: 0.5,
-            ..Recipe::for_rendered(&rendered.metadata)
+        let uploaded_ren = &gpu_ren.tables[mixer_at..mixer_at + expected_ren.delta.len() * 3];
+        assert_eq!(uploaded_ren, expected_ren.delta.as_flattened());
+        assert_eq!(
+            gpu_ren.get(super::pixel_params::slot::RAW_SATURATION)[0],
+            0.
+        );
+        assert_eq!(gpu_ren.get(super::pixel_params::slot::RAW_VIBRANCE)[0], -1.);
+
+        let gpu_raw = super::pixel_params::pixel_params(Source::new(&raw), &r).unwrap();
+        assert_eq!(gpu_raw.get(super::pixel_params::slot::MIXER)[0], -1.);
+        assert_eq!(
+            gpu_raw.get(super::pixel_params::slot::RAW_SATURATION)[0],
+            0.75
+        );
+        let vib_at = gpu_raw.get(super::pixel_params::slot::RAW_VIBRANCE)[0] as usize;
+        let uploaded_vib = &gpu_raw.tables[vib_at..vib_at + expected_vib.factors.len() * 2];
+        assert_eq!(uploaded_vib, expected_vib.factors.as_flattened());
+
+        // Contrast pivot stays invariant to RAW SDR Saturation and Vibrance so its cache key
+        // (`MeasuresKey` + Dehaze) cannot serve a different pivot on cached vs uncached renders.
+        let base_r = Recipe {
+            contrast: 0.5,
+            ..Recipe::for_rendered(&raw.metadata)
         };
-        let expected_pos =
-            crate::develop::color_mixer::ColorMixer::for_source(&r_pos, false).unwrap();
-        let gpu_raw = super::pixel_params::pixel_params(Source::new(&raw), &r_pos).unwrap();
-        let raw_at = gpu_raw.get(super::pixel_params::slot::MIXER)[0] as usize;
-        let uploaded_raw = &gpu_raw.tables[raw_at..raw_at + expected_pos.delta.len() * 3];
-        assert_eq!(uploaded_raw, expected_pos.delta.as_flattened());
+        let sat_r = Recipe {
+            saturation: 1.,
+            vibrance: 1.,
+            ..base_r.clone()
+        };
+        let p_base = CurveSet::with_photo_measures(Source::new(&raw), &base_r, cam_raw)
+            .photo
+            .contrast_pivot;
+        let p_sat = CurveSet::with_photo_measures(Source::new(&raw), &sat_r, cam_raw)
+            .photo
+            .contrast_pivot;
+        assert_eq!(p_base, p_sat);
     }
 }

@@ -14,8 +14,8 @@ gates a change to it must pass. Tracking issue: #374 (from #354).
 | S1 | White balance (a rendered file's: a clip and a matrix), the profile's matrix and HueSatMap, Camera Calibration | linear, sRGB primaries |
 | S2 | Exposure and the DNG exposure ramp (black point) | linear Rec.2020 |
 | S3 | **Scene tone**: Highlights, Shadows, Clarity, Dehaze, the white point and Whites, Blacks | linear ProPhoto, unclamped |
-| S4 | Profile LookTable, enhanced look's HSV table, ProfileToneCurve, look curve | as before |
-| S5 | Contrast, Levels, parametric and point curves, color mixer, Point Color, RGB-table looks, grading, gamut, output | as before |
+| S4 | RAW SDR Saturation (linear ProPhoto, before look tables), Profile LookTable, enhanced look's HSV table, RAW SDR Vibrance (linear ProPhoto HSV, before tone curve), ProfileToneCurve, look curve | linear ProPhoto → linear display RGB |
+| S5 | Contrast, Levels, parametric and point curves, color mixer (HSL on RAW SDR; HSL, Saturation and Vibrance on rendered SDR and HDR masters), Point Color, RGB-table looks, grading, gamut, output | as before |
 
 Each stage boundary has a `PixelOutput` tap, so tests can read a render between
 stages through the same sampling, masks and caches as the display.
