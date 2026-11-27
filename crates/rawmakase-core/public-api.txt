@@ -320,6 +320,7 @@ pub fn rawmakase_core::Photo::profile_errors(&self) -> &[alloc::string::String]
 pub fn rawmakase_core::Photo::profiles(&self) -> &[rawmakase_core::Profile]
 pub fn rawmakase_core::Photo::save_recipe(&self, recipe: &rawmakase_core::Recipe, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::Photo::set(&self, recipe: &mut rawmakase_core::Recipe, parameter: rawmakase_core::Parameter, value: f32) -> rawmakase_core::Result<()>
+pub fn rawmakase_core::Photo::set_profile(&self, recipe: &mut rawmakase_core::Recipe, profile: &rawmakase_core::Profile) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::Photo::starting_recipe(&self, defaults: &rawmakase_core::Defaults) -> rawmakase_core::Result<rawmakase_core::Recipe>
 pub fn rawmakase_core::Photo::value(&self, recipe: &rawmakase_core::Recipe, parameter: rawmakase_core::Parameter) -> f32
 pub fn rawmakase_core::Preset::group(&self) -> &str
@@ -334,6 +335,9 @@ pub fn rawmakase_core::Profile::name(&self) -> &str
 pub fn rawmakase_core::Profile::takes_amount(&self) -> bool
 pub fn rawmakase_core::Recipe::curve(&self) -> &rawmakase_core::ToneCurve
 pub fn rawmakase_core::Recipe::curve_mut(&mut self) -> &mut rawmakase_core::ToneCurve
+pub fn rawmakase_core::Recipe::hdr(&self) -> bool
+pub fn rawmakase_core::Recipe::profile(&self) -> core::option::Option<&str>
+pub fn rawmakase_core::Recipe::set_hdr(&mut self, on: bool)
 pub fn rawmakase_core::Recipe::uses_ai_denoise(&self) -> bool
 pub fn rawmakase_core::Recipe::validate(&self) -> rawmakase_core::Result<()>
 pub fn rawmakase_core::RenderLoop::close(&self)

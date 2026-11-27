@@ -201,6 +201,92 @@ fn setting_a_parameter_follows_the_models_rules() {
     );
 }
 
+/// A profile is chosen from the photo's own, as the Profile menu chooses it:
+/// at 100%, with the white balance following. Another photo's is refused.
+#[test]
+fn a_profile_is_chosen_from_the_photos_own() {
+    // A black & white look over any of the chart's profiles, in a data
+    // folder as an app installs one. Its table is an HSV table of 2 hues,
+    // 2 saturations and 1 value, each sample a 120° hue turn.
+    let data = tempfile::tempdir().unwrap();
+    let looks = data.path().join("camera-profiles");
+    std::fs::create_dir(&looks).unwrap();
+    std::fs::write(
+        looks.join("mono.xmp"),
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><r:RDF xmlns:r="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><r:Description xmlns:c="http://ns.adobe.com/camera-raw-settings/1.0/" c:PresetType="Look" c:UUID="0123456789ABCDEF0123456789ABCDEF" c:ConvertToGrayscale="True" c:LookTable="0123456789ABCDEF0123456789ABCDEF" c:Table_0123456789ABCDEF0123456789ABCDEF="`0000kHl/-pLqAfD9'Mzovcb8X?'L0.#*Q68Jzd@vN4|q[zR%-"><c:Name><r:Alt><r:li xml:lang="x-default">Test Monochrome</r:li></r:Alt></c:Name></r:Description></r:RDF></x:xmpmeta>"#,
+    )
+    .unwrap();
+    let ctx = Context::builder().data_dirs([data.path()]).build().unwrap();
+    let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+    let mut recipe = photo.starting_recipe(&adobe()).unwrap();
+    let start = recipe.profile().map(str::to_owned);
+    assert!(start.is_some(), "a RAW starts with a profile");
+    let other = photo
+        .profiles()
+        .iter()
+        .find(|p| Some(p.name()) != start.as_deref() && p.name() != "Test Monochrome")
+        .expect("the chart has more than one profile");
+    recipe.0.profile_amount = 0.5;
+    photo.set_profile(&mut recipe, other).unwrap();
+    assert_eq!(recipe.profile(), Some(other.name()));
+    assert_eq!(recipe.0.profile_amount, 1., "a new profile starts at 100%");
+    recipe.validate().unwrap();
+    // The profile it has already: nothing changes.
+    recipe.0.profile_amount = 0.5;
+    photo.set_profile(&mut recipe, other).unwrap();
+    assert_eq!(recipe.0.profile_amount, 0.5);
+    let theirs = context().open(chart(), Cancel::NEVER).unwrap();
+    let kept = recipe.clone();
+    let e = photo
+        .set_profile(&mut recipe, &theirs.profiles()[0])
+        .unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::Invalid, "{e:#}");
+    assert_eq!(recipe, kept);
+    // The treatment follows a monochrome profile, and a colour one after it.
+    let mono = photo
+        .profiles()
+        .iter()
+        .find(|p| p.name() == "Test Monochrome")
+        .unwrap_or_else(|| panic!("{:?}", photo.profile_errors()));
+    photo.set_profile(&mut recipe, mono).unwrap();
+    assert!(
+        recipe.0.effects.monochrome,
+        "Black & White with a monochrome profile"
+    );
+    photo.set_profile(&mut recipe, other).unwrap();
+    assert!(
+        !recipe.0.effects.monochrome,
+        "Color again with a colour profile"
+    );
+    recipe.validate().unwrap();
+}
+
+/// A rendered file's recipe renders with its own colors, which its profile
+/// list names.
+#[cfg(feature = "export")]
+#[test]
+fn a_rendered_file_has_its_embedded_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context();
+    let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+    let recipe = photo.starting_recipe(&adobe()).unwrap();
+    let jpeg = dir.path().join("photo.jpg");
+    ctx.export(
+        &photo,
+        &recipe,
+        &ExportSettings::default(),
+        &jpeg,
+        false,
+        Cancel::NEVER,
+        |_| {},
+    )
+    .unwrap();
+    let rendered = ctx.open(&jpeg, Cancel::NEVER).unwrap();
+    let start = rendered.starting_recipe(&adobe()).unwrap();
+    assert_eq!(start.profile(), Some("Embedded"));
+    assert!(rendered.profiles().iter().any(|p| p.name() == "Embedded"));
+}
+
 /// A control carries the model's range, step and formatting, so a front end
 /// hard-codes none of them.
 #[test]
@@ -609,6 +695,32 @@ mod export {
         assert_eq!(kept(&dir.path().join("cache/decoded")), 0);
         photo.decode(Decode::Full, Cancel::NEVER).unwrap();
         assert_eq!(kept(&dir.path().join("cache/decoded")), 1);
+    }
+
+    /// An HDR export needs the edit in HDR, which the recipe turns on.
+    #[test]
+    fn an_hdr_export_needs_hdr_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context();
+        let photo = ctx.open(chart(), Cancel::NEVER).unwrap();
+        let mut recipe = photo.starting_recipe(&adobe()).unwrap();
+        assert!(!recipe.hdr());
+        let settings = ExportSettings {
+            hdr: Some(HdrOutput::default()),
+            ..ExportSettings::default()
+        };
+        let out = dir.path().join("hdr.tif");
+        let export = |recipe: &Recipe| {
+            ctx.export(&photo, recipe, &settings, &out, true, Cancel::NEVER, |_| {})
+        };
+        let e = export(&recipe).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::Invalid, "{e:#}");
+        recipe.set_hdr(true);
+        assert!(recipe.hdr());
+        export(&recipe).unwrap();
+        assert!(out.exists());
+        recipe.set_hdr(false);
+        assert!(!recipe.hdr());
     }
 
     #[test]

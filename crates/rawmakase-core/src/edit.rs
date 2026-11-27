@@ -3,6 +3,7 @@
 //! the slider; presets, and Auto.
 use crate::{Error, Image, Photo, Recipe, Result};
 use rawmakase_cancel::Cancel;
+use rawmakase_engine::develop::black_white::TreatmentChoice;
 use rawmakase_engine::develop::{self, Measures};
 use rawmakase_interop::{presets, xmp};
 use rawmakase_model::model::edit::change_setting;
@@ -133,6 +134,43 @@ impl Photo {
         change_setting(&mut recipe.0, id, Some(self.facts()), |r| {
             *id.value_mut(r) = value;
         });
+        Ok(())
+    }
+
+    /// Chooses `profile`, one of [`Photo::profiles`], as the desktop's
+    /// Profile menu does: a newly chosen profile starts at 100%, as in
+    /// Lightroom, the camera baseline and white balance controls become the
+    /// new profile's, and the treatment follows it: a monochrome profile
+    /// turns Black & White on, and a colour one after it turns it off.
+    /// Choosing the profile the recipe has changes nothing.
+    ///
+    /// [`ErrorKind::Invalid`](crate::ErrorKind::Invalid) for a profile that
+    /// isn't this photo's.
+    pub fn set_profile(&self, recipe: &mut Recipe, profile: &crate::Profile) -> Result<()> {
+        if !self
+            .camera_profiles()
+            .iter()
+            .any(|p| std::sync::Arc::ptr_eq(p, &profile.0))
+        {
+            return Err(Error::of(
+                rawmakase_model::error::Invalid::new(format!(
+                    "{} is not one of this photo's profiles",
+                    profile.name()
+                ))
+                .into(),
+            ));
+        }
+        let r = &mut recipe.0;
+        if r.profile.as_ref() != Some(&profile.0) {
+            let old = r.profile.replace(profile.0.clone());
+            r.profile_amount = 1.;
+            r.profile_changed(self.facts());
+            // Black & White follows a monochrome profile, and Color a colour
+            // one after it. Without the decoded photo there is no Auto mix to
+            // measure for a first conversion, as when the desktop fits a
+            // Camera Look.
+            r.follow_profile_treatment(old.as_deref(), None);
+        }
         Ok(())
     }
 

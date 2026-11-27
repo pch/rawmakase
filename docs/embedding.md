@@ -194,8 +194,11 @@ which CI compares with the code. Each change to them is noted here.
   re-exported, and `Image::metadata` is gone.
 - **The rest of the surface the library's own**: `Recipe` is the
   library's, over the model's: its point curve through `curve` and
-  `curve_mut`, `validate`, and `uses_ai_denoise`; its sliders through
-  `Photo::set`. `Parameter` is the library's list of the model's settings,
+  `curve_mut`, its profile's name through `profile`, HDR through `hdr`
+  and `set_hdr`, `validate`, and `uses_ai_denoise`; its sliders through
+  `Photo::set`, and its profile, one of `Photo::profiles`, through
+  `Photo::set_profile`, which starts it at 100% and has the white balance
+  and Black & White follow it, as the desktop's Profile menu does. `Parameter` is the library's list of the model's settings,
   with `ALL`, `name` and `named`. `Preset` is a handle with its id, name,
   group and kind; `Applied`, `RawDefaults`, `DefaultChoice` and
   `CameraDefault` are the library's values. `Cancelled`, which

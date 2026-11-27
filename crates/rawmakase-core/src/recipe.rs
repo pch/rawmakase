@@ -14,8 +14,9 @@ use rawmakase_model::model::recipe::Recipe as Settings;
 /// Its settings are changed through the library's rules, which keep what
 /// depends on them consistent: a slider with [`Photo::set`](crate::Photo::set),
 /// so that the white balance the renderer multiplies by follows Temp and
-/// Tint, and the point curve through [`Recipe::curve_mut`]'s methods. The
-/// rest of the edit (masks, crop, retouching) joins as the library gives it
+/// Tint, the profile with [`Photo::set_profile`](crate::Photo::set_profile),
+/// and the point curve through [`Recipe::curve_mut`]'s methods. The rest
+/// of the edit (masks, crop, retouching) joins as the library gives it
 /// rules of its own.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Recipe(pub(crate) Settings);
@@ -32,6 +33,27 @@ impl Recipe {
     /// order.
     pub fn curve_mut(&mut self) -> &mut ToneCurve {
         &mut self.0.curve
+    }
+
+    /// The name of the camera profile the recipe renders with, one of
+    /// [`Photo::profiles`](crate::Photo::profiles) when the recipe was made
+    /// for that photo: `Embedded` for a rendered file's own colors, and
+    /// `None` for a RAW developed with its camera's matrix alone. Chosen with
+    /// [`Photo::set_profile`](crate::Photo::set_profile).
+    pub fn profile(&self) -> Option<&str> {
+        self.0.profile.as_deref().map(|p| p.name.as_str())
+    }
+
+    /// Whether the edit is in HDR, as the desktop's HDR switch in the Basic
+    /// panel turns it on. An HDR export needs it.
+    pub fn hdr(&self) -> bool {
+        self.0.hdr.is_active()
+    }
+
+    /// Turns HDR on or off. The HDR settings are kept while it is off, as
+    /// the desktop keeps them.
+    pub fn set_hdr(&mut self, on: bool) {
+        self.0.hdr.enabled = on;
     }
 
     /// Whether the recipe renders: each setting within its range, the curve's
