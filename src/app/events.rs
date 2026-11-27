@@ -404,10 +404,13 @@ impl Editor {
                         self.preview.task.finish(id);
                         // The thumbnail is cached under the current edit: an earlier
                         // render an edit overtook shows, but was not rendered with it.
-                        if let Some(small) = thumbnail
-                            && id == self.preview.task.id()
-                        {
-                            self.refresh_library_thumbnail(ctx, small, request.ai);
+                        if id == self.preview.task.id() {
+                            match thumbnail {
+                                Some(small) => {
+                                    self.refresh_library_thumbnail(ctx, small, request.ai);
+                                }
+                                None => self.ask_library_thumbnail(),
+                            }
                         }
                     }
                     self.preview.status = status;
@@ -757,6 +760,7 @@ impl Editor {
         self.preview.opened_orientation = Some(crate::app::develop::state::Orientation::of(
             self.document.edit.recipe(),
         ));
+        self.preview.library_thumbnail = Some(self.document.edit.recipe().clone());
         self.document.path = Some(p);
         let _ = self.save_session();
     }
@@ -764,12 +768,17 @@ impl Editor {
 impl Editor {
     /// Whether the viewport shows the catalog photo's edit as the library would.
     pub(in crate::app) fn shows_library_edit(&self) -> bool {
+        self.shows_library_edit_but_for_crop()
+            && !self.view.is(crate::app::develop::state::Tool::Crop)
+    }
+    /// [`Self::shows_library_edit`] but for the Crop tool, which shows the photo
+    /// uncropped and so never renders its thumbnail.
+    fn shows_library_edit_but_for_crop(&self) -> bool {
         self.library.is_some()
             && self.document.catalog_photo.is_some()
             && self.document.path.is_some()
             && !self.view.zoom.on
             && !self.view.compare.shows_before()
-            && !self.view.is(crate::app::develop::state::Tool::Crop)
             && self.presets.preview.is_none()
             && !self.preview.peek.is_peeking()
     }
@@ -806,6 +815,26 @@ impl Editor {
             }
         });
         library.update_edited(ctx, id, rendered, shows, small, self.document.edit.recipe());
+        self.preview.library_thumbnail = Some(self.document.edit.recipe().clone());
+    }
+    /// After a finished whole-photo render with the Crop tool open, asks the
+    /// Library to render the edit as the photo's thumbnail when it changed
+    /// since the thumbnail was made, so a turn or a new crop shows in the
+    /// filmstrip and the grid at once, and still does when Develop is left
+    /// with the tool open (#1330).
+    fn ask_library_thumbnail(&mut self) {
+        if self.preview.mode != crate::app::develop::state::TextureMode::Whole
+            || !self.view.is(crate::app::develop::state::Tool::Crop)
+            || !self.shows_library_edit_but_for_crop()
+            || self.preview.library_thumbnail.as_ref() == Some(self.document.edit.recipe())
+        {
+            return;
+        }
+        let (Some(library), Some(id)) = (&mut self.library, self.document.catalog_photo) else {
+            return;
+        };
+        library.render_edited(id, self.document.edit.recipe());
+        self.preview.library_thumbnail = Some(self.document.edit.recipe().clone());
     }
 }
 

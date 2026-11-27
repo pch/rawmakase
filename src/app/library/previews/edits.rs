@@ -240,6 +240,18 @@ impl Sent {
     pub(in crate::app::library) fn dropped(&self) -> usize {
         self.0.lock().jobs.iter().filter(|q| q.dropped).count()
     }
+    /// The photos and edit tags of the renders sent and not taken, oldest first.
+    pub(in crate::app) fn render_tags(&self) -> Vec<(PhotoId, String)> {
+        let state = self.0.lock();
+        state
+            .jobs
+            .iter()
+            .filter_map(|q| match &q.job {
+                EditJob::Render { id, source, .. } => Some((*id, source.tag())),
+                EditJob::Store { .. } | EditJob::Convert { .. } => None,
+            })
+            .collect()
+    }
     /// The tags of the previews sent to be kept and not taken, oldest first.
     pub(in crate::app) fn stored_tags(&self) -> Vec<String> {
         let state = self.0.lock();
@@ -664,6 +676,19 @@ impl Drop for Finished {
 /// The worker's next step, waiting while there is none. A job leaves the
 /// queue only by the step that does it, and only the worker removes jobs
 /// (the UI appends), so an index stays valid until its step.
+/// Whether `jobs[index]` is a render (not one asked ahead) that a later request
+/// for the same photo replaced.
+fn replaced(jobs: &[Queued], index: usize) -> bool {
+    let EditJob::Render {
+        id, ahead: false, ..
+    } = &jobs[index].job
+    else {
+        return false;
+    };
+    jobs[index + 1..].iter().any(|later| {
+        matches!(&later.job, EditJob::Render { id: other, ahead: false, .. } if other == id)
+    })
+}
 fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
     let mut state = shared.lock();
     loop {
@@ -712,6 +737,15 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
                 unreachable!()
             };
             return Step::Store(path, family, tag, stamp, image);
+        }
+        // A request a later one for the same photo replaced, as Develop asks
+        // again while its edit changes, is answered without a render: only the
+        // latest one's result is shown.
+        if let Some(index) = (0..state.jobs.len()).find(|&i| replaced(&state.jobs, i)) {
+            let EditJob::Render { id, ticket, .. } = state.jobs.remove(index).job else {
+                unreachable!()
+            };
+            return Step::Skip(id, ticket);
         }
         let shown = wanted.lock().unwrap().clone();
         let full = state.pace == Pace::Full;

@@ -1337,3 +1337,75 @@ fn the_minimap_thumbnail_counts_turns_from_the_edit_opened() {
         Some(crate::app::develop::state::Orientation::of(&opened))
     );
 }
+
+/// With the Crop tool open Develop renders the photo uncropped, never as its
+/// thumbnail: a turn there asks the Library to render the turned edit instead,
+/// so the filmstrip and the grid show it at once, and once only (#1330).
+#[test]
+fn a_turn_with_the_crop_tool_open_renders_the_library_thumbnail() -> anyhow::Result<()> {
+    let d = tempfile::tempdir()?;
+    let photos = d.path().join("photos");
+    std::fs::create_dir(&photos)?;
+    std::fs::write(photos.join("a.RAF"), b"fixture")?;
+    let path = d.path().join("test.rawmakase");
+    crate::catalog::Catalog::create(&path)?.add_folder(&photos)?;
+    let ctx = egui::Context::default();
+    let (mut e, _) = editor_with_blue_photo(
+        &ctx,
+        crate::app::preferences::session::Session::default(),
+        true,
+    );
+    task::wait_for(vec![e.renderer.stop()], std::time::Duration::from_secs(5));
+    let (taken_tx, _taken) = std::sync::mpsc::channel();
+    let (_release, release) = std::sync::mpsc::channel();
+    e.renderer = worker::holding(taken_tx, release);
+    let mut library = library::Library::load(&path, ctx.clone())?;
+    let sent = library.detach_edited_previews();
+    let photo = library.session.photos()[0].id;
+    e.library = Some(Box::new(library));
+    e.document.catalog_photo = Some(photo);
+    e.document.opened_at(photos.join("a.RAF"));
+    e.view.viewport = Vec2::new(40., 40.);
+    // As the header's arrival records it: the thumbnail shows the edit opened.
+    e.preview.library_thumbnail = Some(e.document.edit.recipe().clone());
+    e.view.set_tool(crate::app::develop::state::Tool::Crop);
+    let render = |e: &mut Editor| {
+        e.schedule();
+        let id = e.preview.task.id();
+        e.tx.send(Event::Rendered {
+            id,
+            pane: worker::Pane::After,
+            preview: worker::Preview::Pixels {
+                image: crate::rendered::Rendered {
+                    width: 1,
+                    height: 1,
+                    pixels: vec![[0.5; 3]],
+                },
+                display_rgb: vec![128; 3],
+                navigator: None,
+            },
+            histogram: Box::new(crate::rendered::Histogram::EMPTY),
+            // Develop asks for no thumbnail while the Crop tool is open.
+            thumbnail: None,
+            samples: None,
+            stage: worker::RenderStage::Fit,
+            status: "rendered".into(),
+        })
+        .unwrap();
+        e.events(&ctx);
+    };
+    render(&mut e);
+    assert!(sent.render_tags().is_empty(), "the edit opened is shown");
+    in_edit_frame(&ctx, &mut e, |e| {
+        crate::develop::turn(
+            e.document.edit.recipe_mut(),
+            crate::develop::QuarterTurn::Right,
+        )
+    });
+    render(&mut e);
+    let turned = library::EditSource::saved(e.document.edit.recipe().clone());
+    assert_eq!(sent.render_tags(), vec![(photo, turned.tag())]);
+    render(&mut e);
+    assert_eq!(sent.render_tags().len(), 1, "asked for once");
+    Ok(())
+}

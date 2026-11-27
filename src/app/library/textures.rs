@@ -548,6 +548,28 @@ impl PreviewTextures {
             self.edits_pending += 1;
         }
     }
+    /// Queues the photo's edited preview rendered with `source`, as the latest
+    /// request for it, keeping the one shown until it comes.
+    pub(super) fn render_edited(&mut self, photo: &Photo, source: EditSource) {
+        let ticket = self.ticket();
+        self.edited_requested.insert(photo.id, ticket);
+        self.unedited.remove(&photo.id);
+        if self
+            .edit_tx
+            .send(EditJob::Render {
+                id: photo.id,
+                ticket,
+                path: photo.path.clone(),
+                copy: self.copies.get(&photo.id).cloned(),
+                source,
+                ahead: false,
+                display: self.display.clone(),
+            })
+            .is_ok()
+        {
+            self.edits_pending += 1;
+        }
+    }
     /// Where offline photos' renders from their editable previews are looked
     /// up, from now on. A photo whose source changes (its original back
     /// online, or offline again with a copy) is asked for again the next time

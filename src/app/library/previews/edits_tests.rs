@@ -261,3 +261,56 @@ fn photos_shown_go_before_the_ones_asked_ahead() {
         Step::Look(0, false)
     ));
 }
+
+/// Develop asks again for a photo's preview as its edit changes (the Crop tool,
+/// #1330): a request a later one for the same photo replaced is answered
+/// without a render.
+#[test]
+fn a_request_replaced_by_a_later_one_for_the_photo_is_not_rendered() {
+    let directory = Path::new("/nonexistent");
+    let shared = Shared::default();
+    let wanted = Wanted::default();
+    wanted.lock().unwrap().extend([PhotoId(1), PhotoId(2)]);
+    let queued = |job| Queued {
+        job,
+        missed: false,
+        dropped: false,
+    };
+    let again = |ticket| {
+        let EditJob::Render {
+            id,
+            path,
+            copy,
+            source,
+            ahead,
+            display,
+            ..
+        } = render_job(1, directory, false)
+        else {
+            unreachable!()
+        };
+        EditJob::Render {
+            id,
+            ticket,
+            path,
+            copy,
+            source,
+            ahead,
+            display,
+        }
+    };
+    shared.lock().jobs = vec![
+        queued(render_job(1, directory, false)),
+        queued(render_job(2, directory, false)),
+        queued(again(7)),
+    ];
+    assert!(matches!(
+        next_step(&shared, &wanted, 2),
+        Step::Skip(PhotoId(1), 1)
+    ));
+    // The latest request for each photo is left, the latest first.
+    assert!(matches!(
+        next_step(&shared, &wanted, 2),
+        Step::Look(1, true)
+    ));
+}
