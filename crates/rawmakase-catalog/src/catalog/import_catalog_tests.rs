@@ -414,6 +414,15 @@ fn a_folder_located_on_its_own_comes_from_where_it_is() -> Result<()> {
     let elsewhere = s.dir.join("elsewhere").join("second day");
     std::fs::create_dir_all(&elsewhere)?;
     std::fs::rename(s.dir.join("trip/day 2/t2.ARW"), elsewhere.join("t2.ARW"))?;
+    // With a folder of its own below it, which is found through it.
+    std::fs::create_dir_all(s.dir.join("trip/day 2/raw"))?;
+    std::fs::write(s.dir.join("trip/day 2/raw/t3.ARW"), b"t3.ARW")?;
+    Catalog::open(s.trip.as_path())?.add_folder(&s.dir.join("trip"))?;
+    std::fs::create_dir_all(elsewhere.join("raw"))?;
+    std::fs::rename(
+        s.dir.join("trip/day 2/raw/t3.ARW"),
+        elsewhere.join("raw/t3.ARW"),
+    )?;
     {
         let mut trip = Catalog::open(s.trip.as_path())?;
         let root = trip.roots()?[0].0;
@@ -422,7 +431,15 @@ fn a_folder_located_on_its_own_comes_from_where_it_is() -> Result<()> {
 
     let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
 
-    assert_eq!((report.added, report.missing.len()), (2, 0));
+    assert_eq!((report.added, report.missing.len()), (3, 0));
+    let t3 = id_of(&s.main, "t3.ARW")?;
+    let t3 = s
+        .main
+        .photos()?
+        .into_iter()
+        .find(|p| p.id == t3)
+        .context("t3")?;
+    assert_eq!(t3.path, elsewhere.join("raw/t3.ARW"));
     let t2 = id_of(&s.main, "t2.ARW")?;
     let t2 = s
         .main
@@ -494,6 +511,82 @@ fn rows_left_behind_by_a_removed_photo_stay_behind() -> Result<()> {
             "SELECT count(*) FROM photo_info WHERE camera='Ghost'"
         )?,
         0
+    );
+    Ok(())
+}
+
+#[test]
+fn importing_again_finds_the_collection_it_numbered() -> Result<()> {
+    let mut s = setup()?;
+    s.main
+        .create_collection(CollectionKind::Set, "Lisbon", None)?;
+    {
+        let mut trip = Catalog::open(s.trip.as_path())?;
+        let t1 = id_of(&trip, "t1.ARW")?;
+        trip.create_collection_of("Lisbon", None, &[t1])?;
+    }
+    s.main.import_catalog(&s.trip, || true)?;
+    // A photo added to the trip catalog since, and to its collection.
+    std::fs::write(s.dir.join("trip/t4.ARW"), b"t4.ARW")?;
+    {
+        let mut trip = Catalog::open(s.trip.as_path())?;
+        trip.add_folder(&s.dir.join("trip"))?;
+        let t4 = id_of(&trip, "t4.ARW")?;
+        let lisbon = trip
+            .collections()?
+            .into_iter()
+            .find(|c| c.name == "Lisbon")
+            .context("collection")?
+            .id;
+        trip.change_collection(lisbon, &[t4], &[])?;
+    }
+
+    s.main.import_catalog(&s.trip, || true)?;
+
+    let lisbons: Vec<_> = s
+        .main
+        .collections()?
+        .into_iter()
+        .filter(|c| c.name.starts_with("Lisbon"))
+        .collect();
+    assert_eq!(lisbons.len(), 2, "the set and Lisbon 2: {lisbons:?}");
+    let numbered = lisbons
+        .iter()
+        .find(|c| c.name == "Lisbon 2")
+        .context("Lisbon 2")?;
+    let t4 = id_of(&s.main, "t4.ARW")?;
+    assert!(s.main.collection_photos()?[&numbered.id].contains(&t4));
+    Ok(())
+}
+
+#[test]
+fn a_photo_added_here_meanwhile_stops_the_import() -> Result<()> {
+    let mut s = setup()?;
+    // The main catalog's folder `trip` exists before the import reads.
+    s.main.add_folder(&s.dir.join("trip"))?;
+    s.main
+        .db_mut_for_tests()
+        .execute("DELETE FROM photos WHERE filename='t1.ARW'", [])?;
+    let main = s.dir.join("Main.rawmakase");
+    let trip = s.dir.join("trip");
+
+    // Between the read and the write, another window adds t1 again.
+    let error = s
+        .main
+        .import_catalog(&s.trip, || {
+            Catalog::open(main.as_path())
+                .and_then(|mut c| c.add_folder(&trip))
+                .is_ok()
+        })
+        .unwrap_err();
+
+    assert!(error.to_string().contains("meanwhile"), "{error}");
+    assert_eq!(
+        count(
+            &s.main,
+            "SELECT count(*) FROM photos WHERE filename='t1.ARW'"
+        )?,
+        1
     );
     Ok(())
 }

@@ -317,6 +317,7 @@ impl Editor {
                             ))
                         }
                         CatalogDialog::ImportCatalog => {
+                            crate::platform::network::prepare_filesystem_bridge();
                             let current =
                                 current.ok_or_else(|| anyhow::anyhow!("Open a catalog first"))?;
                             let Some(source) = catalog_file_dialog()

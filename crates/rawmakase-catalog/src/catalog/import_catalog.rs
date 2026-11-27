@@ -73,9 +73,11 @@ impl Catalog {
         let working = staging.path().join("import.rawmakase");
         super::db::Db::copy_file(source, &working).context("Could not read the catalog")?;
         let mut copy = Catalog::open_as(working.as_path(), &self.computer)?;
+        let unknown = copy.unknown_tables()?;
         ensure!(
-            copy.ensure_known_tables().is_ok(),
-            "A later release of RAWmakase added to that catalog; import it with that release"
+            unknown.is_empty(),
+            "A later release of RAWmakase added to that catalog ({}); import it with that release",
+            unknown.join(", ")
         );
         ensure!(
             !super::file_ops::any_unresolved(&copy.db)?,
@@ -121,28 +123,26 @@ impl Catalog {
         }
         let folder_of: HashMap<PhotoId, FolderId> =
             photos.iter().map(|p| (p.id, p.folder)).collect();
-        let root_of: HashMap<FolderId, RootId> = copy
-            .folders()?
-            .into_iter()
-            .map(|f| (f.id, f.root))
-            .collect();
-        // Where each root is on this computer, as the other catalog has it.
-        let roots: HashMap<RootId, PathBuf> = copy
+        // Where the other catalog's roots, and folders located on their own,
+        // are on this computer.
+        let mut anchors: Vec<PathBuf> = copy
             .roots()?
             .into_iter()
-            .filter_map(|(id, original, here)| {
-                Some((
-                    id,
-                    PathBuf::from(here.unwrap_or(original))
-                        .canonicalize()
-                        .ok()?,
-                ))
-            })
+            .map(|(_, original, here)| PathBuf::from(here.unwrap_or(original)))
+            .chain(
+                copy.location_rows()?
+                    .into_values()
+                    .flatten()
+                    .map(|(_, path)| path),
+            )
+            .filter_map(|path| path.canonicalize().ok())
             .collect();
+        anchors.sort();
+        anchors.dedup();
         let mut leave: BTreeSet<PhotoId> = BTreeSet::new();
         // Each master's file as it is on disk, by the folder chosen for it
-        // as Add Folder is given one: its root's, or its own for a folder
-        // located on its own outside its root.
+        // as Add Folder is given one: the most specific of those that holds
+        // it, else its own.
         let mut by_root: BTreeMap<PathBuf, Vec<(PhotoId, PathBuf)>> = BTreeMap::new();
         for p in photos.iter().filter(|p| p.master.is_none()) {
             let family = &families[&p.id];
@@ -167,14 +167,15 @@ impl Catalog {
                 continue;
             }
             let found = p.path.canonicalize().ok().filter(|f| f.is_file());
-            let root = root_of.get(&p.folder).and_then(|r| roots.get(r));
             match found {
                 Some(file) => {
                     let directory = file.parent().expect("a file is in a folder");
-                    let chosen = match root {
-                        Some(root) if directory.starts_with(root) => root.clone(),
-                        _ => directory.to_path_buf(),
-                    };
+                    let chosen = anchors
+                        .iter()
+                        .filter(|a| directory.starts_with(a))
+                        .max_by_key(|a| a.components().count())
+                        .cloned()
+                        .unwrap_or_else(|| directory.to_path_buf());
                     by_root.entry(chosen).or_default().push((p.id, file));
                 }
                 None => {
@@ -263,6 +264,13 @@ fn copy_rows(
                 !reserved.contains(&super::sidecar::caseless(std::ffi::OsStr::new(&file))),
                 "{file} is being imported by Import Photos; finish or recover that import first"
             );
+            // Added here since the other catalog was read.
+            if let Place::Folder(root, logical) = &target.place {
+                ensure!(
+                    !known(w.write(), *root, logical, Path::new(&file))?,
+                    "{file} was added to this catalog meanwhile; import the catalog again"
+                );
+            }
         }
     }
     let count: i64 = w.read_sqlite::<i64>(sqlite_sql!("SELECT count(*) FROM src.photos"), &[])?[0];
@@ -573,55 +581,52 @@ fn copy_collections(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
             })
             .collect(),
     );
-    let mut existing: Vec<Row> = w
+    let before: Vec<Row> = w
         .write()
         .read(sql!("SELECT id, name, parent, kind FROM collections"), &[])?;
+    let mut made_here: Vec<Row> = Vec::new();
     let mut mapped: HashMap<i64, CollectionId> = HashMap::new();
     for row in rows {
         let parent = row.parent.and_then(|p| mapped.get(&p).copied());
-        let found = existing
-            .iter()
-            .find(|c| c.parent == parent.map(|p| p.0) && c.name == row.name && c.kind == row.kind)
-            .map(|c| CollectionId(c.id));
-        let (id, made) = match found {
-            Some(id) => (id, false),
-            None => {
-                // A name is unique among a set's children, whatever their
-                // kind: one taken by another kind gets a number.
-                let taken = |name: &str| {
-                    existing
-                        .iter()
-                        .any(|c| c.parent == parent.map(|p| p.0) && c.name == name)
-                };
-                let mut name = row.name.clone();
-                let mut n = 2;
-                while taken(&name) {
-                    name = format!("{} {n}", row.name);
-                    n += 1;
-                }
-                let id = super::collections::insert(w.write(), &name, parent, &row.kind)?;
-                existing.push(Row {
-                    id: id.0,
-                    name,
-                    parent: parent.map(|p| p.0),
-                    kind: row.kind.clone(),
-                });
-                for statement in [
-                    sqlite_sql!(
-                        "INSERT INTO collection_options(collection, sort, direction)
-                         SELECT ?1, sort, direction FROM src.collection_options
-                         WHERE collection=?2"
-                    ),
-                    sqlite_sql!(
-                        "INSERT INTO smart_collection_rules(collection, rules, format, lightroom)
-                         SELECT ?1, rules, format, lightroom FROM src.smart_collection_rules
-                         WHERE collection=?2"
-                    ),
-                ] {
-                    w.execute_sqlite(statement, &[&id, &row.id])?;
-                }
-                (id, true)
+        // The first of `name`, `name 2`, … that is a collection of the same
+        // kind this catalog had before, or free: a name is unique among a
+        // set's children, whatever their kind.
+        let mut n = 1;
+        let (id, made) = loop {
+            let name = match n {
+                1 => row.name.clone(),
+                n => format!("{} {n}", row.name),
+            };
+            let here = |c: &Row| c.parent == parent.map(|p| p.0) && c.name == name;
+            if let Some(c) = before.iter().find(|c| here(c) && c.kind == row.kind) {
+                break (CollectionId(c.id), false);
             }
+            if before.iter().chain(&made_here).any(here) {
+                n += 1;
+                continue;
+            }
+            let id = super::collections::insert(w.write(), &name, parent, &row.kind)?;
+            for statement in [
+                sqlite_sql!(
+                    "INSERT INTO collection_options(collection, sort, direction)
+                     SELECT ?1, sort, direction FROM src.collection_options
+                     WHERE collection=?2"
+                ),
+                sqlite_sql!(
+                    "INSERT INTO smart_collection_rules(collection, rules, format, lightroom)
+                     SELECT ?1, rules, format, lightroom FROM src.smart_collection_rules
+                     WHERE collection=?2"
+                ),
+            ] {
+                w.execute_sqlite(statement, &[&id, &row.id])?;
+            }
+            made_here.push(Row {
+                id: id.0,
+                name,
+                parent: parent.map(|p| p.0),
+                kind: row.kind.clone(),
+            });
+            break (id, true);
         };
         mapped.insert(row.id, id);
         w.execute_sqlite(

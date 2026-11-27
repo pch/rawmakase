@@ -273,13 +273,7 @@ impl Catalog {
     /// release added it, and whether its rows are about photos left out, and
     /// must go, can't be told here.
     pub(super) fn ensure_known_tables(&self) -> Result<()> {
-        let known = known_tables();
-        let unknown: Vec<String> = self
-            .db
-            .table_names()?
-            .into_iter()
-            .filter(|t| !known.contains(t.as_str()))
-            .collect();
+        let unknown = self.unknown_tables()?;
         if !unknown.is_empty() {
             bail!(
                 "A later release of RAWmakase added to this catalog ({}); export it with that release",
@@ -287,6 +281,18 @@ impl Catalog {
             );
         }
         Ok(())
+    }
+
+    /// The catalog's tables this release does not know: a later release
+    /// added them.
+    pub(super) fn unknown_tables(&self) -> Result<Vec<String>> {
+        let known = known_tables();
+        Ok(self
+            .db
+            .table_names()?
+            .into_iter()
+            .filter(|t| !known.contains(t.as_str()))
+            .collect())
     }
 
     /// The photos `scope` chose, each one checked to be in the catalog.
