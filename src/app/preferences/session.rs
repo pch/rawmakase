@@ -243,6 +243,15 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub zoom_level: Option<f32>,
+    /// The corner of the view the zoomed-in minimap sits in, by
+    /// [`crate::app::view::minimap::Corner::key`]; none, or a name this version
+    /// does not know, is the bottom right.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub minimap_corner: Option<String>,
     /// The Crop tool's guide overlay.
     #[serde(default, deserialize_with = "lenient")]
     pub crop_guides: CropGuideLayout,

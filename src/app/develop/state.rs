@@ -434,7 +434,7 @@ pub(in crate::app) struct ViewState {
     pub(in crate::app) zoom: crate::app::view::navigator::Zoom,
     /// Aperture's Loupe over the fitted photo in Develop.
     pub(in crate::app) magnifier: crate::app::view::magnifier::Magnifier,
-    /// The corner the minimap sits in while zoomed in.
+    /// The corner the minimap sits in while zoomed in, kept across launches.
     pub(in crate::app) minimap: crate::app::view::minimap::Minimap,
     /// The size, in pixels, of the area the edit is shown in: the viewport, or its
     /// half beside Before.
