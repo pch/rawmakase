@@ -41,9 +41,9 @@ impl Catalog {
     }
     /// The overrides of several photos, by photo.
     pub fn descriptive_of(&self, ids: &[PhotoId]) -> Result<HashMap<PhotoId, Descriptive>> {
-        ids.iter()
-            .map(|id| Ok((*id, read(&self.db, *id)?)))
-            .collect()
+        // One snapshot, so every photo is read from the same catalog state.
+        self.db
+            .snapshot(|s| ids.iter().map(|id| Ok((*id, read(s, *id)?))).collect())
     }
     /// Replaces the default language of a field on every photo given, keeping
     /// its other languages; empty text clears the field, every language.

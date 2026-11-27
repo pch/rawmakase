@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS collection_photos (
     position TEXT,
     PRIMARY KEY(collection,photo)
 );
+CREATE INDEX IF NOT EXISTS collection_photos_photo ON collection_photos(photo);
 
 -- A collection's sort, as Lightroom's sortType and sortDirection strings.
 -- A row is only written when a sort is chosen (or imported), so a missing
@@ -199,6 +200,7 @@ CREATE TABLE IF NOT EXISTS photo_imports (
     photo BIGINT PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
     batch BIGINT NOT NULL REFERENCES import_batches(id)
 );
+CREATE INDEX IF NOT EXISTS photo_imports_batch ON photo_imports(batch);
 CREATE TABLE IF NOT EXISTS import_burst_stacks (
     batch BIGINT PRIMARY KEY REFERENCES import_batches(id) ON DELETE CASCADE,
     seconds DOUBLE PRECISION NOT NULL
@@ -211,6 +213,7 @@ CREATE TABLE IF NOT EXISTS photo_import_facts (
     size BIGINT,
     exif_read BIGINT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS photo_import_facts_exif_read ON photo_import_facts(exif_read, photo);
 
 CREATE TABLE IF NOT EXISTS catalog_counters (
     name TEXT PRIMARY KEY,

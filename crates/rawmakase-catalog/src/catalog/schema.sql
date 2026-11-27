@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS collection_photos (
     position TEXT,
     PRIMARY KEY(collection,photo)
 );
+CREATE INDEX IF NOT EXISTS collection_photos_photo ON collection_photos(photo);
 
 -- A collection's sort, as Lightroom's sortType and sortDirection strings.
 -- A row is only written when a sort is chosen (or imported), so a missing
@@ -226,6 +227,7 @@ CREATE TABLE IF NOT EXISTS photo_imports (
     photo INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
     batch INTEGER NOT NULL REFERENCES import_batches(id)
 );
+CREATE INDEX IF NOT EXISTS photo_imports_batch ON photo_imports(batch);
 -- Batches added with Stack Camera Bursts on, whose bursts are not stacked
 -- yet: a row goes in the transaction that stacks them. `seconds` is the
 -- longest gap between frames a camera didn't number (continuous drive).
@@ -248,6 +250,7 @@ CREATE TABLE IF NOT EXISTS photo_import_facts (
     size INTEGER,
     exif_read INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS photo_import_facts_exif_read ON photo_import_facts(exif_read, photo);
 
 -- Numbers the catalog hands out once, by name: `import_number`, the last
 -- Import # an Import Photos run took.

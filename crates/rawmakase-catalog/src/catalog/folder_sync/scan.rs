@@ -53,6 +53,21 @@ pub(super) fn list(directory: &Path) -> Listing {
     Listing::Listed { files, directories }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Every present photo [`Matching::hash_present_of_size`] tried to read
+    /// on this thread, so a test can count the reads a scan made.
+    static PRESENT_READS: std::cell::RefCell<Vec<PhotoId>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
+}
+
+/// Takes the present photos this thread's scans have tried to read so far.
+#[cfg(test)]
+pub(in crate::catalog) fn take_present_reads() -> Vec<PhotoId> {
+    PRESENT_READS.with(|reads| std::mem::take(&mut *reads.borrow_mut()))
+}
+
 /// What one unknown file matched.
 enum Found {
     New,
@@ -270,34 +285,36 @@ pub fn scan(
     }
     unknown.sort();
     // Each unknown file matched with the checksums on record.
-    // Present photos without a current checksum are read now, so a copy
-    // of one is known as a copy.
-    let mut checksums = inputs.checksums.clone();
-    let mut by_quick = inputs.by_quick.clone();
-    for (id, state) in &states {
-        if *state != FileState::Present {
-            continue;
-        }
-        let Some(path) = inputs.path_of(*id) else {
-            continue;
-        };
-        let current = checksums.get(id).is_some_and(|c| {
-            crate::storage::Stamp::read(&path).is_ok_and(|now| {
+    // Present photos without a current checksum are grouped by the size
+    // their file has now, and a group is read only when an unknown file of
+    // that size turns up, so a copy of one is still known as a copy.
+    let mut unhashed_present_by_size: HashMap<u64, Vec<PhotoId>> = HashMap::new();
+    // The size each present photo without a current checksum has now.
+    let mut observed_size: HashMap<PhotoId, u64> = HashMap::new();
+    if !unknown.is_empty() {
+        for (id, state) in &states {
+            if *state != FileState::Present {
+                continue;
+            }
+            if cancelled() {
+                bail!("Synchronization stopped");
+            }
+            let Some(path) = inputs.path_of(*id) else {
+                continue;
+            };
+            let Ok(now) = crate::storage::Stamp::read(&path) else {
+                continue;
+            };
+            let current = inputs.checksums.get(id).is_some_and(|c| {
                 now.size == c.identity.size && now.modified_ns == c.identity.modified_ns
-            })
-        });
-        if current {
-            continue;
-        }
-        if cancelled() {
-            bail!("Synchronization stopped");
-        }
-        if let Ok(ChecksumRead::Done(quick)) = FileChecksum::read_quick(&path, |_| !cancelled()) {
-            by_quick
-                .entry((quick.size, quick.quick.clone()))
-                .or_default()
-                .push(*id);
-            checksums.insert(*id, quick);
+            });
+            if !current {
+                observed_size.insert(*id, now.size);
+                unhashed_present_by_size
+                    .entry(now.size)
+                    .or_default()
+                    .push(*id);
+            }
         }
     }
     let mut matcher = Matching {
@@ -305,8 +322,10 @@ pub fn scan(
         online,
         cancel,
         states,
-        checksums,
-        by_quick,
+        unhashed_present_by_size,
+        observed_size,
+        read_checksums: HashMap::new(),
+        read_by_quick: HashMap::new(),
     };
     let mut found: Vec<(PathBuf, (RootId, String), Identity, Found)> = Vec::new();
     for (n, (file, place)) in unknown.into_iter().enumerate() {
@@ -478,12 +497,53 @@ struct Matching<'a> {
     online: &'a dyn Fn(&Path) -> bool,
     cancel: Cancel<'a>,
     states: HashMap<PhotoId, FileState>,
-    /// The checksums on record, with those of present photos read now.
-    checksums: HashMap<PhotoId, FileChecksum>,
-    by_quick: HashMap<(u64, String), Vec<PhotoId>>,
+    /// Present photos without a current checksum, by the size their file
+    /// had when the scan stamped it, not read yet.
+    unhashed_present_by_size: HashMap<u64, Vec<PhotoId>>,
+    /// The size each present photo without a current checksum had when the
+    /// scan stamped it. A photo whose size differs from an unknown file's
+    /// cannot hold the same bytes, whatever its stale checksum on record says.
+    observed_size: HashMap<PhotoId, u64>,
+    /// Checksums of present photos read during this scan, which take the
+    /// place of the ones on record.
+    read_checksums: HashMap<PhotoId, FileChecksum>,
+    read_by_quick: HashMap<(u64, String), Vec<PhotoId>>,
 }
 
 impl Matching<'_> {
+    /// Reads the present photos of `size` without a current checksum, once
+    /// per scan. A photo that changes while being read, or cannot be read,
+    /// is not tried again here. When its stale checksum on record matches an
+    /// unknown file of the same size, [`Matching::find`] reads it whole, so a
+    /// read that fails leaves that file not checked rather than taken for a
+    /// new photo or a move.
+    fn hash_present_of_size(&mut self, size: u64) -> Result<()> {
+        let Some(ids) = self.unhashed_present_by_size.remove(&size) else {
+            return Ok(());
+        };
+        for id in ids {
+            if !self.go_on() {
+                bail!("Synchronization stopped");
+            }
+            let Some(path) = self.inputs.path_of(id) else {
+                continue;
+            };
+            #[cfg(test)]
+            PRESENT_READS.with(|reads| reads.borrow_mut().push(id));
+            match FileChecksum::read_quick(&path, |_| self.go_on()) {
+                Ok(ChecksumRead::Done(quick)) => {
+                    self.read_by_quick
+                        .entry((quick.size, quick.quick.clone()))
+                        .or_default()
+                        .push(id);
+                    self.read_checksums.insert(id, quick);
+                }
+                Ok(ChecksumRead::Changed) | Err(_) => {}
+                Ok(ChecksumRead::Cancelled) => bail!("Synchronization stopped"),
+            }
+        }
+        Ok(())
+    }
     /// Where master `id`'s file stands; one outside the scope is checked
     /// on its own, by the same rules.
     fn state(&mut self, id: PhotoId) -> FileState {
@@ -524,9 +584,13 @@ impl Matching<'_> {
             ChecksumRead::Cancelled => bail!("Synchronization stopped"),
         };
         let identity = quick.identity.clone();
+        self.hash_present_of_size(quick.size)?;
+        let quick_key = (quick.size, quick.quick.clone());
         let mut hits: BTreeSet<PhotoId> = BTreeSet::new();
-        if let Some(ids) = self.by_quick.get(&(quick.size, quick.quick.clone())) {
-            hits.extend(ids);
+        for by_quick in [&self.inputs.by_quick, &self.read_by_quick] {
+            if let Some(ids) = by_quick.get(&quick_key) {
+                hits.extend(ids);
+            }
         }
         if let Some(ids) = self
             .inputs
@@ -539,7 +603,17 @@ impl Matching<'_> {
         let mut missing: Vec<(PhotoId, bool)> = Vec::new();
         let mut present: Vec<PhotoId> = Vec::new();
         for id in hits {
-            let stored = self.checksums.get(&id).cloned();
+            let stored = match self.read_checksums.get(&id) {
+                Some(read) => Some(read.clone()),
+                None if self
+                    .observed_size
+                    .get(&id)
+                    .is_some_and(|&size| size != quick.size) =>
+                {
+                    continue;
+                }
+                None => self.inputs.checksums.get(&id).cloned(),
+            };
             let stored = stored.as_ref();
             // A quick hash on record that differs rules it out.
             if stored.is_some_and(|c| c.size != quick.size || c.quick != quick.quick) {

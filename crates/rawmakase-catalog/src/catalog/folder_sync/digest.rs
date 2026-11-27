@@ -6,7 +6,7 @@
 //! ([`placement`]) and what the user made of it ([`user_state`]).
 use super::super::PhotoId;
 use super::super::db::{Reads, Row, Sql, sql};
-use super::super::value::{FromRow, FromValue, ValueError, ValueRef};
+use super::super::value::{FromRow, ValueRef};
 use anyhow::Result;
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
@@ -116,29 +116,43 @@ pub(super) const PHOTO_TABLES: [(&str, Sql, Sql); 19] = [
 /// SHA-256 of a family's photos and their rows.
 pub type FamilyDigest = [u8; 32];
 
-/// One column's value, tagged by class and length-prefixed.
-struct Stored(Vec<u8>);
-impl FromValue for Stored {
-    fn from_value(value: ValueRef<'_>) -> Result<Self, ValueError> {
-        let (tag, bytes): (u8, Vec<u8>) = match value {
-            ValueRef::Null => (0, Vec::new()),
-            ValueRef::Integer(i) => (1, i.to_le_bytes().to_vec()),
-            ValueRef::Real(f) => (2, f.to_bits().to_le_bytes().to_vec()),
-            ValueRef::Text(t) => (3, t.to_vec()),
-            ValueRef::Blob(b) => (4, b.to_vec()),
-        };
-        let mut out = vec![tag];
-        out.extend((bytes.len() as u64).to_le_bytes());
-        out.extend(bytes);
-        Ok(Self(out))
+/// Encodes one column's value, tagged by class and length-prefixed, into `out`.
+fn push_value(out: &mut Vec<u8>, value: ValueRef<'_>) {
+    match value {
+        ValueRef::Null => {
+            out.push(0);
+            out.extend(0u64.to_le_bytes());
+        }
+        ValueRef::Integer(i) => {
+            out.push(1);
+            out.extend(8u64.to_le_bytes());
+            out.extend(i.to_le_bytes());
+        }
+        ValueRef::Real(f) => {
+            out.push(2);
+            out.extend(8u64.to_le_bytes());
+            out.extend(f.to_bits().to_le_bytes());
+        }
+        ValueRef::Text(t) => {
+            out.push(3);
+            out.extend((t.len() as u64).to_le_bytes());
+            out.extend_from_slice(t);
+        }
+        ValueRef::Blob(b) => {
+            out.push(4);
+            out.extend((b.len() as u64).to_le_bytes());
+            out.extend_from_slice(b);
+        }
     }
 }
 /// Columns `from..` of `row`, as bytes.
 fn encode(row: &Row<'_>, from: usize) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(row.len().saturating_sub(from) * 16);
     for i in from..row.len() {
-        let value: Stored = row.get(i)?;
-        out.extend(value.0);
+        row.visit(i, |value| {
+            push_value(&mut out, value);
+            Ok(())
+        })?;
     }
     Ok(out)
 }
