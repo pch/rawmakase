@@ -109,13 +109,7 @@ impl FullSize {
         if let Some(image) = self.cached(&raw.metadata) {
             return Ok(image);
         }
-        let policy = if store {
-            DecodePolicy::Show
-        } else {
-            DecodePolicy::Export
-        };
-        let image =
-            crate::develop::quality::with_recovered(self.decode(raw, policy, cancel)?, cancel)?;
+        let image = self.decode(raw, DecodePolicy::Show, cancel)?;
         if store {
             self.store(&image, cancel);
         }
