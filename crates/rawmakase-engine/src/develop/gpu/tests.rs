@@ -915,6 +915,30 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         blacks: 0.2,
         ..base(&none_raw)
     });
+    // A scanned negative's conversion, colour and black & white, with the controls
+    // that read the converted photo.
+    {
+        use crate::model::negative::{FilmType, NegativeConversion};
+        let colour = NegativeConversion {
+            base: [1.4, 0.9, 1.2],
+            dmin: [0.1, 0.15, 0.2],
+            dmax: [1.6, 1.3, 1.5],
+            ..NegativeConversion::new(FilmType::Colour)
+        };
+        let mut r = Recipe {
+            negative: Some(colour.clone()),
+            exposure: 0.3,
+            contrast: 0.4,
+            shadows: 0.3,
+            ..base(&tables)
+        };
+        r.effects.dehaze = 0.2;
+        recipes.push(r);
+        recipes.push(Recipe {
+            negative: Some(colour.with_film(FilmType::BlackWhite)),
+            ..base(&plain)
+        });
+    }
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);
     // The swatches select part of the test image (the same source for both).

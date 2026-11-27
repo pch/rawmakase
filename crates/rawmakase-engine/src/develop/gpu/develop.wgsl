@@ -1929,8 +1929,25 @@ fn toning(rgb_in: vec3<f32>) -> vec3<f32> {
     }
     return rgb;
 }
+// negative::Inversion::apply: a scanned negative's positive.
+fn negative(sample: vec3<f32>) -> vec3<f32> {
+    let log_base = vec3(p(P_NEGATIVE + 2u), p(P_NEGATIVE + 3u), p(P_NEGATIVE + 4u));
+    let dmax = vec3(p(P_NEGATIVE + 5u), p(P_NEGATIVE + 6u), p(P_NEGATIVE + 7u));
+    let stretch = vec3(p(P_NEGATIVE + 8u), p(P_NEGATIVE + 9u), p(P_NEGATIVE + 10u));
+    // Not `max`, which may keep a NaN: one is the densest film, as on the CPU.
+    let v = select(vec3(1e-6), sample, sample > vec3(1e-6));
+    var d = log_base - log2(v);
+    if p(P_NEGATIVE + 1u) != 0.0 {
+        d = vec3((d.x + d.y + d.z) / 3.0);
+    }
+    return exp2((d - dmax) * stretch);
+}
 // S1: scene_color.
-fn scene_color(sample: vec3<f32>, apply_local: bool) -> vec3<f32> {
+fn scene_color(sample_in: vec3<f32>, apply_local: bool) -> vec3<f32> {
+    var sample = sample_in;
+    if p(P_NEGATIVE) != 0.0 {
+        sample = negative(sample);
+    }
     var wb = vec3(1.0);
     if (V_MASKS && masked && apply_local) {
         let temp = vec3(p(P_LOCAL_WB), p(P_LOCAL_WB + 1u), p(P_LOCAL_WB + 2u));

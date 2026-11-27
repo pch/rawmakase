@@ -826,12 +826,26 @@ pub(super) fn photo_measures(
     // A neutral whose last channel just clips (highlight recovery rebuilds the others
     // up to it): the sensor clips at 1 in camera values divided by the as-shot white
     // balance, before the recipe's. Measured on the synthetic chart, whose white
-    // balance is not neutral.
-    let clip = (0..3)
-        .map(|c| metadata.wb[c].max(1e-3))
-        .fold(0f32, f32::max);
+    // balance is not neutral. A converted negative's white is the conversion's
+    // instead, its `dmax` at 1 in every channel: the sensor's clip is the film base,
+    // the scene's darkest end.
+    let (white, white_camera) = match shot_camera.negative {
+        Some(_) => (
+            crate::develop::negative::WHITE,
+            Camera {
+                negative: None,
+                ..shot_camera
+            },
+        ),
+        None => (
+            (0..3)
+                .map(|c| metadata.wb[c].max(1e-3))
+                .fold(0f32, f32::max),
+            shot_camera,
+        ),
+    };
     let white = crate::develop::scene_tone::luminance(exposure_stage(
-        scene_color([clip; 3], &as_shot, &base_lut, shot_camera, None),
+        scene_color([white; 3], &as_shot, &base_lut, white_camera, None),
         &base_lut,
         None,
     ));
@@ -999,7 +1013,8 @@ pub(super) fn photo_measures(
 }
 /// The haze Dehaze uses (`scene_tone::Haze`), on the scene values `photo_measures`
 /// reads: the measurement copy at the stage's input, Exposure 0. Airlight candidates
-/// are ranked in the camera's white-balanced values (`small.pixels` × `r.wb`).
+/// are ranked in the camera's white-balanced values (`small.pixels` × `r.wb`), a
+/// scanned negative's converted first.
 pub(super) fn photo_haze(
     im: Source,
     r: &Recipe,
@@ -1015,6 +1030,7 @@ pub(super) fn photo_haze(
         .pixels
         .par_iter()
         .map(|p| {
+            let p = camera.negative.as_ref().map_or(*p, |n| n.apply(*p));
             std::array::from_fn(|c| {
                 let held = if p[c] > camera.clip[c] {
                     camera.clip[c]

@@ -3314,3 +3314,252 @@ fn raw_sdr_saturation_precedes_profile_look_and_vibrance_follows_it() {
         "expected look-table ordering difference, got {diff}"
     );
 }
+
+/// A positive photo of scene exposures within the synthetic film's range: smooth
+/// gradients across about 1.9 decades, some saturated, and a grey patch.
+fn film_scene() -> CameraImage {
+    crate::develop::negative::tests::image(48, 32, |x, y| {
+        if (20..28).contains(&x) && (12..20).contains(&y) {
+            return [0.18; 3];
+        }
+        let (x, y) = (x as f32 / 47., y as f32 / 31.);
+        [
+            10f32.powf(-1.9 + 1.85 * x),
+            10f32.powf(-1.9 + 1.85 * y),
+            10f32.powf(-1.9 + 1.85 * (1. - x) * (0.5 + 0.5 * y)),
+        ]
+    })
+}
+/// The synthetic colour film's scan of [`film_scene`], and the recipes that render
+/// the positive and the scan with its conversion: the same but for it.
+fn scanned_scene(plain: Recipe) -> (CameraImage, CameraImage, Recipe, Recipe) {
+    use crate::develop::negative::synthetic::COLOUR;
+    use crate::model::negative::FilmType;
+    let positive = film_scene();
+    let negative = COLOUR.scanned(&positive);
+    let converted = Recipe {
+        negative: Some(COLOUR.conversion(FilmType::Colour)),
+        ..plain.clone()
+    };
+    (positive, negative, plain, converted)
+}
+
+/// A scanned negative with its conversion renders as the positive it was made from:
+/// the scene tone stage's input, the photo's measures and white point, and the
+/// finished render with every control that reads the photo (Shadows and Highlights'
+/// map, Contrast's pivot, Dehaze's haze), as the conversion gives the scene back
+/// within the film's range.
+#[test]
+fn a_converted_negative_renders_as_its_positive() {
+    let (positive, negative, plain, converted) = scanned_scene(scene_stage_recipe());
+    let close = |a: f32, b: f32, tolerance: f32| (a - b).abs() <= tolerance;
+    let tap = |im: &CameraImage, r: &Recipe| {
+        let camera = camera_stage(&im.metadata, r);
+        let mut lut = CurveSet::with_photo_measures(im.into(), r, camera);
+        lut.output = PixelOutput::SceneInput;
+        let pixels: Vec<[f32; 3]> = im
+            .pixels
+            .iter()
+            .map(|p| process_pixel(*p, r, &lut, camera, [0., 0.], None))
+            .collect();
+        (lut.measures, pixels)
+    };
+    let (want, scene) = tap(&positive, &plain);
+    let (got, converted_scene) = tap(&negative, &converted);
+    for (a, b) in scene.iter().zip(&converted_scene) {
+        assert!(
+            (0..3).all(|c| close(a[c], b[c], 2e-3 * a[c].abs().max(1e-3))),
+            "{a:?} {b:?}"
+        );
+    }
+    // In stops. The white is the conversion's, at 1 as the positive's sensor clips:
+    // the scan's own clip is its film base.
+    for (name, a, b) in [
+        ("sensor white", want.sensor_white, got.sensor_white),
+        ("max", want.max, got.max),
+        ("min", want.min, got.min),
+        ("dark", want.dark, got.dark),
+        ("p99", want.p99, got.p99),
+        ("whites p99", want.whites_p99, got.whites_p99),
+    ] {
+        assert!(close(a, b, 0.01), "{name}: {a} {b}");
+    }
+    let shown =
+        |im: &CameraImage, r: &Recipe| render(im, &r.checked().unwrap(), 0, Cancel::NEVER).unwrap();
+    let (a, b) = (shown(&positive, &plain), shown(&negative, &converted));
+    let worst = a
+        .pixels
+        .iter()
+        .zip(&b.pixels)
+        .flat_map(|(a, b)| (0..3).map(move |c| (a[c] - b[c]).abs()))
+        .fold(0f32, f32::max);
+    assert!(worst < 2. / 255., "{worst}");
+    // And without its conversion, the scan renders as the negative it is.
+    assert_ne!(shown(&negative, &plain).pixels, a.pixels);
+}
+
+/// Black & white film converts to equal channels before white balance: a scan of a
+/// toned base renders as greys at neutral white balance.
+#[test]
+fn a_converted_black_and_white_negative_renders_grey() {
+    use crate::develop::negative::synthetic::BLACK_WHITE;
+    use crate::model::negative::FilmType;
+    let im = BLACK_WHITE.scanned(&film_scene());
+    let r = Recipe {
+        negative: Some(BLACK_WHITE.conversion(FilmType::BlackWhite)),
+        ..Default::default()
+    };
+    let camera = camera_stage(&im.metadata, &r);
+    let mut lut = CurveSet::with_photo_measures((&im).into(), &r, camera);
+    lut.output = PixelOutput::SceneInput;
+    for p in &im.pixels {
+        let out = process_pixel(*p, &r, &lut, camera, [0., 0.], None);
+        let spread =
+            out.iter().copied().fold(0., f32::max) - out.iter().copied().fold(1., f32::min);
+        assert!(spread < 1e-4 * out[1].max(1e-3), "{out:?}");
+    }
+}
+
+/// The white balance picker reads a scanned negative's positive: picking a grey of the
+/// scene gives the gains picking it on the positive gives.
+#[test]
+fn the_neutral_picker_reads_the_converted_negative() {
+    let (mut positive, _, plain, converted) = scanned_scene(Recipe::default());
+    // A grey under warm light.
+    for (i, p) in positive.pixels.iter_mut().enumerate() {
+        if (8..24).contains(&(i / 48)) {
+            *p = [0.3, 0.2, 0.12];
+        }
+    }
+    let negative = crate::develop::negative::synthetic::COLOUR.scanned(&positive);
+    let want = neutral_pick(&positive, &plain, 0.5, 0.5);
+    let got = neutral_pick(&negative, &converted, 0.5, 0.5);
+    for c in 0..3 {
+        assert!((got[c] / want[c] - 1.).abs() < 2e-3, "{got:?} {want:?}");
+    }
+    assert!((want[0] - 2. / 3.).abs() < 1e-3 && (want[2] - 0.2 / 0.12).abs() < 1e-3);
+}
+
+/// Auto white balance and Auto tone measure a scanned negative through its
+/// conversion: they choose for it what they choose for its positive.
+#[test]
+fn auto_reads_a_converted_negatives_positive() {
+    let (mut positive, _, plain, converted) = scanned_scene(Recipe::default());
+    // A cast for Auto white balance to find.
+    for p in positive.pixels.iter_mut() {
+        *p = [p[0] * 1.2, p[1], p[2] * 0.8];
+    }
+    let negative = crate::develop::negative::synthetic::COLOUR.scanned(&positive);
+    let want = crate::develop::auto_white_balance(&positive, &plain, Cancel::NEVER).unwrap();
+    let got = crate::develop::auto_white_balance(&negative, &converted, Cancel::NEVER).unwrap();
+    assert!(
+        (got.temperature - want.temperature).abs() < 20. && (got.tint - want.tint).abs() < 1.,
+        "{} {} against {} {}",
+        got.temperature,
+        got.tint,
+        want.temperature,
+        want.tint
+    );
+    assert_eq!(got.negative, converted.negative);
+    let want = crate::develop::auto_tone(&positive, &plain, Cancel::NEVER).unwrap();
+    let got = crate::develop::auto_tone(&negative, &converted, Cancel::NEVER).unwrap();
+    for (name, a, b) in [
+        ("exposure", want.exposure, got.exposure),
+        ("contrast", want.contrast, got.contrast),
+        ("highlights", want.highlights, got.highlights),
+        ("shadows", want.shadows, got.shadows),
+        ("whites", want.whites, got.whites),
+        ("blacks", want.blacks, got.blacks),
+        ("vibrance", want.vibrance, got.vibrance),
+    ] {
+        assert!((a - b).abs() < 0.011, "{name}: {a} {b}");
+    }
+    assert_eq!(got.negative, converted.negative);
+}
+
+/// Point Color's dropper and the Targeted Adjustment Tool sample the positive.
+#[test]
+fn panel_samples_read_a_converted_negatives_positive() {
+    use crate::develop::quality::{point_color_pick, targeted_sample};
+    let (positive, negative, plain, converted) = scanned_scene(Recipe::default());
+    for (u, v) in [(0.5, 0.5), (0.2, 0.7), (0.8, 0.3)] {
+        let want = point_color_pick(&positive, &plain, u, v, Cancel::NEVER).unwrap();
+        let got = point_color_pick(&negative, &converted, u, v, Cancel::NEVER).unwrap();
+        assert!(
+            (0..3).all(|c| (got[c] - want[c]).abs() < 0.01),
+            "{got:?} {want:?}"
+        );
+        let want = targeted_sample(&positive, &plain, u, v, Cancel::NEVER).unwrap();
+        let got = targeted_sample(&negative, &converted, u, v, Cancel::NEVER).unwrap();
+        assert!(
+            (got.tone - want.tone).abs() < 0.01,
+            "{} {}",
+            got.tone,
+            want.tone
+        );
+    }
+}
+
+/// A scanned TIFF or JPEG (a rendered file) converts its own linear values, as the
+/// conversion's film base is measured in them: a grey ramp's negative renders as a
+/// neutral ramp, brighter for a brighter scene.
+#[test]
+fn a_rendered_scan_renders_a_neutral_positive() {
+    use crate::develop::negative::synthetic::BLACK_WHITE;
+    use crate::model::negative::FilmType;
+    let greys: Vec<[f32; 3]> = (0..=20)
+        .map(|i| [10f32.powf(-2. * (1. - i as f32 / 20.)); 3])
+        .collect();
+    let mut im = crate::develop::negative::tests::image(greys.len() as u32, 1, |x, _| {
+        BLACK_WHITE.scan(greys[x as usize])
+    });
+    im.metadata.source = crate::camera_data::Source::Rendered;
+    let im = crate::develop::rendered::to_scene(im);
+    let mut r = Recipe::for_rendered(&im.metadata);
+    r.negative = Some(BLACK_WHITE.conversion(FilmType::BlackWhite));
+    let out = render(&im, &r.checked().unwrap(), 0, Cancel::NEVER).unwrap();
+    let mut last = -1f32;
+    for p in &out.pixels {
+        assert!(
+            (p[0] - p[1]).abs() < 0.01 && (p[1] - p[2]).abs() < 0.01,
+            "{p:?}"
+        );
+        assert!(p[1] >= last, "{:?}", out.pixels);
+        last = p[1];
+    }
+    assert!(
+        out.pixels[0][1] < 0.1 && out.pixels[20][1] > 0.8,
+        "{:?}",
+        out.pixels
+    );
+}
+
+/// The GPU port renders a RAW's conversion (`gpu::tests::gpu_develop_matches_cpu_pixel_stage`
+/// compares it with the CPU). A rendered file's, which reads the file's linear values,
+/// renders on the CPU; without a conversion the port's slot is off.
+#[test]
+fn the_gpu_port_takes_a_raws_conversion_and_leaves_a_rendered_files_to_the_cpu() {
+    use crate::develop::negative::synthetic::COLOUR;
+    use crate::model::negative::FilmType;
+    let mut im = film_scene();
+    im.metadata.cam_xyz = [[0.9, -0.3, -0.1], [-0.4, 1.2, 0.2], [-0.1, 0.2, 0.6]];
+    let profile =
+        crate::camera_profiles::CameraProfile::camera_matrix_default(&im.metadata).unwrap();
+    let positive = Recipe {
+        profile: Some(std::sync::Arc::new(profile)),
+        ..Default::default()
+    };
+    let params = pixel_params::pixel_params((&im).into(), &positive).unwrap();
+    assert_eq!(params.get(pixel_params::slot::NEGATIVE), [0.; 11]);
+    let converted = Recipe {
+        negative: Some(COLOUR.conversion(FilmType::Colour)),
+        ..positive
+    };
+    let params = pixel_params::pixel_params((&im).into(), &converted).unwrap();
+    assert_eq!(params.get(pixel_params::slot::NEGATIVE)[0], 1.);
+    let rendered = rendered_fixture(&[[200, 120, 80], [20, 10, 5]]);
+    let mut r = Recipe::for_rendered(&rendered.metadata);
+    assert!(pixel_params::pixel_params((&rendered).into(), &r).is_some());
+    r.negative = converted.negative;
+    assert!(pixel_params::pixel_params((&rendered).into(), &r).is_none());
+}

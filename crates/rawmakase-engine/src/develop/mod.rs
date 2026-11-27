@@ -30,6 +30,7 @@ mod local_tone_rule_ext_data;
 mod local_tone_rule_pair_data;
 mod luminance_noise;
 pub mod masks;
+mod negative;
 mod orientation;
 pub mod parametric;
 mod pipeline;
@@ -64,6 +65,7 @@ pub use auto::{AutoTone, Measures, auto_tone, auto_tone_basis, auto_white_balanc
 pub use black_white::{AutoMix, ColorSpread};
 pub use geometry::{Geometry, rendered_crop};
 pub use image_space::ViewMapping;
+pub use negative::{FilmBaseRefusal, auto_negative, film_base_pick};
 pub use orientation::{Mirror, QuarterTurn, mirror, turn, turned_crop};
 pub(crate) use pipeline::{Camera, camera_stage, render_base};
 pub use pipeline::{

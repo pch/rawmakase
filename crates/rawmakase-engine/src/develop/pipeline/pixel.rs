@@ -86,8 +86,9 @@ fn scene_input(
     };
     (scene, crate::develop::scene_tone::luminance(clarity_scene))
 }
-/// S1: a camera sample's scene color: white balance (a mask's too), the profile's
-/// matrix and HueSatMap, and Camera Calibration. Linear, sRGB primaries.
+/// S1: a camera sample's scene color: a scanned negative's conversion to a positive
+/// (`develop::negative`), white balance (a mask's too), the profile's matrix and
+/// HueSatMap, and Camera Calibration. Linear, sRGB primaries.
 pub(super) fn scene_color(
     p: [f32; 3],
     r: &Recipe,
@@ -95,6 +96,7 @@ pub(super) fn scene_color(
     camera: Camera,
     local: Option<Local>,
 ) -> [f32; 3] {
+    let p = camera.negative.as_ref().map_or(p, |n| n.apply(p));
     let wb = local.map_or([1.; 3], |l| l.math.white_balance_gain(l.delta));
     // Not `min`, which would turn a NaN sample into the clip.
     let held = |c: usize| {
