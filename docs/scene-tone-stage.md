@@ -59,8 +59,8 @@ XMP RGB-table look.
 |---|---|---|---|---|
 | Exposure | S2 (scale), then S3's white point | before | before | RGBTone (white-point rolloff) |
 | White point (default) | S3 | before | before | RGBTone |
-| Whites | S3, with the white point | before | before | RGBTone (+), `L255` gain (−, SDR Auto default black) |
-| Blacks | S3, after Whites (exact composition) | before | before | per channel (−, ≤+25), `L255` gain (>+25, SDR Auto default black) |
+| Whites | S3, with the white point | before | before | RGBTone (+), `L255` gain (−, SDR RAW) |
+| Blacks | S3, after Whites (exact composition) | before | before | per channel (−, Auto ≤+25, rendered), `L255` gain (SDR RAW: Auto >+25, None >0) |
 | Highlights, Shadows | S3 | before | before | luminance gain |
 | Clarity | S3 | before | before | luminance gain |
 | Dehaze | S3 | before | before | per channel (from/toward the airlight) |
@@ -183,28 +183,42 @@ near `W* ≈ 8` while its pseudo-scene rises above 1 near white; see
   On photos the level positive Whites stretches toward is not their maximum: a specular
   highlight at the sensor's white does not stop it. For each of 22 training photos the
   level that best reproduces Camera Raw's Whites +100 through the table is, within 0.1
-  stops on average (median 0.06), twice the 99th percentile of the photo's luminance,
-  at most its sensor's white; its maximum misses by 1.0 stops on average, the 99.9th
-  percentile by 0.6. For SDR positive Whites (`PhotoMeasures::whites_p99`), flat
-  sensor-clipped highlight regions (e.g. a small blown-out sky with as-shot luminance
-  `>= 0.95 * white` and 4-neighbor gradient `< 1e-4 * white`) are excluded from that
-  99th percentile so they do not hold positive Whites back; testing in as-shot white
-  balance keeps the exclusion invariant under Temp/Tint drags, while plain `p99` stays
-  untouched for HDR positive Whites. RAWmakase stretches toward that level; the white
-  point keeps the maximum. Negative SDR Whites (with Auto default black) composes after
-  the default white curve as a 129-sample uniform-linear `[0, 1]` LUT applied as a scalar
-  gain on `L255 = 0.25 R + 0.50 G + 0.25 B` (preserving channel ratios and resolving the
-  steep highlight shoulder near `y = 1`, uploaded to GPU as `P_SCENE_NEG_WHITES`). An HDR
-  render's positive Whites follows plain `p99` without the limit at the sensor's white
+  stops on average (median 0.06), twice the 99th percentile of the photo's luminance
+  (capped at the sensor's white on rendered files, or `sensor.max(sensor.clamp(-1, 0) + 1)`
+  on RAW files, below); its maximum misses by 1.0 stops on average, the 99.9th
+  percentile by 0.6. For SDR positive Whites (`PhotoMeasures::whites_p99`, `whites_p01`),
+  a 3×3 median on the measurement copy removes isolated point-source highlights (such as
+  night streetlamps) before box-reduction to 128 px (`MAX_EDGE`); flat cells (where
+  as-shot luminance range `hi - lo <= 1e-4 * max(mean, 1e-6)`, e.g. blown-out skies or
+  uniform backgrounds, tested at as-shot white balance so Temp/Tint drags never flip a
+  cell) are excluded from `whites_p99`, while `whites_p01` is taken over all 128 px
+  cells. Plain `p99` stays untouched for HDR positive Whites. When the scene's dynamic
+  range `dr = whites_p99 - whites_p01` is below 5 stops, Camera Raw lifts the stretch
+  target by `0.2 * (5 - dr)` stops, capped at `sensor.max(sensor.clamp(-1, 0) + 1)` so
+  high-stratum negative-Exposure scenes (`sensor <= 0`) do not over-stretch. In
+  `GlobalTone::new`, positive Whites evaluates in `w_neg = sensor.clamp(-1, 0)`-normalized
+  coordinates (`m_norm = (stretch - w_neg).min(sensor.max(1))`, composed through
+  `white.bin(w_neg)` when `w_neg < 0`) and continues seamlessly beyond `below > 5` stops
+  (`m_norm < -5`) by shifting the converged `below = 5` curve horizontally by
+  `POS_WHITES_EXTRAP_ALPHA` per extra stop (`alpha = 1` at Whites +100, scale-invariant
+  in `log2(x) - stretch`). Rendered files (`rendered = true`) keep their legacy
+  `sensor_white` cap and 5-stop `white3.bin` clamp; the white point keeps the 128 px
+  maximum. Negative SDR Whites on RAW files (both `DefaultBlackRender::Auto` and `None`)
+  composes after the default white curve as a 129-sample uniform-linear `[0, 1]` LUT
+  applied as a scalar gain on `L255 = 0.25 R + 0.50 G + 0.25 B` (preserving channel
+  ratios and resolving the steep highlight shoulder near `y = 1`, uploaded to GPU as
+  `P_SCENE_NEG_WHITES`); rendered files keep RGBTone negative Whites. An HDR render's
+  positive Whites follows plain `p99` without the limit at the sensor's white
   ([HDR](hdr.md#what-the-master-renders)).
 - **Blacks** composes after the white point and Whites exactly (encoded error 0.0000:
   Blacks maps their output). Negative Blacks maps the photo's darkest level to black
   when it lies above a fixed black point (about 0.016 scene); even a 4-pixel dark spot
   counts, so the minimum is measured at higher resolution than the maximum. Negative
-  Blacks and the +0..+25 default-black fade work per channel; SDR positive Blacks above
-  +25 (with Auto default black) applies `blacks_none.bin` as a scalar gain on
-  `L255 = 0.25 R + 0.50 G + 0.25 B` (keeping gain `1.0` at `l >= 1.0` so SDR
-  positive-Whites overshoot stays untouched).
+  Blacks, the Auto `+0..+25` default-black fade, and rendered files work per channel;
+  SDR RAW positive Blacks above `+25` with Auto default black (remapped `[+25, +100] ->
+  [0, 1]`) and above `0` on `DefaultBlackRender::None` RAW profiles (`t = blacks`) apply
+  `blacks_none.bin` as a scalar gain on `L255 = 0.25 R + 0.50 G + 0.25 B` (keeping gain
+  `1.0` at `l >= 1.0` so SDR positive-Whites overshoot stays untouched).
 - **The default black** follows the photo's dark scene level, including camera
   baseline exposure and the user's Exposure. Its key is the 0.1th percentile of
   the measurement copy's luminance before red-eye correction and spot removal.
@@ -249,9 +263,12 @@ near `W* ≈ 8` while its pseudo-scene rises above 1 near white; see
   it is left at a key of −8 and 0.69 at −12); the output goes from the photo's default
   black alone to the value without it by the share of the way `blacks.bin`'s first
   row, measured at a key of −8, has gone at the same scene value (exact at that key,
-  0.03 to 0.09 EV RMS at a key of −12), so a higher Blacks is never darker. Profiles without a default black, which rendered files use, keep `blacks.bin`
-  as it is: on None ramps that is 0.9 EV off at +50 and +100, not yet changed because
-  rendered files were matched to Lightroom with it.
+  0.03 to 0.09 EV RMS at a key of −12), so a higher Blacks is never darker. Non-rendered
+  RAW profiles with `DefaultBlackRender::None` (e.g. Adobe camera-matching and linear
+  profiles) apply `blacks_none.bin` directly at `t = blacks` as an `L255` scalar gain
+  for `blacks > 0`, matching Camera Raw 18.7 on both neutral ramps and saturated colors;
+  rendered files (JPEG/PNG/TIFF, `rendered = true`) keep `blacks.bin` per channel as
+  calibrated against Lightroom.
 
   Camera Raw 18.7 neutral ramps with the same scene values and different camera
   baselines produce the same dark outputs; raising Exposure moves the response.

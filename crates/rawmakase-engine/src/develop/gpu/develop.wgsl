@@ -996,7 +996,7 @@ fn apply_luma_linear_curve(q: vec3<f32>, base: i32) -> vec3<f32> {
 }
 // GlobalTone::apply: the white curve (RGBTone, with SDR negative Whites as an L255
 // scalar gain after the default curve), then the default black (per channel) and Blacks
-// (L255 scalar gain for SDR positive Blacks above +25 with Auto default black, else per
+// (L255 scalar gain when GlobalTone::blacks_is_luma sets P_SCENE_KEYS + 4, else per
 // channel).
 fn scene_global(q_in: vec3<f32>) -> vec3<f32> {
     let whites = p(P_SCENE_KEYS + 3u);
@@ -1045,11 +1045,7 @@ fn scene_global(q_in: vec3<f32>) -> vec3<f32> {
     }
     let blacks = offset(P_SCENE_BLACKS);
     if blacks >= 0 {
-        let black_point = p(P_SCENE_KEYS + 2u) != 0.0;
-        let blacks_s = p(P_SCENE_KEYS + 4u);
-        // 0.25 matches `scene_tone::global::BLACK_REMOVED` (+25 Blacks, where Auto
-        // default black finishes fading out and `blacks_none.bin` starts as L255 gain).
-        let blacks_luma = !V_HDR && black_point && blacks_s > 0.25;
+        let blacks_luma = p(P_SCENE_KEYS + 4u) != 0.0;
         if blacks_luma {
             out = apply_luma_curve(out, blacks);
         } else {

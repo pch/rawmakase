@@ -29,7 +29,7 @@ const SAMPLES: usize = 4097;
 /// else is built from them.
 fn white() -> &'static GlobalTone {
     static WHITE: OnceLock<GlobalTone> = OnceLock::new();
-    WHITE.get_or_init(|| GlobalTone::new([0.; 4], 0., 0., -12., -12., false))
+    WHITE.get_or_init(|| GlobalTone::new([0.; 4], 0., 0., -12., -12., false, true))
 }
 
 /// `F` on one neutral value: the white curve, then ACR3 as the profile applies it.
