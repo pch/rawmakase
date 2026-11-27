@@ -1423,6 +1423,7 @@ mod tests {
                     id,
                     kind: crate::app::worker::AutoKind::Settings,
                     result: Err(message),
+                    holder_in_crop: false,
                 });
             },
         );

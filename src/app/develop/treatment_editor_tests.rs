@@ -171,7 +171,7 @@ fn auto_ends_a_conversion_waiting_for_the_photo() {
     assert!(editor.document.pending_treatment.is_some());
     let mut auto = editor.document.edit.recipe().clone();
     auto.exposure = 1.;
-    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)));
+    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)), false);
     // Any other edit drops the waiting conversion, as an edit made with a slider does.
     assert_eq!(editor.document.edit.recipe().exposure, 1.);
     assert!(editor.document.pending_treatment.is_none());

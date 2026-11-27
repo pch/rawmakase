@@ -207,7 +207,7 @@ fn assert_bounds(got: &NegativeConversion, want: &NegativeConversion, tolerance:
 #[test]
 fn auto_levels_the_frame_to_its_darkest_and_brightest_greys() {
     let r = unlevelled(&COLOUR, FilmType::Colour);
-    let got = auto_negative(&auto_scan(&COLOUR, None), &r, Cancel::NEVER).unwrap();
+    let got = auto(&auto_scan(&COLOUR, None), &r).conversion;
     assert_bounds(&got, &COLOUR.conversion(FilmType::Colour), 1e-3);
     assert_eq!(
         NegativeConversion {
@@ -223,7 +223,7 @@ fn auto_levels_the_frame_to_its_darkest_and_brightest_greys() {
 #[test]
 fn auto_levels_black_and_white_film_alike_in_every_channel() {
     let r = unlevelled(&BLACK_WHITE, FilmType::BlackWhite);
-    let got = auto_negative(&auto_scan(&BLACK_WHITE, None), &r, Cancel::NEVER).unwrap();
+    let got = auto(&auto_scan(&BLACK_WHITE, None), &r).conversion;
     assert!(got.dmin.iter().all(|d| *d == got.dmin[0]), "{got:?}");
     assert!(got.dmax.iter().all(|d| *d == got.dmax[0]), "{got:?}");
     assert_bounds(&got, &BLACK_WHITE.conversion(FilmType::BlackWhite), 1e-3);
@@ -237,8 +237,8 @@ fn auto_levels_black_and_white_film_alike_in_every_channel() {
 fn a_coloured_highlight_does_not_cast_the_greys() {
     let r = unlevelled(&COLOUR, FilmType::Colour);
     let im = auto_scan(&COLOUR, Some([3., 0.4, 0.15]));
-    let auto = auto_negative(&im, &r, Cancel::NEVER).unwrap();
-    let inversion = Inversion::new(&auto, false);
+    let levelled = auto(&im, &r).conversion;
+    let inversion = Inversion::new(&levelled, false);
     for e in greys() {
         let out = inversion.apply(COLOUR.scan(e));
         let spread = out.iter().copied().fold(0., f32::max)
@@ -288,42 +288,144 @@ fn with_holder(im: &CameraImage, _film: &Film, side: usize, share: f32) -> Camer
     out
 }
 
-/// No-light pixels inside the crop are left out: a holder's sliver covering up to
-/// about 5% of the crop, along any edge, leaves the bounds as the frame alone gives
-/// them, for either film. On a real scan such a sliver (about 2.5 above the base's
-/// density, against the frame's 0.8) was taken as the white and rendered the frame
-/// black.
-///
-/// Auto leaves out 3% at each side, so a sliver covering 4.5% of the crop shows 1.5%
-/// of it, a few pixels of the reduced copy Auto reads; one covering 3.5% (as this
-/// test first had it) shows little more than its two-pixel blurred edge, which lets
-/// the frame's light through and is no evidence of a holder: Auto keeps it.
+/// Auto's result on `im`, which must measure.
+fn auto(im: &CameraImage, r: &Recipe) -> AutoLevels {
+    auto_negative(im, r, Cancel::NEVER).unwrap()
+}
+
+/// The levels of `im` as every sample inside the crop, less the 3% inset and clipped
+/// samples, gives them, nothing else left out: what Auto must give whatever the crop
+/// holds.
+fn levels_as_measured(im: &CameraImage, r: &Recipe) -> NegativeConversion {
+    use crate::develop::auto::{WHITE_BALANCE_EDGE, analysis_edge, crop_grid};
+    let n = r.negative.as_ref().unwrap();
+    let small = crate::develop::preview(im, analysis_edge(im, r, WHITE_BALANCE_EDGE));
+    let inversion = Inversion::new(n, small.metadata.is_rendered());
+    let densities: Vec<[f32; 3]> = crop_grid(&small, r, AUTO_INSET)
+        .samples
+        .into_iter()
+        .filter(|(_, p)| !clipped(*p, &small.metadata))
+        .map(|(_, p)| inversion.density(p))
+        .collect();
+    let (dmin, dmax) = match n.film {
+        FilmType::BlackWhite => (
+            percentiles(&densities, AUTO_PERCENTILE),
+            percentiles(&densities, 1. - AUTO_PERCENTILE),
+        ),
+        FilmType::Colour => colour_ends(&densities),
+    };
+    NegativeConversion {
+        dmin,
+        dmax,
+        ..n.clone()
+    }
+}
+
+/// A holder's sliver inside the crop, along any edge, for either film: Auto measures
+/// it as part of the frame (it can't be told reliably from the scene's own dense
+/// areas), so the levels are the crop's as it is, darker than the frame alone gives
+/// them, and Auto says the crop holds part of the holder. The frame alone gets no such
+/// note.
 #[test]
-fn auto_leaves_out_a_holder_sliver_inside_the_crop() {
+fn auto_says_the_crop_holds_a_holder_sliver_and_measures_it() {
     for (film, kind) in [
         (&BLACK_WHITE, FilmType::BlackWhite),
         (&COLOUR, FilmType::Colour),
     ] {
         let r = unlevelled(film, kind);
         let frame = auto_scan(film, None);
-        let want = auto_negative(&frame, &r, Cancel::NEVER).unwrap();
+        let alone = auto(&frame, &r);
+        assert!(!alone.holder_in_crop, "{kind:?}");
         for side in 0..4 {
             for share in [0.045, 0.05] {
                 let im = with_holder(&frame, film, side, share);
-                let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
-                assert_bounds(&got, &want, 0.02);
+                let got = auto(&im, &r);
+                assert!(got.holder_in_crop, "{kind:?} side {side} {share}");
+                assert_eq!(got.conversion, levels_as_measured(&im, &r), "{kind:?}");
+                assert!(
+                    got.conversion.dmax[1] > alone.conversion.dmax[1] + 0.5,
+                    "{kind:?} side {side} {share}: {:?}",
+                    got.conversion
+                );
             }
         }
-        // Without the gap, the sliver would set the white.
-        let im = with_holder(&frame, film, 0, 0.05);
-        let n = r.negative.as_ref().unwrap();
-        let all: Vec<[f32; 3]> = im
-            .pixels
-            .iter()
-            .map(|p| Inversion::new(n, false).density(*p))
-            .collect();
-        let naive = percentiles(&all, 1. - AUTO_PERCENTILE);
-        assert!(naive[1] > want.dmax[1] + 0.5, "{naive:?}");
+    }
+}
+
+/// A 256 × 192 frame of densities 0.1 to 0.7 above `base`, its top `sky` rows at
+/// density 1.5, and its top `holder` rows a holder recording no light (0.001 of the
+/// sensor's white) above the sky.
+fn sky_frame(base: f32, sky: u32, holder: u32) -> CameraImage {
+    image(256, 192, |x, y| {
+        if y < holder {
+            return [0.001; 3];
+        }
+        let d = if y < sky {
+            1.5
+        } else {
+            0.1 + 0.6 * x as f32 / 255.
+        };
+        [base * 10f32.powf(-d); 3]
+    })
+}
+fn on_base(base: f32, kind: FilmType) -> Recipe {
+    Recipe {
+        negative: Some(NegativeConversion {
+            base: [base; 3],
+            ..NegativeConversion::new(kind)
+        }),
+        ..Default::default()
+    }
+}
+
+/// A sky along a whole edge is measured as the photo's own, for either film: its
+/// density is the white, and it renders as white. On a bright base (0.8) Auto says
+/// nothing of a holder. On a dark one (0.1) the sky lets through less than a holder's
+/// light floor, so Auto may say the crop holds part of the holder: a needless note,
+/// with the levels as they are. The review's cases: the sky was cut as holder, and
+/// rendered at 23 times white.
+#[test]
+fn auto_measures_a_sky_along_an_edge_whatever_the_base() {
+    for kind in [FilmType::BlackWhite, FilmType::Colour] {
+        for (base, note) in [(0.8, false), (0.1, true)] {
+            let r = on_base(base, kind);
+            let im = sky_frame(base, 16, 0);
+            let got = auto(&im, &r);
+            assert_eq!(got.conversion, levels_as_measured(&im, &r), "{kind:?}");
+            assert!(
+                got.conversion.dmax.iter().all(|d| (d - 1.5).abs() < 0.02),
+                "{kind:?} on {base}: {:?}",
+                got.conversion
+            );
+            let sky = Inversion::new(&got.conversion, false).apply([base * 10f32.powf(-1.5); 3]);
+            assert!(
+                sky.iter().all(|v| (v - 1.).abs() < 0.05),
+                "{kind:?} on {base}: the sky renders at {sky:?}"
+            );
+            assert_eq!(got.holder_in_crop, note, "{kind:?} on {base}");
+        }
+    }
+}
+
+/// A holder above a sky along the same edge: both are measured, nothing cut, and Auto
+/// says the crop holds part of the holder. The review's case: the holder and the sky
+/// formed one region, which was cut whole, and the sky rendered at 23 times white.
+#[test]
+fn auto_measures_a_holder_beside_a_sky_and_says_so() {
+    for kind in [FilmType::BlackWhite, FilmType::Colour] {
+        let r = on_base(0.8, kind);
+        for holder in [8, 10, 12] {
+            let im = sky_frame(0.8, 16, holder);
+            let got = auto(&im, &r);
+            assert_eq!(got.conversion, levels_as_measured(&im, &r), "{kind:?}");
+            assert!(got.holder_in_crop, "{kind:?} {holder}");
+            // The sky is measured: the white is no thinner than its density.
+            assert!(
+                got.conversion.dmax.iter().all(|d| *d >= 1.48),
+                "{kind:?} {holder}: {:?}",
+                got.conversion
+            );
+        }
     }
 }
 
@@ -340,7 +442,7 @@ fn auto_keeps_a_separate_dense_area_inside_the_frame() {
             *p = window;
         }
     }
-    let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
+    let got = auto(&im, &r).conversion;
     let window_density = BLACK_WHITE.density([20.; 3])[0];
     assert!(
         (got.dmax[0] - window_density).abs() < 0.02,
@@ -348,44 +450,8 @@ fn auto_keeps_a_separate_dense_area_inside_the_frame() {
     );
 }
 
-/// A bright sky along a whole edge, apart from the rest of the frame by a gap in
-/// density, still lets light through: it is the photo's own, not a holder, which
-/// lets through none. The review's case, for either film: a 256 × 192 frame of
-/// densities 0.1 to 0.7 above a base of 0.8, its top 16 rows at 1.5, was levelled to
-/// 0.68 and its sky rendered at 23 times white.
-#[test]
-fn auto_keeps_a_bright_sky_along_an_edge() {
-    for kind in [FilmType::BlackWhite, FilmType::Colour] {
-        let r = Recipe {
-            negative: Some(NegativeConversion {
-                base: [0.8; 3],
-                ..NegativeConversion::new(kind)
-            }),
-            ..Default::default()
-        };
-        let im = image(256, 192, |x, y| {
-            let d = if y < 16 {
-                1.5
-            } else {
-                0.1 + 0.6 * x as f32 / 255.
-            };
-            [0.8 * 10f32.powf(-d); 3]
-        });
-        let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
-        assert!(
-            got.dmax.iter().all(|d| (d - 1.5).abs() < 0.02),
-            "{kind:?}: {got:?}"
-        );
-        let sky = Inversion::new(&got, false).apply([0.8 * 10f32.powf(-1.5); 3]);
-        assert!(
-            sky.iter().all(|v| (v - 1.).abs() < 0.05),
-            "{kind:?}: the sky renders at {sky:?}"
-        );
-    }
-}
-
 /// A highlight near the crop's edge, apart from the rest of the frame by a gap in
-/// density, is the photo's own, not a holder: one 20 pixels in from the left edge
+/// density, is measured as the photo's own: one 20 pixels in from the left edge
 /// of a 256 × 192 frame, and one touching that edge along a short stretch of it, are
 /// kept as the one in the middle is, for either film (the review's case: the one
 /// near the edge was cut as no light, and rendered at 23 times white).
@@ -407,7 +473,7 @@ fn auto_keeps_a_highlight_near_or_briefly_touching_the_edge() {
                 };
                 film.scan([e; 3])
             });
-            let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
+            let got = auto(&im, &r).conversion;
             for c in 0..3 {
                 assert!(
                     (got.dmax[c] - highlight[c]).abs() < 0.02,

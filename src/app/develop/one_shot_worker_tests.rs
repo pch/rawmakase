@@ -73,7 +73,7 @@ fn a_panicking_auto_still_reports_and_stops_running() {
             result.as_ref().map(|_| ()),
             Err(&"Auto: the estimate failed unexpectedly".to_string())
         );
-        e.auto_ready(kind, result);
+        e.auto_ready(kind, result, false);
         assert!(!e.document.auto.is_running());
     }
 }

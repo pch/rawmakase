@@ -24,6 +24,9 @@ pub(in crate::app::develop::panels::inspector) struct View {
     /// The photo is an HDR file, whose HDR master renders no conversion
     /// (`model::hdr::check_hdr_file`).
     pub hdr_file: bool,
+    /// The last Auto found part of the film holder in this crop
+    /// (`ViewState::negative_holder`).
+    pub holder_in_crop: bool,
 }
 
 /// The film type as the panel's switch shows it.
@@ -172,6 +175,14 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 }
             });
         });
+        if facts.holder_in_crop {
+            note(
+                ui,
+                "The crop holds part of the film holder, which makes Auto too dark: \
+                 crop it out and press Auto again",
+                palette.warning(),
+            );
+        }
         // An HDR file's HDR master applies Exposure to its light before anything
         // reads it, so it renders no conversion: the photo shows its SDR rendition.
         if facts.hdr_file && r.hdr.enabled {
@@ -199,6 +210,9 @@ pub(in crate::app::develop::panels::inspector) fn show(
     // (`Editor::finish_edit_frame` puts it away too, for undo).
     if r.negative.is_none() && view.is(Tool::FilmBase) {
         view.set_tool(Tool::None);
+    }
+    if r.negative.is_none() {
+        view.negative_holder = None;
     }
     actions
 }

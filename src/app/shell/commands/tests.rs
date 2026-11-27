@@ -616,7 +616,11 @@ fn asynchronous_edits_and_out_of_frame_undo_invalidate_guards() {
     let initial = json(e.command_state())["revision"].as_u64().unwrap();
     let mut auto = e.document.edit.recipe().clone();
     auto.exposure = 1.25;
-    e.auto_ready(crate::app::worker::AutoKind::Settings, Ok(Box::new(auto)));
+    e.auto_ready(
+        crate::app::worker::AutoKind::Settings,
+        Ok(Box::new(auto)),
+        false,
+    );
     let mut command = Command::new(Operation::Set(Param::Setting(ParameterId::Contrast), 10.));
     command.target.revision = Some(initial);
     assert_eq!(

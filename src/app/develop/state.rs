@@ -409,6 +409,13 @@ pub(in crate::app) enum Tool {
     /// The Targeted Adjustment Tool of the Tone Curve, the Color Mixer or B&W.
     Targeted(crate::develop::targeted::Target),
 }
+/// Where the Negative panel's Auto found part of the film holder: the photo's load
+/// and the crop it measured.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::app) struct NegativeHolder {
+    pub(in crate::app) load: u64,
+    pub(in crate::app) crop: [f32; 4],
+}
 /// The tool open, kept where only [`ViewState`]'s methods reach it, and
 /// how many times a tool was taken up.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -456,6 +463,10 @@ pub(in crate::app) struct ViewState {
     /// Why the film base picker's last click read no base, while it stays open:
     /// the Negative panel says so under it. Any change of tool clears it.
     pub(in crate::app) film_base_refusal: Option<crate::develop::FilmBaseRefusal>,
+    /// The Negative panel's last Auto found part of the film holder in the crop: the
+    /// panel says so under Levels while that photo and crop stay. Neither the recipe
+    /// nor History holds it.
+    pub(in crate::app) negative_holder: Option<NegativeHolder>,
     /// A drag on the crop, from the press to the release.
     pub(in crate::app) crop_drag: Option<crate::app::develop::tools::crop_drag::CropDrag>,
     /// The aspect this photo's crop is locked to, in the Crop menu's values: the
@@ -548,6 +559,7 @@ impl Default for ViewState {
             tone_drag: None,
             tool_slot: ToolSlot::default(),
             film_base_refusal: None,
+            negative_holder: None,
             crop_drag: None,
             aspect: -1.,
             aspect_read: false,

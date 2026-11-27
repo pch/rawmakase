@@ -117,9 +117,12 @@ impl Editor {
                         Err(e) => self.messages.fail(e.to_string()),
                     }
                 }
-                Event::Auto { id, kind, result } if id == self.document.load_id() => {
-                    self.auto_ready(kind, result)
-                }
+                Event::Auto {
+                    id,
+                    kind,
+                    result,
+                    holder_in_crop,
+                } if id == self.document.load_id() => self.auto_ready(kind, result, holder_in_crop),
                 Event::PointColorSample {
                     id,
                     generation,

@@ -840,9 +840,10 @@ fn prepare(
                         AutoKind::Negative => {
                             let mut recipe = start.clone();
                             let auto = Recipe {
-                                negative: Some(crate::develop::auto_negative(
-                                    image, &start, cancel,
-                                )?),
+                                negative: Some(
+                                    crate::develop::auto_negative(image, &start, cancel)?
+                                        .conversion,
+                                ),
                                 ..start.clone()
                             };
                             crate::app::develop::auto::apply_negative_levels(&auto, &mut recipe);

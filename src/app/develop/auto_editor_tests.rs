@@ -110,6 +110,7 @@ fn stale_auto_results_are_ignored_after_moving_on() {
             id: editor.document.load_id() + 1,
             kind: worker::AutoKind::Settings,
             result: Ok(Box::new(auto)),
+            holder_in_crop: false,
         })
         .unwrap();
     editor.events(&ctx);
@@ -195,7 +196,7 @@ fn auto_arriving_mid_drag_lands_between_the_two_halves_of_the_drag() {
         .observe(start.clone(), &mid, true);
     let mut auto = start.clone();
     auto.exposure = 1.;
-    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)));
+    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)), false);
     let with_auto = editor.document.edit.recipe().clone();
     assert_eq!(with_auto.exposure, 1.);
     editor.document.edit.setup_mut().shadows = 0.2;
@@ -256,7 +257,7 @@ fn auto_runs_again_when_the_crop_changed_while_it_ran() {
     let mut auto = editor.document.edit.recipe().clone();
     auto.exposure = 1.;
     editor.document.edit.setup_mut().crop = [0.1, 0.1, 0.9, 0.9];
-    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)));
+    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)), false);
     assert_eq!(editor.document.edit.recipe().exposure, 0.);
     assert!(!editor.document.edit.history().can_undo());
     assert!(
@@ -298,6 +299,7 @@ fn auto_runs_again_when_it_failed_on_settings_changed_since() {
     editor.auto_ready(
         worker::AutoKind::Settings,
         Err("Auto: no usable pixels".into()),
+        false,
     );
     assert!(
         !editor.messages.line().contains("usable"),
@@ -324,7 +326,7 @@ fn auto_is_off_while_its_settings_stand() {
     auto.exposure = 1.;
     auto.vibrance = 0.15;
     auto.saturation = 0.02;
-    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)));
+    editor.auto_ready(worker::AutoKind::Settings, Ok(Box::new(auto)), false);
     assert_eq!(editor.document.edit.recipe().vibrance, 0.15);
     assert_eq!(editor.document.edit.recipe().saturation, 0.02);
     assert!(editor.auto_in_effect());

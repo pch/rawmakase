@@ -226,11 +226,13 @@ pub(crate) enum Event {
         sampled: Box<Recipe>,
         result: Result<crate::develop::targeted::TargetSample, String>,
     },
-    /// An Auto estimate for the photo loaded as `id`.
+    /// An Auto estimate for the photo loaded as `id`; for the Negative panel's, whether
+    /// the crop seems to hold part of the film holder.
     Auto {
         id: u64,
         kind: AutoKind,
         result: Result<Box<Recipe>, String>,
+        holder_in_crop: bool,
     },
     /// Upright's corrections for the photo loaded as `id`, analysed from `analysed`.
     Upright {

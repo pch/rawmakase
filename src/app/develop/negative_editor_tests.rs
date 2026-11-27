@@ -280,7 +280,9 @@ fn negative_auto_clears_its_busy_state_whatever_its_end() {
     let n = r.negative.clone().unwrap();
     assert!((0..3).all(|c| (n.base[c] / BASE[c] - 1.).abs() < 1e-5));
     let image = editor.document.full().unwrap().clone();
-    let want = crate::develop::auto_negative(&image, &r, rawmakase_cancel::Cancel::NEVER).unwrap();
+    let want = crate::develop::auto_negative(&image, &r, rawmakase_cancel::Cancel::NEVER)
+        .unwrap()
+        .conversion;
     assert_eq!((n.dmin, n.dmax), (want.dmin, want.dmax));
     assert_eq!(r.effects.clarity, 0.25);
     // A result for another photo is dropped.
@@ -293,6 +295,7 @@ fn negative_auto_clears_its_busy_state_whatever_its_end() {
                 negative: Some(NegativeConversion::new(FilmType::Colour)),
                 ..r.clone()
             })),
+            holder_in_crop: false,
         })
         .unwrap();
     editor.events(&ctx);
@@ -363,6 +366,119 @@ fn the_negative_panel_says_an_hdr_files_master_has_no_conversion() {
     assert!(!says(&controls_frame(&ctx, &mut editor, vec![])));
 }
 
+/// The Negative panel's note when Auto finds part of the film holder in the crop.
+const HOLDER_NOTE: &str = "The crop holds part of the film holder";
+
+/// Whether the panel shows a note starting with `start`.
+fn says(shown: &egui::accesskit::TreeUpdate, start: &str) -> bool {
+    shown.nodes.iter().any(|(_, n)| {
+        n.label()
+            .or(n.value())
+            .is_some_and(|t| t.starts_with(start))
+    })
+}
+
+/// Runs the Negative panel's Auto to its end.
+fn run_negative_auto(ctx: &egui::Context, editor: &mut Editor) {
+    editor.start_auto(worker::AutoKind::Negative);
+    assert!(editor.document.auto.is_running());
+    finish_auto(ctx, editor);
+}
+
+/// Auto measures a holder inside the crop as part of the frame, and the panel says
+/// so under Levels; the note goes when the crop changes, when Auto runs again without
+/// finding it, when the conversion goes, and with the photo. It is no part of the
+/// recipe or of History.
+#[test]
+fn negative_auto_says_when_the_crop_holds_the_holder() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan(&ctx, false, false);
+    // The scan with a holder along its left edge, which records no light.
+    let mut image = (*negative_scan(false)).clone();
+    for (i, p) in image.pixels.iter_mut().enumerate() {
+        if i % 64 < 6 {
+            *p = [0.0005; 3];
+        }
+    }
+    editor.document.set_image(Arc::new(image));
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().negative = Some(NegativeConversion {
+            base: BASE,
+            ..NegativeConversion::new(FilmType::BlackWhite)
+        })
+    });
+    assert!(!says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    run_negative_auto(&ctx, &mut editor);
+    let r = editor.document.edit.recipe().clone();
+    let image = editor.document.full().unwrap().clone();
+    let measured =
+        crate::develop::auto_negative(&image, &r, rawmakase_cancel::Cancel::NEVER).unwrap();
+    assert!(measured.holder_in_crop);
+    // The levels are the crop's as it is.
+    let n = r.negative.as_ref().unwrap();
+    assert_eq!(
+        (n.dmin, n.dmax),
+        (measured.conversion.dmin, measured.conversion.dmax)
+    );
+    assert!(says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    let steps = editor.document.edit.history().steps().1;
+    // Another crop: gone, with no step of its own.
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().crop = [0.2, 0., 1., 1.]
+    });
+    assert!(!says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    assert_eq!(editor.document.edit.history().steps().1, steps + 1);
+    // Auto again, the holder cropped out: no note.
+    run_negative_auto(&ctx, &mut editor);
+    assert!(!says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    // The holder back in: the note again, until the conversion is turned off.
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().crop = [0., 0., 1., 1.]
+    });
+    run_negative_auto(&ctx, &mut editor);
+    assert!(says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    assert!(editor.document.edit.recipe().unknown.is_empty());
+    click(&ctx, &mut editor, "Off");
+    assert!(!says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    editor.undo();
+    assert!(!says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    // And another photo: gone.
+    run_negative_auto(&ctx, &mut editor);
+    assert!(says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+    editor.document.reset(None);
+    editor.document.start_load();
+    editor.document.metadata = Some(image.metadata.clone());
+    editor.document.set_image(image);
+    assert!(!says(
+        &controls_frame(&ctx, &mut editor, vec![]),
+        HOLDER_NOTE
+    ));
+}
+
 /// A screen reader hears which film type is set: the switch's options are radio
 /// buttons, the set one selected, the others not.
 #[test]
@@ -413,7 +529,8 @@ fn the_negative_panel_lines_up_its_rows() {
 /// The Negative panel in each state it is met in, for `RAWMAKASE_UI_SHOTS`
 /// ([`crate::app::ui::shots`]): off; a colour negative nothing has measured yet; a
 /// black & white one picked and levelled; the picker out; the picker after a
-/// clipped click; Auto off before the photo decodes; while Auto runs; and an HDR
+/// clipped click; Auto off before the photo decodes; while Auto runs; after an Auto
+/// that found part of the film holder in the crop; and an HDR
 /// file with HDR on, whose master renders no conversion.
 #[test]
 fn shots_of_the_negative_panel() {
@@ -426,7 +543,7 @@ fn shots_of_the_negative_panel() {
     };
     let colour = Some(NegativeConversion::new(FilmType::Colour));
     type Setup = fn(&mut Editor);
-    let states: [(&str, Option<NegativeConversion>, bool, Setup); 8] = [
+    let states: [(&str, Option<NegativeConversion>, bool, Setup); 9] = [
         ("negative-off", None, true, |_| {}),
         ("negative-colour", colour.clone(), true, |_| {}),
         ("negative-black-white", Some(measured.clone()), true, |_| {}),
@@ -441,6 +558,17 @@ fn shots_of_the_negative_panel() {
         ("negative-auto-running", Some(measured.clone()), true, |e| {
             e.document.auto.start();
         }),
+        (
+            "negative-holder-in-crop",
+            Some(measured.clone()),
+            true,
+            |e| {
+                e.view.negative_holder = Some(crate::app::develop::state::NegativeHolder {
+                    load: e.document.load_id(),
+                    crop: e.document.edit.recipe().crop,
+                });
+            },
+        ),
         ("negative-hdr-file", Some(measured), true, |e| {
             if let Some(m) = e.document.metadata.as_mut() {
                 m.source = crate::camera_data::Source::Rendered;

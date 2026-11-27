@@ -1,5 +1,6 @@
 //! The Basic panel's Auto, the White Balance menu's and the Negative panel's,
 //! estimated off the UI thread.
+use crate::app::develop::state::NegativeHolder;
 use crate::app::{
     Editor,
     history::Step,
@@ -78,6 +79,7 @@ impl Editor {
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
+                let mut holder_in_crop = false;
                 let result = match kind {
                     AutoKind::Settings => {
                         crate::develop::auto_tone(&im, &base, Cancel::new(&cancel))
@@ -86,32 +88,48 @@ impl Editor {
                         crate::develop::auto_white_balance(&im, &base, Cancel::new(&cancel))
                     }
                     AutoKind::Negative => {
-                        crate::develop::auto_negative(&im, &base, Cancel::new(&cancel)).map(|n| {
-                            Recipe {
-                                negative: Some(n),
-                                ..base.clone()
-                            }
-                        })
+                        crate::develop::auto_negative(&im, &base, Cancel::new(&cancel)).map(
+                            |levels| {
+                                holder_in_crop = levels.holder_in_crop;
+                                Recipe {
+                                    negative: Some(levels.conversion),
+                                    ..base.clone()
+                                }
+                            },
+                        )
                     }
                 }
                 .map(Box::new)
                 .map_err(|e| format!("Auto: {e:#}"));
-                let _ = tx.send(Event::Auto { id, kind, result });
+                let _ = tx.send(Event::Auto {
+                    id,
+                    kind,
+                    result,
+                    holder_in_crop,
+                });
             },
             // A panic still sends a result, so Auto does not stay disabled.
             move |tx, _| {
                 let result = Err("Auto: the estimate failed unexpectedly".to_owned());
-                let _ = tx.send(Event::Auto { id, kind, result });
+                let _ = tx.send(Event::Auto {
+                    id,
+                    kind,
+                    result,
+                    holder_in_crop: false,
+                });
             },
         );
     }
 
     /// Applies an Auto estimate as one History step. Only the fields Auto sets are
-    /// taken, so edits made while it ran are kept.
+    /// taken, so edits made while it ran are kept. The Negative panel's says, beside
+    /// its levels, when the crop seemed to hold part of the film holder
+    /// (`holder_in_crop`), until the crop changes or Auto runs again.
     pub(in crate::app) fn auto_ready(
         &mut self,
         kind: AutoKind,
         result: Result<Box<Recipe>, String>,
+        holder_in_crop: bool,
     ) {
         self.document.auto.invalidate();
         // The estimate was fitted to the photo as it was when Auto started. If any other
@@ -129,6 +147,9 @@ impl Editor {
         let auto = match result {
             Ok(auto) => auto,
             Err(e) => {
+                if kind == AutoKind::Negative {
+                    self.view.negative_holder = None;
+                }
                 self.messages.fail(e);
                 return;
             }
@@ -150,7 +171,13 @@ impl Editor {
                 self.document.auto_effect.take();
             }
             AutoKind::WhiteBalance => apply_white_balance(&auto, &mut applied),
-            AutoKind::Negative => apply_negative_levels(&auto, &mut applied),
+            AutoKind::Negative => {
+                apply_negative_levels(&auto, &mut applied);
+                self.view.negative_holder = holder_in_crop.then(|| NegativeHolder {
+                    load: self.document.load_id(),
+                    crop: applied.crop,
+                });
+            }
         }
         // With Auto Sync on, the other selected photos get an Auto of their own:
         // the steps before are taken first, so only Auto's is measured.

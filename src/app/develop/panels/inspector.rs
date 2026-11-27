@@ -706,6 +706,10 @@ impl Editor {
                 .metadata
                 .as_ref()
                 .is_some_and(|m| m.hdr_source.is_some()),
+            holder_in_crop: self.view.negative_holder.is_some_and(|h| {
+                let r = self.document.edit.recipe();
+                h.load == self.document.load_id() && h.crop == r.crop && r.negative.is_some()
+            }),
         };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;
