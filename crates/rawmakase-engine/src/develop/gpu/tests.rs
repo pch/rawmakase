@@ -762,7 +762,8 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     r.effects.gray_mix = [0.2, -0.3, 0.1, 0.4, -0.2, 0.3, 0., -0.1];
     recipes.push(r);
     // SDR RAW (Auto default black) L255 scalar gain paths: negative Whites + positive
-    // Blacks above +25, and positive Whites overshoot + positive Blacks above +25.
+    // Blacks above +25, positive Whites overshoot + positive Blacks above +25, and negative
+    // Exposure + positive Whites.
     recipes.push(Recipe {
         whites: -0.6,
         blacks: 0.6,
@@ -772,6 +773,24 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         whites: 0.8,
         blacks: 0.8,
         ..base(&plain)
+    });
+    recipes.push(Recipe {
+        exposure: -1.5,
+        whites: 1.0,
+        ..base(&plain)
+    });
+    // SDR RAW with DefaultBlackRender::None (`!black_point && !rendered`): L255 scalar
+    // gains apply to negative Whites and all positive Blacks (> 0, including <= +25).
+    let none_raw = CameraProfile::embedded(&metadata);
+    recipes.push(Recipe {
+        whites: -0.6,
+        blacks: 0.6,
+        ..base(&none_raw)
+    });
+    recipes.push(Recipe {
+        whites: 0.8,
+        blacks: 0.2,
+        ..base(&none_raw)
     });
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);

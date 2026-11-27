@@ -18,10 +18,18 @@ pub(crate) struct PhotoMeasures {
     pub(crate) dark: f32,
     /// Its luminance's 99th percentile (plain, used by HDR positive Whites).
     pub(crate) p99: f32,
-    /// Its luminance's 99th percentile excluding flat sensor-clipped highlight regions
-    /// (tested at as-shot white balance): a stop below the level SDR positive Whites
+    /// Its luminance's 99th percentile excluding flat regions (tested at as-shot white
+    /// balance, reduced to `MAX_EDGE`): a stop below the level SDR positive Whites
     /// stretches toward.
     pub(crate) whites_p99: f32,
+    /// Its luminance's 1st percentile across all reduced cells, including flat regions
+    /// (so flat dark backgrounds do not trigger a false narrow-range lift): when the
+    /// scene's dynamic range `whites_p99 - whites_p01` is below 5 stops, Camera Raw
+    /// raises the SDR positive-Whites stretch target by `0.2 * (5 - dr)` stops.
+    pub(crate) whites_p01: f32,
+    /// Whether the source is a rendered file (JPEG, PNG, TIFF), which keeps the legacy
+    /// rendered-file Whites and Blacks rules calibrated against Lightroom.
+    pub(crate) rendered: bool,
 }
 /// What the stage cache keeps of a photo's measurement copy for the settings the
 /// measures read: the measures, and the haze Dehaze uses, measured on the
@@ -146,6 +154,8 @@ impl Default for PhotoMeasures {
             dark: -12.,
             p99: -1.,
             whites_p99: -1.,
+            whites_p01: -12.,
+            rendered: false,
         }
     }
 }
@@ -171,10 +181,19 @@ impl PhotoMeasures {
         }
     }
     /// The level SDR positive Whites stretches toward (log2) at `exposure` stops: twice
-    /// the 99th percentile of non-flat-clipped luminance, at most the sensor's white
-    /// (fitted on training photos; docs/scene-tone-stage.md#whites-and-blacks).
+    /// the 99th percentile of non-flat luminance, lifted by `0.2 * max(0, 5 - dr)` when
+    /// the photo's dynamic range `dr = whites_p99 - whites_p01` is under 5 stops, and
+    /// capped at `sensor.max(sensor.clamp(-1, 0) + 1)` (Camera Raw 18.7, measured on
+    /// synthetic probes; docs/scene-tone-stage.md#whites-and-blacks). Rendered files
+    /// keep their legacy cap at `sensor_white`.
     pub(crate) fn whites_top(&self, exposure: f32) -> f32 {
-        (self.whites_p99 + 1.).min(self.sensor_white) + exposure
+        if self.rendered {
+            return (self.whites_p99 + 1.).min(self.sensor_white) + exposure;
+        }
+        let sensor = self.sensor_white + exposure;
+        let cap = sensor.max(sensor.clamp(-1., 0.) + 1.);
+        let dr = (self.whites_p99 - self.whites_p01).max(0.);
+        (self.whites_p99 + exposure + 1. + 0.2 * (5. - dr).max(0.)).min(cap)
     }
     /// The black key (log2 of the photo's darkest level) at `exposure` stops.
     pub(crate) fn black_key(&self, exposure: f32) -> f32 {
@@ -199,6 +218,8 @@ mod tests {
             dark: -12.,
             p99: -1.,
             whites_p99: -1.,
+            whites_p01: -12.,
+            rendered: false,
         }
         .white_point(exposure)
         .exp2()
@@ -216,12 +237,26 @@ mod tests {
             dark: -12.,
             p99,
             whites_p99: p99,
+            whites_p01: -12.,
+            rendered: false,
         };
         // A specular highlight at the sensor's white does not hold Whites back.
         assert_eq!(measures(1., -3.).whites_top(0.), -2.);
-        // Never above the sensor's white; Exposure moves it.
+        // Capped at `sensor.clamp(-1, 0) + 1`; Exposure moves it.
         assert_eq!(measures(1., 0.5).whites_top(0.), 1.);
         assert_eq!(measures(1., -3.).whites_top(-1.), -3.);
+        // Narrow dynamic range (< 5 stops) lifts the stretch target by 0.2 * (5 - dr).
+        let narrow = PhotoMeasures {
+            sensor_white: 0.,
+            max: -1.,
+            min: -3.,
+            dark: -3.,
+            p99: -1.,
+            whites_p99: -1.,
+            whites_p01: -3.,
+            rendered: false,
+        };
+        assert!((narrow.whites_top(0.) - 0.6).abs() < 1e-6);
     }
 
     #[test]

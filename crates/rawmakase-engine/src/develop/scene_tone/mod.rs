@@ -89,6 +89,7 @@ impl SceneTone {
                 measures.black_key(r.exposure),
                 measures.dark_key(r.exposure),
                 black_point,
+                measures.rendered,
             ),
             dehaze: r.effects.dehaze,
             haze,
@@ -243,6 +244,8 @@ mod tests {
                 dark: -12.,
                 p99: -3.,
                 whites_p99: -3.,
+                whites_p01: -12.,
+                rendered: false,
             };
             let r = Recipe {
                 whites: 1.,

@@ -42,6 +42,12 @@ static BLACKS: &[u8] = include_bytes!("blacks.bin");
 static MASKS: &[u8] = include_bytes!("masks.bin");
 static DEFAULT_BLACK: &[u8] = include_bytes!("default_black.bin");
 static BLACKS_NONE: &[u8] = include_bytes!("blacks_none.bin");
+/// Horizontal shift in log2 scene value per stop of `m_norm` below −5.0 for each
+/// positive Whites slider row (0 to +100 in steps of 12.5), measured from `white3.bin`
+/// at `sensor = 0.0` between `below = 4.0` and `below = 5.0`. At Whites +100 (`alpha = 1`),
+/// Camera Raw's curve is scale-invariant in `log2(x) - m_norm`; at Whites 0 (`alpha = 0`),
+/// the stretch vanishes continuously.
+const POS_WHITES_EXTRAP_ALPHA: [f32; 9] = [0., 0.002, 0.015, 0.063, 0.209, 0.426, 0.646, 0.814, 1.];
 /// Rows of `blacks_none.bin`: Blacks 0 to 1 in steps of [`SLIDER_STEP`].
 const NONE_ROWS: usize = 9;
 /// The Blacks position at which Camera Raw has removed the default black: +25 renders
@@ -144,6 +150,7 @@ pub(crate) struct GlobalTone {
     top: f32,
     black_key: f32,
     black_point: bool,
+    rendered: bool,
     whites: f32,
     blacks: f32,
     /// The white curves of this photo's sensor white and maximum, one per Whites
@@ -213,9 +220,10 @@ impl GlobalTone {
     /// For the sensor's white, the photo's maximum, the level positive Whites stretches
     /// toward (`PhotoMeasures::whites_top`) and the white point (log2, at the render's
     /// Exposure), Whites and Blacks (−1 to 1), the photo's black key (log2 of its darkest
-    /// level, for Blacks), the level the default black follows (`PhotoMeasures::dark_key`)
-    /// and whether the profile has Camera Raw's default black point (its DefaultBlackRender
-    /// is Auto).
+    /// level, for Blacks), the level the default black follows (`PhotoMeasures::dark_key`),
+    /// whether the profile has Camera Raw's default black point (its DefaultBlackRender
+    /// is Auto), and whether the source is a rendered file (JPEG/PNG/TIFF, which keeps
+    /// its legacy Lightroom-calibrated Whites and Blacks rules).
     pub(crate) fn new(
         [sensor, top, stretch, white_point]: [f32; 4],
         whites: f32,
@@ -223,34 +231,38 @@ impl GlobalTone {
         black_key: f32,
         dark_key: f32,
         black_point: bool,
+        rendered: bool,
     ) -> Self {
         // Outside the measured sensor whites and maxima the nearest curves apply to the
         // scene values as they are: the curves are over x relative to the maximum, so it
         // is clamped with them, and Exposure keeps its effect.
         let last = SENSOR_FIRST + (SENSORS - 1) as f32 * SENSOR_STEP;
+        let max_below = (BELOWS - 1) as f32 * BELOW_STEP;
+        let raw_sensor = sensor;
         let sensor = sensor.clamp(SENSOR_FIRST, last);
-        let within = |t: f32| sensor - (sensor - t).clamp(0., (BELOWS - 1) as f32 * BELOW_STEP);
-        let (top, stretch) = (within(top), within(stretch));
+        let within = |t: f32| sensor - (sensor - t).clamp(0., max_below);
+        let top = within(top);
         let row = |w: usize, k: usize| value(WHITE, (w * SLIDERS + SLIDERS / 2) * T_SAMPLES + k);
-        let (w, tw) = bracket(white_point, WHITE_FIRST, WHITE_STEP, WHITE_POINTS);
-        let tail: Box<[f32; T_SAMPLES]> = Box::new(std::array::from_fn(|k| {
-            row(w, k) * (1. - tw) + row(w + 1, k) * tw
-        }));
+        let white_row = |wp: f32| -> [f32; T_SAMPLES] {
+            let (w, tw) = bracket(wp, WHITE_FIRST, WHITE_STEP, WHITE_POINTS);
+            std::array::from_fn(|k| row(w, k) * (1. - tw) + row(w + 1, k) * tw)
+        };
+        let tail: Box<[f32; T_SAMPLES]> = Box::new(white_row(white_point));
         let tail_at = |log: f32| evaluate(&tail[..], T_FIRST, T_STEP, log.exp2());
-        // The measured curves around a sensor white and maximum `max` at Whites row `s`,
-        // read at log2 scene value `log` each (relative to its own maximum) and blended.
-        // Above a curve's maximum it rolls on to white with the default curve, as
-        // `white_at` does above the photo's.
-        let curve = |max: f32, s: usize, log: f32| {
-            let (i, ti) = bracket(sensor, SENSOR_FIRST, SENSOR_STEP, SENSORS);
-            let (j, tj) = bracket(sensor - max, 0., BELOW_STEP, BELOWS);
+        // The measured curves around a sensor white `s_val` and maximum `max` at Whites
+        // row `s`, read at log2 scene value `log` each (relative to its own maximum) and
+        // blended. Above a curve's maximum it rolls on to white with `tail_fn`, as
+        // `sdr_white_at` does above the photo's.
+        let curve_at = |s_val: f32, max: f32, s: usize, log: f32, tail_fn: &dyn Fn(f32) -> f32| {
+            let (i, ti) = bracket(s_val, SENSOR_FIRST, SENSOR_STEP, SENSORS);
+            let (j, tj) = bracket(s_val - max, 0., BELOW_STEP, BELOWS);
             let at = |i: usize, j: usize| {
                 let corner = SENSOR_FIRST + i as f32 * SENSOR_STEP - j as f32 * BELOW_STEP;
                 let base = ((i * BELOWS + j) * SLIDERS + s) * U_SAMPLES;
                 let f = (log - corner - U_FIRST) / U_STEP;
                 if f > (U_SAMPLES - 1) as f32 {
                     let at_top = value16(WHITE3, base + U_SAMPLES - 1);
-                    let (r, rm) = (tail_at(log), tail_at(corner));
+                    let (r, rm) = (tail_fn(log), tail_fn(corner));
                     return if rm < 1. {
                         at_top + (1. - at_top) * ((r - rm) / (1. - rm)).clamp(0., 1.)
                     } else {
@@ -265,9 +277,28 @@ impl GlobalTone {
             (at(i, j) * (1. - tj) + at(i, j + 1) * tj) * (1. - ti)
                 + (at(i + 1, j) * (1. - tj) + at(i + 1, j + 1) * tj) * ti
         };
+        // Precompute the positive-Whites reference curve coordinates for RAW files:
+        // Camera Raw keys positive Whites on `m_norm = (stretch - w_neg).min(sensor.max(1.))`
+        // in `w_neg = sensor.clamp(-1., 0.)`-normalized coordinates, allowing `m_norm` up to
+        // +1 even when `sensor < 1`, and continuing seamlessly below `below > 5` stops
+        // (natively down to `m_norm = -5` via `s_ref >= 0`, then shifting by
+        // `POS_WHITES_EXTRAP_ALPHA` beyond −5).
+        let w_neg = raw_sensor.clamp(-1., 0.);
+        let m_norm = (stretch - w_neg).min(sensor.max(1.));
+        let s_ref = sensor.clamp(m_norm, m_norm + max_below).clamp(0., last);
+        let m_clamped = m_norm.max(-max_below);
+        let extra = (-max_below - m_norm).max(0.);
+        let ref_tail = white_row(if w_neg < 0. {
+            s_ref
+        } else {
+            white_point.max(s_ref)
+        });
+        let ref_tail_at = |log: f32| evaluate(&ref_tail[..], T_FIRST, T_STEP, log.exp2());
+        let neg_white = (w_neg < 0.).then(|| white_row(w_neg));
+        let rendered_stretch = within(stretch);
         // The default and negative Whites follow the photo's maximum; positive Whites
         // adds the stretch toward `stretch` (twice its non-flat 99th percentile on
-        // photos), so the rows meet at Whites 0.
+        // photos, with the narrow-DR lift), so the rows meet at Whites 0.
         let one = ((0. - WHITE_FIRST) / WHITE_STEP) as usize;
         let toe = (!black_point).then(|| Box::new(std::array::from_fn(|k| row(one, k))));
         let linear_below = toe.as_ref().map_or(0., |toe| {
@@ -281,11 +312,30 @@ impl GlobalTone {
         let rows: Box<[[f32; U_SAMPLES]; SLIDERS]> = Box::new(std::array::from_fn(|s| {
             let mut row: [f32; U_SAMPLES] = std::array::from_fn(|k| {
                 let log = top + U_FIRST + k as f32 * U_STEP;
-                let default = curve(top, s.min(zero), log);
+                let default = curve_at(sensor, top, s.min(zero), log, &tail_at);
                 if s <= zero {
                     default
+                } else if rendered {
+                    default + curve_at(sensor, rendered_stretch, s, log, &tail_at)
+                        - curve_at(sensor, rendered_stretch, zero, log, &tail_at)
                 } else {
-                    default + curve(stretch, s, log) - curve(stretch, zero, log)
+                    let log_norm = log - w_neg;
+                    let ref_s = curve_at(
+                        s_ref,
+                        m_clamped,
+                        s,
+                        log_norm + POS_WHITES_EXTRAP_ALPHA[s - zero] * extra,
+                        &ref_tail_at,
+                    );
+                    let ref_0 = curve_at(s_ref, m_clamped, zero, log_norm, &ref_tail_at);
+                    if let Some(neg_row) = &neg_white {
+                        let scale = w_neg.exp2();
+                        let y_s = evaluate(&neg_row[..], T_FIRST, T_STEP, scale * ref_s);
+                        let y_0 = evaluate(&neg_row[..], T_FIRST, T_STEP, scale * ref_0);
+                        (default + y_s - y_0).max(0.)
+                    } else {
+                        (default + ref_s - ref_0).max(0.)
+                    }
                 }
             });
             // Without a black point, Camera Raw's toe is divided out of the curve.
@@ -306,13 +356,18 @@ impl GlobalTone {
         // The white probes' darkest patch is 14 stops below their maximum.
         // Their black response is already present; adding the photo's response
         // directly would apply black rendering twice.
-        // With the default black:
+        // With the default black (Auto):
         // - 0 < blacks <= +25 fades out the default black per channel (`positive_blacks`).
         // - blacks > +25 removes the calibration black per channel in `default_black` and
         //   applies `blacks_none.bin` in `blacks_curve` as an `L255` scalar gain.
+        // Without a default black on a RAW profile (`DefaultBlackRender::None`, `!rendered`):
+        // - blacks > 0 applies `blacks_none.bin` directly at `t = blacks` as an `L255`
+        //   scalar gain (Camera Raw 18.7, measured on neutral and saturated patches).
+        // Rendered files keep `blacks.bin` per channel as calibrated against Lightroom.
         let fade_black = black_point && blacks > 0. && blacks <= BLACK_REMOVED;
-        let luma_positive_blacks = black_point && blacks > BLACK_REMOVED;
-        let default_black = if luma_positive_blacks {
+        let luma_auto_blacks = black_point && blacks > BLACK_REMOVED;
+        let luma_none_blacks = !black_point && !rendered && blacks > 0.;
+        let default_black = if luma_auto_blacks {
             Some(remove_calibration_black(top - 14.))
         } else if fade_black {
             Some(positive_blacks(blacks, dark_key, top - 14.))
@@ -328,10 +383,12 @@ impl GlobalTone {
                         .any(|(k, value)| *value != (Y_FIRST + k as f32 * Y_STEP).exp2())
                 })
         };
-        let blacks_curve = if luma_positive_blacks {
+        let blacks_curve = if luma_auto_blacks {
             Some(blacks_none_row(
                 (blacks - BLACK_REMOVED) / (1. - BLACK_REMOVED),
             ))
+        } else if luma_none_blacks {
+            Some(blacks_none_row(blacks))
         } else if blacks != 0. && !fade_black {
             let corners = blacks_corners(black_key, blacks);
             Some(Box::new(std::array::from_fn(|k| {
@@ -344,6 +401,7 @@ impl GlobalTone {
             top,
             black_key,
             black_point,
+            rendered,
             whites,
             blacks,
             rows,
@@ -358,7 +416,7 @@ impl GlobalTone {
             hdr: None,
         };
         tone.white = tone.row_at(whites);
-        if whites < 0. && black_point {
+        if whites < 0. && (black_point || !rendered) {
             tone.neg_whites = Some(tone.build_neg_whites());
         }
         tone
@@ -380,7 +438,7 @@ impl GlobalTone {
         dark_key: f32,
         black_point: bool,
     ) -> Self {
-        let mut tone = Self::new([0.; 4], 0., blacks, black_key, dark_key, black_point);
+        let mut tone = Self::new([0.; 4], 0., blacks, black_key, dark_key, black_point, true);
         // Keep HDR positive Blacks per-channel (matching `main`): the L255 gain split is
         // SDR-only.
         if black_point && blacks > BLACK_REMOVED {
@@ -474,10 +532,12 @@ impl GlobalTone {
         }))
     }
     /// Whether `blacks_curve` applies as a scalar gain on [`luma_255`] (Camera Raw's SDR
-    /// positive Blacks above `BLACK_REMOVED` with Auto default black) rather than per
-    /// channel.
+    /// positive Blacks above `BLACK_REMOVED` with Auto default black, or above 0 on a
+    /// non-rendered `DefaultBlackRender::None` RAW profile) rather than per channel.
     fn blacks_is_luma(&self) -> bool {
-        self.hdr.is_none() && self.black_point && self.blacks > BLACK_REMOVED
+        self.hdr.is_none()
+            && ((self.black_point && self.blacks > BLACK_REMOVED)
+                || (!self.black_point && !self.rendered && self.blacks > 0.))
     }
     /// Black responses for a mask's total Shadows: one dark key for each tenth from
     /// −1 to 1, with the recipe's own `shadows`.
@@ -567,7 +627,8 @@ impl GlobalTone {
             }
         };
         match &self.blacks_curve {
-            // SDR positive Blacks above +25 (Auto): scalar gain on L255.
+            // SDR positive Blacks scalar gain on L255 (see `Self::blacks_is_luma`:
+            // Auto above +25, or non-rendered DefaultBlackRender::None RAW above 0).
             // At or above white (`l >= 1`), `apply_luma_curve` keeps gain 1.
             Some(blacks) if self.blacks_is_luma() => apply_luma_curve(p, blacks),
             // In HDR, Blacks leaves values above white alone, as Camera Raw's HDR
@@ -602,15 +663,16 @@ impl GlobalTone {
         }
     }
     /// What the GPU reads with the curves: the photo's maximum, the black key, whether
-    /// there is a black point, the recipe's Whites and Blacks, and where the curve
-    /// continues linearly without a black point.
+    /// there is a black point, the recipe's Whites, whether `blacks_curve` runs as an
+    /// `L255` scalar gain ([`Self::blacks_is_luma`]), and where the curve continues
+    /// linearly without a black point.
     pub(crate) fn gpu_keys(&self) -> [f32; 6] {
         [
             self.top,
             self.black_key,
             self.black_point as u8 as f32,
             self.whites,
-            self.blacks,
+            self.blacks_is_luma() as u8 as f32,
             self.linear_below,
         ]
     }
@@ -883,6 +945,7 @@ mod tests {
             -8.,
             -8.,
             black_point,
+            false,
         )
     }
 
@@ -896,8 +959,8 @@ mod tests {
             assert!(gray(sensor - 1.) < gray(sensor) * 0.75, "{sensor}");
         }
         let dim = |top: f32| {
-            GlobalTone::new([0., top, top, 0.], 0., 0., -8., -8., true).apply([2f32.powf(-7.); 3])
-                [1]
+            GlobalTone::new([0., top, top, 0.], 0., 0., -8., -8., true, false)
+                .apply([2f32.powf(-7.); 3])[1]
         };
         assert!(
             (dim(-6.) / dim(-10.) - 1.).abs() < 0.1,
@@ -923,7 +986,8 @@ mod tests {
     #[test]
     fn curves_between_measured_maxima_keep_mid_gray() {
         let gray = |sensor: f32, top: f32| {
-            GlobalTone::new([sensor, top, top, sensor], 0., 0., -8., -8., true).apply([0.18; 3])[1]
+            GlobalTone::new([sensor, top, top, sensor], 0., 0., -8., -8., true, false)
+                .apply([0.18; 3])[1]
         };
         let corner = gray(0.5, 0.5);
         for (sensor, top) in [(0.862, 0.726), (0.25, -0.6), (1.7, 0.2)] {
@@ -942,7 +1006,7 @@ mod tests {
     fn no_shoulder_below_the_photos_maximum() {
         let x = 0.840896;
         let between =
-            GlobalTone::new([0., -0.25, -0.25, 0.], 0., 0., -8., -8., true).apply([x; 3])[1];
+            GlobalTone::new([0., -0.25, -0.25, 0.], 0., 0., -8., -8., true, false).apply([x; 3])[1];
         let measured = reaching(0., 0., 0., true).apply([x; 3])[1];
         assert!(
             (between - measured).abs() < 0.02,
@@ -955,7 +1019,8 @@ mod tests {
     #[test]
     fn the_stretch_level_moves_only_positive_whites() {
         let at = |stretch: f32, whites: f32, x: f32| {
-            GlobalTone::new([2., 2., stretch, 2.], whites, 0., -8., -8., true).apply([x; 3])[1]
+            GlobalTone::new([2., 2., stretch, 2.], whites, 0., -8., -8., true, false).apply([x; 3])
+                [1]
         };
         for whites in [0., -0.5, -1.] {
             for x in [0.1, 1., 2.] {
@@ -1011,7 +1076,7 @@ mod tests {
     fn positive_whites_stretches_a_dim_photo_toward_white() {
         // A photo four stops below its sensor's white: Whites +100 brightens it far more
         // than a photo reaching its white point.
-        let dim = GlobalTone::new([2., -2., -2., 0.], 1., 0., -8., -8., true);
+        let dim = GlobalTone::new([2., -2., -2., 0.], 1., 0., -8., -8., true, false);
         let bright = reaching(2., 1., 0., true);
         let x = 0.2;
         assert!(dim.apply([x; 3])[0] > bright.apply([x; 3])[0] + 0.2);
@@ -1044,6 +1109,7 @@ mod tests {
                                 -5.,
                                 -5.,
                                 black_point,
+                                false,
                             );
                             monotone(
                                 &tone,
@@ -1057,9 +1123,9 @@ mod tests {
             }
         }
         // Found in review: a brighter input came out darker.
-        let tone = GlobalTone::new([2., 2., -1., 2.], 1., 0., -14., -14., true);
+        let tone = GlobalTone::new([2., 2., -1., 2.], 1., 0., -14., -14., true, false);
         monotone(&tone, "review case");
-        let tone = GlobalTone::new([-1., -2., -5., -1.], 0.75, 0., -14., -14., false);
+        let tone = GlobalTone::new([-1., -2., -5., -1.], 0.75, 0., -14., -14., false, false);
         monotone(&tone, "review case without a black point");
     }
 
@@ -1081,7 +1147,7 @@ mod tests {
 
     #[test]
     fn a_masks_whites_and_blacks_follow_the_global_curves() {
-        let render = GlobalTone::new([1.3, 0.2, 0.2, 1.2], 0.2, -0.1, -5., -5., true);
+        let render = GlobalTone::new([1.3, 0.2, 0.2, 1.2], 0.2, -0.1, -5., -5., true, false);
         let p = [0.4f32, 0.3, 0.6];
         assert_eq!(render.apply_at(p, 0., 0., 0.), render.apply(p));
         // Measured: a mask's Whites +50 takes 0.18 (default output 0.177) to 0.240.
@@ -1106,11 +1172,11 @@ mod tests {
         // The minimum (Blacks' key) at 2^-14 throughout: the default black reads the
         // percentile only.
         let keyed = |dark: f32, black_point: bool| {
-            GlobalTone::new([0., 0., 0., 0.], 0., 0., -14., dark, black_point)
+            GlobalTone::new([0., 0., 0., 0.], 0., 0., -14., dark, black_point, false)
         };
         assert!(keyed(-14., false).default_black_samples().is_none());
         assert_eq!(
-            GlobalTone::new([0.; 4], 0., 0., -8.5, -8.5, true).default_black_samples(),
+            GlobalTone::new([0.; 4], 0., 0., -8.5, -8.5, true, false).default_black_samples(),
             keyed(-8.5, true).default_black_samples()
         );
         // Camera baseline exposure is not subtracted from the scene key. The
@@ -1167,7 +1233,7 @@ mod tests {
             ),
         ];
         for (blacks, outputs) in CAMERA_RAW {
-            let tone = GlobalTone::new([2.; 4], 0., blacks, -10., -10., true);
+            let tone = GlobalTone::new([2.; 4], 0., blacks, -10., -10., true, false);
             for (x, y) in SCENE.into_iter().zip(outputs) {
                 let ours = tone.apply([x; 3])[1];
                 assert!(
@@ -1182,7 +1248,8 @@ mod tests {
     /// default black at 0 and the key-free curve at +25 without a step.
     #[test]
     fn positive_blacks_leaves_the_default_black_continuously() {
-        let tone = |blacks: f32, dark: f32| GlobalTone::new([2.; 4], 0., blacks, dark, dark, true);
+        let tone =
+            |blacks: f32, dark: f32| GlobalTone::new([2.; 4], 0., blacks, dark, dark, true, false);
         for x in [2f32.powf(-9.), 2f32.powf(-7.), 2f32.powf(-5.), 0.18] {
             let at = |blacks: f32, dark: f32| tone(blacks, dark).apply([x; 3])[1];
             assert_eq!(at(0.5, -12.), at(0.5, -8.5));
@@ -1195,8 +1262,9 @@ mod tests {
         // The smallest Blacks changes nothing, down to the darkest values and at a
         // calibration key between the measured ones (a photo whose top is 0.525).
         for dark in [-14., -12., -9.3] {
-            let tone =
-                |blacks: f32| GlobalTone::new([1., 0.525, 0.525, 1.], 0., blacks, dark, dark, true);
+            let tone = |blacks: f32| {
+                GlobalTone::new([1., 0.525, 0.525, 1.], 0., blacks, dark, dark, true, false)
+            };
             for x in [
                 2f32.powf(-18.),
                 2f32.powf(-16.),
@@ -1259,7 +1327,7 @@ mod tests {
     /// matching the calibration's darkest level leaves that response unchanged.
     #[test]
     fn the_middle_channel_keeps_its_place() {
-        let tone = GlobalTone::new([2.; 4], 0.5, 0., -12., -12., true);
+        let tone = GlobalTone::new([2.; 4], 0.5, 0., -12., -12., true, false);
         let [r, g, b] = tone.apply([1.2, 0.6, 0.3]);
         assert!(r > g && g > b);
         assert!(((g - b) / (r - b) - (0.6 - 0.3) / (1.2 - 0.3)).abs() < 1e-5);
@@ -1271,15 +1339,15 @@ mod tests {
     fn positive_blacks_and_negative_whites_preserve_channel_ratios() {
         let p = [0.4f32, 0.15, 0.05];
         // Positive Blacks above +25 (default black removed): exact scalar gain.
-        let b50 = GlobalTone::new([2.; 4], 0., 0.5, -12., -12., true).apply(p);
-        let b100 = GlobalTone::new([2.; 4], 0., 1., -12., -12., true).apply(p);
+        let b50 = GlobalTone::new([2.; 4], 0., 0.5, -12., -12., true, false).apply(p);
+        let b100 = GlobalTone::new([2.; 4], 0., 1., -12., -12., true, false).apply(p);
         let ratios: [f32; 3] = std::array::from_fn(|c| b100[c] / b50[c]);
         assert!(ratios[0] > 1.05, "{ratios:?}");
         assert!((ratios[0] - ratios[1]).abs() < 1e-5 && (ratios[1] - ratios[2]).abs() < 1e-5);
         // Negative Whites -100 relative to default: exact scalar gain (dark_key = top - 14
         // so `default_black` is the identity and bypassed).
-        let def = GlobalTone::new([2.; 4], 0., 0., -12., -12., true).apply(p);
-        let wneg = GlobalTone::new([2.; 4], -1., 0., -12., -12., true).apply(p);
+        let def = GlobalTone::new([2.; 4], 0., 0., -12., -12., true, false).apply(p);
+        let wneg = GlobalTone::new([2.; 4], -1., 0., -12., -12., true, false).apply(p);
         let wratios: [f32; 3] = std::array::from_fn(|c| wneg[c] / def[c]);
         assert!(wratios[0] < 0.99, "{wratios:?}");
         assert!((wratios[0] - wratios[1]).abs() < 1e-5 && (wratios[1] - wratios[2]).abs() < 1e-5);
@@ -1290,7 +1358,7 @@ mod tests {
     #[test]
     fn negative_whites_linear_lut_tracks_highlight_shoulder() {
         for sw in [2.0f32, 4.0] {
-            let tone = GlobalTone::new([sw; 4], -1., 0., sw - 14., sw - 14., true);
+            let tone = GlobalTone::new([sw; 4], -1., 0., sw - 14., sw - 14., true, false);
             for x in [0.25f32, 0.5, 1.0, 2.0, 3.0, 4.0, 8.0] {
                 let want = tone.white_curve(x);
                 let got = tone.apply([x; 3])[1];
@@ -1308,7 +1376,7 @@ mod tests {
     /// cyan/green patches or greys.
     #[test]
     fn rgb_tone_clamps_negative_channels_without_lifting_midtones() {
-        let tone = GlobalTone::new([0.; 4], 0., 0., -12., -12., false);
+        let tone = GlobalTone::new([0.; 4], 0., 0., -12., -12., false, false);
         // Saturated cyan/green where both red and blue are negative after WB: red must
         // stay 0 rather than being lifted by `-lo / (hi - lo)`.
         let [r, g, b] = tone.apply([-0.022, 0.523, -0.134]);
@@ -1324,6 +1392,177 @@ mod tests {
             "negative blue lifted red: r/g = {}, want {} (rgb = [{r}, {g}, {b}])",
             r / g,
             0.10 / 0.65
+        );
+    }
+
+    /// Positive Whites on RAW files continues stretching past `below > 5.0` stops
+    /// (scale-invariant in `log2(x) - stretch` at +100), stays continuous across
+    /// `m_norm = -5.0`, and stays monotone.
+    #[test]
+    fn positive_whites_continues_beyond_five_stops_below_sensor() {
+        let eval = |sensor: f32, stretch: f32, whites: f32, x: f32| {
+            GlobalTone::new(
+                [sensor, sensor, stretch, sensor],
+                whites,
+                0.,
+                -14.,
+                -14.,
+                true,
+                false,
+            )
+            .apply([x; 3])[1]
+        };
+        // At sensor = +1.75 (like a dark night scene), stretch = -4.5 (below = 6.25) and
+        // -6.0 (below = 7.75) stretch strictly further than the old 5-stop clamp (-3.25).
+        let x = (-7.0f32).exp2();
+        let at_clamp = eval(1.75, -3.25, 1., x);
+        let at_625 = eval(1.75, -4.5, 1., x);
+        let at_775 = eval(1.75, -6.0, 1., x);
+        assert!(
+            at_625 > at_clamp + 0.15 && at_775 > at_625 + 0.25,
+            "at_clamp={at_clamp} at_625={at_625} at_775={at_775}"
+        );
+        // Scale invariance at Whites +100 past m_norm = -5: shifting both stretch and log2(x)
+        // by -1.5 stops gives the same output within interpolation tolerance.
+        for u in [-4.0f32, -3.0, -2.5] {
+            let a = eval(0., -5.0, 1., (-5.0 + u).exp2());
+            let b = eval(0., -6.5, 1., (-6.5 + u).exp2());
+            assert!(
+                (a - b).abs() < 0.01,
+                "u={u}: m=-5.0 gave {a}, m=-6.5 gave {b}"
+            );
+        }
+        // Continuity across m_norm = -5.0 at intermediate positive Whites sliders.
+        for whites in [0.25f32, 0.5, 0.75, 1.0] {
+            let below = eval(0., -5.002, whites, (-7.0f32).exp2());
+            let above = eval(0., -4.998, whites, (-7.0f32).exp2());
+            assert!(
+                (below - above).abs() < 0.005,
+                "whites={whites}: below={below} above={above}"
+            );
+        }
+        // Monotonicity deep into the extrapolated region.
+        for (sensor, stretch) in [(1.75, -6.5), (0.0, -8.0), (-1.0, -7.0)] {
+            let tone = GlobalTone::new(
+                [sensor, sensor, stretch, sensor],
+                1.,
+                0.,
+                -14.,
+                -14.,
+                true,
+                false,
+            );
+            let mut prev = 0.0f32;
+            for i in 0..320 {
+                let x = 2f32.powf(-16. + i as f32 * 0.05);
+                let y = tone.apply([x; 3])[1];
+                assert!(
+                    y >= prev - 2e-4,
+                    "({sensor}, {stretch}) at {x}: {y} < {prev}"
+                );
+                prev = y;
+            }
+        }
+    }
+
+    /// Positive Whites with negative `sensor` (e.g. `Exposure -1`) allows `m_norm` up to
+    /// +1.0 (preventing bright-bulk over-stretching) and is continuous across `sensor = 0`.
+    #[test]
+    fn positive_whites_negative_sensor_respects_cap_and_continuity() {
+        let eval = |sensor: f32, stretch: f32, x: f32| {
+            let wp = if sensor < 0. { sensor.max(-1.) } else { sensor };
+            GlobalTone::new(
+                [sensor, sensor, stretch, wp],
+                1.,
+                0.,
+                -14.,
+                -14.,
+                true,
+                false,
+            )
+            .apply([x; 3])[1]
+        };
+        // At sensor = -1.0, a bright bulk (stretch = 0.0 -> m_norm = +1.0) stretches far less
+        // than a darker scene (stretch = -1.0 -> m_norm = 0.0).
+        let x = 0.125;
+        let bright_bulk = eval(-1.0, 0.0, x);
+        let dark_bulk = eval(-1.0, -1.0, x);
+        assert!(
+            bright_bulk < dark_bulk - 0.10,
+            "bright_bulk={bright_bulk} dark_bulk={dark_bulk}"
+        );
+        // Continuous across sensor = 0.0 (both dark and bright stretch levels).
+        for stretch in [-2.0f32, 0.0, 0.8] {
+            let neg = eval(-0.002, stretch, 0.18);
+            let pos = eval(0.002, stretch, 0.18);
+            assert!(
+                (neg - pos).abs() < 0.015,
+                "stretch={stretch}: neg={neg} pos={pos}"
+            );
+        }
+    }
+
+    /// Non-rendered `DefaultBlackRender::None` RAW profiles use `L255` scalar gains for
+    /// positive Blacks (> 0, `blacks_none.bin` directly at `t = blacks`) and negative Whites,
+    /// while rendered files (`rendered = true`) keep their legacy Lightroom-calibrated paths.
+    #[test]
+    fn default_black_none_raw_uses_l255_while_rendered_keeps_legacy_path() {
+        let p = [0.4f32, 0.15, 0.05];
+        // Positive Blacks > 0 on RAW None profile: L255 scalar gain + blacks_none_row(blacks).
+        for blacks in [0.25f32, 0.5, 1.0] {
+            let raw_zero = GlobalTone::new([0.; 4], 0., 0., -8., -8., false, false);
+            let raw_pos = GlobalTone::new([0.; 4], 0., blacks, -8., -8., false, false);
+            let ren_pos = GlobalTone::new([0.; 4], 0., blacks, -8., -8., false, true);
+            assert_eq!(
+                raw_pos.gpu_keys()[4],
+                1.0,
+                "RAW None blacks={blacks} must set luma flag"
+            );
+            assert_eq!(
+                ren_pos.gpu_keys()[4],
+                0.0,
+                "Rendered blacks={blacks} must stay per-channel"
+            );
+            let base = raw_zero.apply(p);
+            let lifted = raw_pos.apply(p);
+            let ratios: [f32; 3] = std::array::from_fn(|c| lifted[c] / base[c]);
+            assert!(ratios[0] > 1.02, "blacks={blacks}: {ratios:?}");
+            assert!(
+                (ratios[0] - ratios[1]).abs() < 1e-5 && (ratios[1] - ratios[2]).abs() < 1e-5,
+                "blacks={blacks} ratios diverged: {ratios:?}"
+            );
+            // Neutral output matches `blacks_none_row(blacks)` evaluated on `raw_zero`.
+            let neutral_base = raw_zero.apply([0.0625; 3])[1];
+            let neutral_got = raw_pos.apply([0.0625; 3])[1];
+            let want_row = blacks_none_row(blacks);
+            let neutral_want = evaluate(&want_row[..], Y_FIRST, Y_STEP, neutral_base);
+            assert!(
+                (neutral_got - neutral_want).abs() < 1e-5,
+                "blacks={blacks}: got={neutral_got} want={neutral_want}"
+            );
+            // Rendered file keeps `blacks.bin` per-channel (different channel ratios).
+            let ren_base = GlobalTone::new([0.; 4], 0., 0., -8., -8., false, true).apply(p);
+            let ren_lifted = ren_pos.apply(p);
+            let ren_ratios: [f32; 3] = std::array::from_fn(|c| ren_lifted[c] / ren_base[c]);
+            assert!(
+                (ren_ratios[2] - ren_ratios[0]).abs() > 0.05,
+                "rendered blacks={blacks} should stay per-channel: {ren_ratios:?}"
+            );
+        }
+        // Negative Whites on RAW None profile: L255 scalar gain (`neg_whites_samples().is_some()`),
+        // while rendered file keeps RGBTone (`neg_whites_samples().is_none()`).
+        let raw_def = GlobalTone::new([2.; 4], 0., 0., -8., -8., false, false);
+        let raw_wneg = GlobalTone::new([2.; 4], -1., 0., -8., -8., false, false);
+        let ren_wneg = GlobalTone::new([2.; 4], -1., 0., -8., -8., false, true);
+        assert!(raw_wneg.neg_whites_samples().is_some());
+        assert!(ren_wneg.neg_whites_samples().is_none());
+        let def_p = raw_def.apply(p);
+        let wneg_p = raw_wneg.apply(p);
+        let wratios: [f32; 3] = std::array::from_fn(|c| wneg_p[c] / def_p[c]);
+        assert!(wratios[0] < 0.99, "{wratios:?}");
+        assert!(
+            (wratios[0] - wratios[1]).abs() < 1e-5 && (wratios[1] - wratios[2]).abs() < 1e-5,
+            "RAW None neg whites ratios diverged: {wratios:?}"
         );
     }
 }

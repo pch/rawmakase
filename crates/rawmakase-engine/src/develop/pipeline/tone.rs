@@ -869,48 +869,98 @@ pub(super) fn photo_measures(
     };
     let mut lum = crop_lum(&scene);
     let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
-    // For SDR positive Whites (`whites_p99`), exclude flat sensor-clipped highlight
-    // regions (e.g. a small blown-out sky) so they do not hold positive Whites back on
-    // an otherwise dark scene, while keeping all textured highlights and dark pixels.
-    // The clip test runs on `camera_as_shot` (the same as-shot white balance as `white`)
-    // so dragging Temp or Tint never flips a clipped region in or out. Plain `p99` is
-    // kept untouched for HDR positive Whites (`PhotoMeasures::hdr_whites_level`).
-    let mut whites_p99 = if !lum.is_empty() && !rendered && white > 1e-6 {
+    // For SDR positive Whites (`whites_p99` and `whites_p01`), remove single-pixel
+    // point sources via a 3×3 median on the reduced copy, box-reduce to `MAX_EDGE`
+    // (128 px), and exclude flat cells (e.g. blown-out skies or uniform synthetic
+    // backgrounds, tested at as-shot white balance so Temp/Tint drags never flip a
+    // region in or out). Point sources (like night streetlamps) do not smear across
+    // `MAX_EDGE` boxes while textured highlights and dark pixels stay intact. Plain
+    // `p99` is kept untouched for HDR positive Whites (`PhotoMeasures::hdr_whites_level`).
+    let (whites_p99, whites_p01) = if !lum.is_empty() && !rendered && white > 1e-6 {
         let as_shot_lum = crop_lum(&camera_as_shot);
-        let hi_thr = 0.95 * white;
-        let flat_thr = 1e-4 * white;
-        let mut kept = Vec::with_capacity(lum.len());
-        for y in 0..ch {
-            let row = y * cw;
-            for x in 0..cw {
-                let av = as_shot_lum[row + x];
-                if av >= hi_thr {
-                    let mut diff = 0f32;
-                    if y > 0 {
-                        diff = diff.max((av - as_shot_lum[row - cw + x]).abs());
-                    }
-                    if y + 1 < ch {
-                        diff = diff.max((av - as_shot_lum[row + cw + x]).abs());
-                    }
-                    if x > 0 {
-                        diff = diff.max((av - as_shot_lum[row + x - 1]).abs());
-                    }
-                    if x + 1 < cw {
-                        diff = diff.max((av - as_shot_lum[row + x + 1]).abs());
-                    }
-                    if diff < flat_thr {
-                        continue;
+        let scale = (edge as f32 / cw.max(ch) as f32).min(1.);
+        let (bw, bh) = (
+            ((cw as f32 * scale).round() as usize).max(1),
+            ((ch as f32 * scale).round() as usize).max(1),
+        );
+        // Apply 3×3 median before box-reduction when downsampling (so 1–2 px bright
+        // point sources do not inflate 4×4 linear box averages, matching Camera Raw's
+        // speckle and night-lamp response).
+        let (med_s, med_a) = if cw.max(ch) > edge as usize && cw >= 3 && ch >= 3 {
+            (
+                Some(median_3x3(&lum, cw, ch)),
+                Some(median_3x3(&as_shot_lum, cw, ch)),
+            )
+        } else {
+            (None, None)
+        };
+        let src_s = med_s.as_deref().unwrap_or(&lum);
+        let src_a = med_a.as_deref().unwrap_or(&as_shot_lum);
+        let total_cells = bw * bh;
+        let mut all_cells = Vec::with_capacity(total_cells);
+        let mut kept = Vec::with_capacity(total_cells);
+        for by in 0..bh {
+            let y0 = by * ch / bh;
+            let y1 = ((by + 1) * ch / bh).max(y0 + 1);
+            for bx in 0..bw {
+                let x0 = bx * cw / bw;
+                let x1 = ((bx + 1) * cw / bw).max(x0 + 1);
+                let count = (x1 - x0) * (y1 - y0);
+                let mut sum_s = 0f32;
+                let mut sum_a = 0f32;
+                let mut lo_a = f32::INFINITY;
+                let mut hi_a = f32::NEG_INFINITY;
+                for yy in y0..y1 {
+                    let row = yy * cw;
+                    for xx in x0..x1 {
+                        let idx = row + xx;
+                        sum_s += src_s[idx];
+                        let av = src_a[idx];
+                        sum_a += av;
+                        lo_a = lo_a.min(av);
+                        hi_a = hi_a.max(av);
                     }
                 }
-                kept.push(lum[row + x]);
+                let mean_s = sum_s / count as f32;
+                all_cells.push(mean_s);
+                let flat = if count > 1 {
+                    let mean_a = sum_a / count as f32;
+                    hi_a - lo_a <= 1e-4 * mean_a.max(1e-6)
+                } else {
+                    let idx = y0 * cw + x0;
+                    let av = src_a[idx];
+                    let mut diff = 0f32;
+                    if y0 > 0 {
+                        diff = diff.max((av - src_a[idx - cw]).abs());
+                    }
+                    if y0 + 1 < ch {
+                        diff = diff.max((av - src_a[idx + cw]).abs());
+                    }
+                    if x0 > 0 {
+                        diff = diff.max((av - src_a[idx - 1]).abs());
+                    }
+                    if x0 + 1 < cw {
+                        diff = diff.max((av - src_a[idx + 1]).abs());
+                    }
+                    diff <= 1e-4 * av.max(1e-6)
+                };
+                if !flat {
+                    kept.push(mean_s);
+                }
             }
         }
-        (kept.len() >= 100).then(|| {
-            let k = (kept.len() - 1) * 99 / 100;
-            *kept.select_nth_unstable_by(k, f32::total_cmp).1
-        })
+        let sample = if kept.len() >= 100 && kept.len() * 50 >= total_cells {
+            &mut kept
+        } else {
+            &mut all_cells
+        };
+        let k99 = (sample.len() - 1) * 99 / 100;
+        let wp99 = *sample.select_nth_unstable_by(k99, f32::total_cmp).1;
+        let k01 = (all_cells.len() - 1) / 100;
+        let wp01 = *all_cells.select_nth_unstable_by(k01, f32::total_cmp).1;
+        (Some(wp99), Some(wp01))
     } else {
-        None
+        (None, None)
     };
     let p99 = if lum.is_empty() {
         1.
@@ -918,7 +968,8 @@ pub(super) fn photo_measures(
         let k = (lum.len() - 1) * 99 / 100;
         *lum.select_nth_unstable_by(k, f32::total_cmp).1
     };
-    let whites_p99 = whites_p99.take().unwrap_or(p99);
+    let whites_p99 = whites_p99.unwrap_or(p99);
+    let whites_p01 = whites_p01.unwrap_or(min);
     let mut dark_lum = match unretouched_scene {
         Some(ref plain) => crop_lum(plain),
         None => Vec::new(),
@@ -942,6 +993,8 @@ pub(super) fn photo_measures(
         dark: dark.max(2f32.powi(-20)).log2(),
         p99: crate::develop::local_tone::level(p99),
         whites_p99: crate::develop::local_tone::level(whites_p99),
+        whites_p01: crate::develop::local_tone::level(whites_p01),
+        rendered,
     }
 }
 /// The haze Dehaze uses (`scene_tone::Haze`), on the scene values `photo_measures`
@@ -1041,6 +1094,32 @@ fn measured_scene(
         .par_iter()
         .map(|p| exposure_stage(scene_color(*p, base, lut, camera, None), lut, None))
         .collect()
+}
+/// 3×3 median filter on a `w × h` single-channel plane (edge pixels clamped).
+fn median_3x3(src: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0f32; w * h];
+    for y in 0..h {
+        let ym = y.saturating_sub(1);
+        let yp = (y + 1).min(h - 1);
+        for x in 0..w {
+            let xm = x.saturating_sub(1);
+            let xp = (x + 1).min(w - 1);
+            let mut win = [
+                src[ym * w + xm],
+                src[ym * w + x],
+                src[ym * w + xp],
+                src[y * w + xm],
+                src[y * w + x],
+                src[y * w + xp],
+                src[yp * w + xm],
+                src[yp * w + x],
+                src[yp * w + xp],
+            ];
+            win.select_nth_unstable_by(4, f32::total_cmp);
+            out[y * w + x] = win[4];
+        }
+    }
+    out
 }
 /// `pixels` (`width` × `height`) averaged into boxes so the long edge is `edge`.
 fn box_reduce(pixels: &[[f32; 3]], width: u32, height: u32, edge: u32) -> Vec<[f32; 3]> {
@@ -1645,5 +1724,100 @@ mod tests {
             .photo
             .contrast_pivot;
         assert_eq!(p_base, p_sat);
+    }
+
+    /// `photo_measures`'s `median_3x3 -> 128 px` SDR `whites_p99` rejects scattered 1×1
+    /// point sources (like night streetlamps) while keeping larger textured highlights,
+    /// measures `whites_p01` across all cells (including flat dark backgrounds), and sets
+    /// `rendered` for rendered sources.
+    #[test]
+    fn photo_measures_whites_p99_rejects_point_sources_and_tracks_dynamic_range() {
+        let make = |w: u32,
+                    h: u32,
+                    pixels: Vec<[f32; 3]>,
+                    source: rawmakase_model::camera_data::Source| CameraImage {
+            width: w,
+            height: h,
+            recovered: Default::default(),
+            pixels: pixels.into(),
+            metadata: Metadata {
+                source,
+                wb: [1., 1., 1.],
+                matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+                ..Default::default()
+            },
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+            hdr: Default::default(),
+        };
+        let measure = |im: &CameraImage| {
+            let r = Recipe::default();
+            let cam = camera_stage(&im.metadata, &r);
+            photo_measures(Source::new(im), &r, cam)
+        };
+        // 512×512 dark textured scene (~0.004) with isolated 1×1 bright lamps (1.0) in
+        // about 3% of 4×4 boxes: without median_3x3 those boxes average to ~0.066 (-3.9 EV)
+        // and drag whites_p99 up by +4 stops; with median_3x3 they vanish (< -7.0 EV).
+        let (w, h) = (512u32, 512u32);
+        let mut lamps = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let is_lamp = (x % 16 == 2) && (y % 32 == 2);
+                let v = if is_lamp {
+                    1.0
+                } else {
+                    0.004 * (1. + 0.05 * ((x as f32 * 0.3).sin() * (y as f32 * 0.3).cos()))
+                };
+                lamps.push([v; 3]);
+            }
+        }
+        let m_lamps = measure(&make(
+            w,
+            h,
+            lamps,
+            rawmakase_model::camera_data::Source::Raw,
+        ));
+        assert!(
+            m_lamps.whites_p99 < -7.0,
+            "isolated 1×1 point sources leaked into whites_p99: {}",
+            m_lamps.whites_p99
+        );
+        assert!(
+            !m_lamps.rendered && m_lamps.whites_p01 < -7.5,
+            "unexpected lamps measures: {:?}",
+            m_lamps
+        );
+
+        // Flat dark background (0.004, >80% of cells flat) + textured mid-bright patch
+        // (0.25, 10% of frame): whites_p99 tracks the textured patch (~-2 EV) while
+        // whites_p01 still reads the flat dark background (~-8 EV), so dr > 5 stops.
+        let mut ramp = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let v = if y < 64 {
+                    0.25 * (1. + 0.1 * ((x as f32 * 0.25).sin() * (y as f32 * 0.25).cos()))
+                } else {
+                    0.004
+                };
+                ramp.push([v; 3]);
+            }
+        }
+        let m_ramp = measure(&make(w, h, ramp, rawmakase_model::camera_data::Source::Raw));
+        assert!(
+            (m_ramp.whites_p99 - (-2.0)).abs() < 0.3 && m_ramp.whites_p01 < -7.5,
+            "whites_p99={} whites_p01={}",
+            m_ramp.whites_p99,
+            m_ramp.whites_p01
+        );
+
+        // Rendered source pins sensor_white and max to 0 and flags `rendered = true`.
+        let m_ren = measure(&make(
+            64,
+            64,
+            vec![[0.2; 3]; 64 * 64],
+            rawmakase_model::camera_data::Source::Rendered,
+        ));
+        assert!(m_ren.rendered && m_ren.sensor_white == 0. && m_ren.max == 0.);
     }
 }
