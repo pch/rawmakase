@@ -1,6 +1,6 @@
 <h1><img src="packaging/icons/rawmakase.svg" width="48" height="48" align="top" alt=""> RAWmakase</h1>
 
-*/raw·muh·KAH·say/, RAW + omakase*
+*/raw·muh·KAH·say/, RAW + omakase* · [🔊 listen](https://rawmakase.com/rawmakase.mp3)
 
 RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF, PNG or JPEG XL, with HDR edits exported as HDR TIFF or JPEG XL or as JPEG with a gain map (exporting to WebP, AVIF and HEIF is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
 

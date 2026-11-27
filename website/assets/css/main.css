@@ -68,8 +68,19 @@ p, dd { text-wrap: pretty; }
 }
 h1 {
   margin: 0; font: 800 clamp(56px, 9vw, 120px)/0.95 var(--sans); letter-spacing: -0.055em;
+  /* The R's left side bearing, about 0.054em in Inter ExtraBold (measured at 120px), would
+     put the name's stem visibly right of the lines below it; pull it back to their edge. */
+  margin-left: -0.054em;
 }
 .say { margin: 10px 0 0; font: 400 14px/1.4 var(--sans); color: var(--rice-faint); }
+/* Inline, not inline-flex: a flex box sits on the line by the icon's bottom edge, which
+   lifts the text above the rest of the line. */
+.listen {
+  display: inline; padding: 0; border: 0; background: none;
+  font: inherit; color: inherit; cursor: pointer; transition: color .2s;
+}
+.listen .icon { font-size: 15px; margin-right: 6px; vertical-align: -0.2em; }
+.listen:hover, .listen:focus-visible { color: var(--salmon); }
 .tagline { margin: 20px 0 0; font: 600 clamp(22px, 2.6vw, 28px)/1.25 var(--sans); letter-spacing: -0.02em; color: var(--rice); max-width: 22em; }
 .lede { margin: 18px 0 0; max-width: 36em; color: var(--rice-dim); }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }

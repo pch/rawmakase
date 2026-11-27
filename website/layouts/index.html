@@ -52,7 +52,7 @@
     <section class="hero wrap">
       <div class="hero-copy">
         <h1 class="reveal" style="--d:0">RAWmakase</h1>
-        <p class="say reveal" style="--d:0"><i>/raw·muh·KAH·say/</i>, RAW + omakase</p>
+        <p class="say reveal" style="--d:0"><button type="button" class="listen" data-audio="{{ "rawmakase.mp3" | relURL }}" aria-label="Play the pronunciation of RAWmakase" title="Listen">{{ partial "icon.html" "volume-2" }}<i>/raw·muh·KAH·say/</i></button>, RAW + omakase</p>
         <p class="tagline reveal" style="--d:1">{{ .Params.tagline }}</p>
         <p class="lede reveal" style="--d:2">{{ .Params.lede }}</p>
         <div class="cta reveal" style="--d:3">
@@ -172,6 +172,11 @@
   </footer>
 
   <script>
+    document.querySelectorAll("[data-audio]").forEach(function (b) {
+      var a = new Audio(b.dataset.audio);
+      a.preload = "none";
+      b.addEventListener("click", function () { a.currentTime = 0; a.play().catch(function () {}); });
+    });
     document.querySelectorAll("[data-copy]").forEach(function (b) {
       b.addEventListener("click", function () {
         navigator.clipboard.writeText(b.dataset.copy).then(function () {

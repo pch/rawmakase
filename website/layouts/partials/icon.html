@@ -1,4 +1,4 @@
-{{- /* Phosphor icon (MIT) from assets/icons, inlined. Pass the icon name. */ -}}
+{{- /* Phosphor (MIT) or Lucide (ISC) icon from assets/icons, inlined. Pass the icon name. */ -}}
 {{- with resources.Get (printf "icons/%s.svg" .) -}}
 {{- replace .Content "<svg " "<svg class=\"icon\" aria-hidden=\"true\" focusable=\"false\" " | safeHTML -}}
 {{- end -}}
