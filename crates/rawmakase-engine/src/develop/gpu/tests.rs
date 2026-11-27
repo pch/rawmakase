@@ -6,19 +6,74 @@ use std::sync::atomic::{AtomicBool, Ordering};
 fn windows_leaves_vulkan_out_while_directx_works() {
     // Intel's Vulkan driver crashed the app at launch where DirectX 12 worked (#623).
     let mut tried = Vec::new();
-    let windows = default_backends(true, |backends| {
-        tried.push(backends);
+    let dxc = wgpu::Dx12Compiler::DynamicDxc {
+        dxc_path: "/app/dxcompiler.dll".into(),
+    };
+    let choice = choose_windows(true, dxc, true, |backends, compiler| {
+        tried.push((
+            backends,
+            matches!(compiler, wgpu::Dx12Compiler::DynamicDxc { .. }),
+        ));
         true
     });
-    assert_eq!(windows, wgpu::Backends::DX12 | wgpu::Backends::GL);
-    assert_eq!(tried, [wgpu::Backends::DX12]);
+    assert_eq!(choice.backends, wgpu::Backends::DX12 | wgpu::Backends::GL);
+    assert!(matches!(
+        choice.compiler,
+        wgpu::Dx12Compiler::DynamicDxc { .. }
+    ));
+    assert_eq!(tried, [(wgpu::Backends::DX12, true)]);
+}
+
+#[test]
+fn windows_retries_directx_with_fxc_when_bundled_dxc_fails() {
+    // On Shader Model 5.1 drivers (where wgpu hides adapters under DXC) or a
+    // damaged bundled DLL, fall back to FXC on DirectX 12 instead of probing
+    // Vulkan (#623) or dropping GPU compute on OpenGL.
+    let mut tried = Vec::new();
+    let dxc = wgpu::Dx12Compiler::DynamicDxc {
+        dxc_path: "/app/dxcompiler.dll".into(),
+    };
+    let choice = choose_windows(true, dxc, true, |backends, compiler| {
+        let is_fxc = matches!(compiler, wgpu::Dx12Compiler::Fxc);
+        tried.push((backends, is_fxc));
+        backends == wgpu::Backends::DX12 && is_fxc
+    });
+    assert_eq!(choice.backends, wgpu::Backends::DX12 | wgpu::Backends::GL);
+    assert!(matches!(choice.compiler, wgpu::Dx12Compiler::Fxc));
+    assert_eq!(
+        tried,
+        [(wgpu::Backends::DX12, false), (wgpu::Backends::DX12, true)]
+    );
+}
+
+#[test]
+fn windows_skips_fxc_retry_when_compiler_is_explicitly_overridden() {
+    let mut tried = Vec::new();
+    let dxc = wgpu::Dx12Compiler::default_dynamic_dxc();
+    let choice = choose_windows(true, dxc, false, |backends, compiler| {
+        tried.push((backends, matches!(compiler, wgpu::Dx12Compiler::Fxc)));
+        backends == wgpu::Backends::VULKAN
+    });
+    assert_eq!(choice.backends, wgpu::Backends::VULKAN | wgpu::Backends::GL);
+    assert_eq!(
+        tried,
+        [
+            (wgpu::Backends::DX12, false),
+            (wgpu::Backends::VULKAN, false)
+        ]
+    );
 }
 
 #[test]
 fn windows_moves_on_from_a_backend_whose_device_fails() {
     // A driver refusing DirectX 12's device ended the app at launch (#768).
     use wgpu::Backends;
-    let chosen = |working: Backends| default_backends(true, |backends| working.contains(backends));
+    let chosen = |working: Backends| {
+        choose_windows(true, wgpu::Dx12Compiler::Fxc, true, |backends, _| {
+            working.contains(backends)
+        })
+        .backends
+    };
     assert_eq!(
         chosen(Backends::VULKAN | Backends::GL),
         Backends::VULKAN | Backends::GL
@@ -29,8 +84,76 @@ fn windows_moves_on_from_a_backend_whose_device_fails() {
 
 #[test]
 fn other_systems_keep_their_backends_without_trying_them() {
-    let elsewhere = default_backends(false, |_| panic!("tried a device"));
-    assert!(elsewhere.contains(wgpu::Backends::VULKAN | wgpu::Backends::METAL));
+    let elsewhere = choose_windows(false, wgpu::Dx12Compiler::default(), true, |_, _| {
+        panic!("tried a device")
+    });
+    assert!(
+        elsewhere
+            .backends
+            .contains(wgpu::Backends::VULKAN | wgpu::Backends::METAL)
+    );
+}
+
+#[test]
+fn windows_loads_dxc_only_by_absolute_path_beside_the_executable() {
+    let root = std::env::temp_dir().join(format!(
+        "rawmakase-dxc-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let exe = root.join("rawmakase.exe");
+    let expected = root.join("dxcompiler.dll");
+
+    // Without a bundled DLL beside the executable, fall back to FXC rather than
+    // wgpu's Auto, which would search PATH (#1254).
+    assert!(matches!(
+        dx12_compiler(true, Some(&exe), |p| p.is_file()),
+        wgpu::Dx12Compiler::Fxc
+    ));
+
+    // A directory with the DLL's name is ignored.
+    std::fs::create_dir_all(&expected).unwrap();
+    assert!(matches!(
+        dx12_compiler(true, Some(&exe), |p| p.is_file()),
+        wgpu::Dx12Compiler::Fxc
+    ));
+    std::fs::remove_dir(&expected).unwrap();
+
+    // A file beside the executable is loaded by its exact absolute path.
+    std::fs::write(&expected, b"dxc").unwrap();
+    match dx12_compiler(true, Some(&exe), |p| p.is_file()) {
+        wgpu::Dx12Compiler::DynamicDxc { dxc_path } => {
+            assert_eq!(std::path::Path::new(&dxc_path), expected.as_path());
+            assert!(std::path::Path::new(&dxc_path).is_absolute());
+        }
+        other => panic!("expected DynamicDxc beside executable, got {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn windows_never_passes_a_relative_dxc_path_and_other_systems_skip_probing() {
+    // Missing or relative executable paths fall back to FXC so Windows never
+    // searches PATH for a bare "dxcompiler.dll".
+    assert!(matches!(
+        dx12_compiler(true, None, |_| true),
+        wgpu::Dx12Compiler::Fxc
+    ));
+    assert!(matches!(
+        dx12_compiler(true, Some(std::path::Path::new("rawmakase.exe")), |_| true),
+        wgpu::Dx12Compiler::Fxc
+    ));
+    assert!(matches!(
+        dx12_compiler(
+            false,
+            Some(&std::env::temp_dir().join("rawmakase")),
+            |_| panic!("probed filesystem on non-Windows")
+        ),
+        wgpu::Dx12Compiler::Auto
+    ));
 }
 
 #[test]

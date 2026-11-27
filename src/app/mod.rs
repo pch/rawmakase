@@ -997,6 +997,7 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
     let mut options = eframe::egui_wgpu::WgpuConfiguration::default();
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
         setup.instance_descriptor.backends = crate::develop::gpu::backends();
+        setup.instance_descriptor.backend_options = crate::develop::gpu::backend_options();
         #[cfg(target_os = "linux")]
         {
             setup.native_adapter_selector = Some(std::sync::Arc::new(|adapters, surface| {

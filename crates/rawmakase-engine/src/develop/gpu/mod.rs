@@ -19,8 +19,13 @@
 //! Vulkan out while a DirectX 12 device can be created, because an Intel Vulkan
 //! driver crashed the app at launch where DirectX 12 worked (#623). If that device
 //! fails, it tries Vulkan and then OpenGL before opening the window (#768);
-//! `WGPU_BACKEND` overrides all of this. The UI and a standalone processor share that
-//! choice ([`backends`]). The desktop creates the UI's device with the storage limits
+//! `WGPU_BACKEND` overrides all of this. The UI and standalone processors share that
+//! choice ([`backends`]) and the DirectX 12 shader compiler choice
+//! ([`backend_options`]): on Windows, wgpu's default searches `PATH` for
+//! `dxcompiler.dll`, so we load only the copy bundled beside our executable by
+//! absolute path and fall back to Windows' built-in FXC when the DLL is absent or
+//! fails to start a DirectX 12 device (#1254). The desktop creates the UI's device
+//! with the storage limits
 //! previews need ([`required_limits`]) and a high-performance adapter. On Linux the
 //! window's adapter is the first GPU the system lists instead: the display's GPU, or
 //! the discrete one under `prime-run` or `DRI_PRIME=1`, because a render-offload GPU
@@ -245,45 +250,145 @@ struct Buffers {
     output: wgpu::Buffer,
     staging: wgpu::Buffer,
 }
+struct WindowsChoice {
+    backends: wgpu::Backends,
+    compiler: wgpu::Dx12Compiler,
+}
 /// The wgpu backends the UI and previews may use, unless `WGPU_BACKEND` names
 /// others. Windows uses DirectX 12 with OpenGL as the fallback and leaves Vulkan out
 /// while DirectX 12 works: wgpu prefers Vulkan when both are available, and Intel's
 /// Vulkan driver for HD Graphics 530 (igvk64.dll 31.0.101.2125) crashes the process
 /// at most launches, while DirectX 12 and OpenGL start reliably there (#623).
 pub fn backends() -> wgpu::Backends {
-    static DEFAULT: std::sync::OnceLock<wgpu::Backends> = std::sync::OnceLock::new();
-    wgpu::Backends::from_env()
-        .unwrap_or_else(|| *DEFAULT.get_or_init(|| default_backends(cfg!(windows), device_starts)))
+    wgpu::Backends::from_env().unwrap_or_else(|| windows_choice().backends)
+}
+/// Backend options the UI, previews and GPU export share.
+///
+/// On Windows, wgpu's default [`wgpu::Dx12Compiler::Auto`] loads `"dxcompiler.dll"`
+/// by bare name, so Windows searches `PATH` and can load another application's
+/// incompatible build (#1254). Unless `WGPU_DX12_COMPILER` overrides the compiler,
+/// load `dxcompiler.dll` only by absolute path beside this executable, and fall back
+/// to Windows' built-in FXC compiler when the DLL is absent or fails to start a
+/// DirectX 12 device (for example on Shader Model 5.1 drivers or if the DLL cannot
+/// load).
+pub fn backend_options() -> wgpu::BackendOptions {
+    if !cfg!(windows) || wgpu::Dx12Compiler::from_env().is_some() {
+        return wgpu::BackendOptions::from_env_or_default();
+    }
+    let compiler = if wgpu::Backends::from_env()
+        .is_some_and(|backends| !backends.contains(wgpu::Backends::DX12))
+    {
+        preferred_dx12_compiler()
+    } else {
+        windows_choice().compiler.clone()
+    };
+    backend_options_with(compiler).with_env()
+}
+fn windows_choice() -> &'static WindowsChoice {
+    static CHOICE: std::sync::OnceLock<WindowsChoice> = std::sync::OnceLock::new();
+    CHOICE.get_or_init(|| {
+        let env_compiler = wgpu::Dx12Compiler::from_env();
+        let allow_fxc_fallback = env_compiler.is_none();
+        let preferred = env_compiler.unwrap_or_else(preferred_dx12_compiler);
+        choose_windows(
+            cfg!(windows),
+            preferred,
+            allow_fxc_fallback,
+            |backends, compiler| device_starts(backends, backend_options_with(compiler).with_env()),
+        )
+    })
+}
+fn preferred_dx12_compiler() -> wgpu::Dx12Compiler {
+    let exe = cfg!(windows)
+        .then(|| std::env::current_exe().ok())
+        .flatten();
+    dx12_compiler(cfg!(windows), exe.as_deref(), |path| path.is_file())
+}
+fn backend_options_with(shader_compiler: wgpu::Dx12Compiler) -> wgpu::BackendOptions {
+    wgpu::BackendOptions {
+        dx12: wgpu::Dx12BackendOptions {
+            shader_compiler,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
 }
 /// wgpu commits to one adapter and gives up if its device fails, so on Windows each
-/// backend is tried here first (#768). Vulkan comes before OpenGL because previews
-/// don't use OpenGL for compute. With nothing working, the usual choice reports why.
-fn default_backends(
+/// backend is tried here first (#768). When DirectX 12 fails under the bundled DXC
+/// (for example on a Shader Model 5.1 driver where wgpu hides the adapter under DXC,
+/// or if the DLL is damaged), DirectX 12 is retried with FXC before moving on to
+/// Vulkan (#623) or OpenGL. Vulkan comes before OpenGL because previews don't use
+/// OpenGL for compute. With nothing working, the usual choice reports why.
+fn choose_windows(
     windows: bool,
-    mut starts: impl FnMut(wgpu::Backends) -> bool,
-) -> wgpu::Backends {
-    use wgpu::Backends;
+    preferred: wgpu::Dx12Compiler,
+    allow_fxc_fallback: bool,
+    mut starts: impl FnMut(wgpu::Backends, wgpu::Dx12Compiler) -> bool,
+) -> WindowsChoice {
+    use wgpu::{Backends, Dx12Compiler};
     if !windows {
-        Backends::PRIMARY | Backends::GL
-    } else if starts(Backends::DX12) {
-        Backends::DX12 | Backends::GL
-    } else if starts(Backends::VULKAN) {
+        return WindowsChoice {
+            backends: Backends::PRIMARY | Backends::GL,
+            compiler: preferred,
+        };
+    }
+    if starts(Backends::DX12, preferred.clone()) {
+        return WindowsChoice {
+            backends: Backends::DX12 | Backends::GL,
+            compiler: preferred,
+        };
+    }
+    if allow_fxc_fallback
+        && !matches!(preferred, Dx12Compiler::Fxc)
+        && starts(Backends::DX12, Dx12Compiler::Fxc)
+    {
+        return WindowsChoice {
+            backends: Backends::DX12 | Backends::GL,
+            compiler: Dx12Compiler::Fxc,
+        };
+    }
+    let backends = if starts(Backends::VULKAN, preferred.clone()) {
         Backends::VULKAN | Backends::GL
-    } else if starts(Backends::GL) {
+    } else if starts(Backends::GL, preferred.clone()) {
         Backends::GL
     } else {
         Backends::DX12 | Backends::GL
+    };
+    WindowsChoice {
+        backends,
+        compiler: preferred,
     }
+}
+fn dx12_compiler(
+    windows: bool,
+    exe: Option<&std::path::Path>,
+    exists: impl FnOnce(&std::path::Path) -> bool,
+) -> wgpu::Dx12Compiler {
+    if !windows {
+        return wgpu::Dx12Compiler::default();
+    }
+    if let Some(dxc) = exe
+        .and_then(|exe| exe.parent())
+        .map(|dir| dir.join("dxcompiler.dll"))
+        && dxc.is_absolute()
+        && let Some(path) = dxc.to_str()
+        && exists(&dxc)
+    {
+        return wgpu::Dx12Compiler::DynamicDxc {
+            dxc_path: path.to_owned(),
+        };
+    }
+    wgpu::Dx12Compiler::Fxc
 }
 /// Whether `backends` has an adapter whose device can be created, chosen and limited
 /// as the window's will be (egui's defaults and [`required_limits`]). DirectX 12 and
 /// Vulkan need real hardware: their software adapters must not hide a usable OpenGL
 /// driver.
-fn device_starts(backends: wgpu::Backends) -> bool {
+fn device_starts(backends: wgpu::Backends, backend_options: wgpu::BackendOptions) -> bool {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends,
         flags: wgpu::InstanceFlags::from_build_config().with_env(),
-        backend_options: wgpu::BackendOptions::from_env_or_default(),
+        backend_options,
         ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
     let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -330,6 +435,7 @@ impl Processor {
     pub fn new() -> Result<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: backends(),
+            backend_options: backend_options(),
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
