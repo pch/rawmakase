@@ -77,6 +77,14 @@ Camera Raw 18.7's master RGB point curve (`crs:ToneCurvePV2012`) and Refine Satu
 
 `curve::apply_master` (and `hdr_curve::apply_master` in HDR) implements both on the CPU and the GPU. `CurveRefineSaturation` is imported and written back with the edit. Tone Curve's point mode has a Refine › Saturation slider (0–100) under the RGB curve; an imported value above 100 shows as 100 and is kept until the slider is moved.
 
+## Editing the point curve
+
+The point curve is edited as in Lightroom Classic:
+
+- Click to add a point and drag to shape it. A click puts the point where it is clicked; **Alt-click** (Option on macOS) puts it on the line at the input clicked, so adding a point doesn't bend the curve, as in Lightroom. A dragged point follows the pointer's movement, not its position, so grabbing it off its centre doesn't make it jump.
+- **Shift-drag** moves a point only up and down, keeping its input exactly. **Alt-drag** (Option on macOS) moves it a tenth as far as the pointer, for fine adjustments. The two can be held together, and pressing or releasing either mid-drag changes how the point follows from then on, without a jump.
+- Double-click or right-click a point, or select it and press Delete, to remove it; the end points stay. Right-click (Control-click on macOS) elsewhere in the curve for Lightroom's menu: **Reset Channel** and **Reset All Channels** set the shown channel, or all four, back to linear; **Copy Curve** keeps the shown channel's curve, and **Paste Curve** puts it into whichever channel is shown, of this photo or another, until RAWmakase quits. A reset or a paste is one History step ("Point Curve"); copying changes nothing. Lightroom's Snap to Grid and Show All Curves are not offered.
+
 ## Point Curve menu
 
 Under the point curve, the **Point Curve** menu lists Lightroom's Linear, Medium Contrast and Strong Contrast, then the curves saved here, then **Save…**. The menu shows the name of the curve the photo has, or Custom.

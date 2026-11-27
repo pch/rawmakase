@@ -508,6 +508,10 @@ pub(in crate::app) struct ViewState {
     /// The Color Grading panel's view: 3-Way or one wheel.
     pub(in crate::app) grading: crate::app::develop::panels::color_grading::GradingView,
     pub(in crate::app) selected_curve: usize,
+    /// The point curve the curve's menu copied, with its channel (0 is RGB),
+    /// for pasting into any channel of any photo while RAWmakase runs. Never
+    /// part of an edit.
+    pub(in crate::app) copied_curve: Option<(usize, crate::color::curve::ToneCurve)>,
     pub(in crate::app) parametric_curve: bool,
     pub(in crate::app) mixer_color: bool,
     pub(in crate::app) mixer_adjust: usize,
@@ -564,6 +568,7 @@ impl Default for ViewState {
             selected_band: 0,
             grading: Default::default(),
             selected_curve: 0,
+            copied_curve: None,
             parametric_curve: false,
             mixer_color: false,
             mixer_adjust: 0,

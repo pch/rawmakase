@@ -10,9 +10,10 @@ use crate::app::develop::step_name::StepName;
 use crate::app::develop::tools::targeted_tool::target_button;
 use crate::app::ui::design::space;
 use crate::app::ui::widgets::{
-    CURVE_CHANNELS_WIDTH, curve_channels, parametric_curve_ui, segmented, setting_slider, slider,
-    switched_section, tone_curve_ui,
+    CURVE_CHANNEL_NAMES, CURVE_CHANNELS_WIDTH, CurveMenu, CurveMenuChoice, curve_channels,
+    parametric_curve_ui, segmented, setting_slider, slider, switched_section, tone_curve_ui,
 };
+use crate::color::curve::ToneCurve;
 use crate::develop::targeted::{Target, TargetWeights};
 use crate::model::panels::Panel;
 use crate::model::params::ParameterId;
@@ -88,18 +89,19 @@ pub(in crate::app::develop::panels::inspector) fn show(
                 highlight_targeted(ui, row.response.rect, moving.map_or(0., |w| w.shares[i]));
             }
         } else {
-            ui.push_id(view.selected_curve, |ui| {
-                tone_curve_ui(
-                    ui,
-                    if view.selected_curve == 0 {
-                        &mut r.curve
-                    } else {
-                        &mut r.effects.channels[view.selected_curve - 1]
-                    },
-                    &histogram(),
-                    view.selected_curve,
-                );
-            });
+            let menu = CurveMenu {
+                any_changed: point_curves(r).iter().any(|c| **c != ToneCurve::default()),
+                copied: view.copied_curve.as_ref().map(|(from, _)| *from),
+            };
+            let channel = view.selected_curve;
+            let chosen = ui
+                .push_id(channel, |ui| {
+                    tone_curve_ui(ui, point_curves(r)[channel], &histogram(), channel, menu)
+                })
+                .inner;
+            if let Some(choice) = chosen {
+                curve_menu_choice(step, r, view, choice);
+            }
             // Lightroom's Point Curve menu: the built-in curves, saved ones, Save….
             use crate::presets::curves::ShownCurve;
             let chosen = ShownCurve::of(r, saved_curves);
@@ -190,4 +192,48 @@ pub(in crate::app::develop::panels::inspector) fn show(
     }
     switch.finish(r);
     actions
+}
+
+/// The point curves, RGB first, then Red, Green and Blue.
+fn point_curves(r: &mut Recipe) -> [&mut ToneCurve; 4] {
+    let [red, green, blue] = &mut r.effects.channels;
+    [&mut r.curve, red, green, blue]
+}
+
+/// Carries out a choice from the point curve's right-click menu on the channel
+/// shown, as Lightroom's Reset Channel, Reset All Channels and Copy and Paste
+/// Channel Settings do. Each change is one "Point Curve" step; copying changes
+/// nothing.
+fn curve_menu_choice(
+    step: &mut StepName,
+    r: &mut Recipe,
+    view: &mut ViewState,
+    choice: CurveMenuChoice,
+) {
+    let channel = view.selected_curve;
+    let name = CURVE_CHANNEL_NAMES[channel];
+    let value = match choice {
+        CurveMenuChoice::Copy => {
+            view.copied_curve = Some((channel, point_curves(r)[channel].clone()));
+            return;
+        }
+        CurveMenuChoice::Paste => {
+            let Some((from, curve)) = view.copied_curve.clone() else {
+                return;
+            };
+            *point_curves(r)[channel] = curve;
+            format!("Paste {} into {name}", CURVE_CHANNEL_NAMES[from])
+        }
+        CurveMenuChoice::ResetChannel => {
+            *point_curves(r)[channel] = ToneCurve::default();
+            format!("Reset {name} Channel")
+        }
+        CurveMenuChoice::ResetAll => {
+            for curve in point_curves(r) {
+                *curve = ToneCurve::default();
+            }
+            "Reset All Channels".into()
+        }
+    };
+    step.name("Point Curve".into(), value);
 }

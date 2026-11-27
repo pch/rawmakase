@@ -14,7 +14,9 @@ fn curve_pointer_add_drag_and_remove() {
                 events,
                 ..Default::default()
             },
-            |ui| tone_curve_ui(ui, &mut curve, &[[0; 256]; 3], 0),
+            |ui| {
+                tone_curve_ui(ui, &mut curve, &[[0; 256]; 3], 0, Default::default());
+            },
         );
         output.textures_delta.clear();
         curve.points.clone()
@@ -45,6 +47,275 @@ fn curve_pointer_add_drag_and_remove() {
         frame(vec![event(q, egui::PointerButton::Secondary, false)]).len(),
         2
     );
+}
+
+/// A point curve on its own in a 320-point window, driven a frame at a time
+/// with the modifiers held through the frame.
+struct CurveHarness {
+    ctx: egui::Context,
+    curve: crate::color::curve::ToneCurve,
+    /// The input's clock, a twentieth of a second a frame, so two clicks a
+    /// few frames apart make a double-click.
+    time: f64,
+}
+impl CurveHarness {
+    fn new() -> Self {
+        let mut harness = Self {
+            ctx: egui::Context::default(),
+            curve: Default::default(),
+            time: 0.,
+        };
+        harness.frame(vec![], egui::Modifiers::NONE);
+        harness
+    }
+    fn frame(&mut self, mut events: Vec<egui::Event>, modifiers: egui::Modifiers) {
+        events.insert(0, egui::Event::ModifiersChanged(modifiers));
+        let curve = &mut self.curve;
+        self.time += 0.05;
+        let mut output = self.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(320.))),
+                time: Some(self.time),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                tone_curve_ui(ui, curve, &[[0; 256]; 3], 0, Default::default());
+            },
+        );
+        output.textures_delta.clear();
+    }
+    /// The curve's area inside its well, where 0–1 map to its edges.
+    fn area(&mut self) -> Rect {
+        self.ctx.enable_accesskit();
+        let mut events = vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)];
+        let curve = &mut self.curve;
+        self.time += 0.05;
+        let mut output = self.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(320.))),
+                time: Some(self.time),
+                events: std::mem::take(&mut events),
+                ..Default::default()
+            },
+            |ui| {
+                tone_curve_ui(ui, curve, &[[0; 256]; 3], 0, Default::default());
+            },
+        );
+        output.textures_delta.clear();
+        let tree = output.platform_output.accesskit_update.expect("on");
+        let b = tree
+            .nodes
+            .iter()
+            .find(|(_, n)| n.label() == Some("Point curve"))
+            .and_then(|(_, n)| n.bounds())
+            .expect("the well");
+        Rect::from_min_max(
+            Pos2::new(b.x0 as f32, b.y0 as f32),
+            Pos2::new(b.x1 as f32, b.y1 as f32),
+        )
+        .shrink(5.)
+    }
+    /// Clicks at `at` with `modifiers` held.
+    fn click(&mut self, at: Pos2, modifiers: egui::Modifiers) {
+        self.button(at, true, modifiers);
+        self.button(at, false, modifiers);
+    }
+    fn button(&mut self, at: Pos2, pressed: bool, modifiers: egui::Modifiers) {
+        self.frame(
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers,
+                },
+            ],
+            modifiers,
+        );
+    }
+    /// Adds a point at `at` with a click and returns its index.
+    fn add(&mut self, at: Pos2) -> usize {
+        self.button(at, true, egui::Modifiers::NONE);
+        self.button(at, false, egui::Modifiers::NONE);
+        assert_eq!(self.curve.points.len(), 3);
+        1
+    }
+    /// Drags from `from` through each of `path` in turn, each with its
+    /// modifiers, and releases at the last.
+    fn drag(&mut self, from: Pos2, path: &[(Pos2, egui::Modifiers)]) {
+        let first = path.first().map_or(egui::Modifiers::NONE, |(_, m)| *m);
+        self.button(from, true, first);
+        for (at, modifiers) in path {
+            self.frame(vec![egui::Event::PointerMoved(*at)], *modifiers);
+        }
+        let (last, modifiers) = path.last().copied().unwrap_or((from, first));
+        self.button(last, false, modifiers);
+    }
+}
+
+const SHIFT: egui::Modifiers = egui::Modifiers::SHIFT;
+const ALT: egui::Modifiers = egui::Modifiers::ALT;
+
+/// How far up a plain drag of `dy` points moves a point added at `at`.
+fn plain_rise(at: Pos2, dy: f32) -> f32 {
+    let mut h = CurveHarness::new();
+    let i = h.add(at);
+    let before = h.curve.points[i];
+    h.drag(at, &[(at + Vec2::new(0., -dy), egui::Modifiers::NONE)]);
+    h.curve.points[i][1] - before[1]
+}
+
+#[test]
+fn a_curve_point_dragged_with_shift_moves_only_up_and_down() {
+    let mut h = CurveHarness::new();
+    let at = Pos2::new(150., 160.);
+    let i = h.add(at);
+    let before = h.curve.points[i];
+    h.drag(
+        at,
+        &[
+            (at + Vec2::new(10., -10.), SHIFT),
+            (at + Vec2::new(40., -40.), SHIFT),
+        ],
+    );
+    let after = h.curve.points[i];
+    assert_eq!(after[0], before[0], "the input stays");
+    assert!(after[1] > before[1] + 0.1, "the output rises: {after:?}");
+}
+
+#[test]
+fn a_curve_point_dragged_with_alt_moves_a_tenth_as_far() {
+    let at = Pos2::new(150., 160.);
+    let full = plain_rise(at, 60.);
+    let mut h = CurveHarness::new();
+    let i = h.add(at);
+    let before = h.curve.points[i];
+    h.drag(at, &[(at + Vec2::new(30., -60.), ALT)]);
+    let after = h.curve.points[i];
+    let step = 1. / 255.;
+    assert!(
+        (after[1] - before[1] - full / 10.).abs() <= 1.5 * step,
+        "rose {} for a tenth of {full}",
+        after[1] - before[1]
+    );
+    assert!((after[0] - before[0] - full / 20.).abs() <= 1.5 * step);
+}
+
+#[test]
+fn a_curve_point_dragged_with_shift_and_alt_moves_slowly_up_and_down() {
+    let at = Pos2::new(150., 160.);
+    let full = plain_rise(at, 60.);
+    let mut h = CurveHarness::new();
+    let i = h.add(at);
+    let before = h.curve.points[i];
+    h.drag(at, &[(at + Vec2::new(40., -60.), SHIFT | ALT)]);
+    let after = h.curve.points[i];
+    assert_eq!(after[0], before[0]);
+    assert!((after[1] - before[1] - full / 10.).abs() <= 1.5 / 255.);
+}
+
+/// Pressing or letting go of a modifier mid-drag changes how the point follows
+/// from there on, without a jump to or from the pointer.
+#[test]
+fn a_modifier_pressed_mid_drag_changes_the_pace_without_a_jump() {
+    let at = Pos2::new(150., 160.);
+    let full = plain_rise(at, 60.);
+    let mut h = CurveHarness::new();
+    let i = h.add(at);
+    let before = h.curve.points[i];
+    let none = egui::Modifiers::NONE;
+    h.drag(
+        at,
+        &[
+            (at + Vec2::new(0., -60.), none),
+            (at + Vec2::new(0., -60.), ALT),
+            (at + Vec2::new(0., -120.), ALT),
+        ],
+    );
+    let rise = h.curve.points[i][1] - before[1];
+    assert!(
+        (rise - full * 1.1).abs() <= 1.5 / 255.,
+        "rose {rise} for {full} and a tenth"
+    );
+}
+
+/// Grabbing a point off its centre moves it by the pointer's movement, not to
+/// the pointer.
+#[test]
+fn a_curve_point_grabbed_off_centre_does_not_jump_to_the_pointer() {
+    let mut h = CurveHarness::new();
+    let at = Pos2::new(150., 160.);
+    let i = h.add(at);
+    let before = h.curve.points[i];
+    let grab = at + Vec2::new(6., 0.);
+    h.drag(grab, &[(grab + Vec2::new(0., -30.), SHIFT)]);
+    assert_eq!(h.curve.points[i][0], before[0]);
+}
+
+/// Double-clicking a point removes it, as in Lightroom; the end points stay.
+#[test]
+fn double_clicking_a_curve_point_removes_it() {
+    let mut h = CurveHarness::new();
+    let at = Pos2::new(150., 160.);
+    h.add(at);
+    // Long enough after adding it that the next two clicks are a double-click
+    // of their own.
+    for _ in 0..20 {
+        h.frame(vec![], egui::Modifiers::NONE);
+    }
+    for _ in 0..2 {
+        h.button(at, true, egui::Modifiers::NONE);
+        h.button(at, false, egui::Modifiers::NONE);
+    }
+    assert_eq!(h.curve.points.len(), 2, "{:?}", h.curve.points);
+    let end = h.curve.points[1];
+    let rect = h.ctx.content_rect().shrink(5.);
+    let corner = Pos2::new(rect.right() - 5., rect.top() + 5.);
+    for _ in 0..20 {
+        h.frame(vec![], egui::Modifiers::NONE);
+    }
+    for _ in 0..2 {
+        h.button(corner, true, egui::Modifiers::NONE);
+        h.button(corner, false, egui::Modifiers::NONE);
+    }
+    assert_eq!(h.curve.points.len(), 2);
+    assert_eq!(h.curve.points[1], end);
+}
+
+/// Where input `x` and output `y` of a curve are on screen.
+fn on_screen(area: Rect, x: f32, y: f32) -> Pos2 {
+    Pos2::new(
+        area.left() + x * area.width(),
+        area.bottom() - y * area.height(),
+    )
+}
+
+/// A plain click puts the point where it is clicked, even a few points off the
+/// line: only Alt-click puts it on the line.
+#[test]
+fn a_plain_click_puts_the_point_where_it_is_clicked() {
+    let mut h = CurveHarness::new();
+    let area = h.area();
+    let at = on_screen(area, 0.5, 0.5) + Vec2::new(0., -6.);
+    h.click(at, egui::Modifiers::NONE);
+    let [_, y] = h.curve.points[1];
+    let clicked = (area.bottom() - at.y) / area.height();
+    assert!((y - clicked).abs() <= 1. / 255., "{y} for {clicked}");
+}
+
+/// Alt-click adds a point on the line however far from it, as in Lightroom.
+#[test]
+fn an_alt_click_adds_a_point_on_the_curve_from_anywhere() {
+    let mut h = CurveHarness::new();
+    h.curve.points = vec![[0., 0.], [0.5, 0.7], [1., 1.]];
+    let lut = crate::color::curve::CurveLut::new(&h.curve);
+    let area = h.area();
+    h.click(on_screen(area, 0.25, 0.9), ALT);
+    assert_eq!(h.curve.points.len(), 4);
+    let [x, y] = h.curve.points[1];
+    assert!((y - lut.evaluate(x)).abs() <= 0.5 / 255., "{x} → {y}");
 }
 
 /// Runs one frame of `add` in a 360-point-wide window at `time`.

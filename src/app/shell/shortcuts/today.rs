@@ -105,7 +105,7 @@ pub(super) const GENERAL: [Shortcut; 16] = [
     ("Cmd+,", "Preferences"),
     ("Cmd+/", "These shortcuts"),
 ];
-pub(super) const DEVELOP: [Shortcut; 57] = [
+pub(super) const DEVELOP: [Shortcut; 61] = [
     ("R", "Crop & Straighten"),
     ("Return", "Finish the crop"),
     ("X", "Swap the crop's orientation"),
@@ -170,6 +170,13 @@ pub(super) const DEVELOP: [Shortcut; 57] = [
     ("double-click", "Reset a slider or grading wheel"),
     ("Shift+drag", "Grading wheel: hue or saturation only"),
     ("Cmd+drag", "Grading wheel: fine adjustment"),
+    ("Shift+drag", "Point curve: move a point up or down only"),
+    ("Option+drag", "Point curve: fine adjustment"),
+    ("Option+click", "Point curve: add a point on the line"),
+    (
+        "right-click",
+        "Point curve: remove a point (or double-click), or the curve's menu",
+    ),
     ("Up / Down", "Nudge the hovered slider (Shift: 10)"),
     (". / ,", "Select the next / previous Basic slider"),
     (

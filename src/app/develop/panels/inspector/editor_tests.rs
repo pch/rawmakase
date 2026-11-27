@@ -624,3 +624,228 @@ fn the_files_lens_correction_switch_turns_it_off_and_on() {
         "disabled while the stand-in renders"
     );
 }
+
+/// The point curve's right-click menu, as Lightroom's: a curve copied from one
+/// channel pastes into another as one named step, and Reset All Channels puts
+/// every channel back to linear.
+#[test]
+fn the_point_curve_menu_copies_pastes_and_resets_channels() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    ctx.all_styles_mut(|s| s.animation_time = 0.);
+    let mut view = crate::app::develop::state::ViewState {
+        parametric_curve: false,
+        ..Default::default()
+    };
+    let mut recipe = crate::model::recipe::Recipe::default();
+    recipe.curve.points = vec![[0., 0.], [0.5, 0.7], [1., 1.]];
+    let mut step = crate::app::develop::step_name::StepName::default();
+    let frame = |recipe: &mut crate::model::recipe::Recipe,
+                 view: &mut crate::app::develop::state::ViewState,
+                 step: &mut crate::app::develop::step_name::StepName,
+                 events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 1200.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                super::panels::tone_curve::show(
+                    ui,
+                    step,
+                    recipe,
+                    view,
+                    || [[0; 256]; 3],
+                    None,
+                    &[],
+                );
+            },
+        );
+        output.textures_delta.clear();
+        output.platform_output.accesskit_update.expect("on")
+    };
+    let node = |tree: &egui::accesskit::TreeUpdate, label: &str| {
+        tree.nodes
+            .iter()
+            .map(|(_, n)| n)
+            .find(|n| n.label() == Some(label))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {label}"))
+    };
+    let right_click = |at: Pos2| {
+        [true, false].map(|pressed| {
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        })
+    };
+    // Right-clicks the well's empty top-left corner and picks `item`.
+    let choose = |recipe: &mut _, view: &mut _, step: &mut _, item: &str| {
+        let tree = frame(recipe, view, step, vec![]);
+        let well = node(&tree, "Point curve").bounds().expect("placed");
+        let corner = Pos2::new(well.x0 as f32 + 20., well.y0 as f32 + 20.);
+        for events in right_click(corner) {
+            frame(recipe, view, step, events);
+        }
+        let menu = frame(recipe, view, step, vec![]);
+        for events in press_and_release(centre(&node(&menu, item))) {
+            frame(recipe, view, step, events);
+        }
+        frame(recipe, view, step, vec![]);
+    };
+    let points = recipe.curve.points.clone();
+    choose(&mut recipe, &mut view, &mut step, "Copy RGB Curve");
+    assert_eq!(recipe.curve.points, points, "copying changes nothing");
+    assert!(step.given().is_none());
+    view.selected_curve = 1;
+    choose(&mut recipe, &mut view, &mut step, "Paste RGB Curve");
+    assert_eq!(recipe.effects.channels[0], recipe.curve);
+    assert_eq!(
+        step.given(),
+        Some(("Point Curve".into(), "Paste RGB into Red".into()))
+    );
+    choose(&mut recipe, &mut view, &mut step, "Reset Red Channel");
+    assert_eq!(recipe.effects.channels[0], Default::default());
+    assert_eq!(recipe.curve.points, points, "only the channel shown resets");
+    choose(&mut recipe, &mut view, &mut step, "Reset All Channels");
+    assert_eq!(recipe.curve, crate::color::curve::ToneCurve::default());
+    assert_eq!(
+        step.given(),
+        Some(("Point Curve".into(), "Reset All Channels".into()))
+    );
+}
+
+/// Right-clicking a point still removes it, without opening the menu.
+#[test]
+fn right_clicking_a_point_curve_point_removes_it_without_the_menu() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let mut view = crate::app::develop::state::ViewState {
+        parametric_curve: false,
+        ..Default::default()
+    };
+    let mut recipe = crate::model::recipe::Recipe::default();
+    recipe.curve.points = vec![[0., 0.], [0.5, 0.7], [1., 1.]];
+    let mut step = crate::app::develop::step_name::StepName::default();
+    let mut frame = |recipe: &mut crate::model::recipe::Recipe, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 1200.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                super::panels::tone_curve::show(
+                    ui,
+                    &mut step,
+                    recipe,
+                    &mut view,
+                    || [[0; 256]; 3],
+                    None,
+                    &[],
+                );
+            },
+        );
+        output.textures_delta.clear();
+        output.platform_output.accesskit_update.expect("on")
+    };
+    let tree = frame(&mut recipe, vec![]);
+    let well = tree
+        .nodes
+        .iter()
+        .find(|(_, n)| n.label() == Some("Point curve"))
+        .and_then(|(_, n)| n.bounds())
+        .expect("the well");
+    // The well is square, with the curve 5 points in from its edges.
+    let inner = (well.x1 - well.x0) as f32 - 10.;
+    let point = Pos2::new(
+        well.x0 as f32 + 5. + 0.5 * inner,
+        well.y1 as f32 - 5. - 0.7 * inner,
+    );
+    for pressed in [true, false] {
+        frame(
+            &mut recipe,
+            vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    let menu = frame(&mut recipe, vec![]);
+    assert_eq!(recipe.curve.points.len(), 2);
+    assert!(
+        !menu
+            .nodes
+            .iter()
+            .any(|(_, n)| n.label() == Some("Reset All Channels")),
+        "no menu"
+    );
+}
+
+/// The Point curve with a point selected, and its right-click menu with a Red
+/// curve copied, for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_the_point_curve_and_its_menu() {
+    use crate::app::ui::widgets::{CurveMenu, curve_menu_items};
+    crate::app::ui::shots::shot(
+        "point-curve",
+        Vec2::new(320., 560.),
+        |e, _| {
+            e.view.parametric_curve = false;
+            e.view.selected_curve = 2;
+        },
+        |e, ctx| {
+            let mut recipe = crate::model::recipe::Recipe::default();
+            recipe.effects.channels[1].points = vec![[0., 0.], [0.3, 0.22], [0.7, 0.8], [1., 1.]];
+            crate::app::ui::shots::panel(ctx, 300., |ui| {
+                super::panels::tone_curve::show(
+                    ui,
+                    &mut Default::default(),
+                    &mut recipe,
+                    &mut e.view,
+                    || [[0; 256]; 3],
+                    None,
+                    &[],
+                );
+            });
+        },
+    );
+    for (name, menu) in [
+        (
+            "point-curve-menu",
+            CurveMenu {
+                any_changed: true,
+                copied: Some(1),
+            },
+        ),
+        ("point-curve-menu-nothing-copied", CurveMenu::default()),
+    ] {
+        crate::app::ui::shots::shot(
+            name,
+            Vec2::new(220., 150.),
+            |_, _| {},
+            |_, ctx| {
+                egui::Area::new(egui::Id::new("menu"))
+                    .fixed_pos(Pos2::new(10., 10.))
+                    .show(ctx, |ui| {
+                        egui::Frame::menu(ui.style()).show(ui, |ui| {
+                            ui.set_width(180.);
+                            curve_menu_items(ui, 2, menu.any_changed, menu);
+                        });
+                    });
+            },
+        );
+    }
+}
