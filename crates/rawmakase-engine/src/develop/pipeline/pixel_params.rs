@@ -175,14 +175,11 @@ pub(crate) fn wgsl_prelude() -> String {
              const SCENE_S: vec3<f32> = vec3(-1.0, {SLIDER_STEP:?}, {SLIDERS}.0);\n\
              const MASK_VALUES = array<f32, {}>({});\n\
              const LOCAL_FLOOR: f32 = {:?};\nconst LAPLACIAN_SIGMA: f32 = {:?};\n\
-             const JBU_RANGE_SIGMA: f32 = {:?};\nconst JBU_SELF_FLOOR: f32 = {:?};\n\
              const PAIR_SAME_POWER: f32 = {:?};\nconst PAIR_OPPOSITE_RATE: f32 = {:?};\n",
             MASK_VALUES.len(),
             MASK_VALUES.map(|v| format!("{v:?}")).join(", "),
             crate::develop::local_tone::FLOOR,
             crate::develop::local_tone::LAPLACIAN_SIGMA,
-            crate::develop::local_tone::JBU_RANGE_SIGMA,
-            crate::develop::local_tone::JBU_SELF_FLOOR,
             crate::develop::local_tone_rule::PAIR_SAME_POWER,
             crate::develop::local_tone_rule::PAIR_OPPOSITE_RATE
         )
@@ -461,7 +458,10 @@ fn set_local(p: &mut PixelParams, local: &LocalToneMap) {
         Some(c) => p.push(c.values()),
         None => -1.,
     };
-    p.set(slot::LOCAL_A, &[0., grid.cells() as f32, clarity]);
+    p.set(
+        slot::LOCAL_A,
+        &[0., grid.guided_at().map_or(-1., |at| at as f32), clarity],
+    );
     p.set(
         slot::CLARITY_MAP,
         &[grid.clarity_base_at().map_or(-1., |at| at as f32)],

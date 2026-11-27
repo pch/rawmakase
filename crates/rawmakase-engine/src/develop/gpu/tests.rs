@@ -3185,16 +3185,16 @@ fn presented_hdr_files_match_the_cpu_master() -> Result<()> {
 
 #[test]
 #[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
-fn gpu_local_laplacian_jbu_upsampling_matches_cpu_across_sharp_edges() -> Result<()> {
+fn gpu_local_laplacian_guided_upsampling_matches_cpu_across_edges() -> Result<()> {
     use crate::{
         camera_data::{CameraImage, Metadata},
         camera_profiles::CameraProfile,
         develop::pipeline::{Samples, Source, develop_samples, pixel_params::pixel_params},
     };
     use std::sync::Arc;
-    // Larger than MAP_EDGE (512) so the 512x64 map upsamples 2x, with an edge at an odd
-    // full-res pixel so straddling map cells exercise both pure 2×2 JBU (`w_sum >=
-    // JBU_SELF_FLOOR`) and self-prior padding (`w_sum < JBU_SELF_FLOOR`) on GPU and CPU.
+    // Larger than MAP_EDGE (512) so the 512x64 map upsamples 2x, covering sharp
+    // odd-pixel edges, soft bokeh ramps, isolated multi-stop outliers, Clarity-only
+    // (`guided_off < 0`), and combined Highlights + Clarity grid offsets on GPU and CPU.
     let (w, h) = (1024, 128);
     let metadata = Metadata {
         width: w,
@@ -3211,12 +3211,16 @@ fn gpu_local_laplacian_jbu_upsampling_matches_cpu_across_sharp_edges() -> Result
             .map(|i| {
                 let (x, y) = (i % w, i / w);
                 // Include isolated 1-pixel multi-stop outliers (`(512, 64)` dark speck in
-                // the bright square and `(60, 64)` bright specular in the -6 EV frame) so
-                // the GPU parity check also covers full self-prior padding (`w_sum ≈ 0`).
+                // the bright square and `(60, 64)` bright specular in the -6 EV frame) and
+                // a soft bokeh ramp across the top strip (`y < 24`).
                 let lum = if x == 512 && y == 64 {
                     (-9f32).exp2()
                 } else if x == 60 && y == 64 {
                     1.0
+                } else if y < 24 && (280..360).contains(&x) {
+                    let t = (x - 280) as f32 / 80.;
+                    let s = t * t * (3. - 2. * t);
+                    (-3.5 * s).exp2()
                 } else if (381..643).contains(&x) && (25..103).contains(&y) {
                     0.9
                 } else if x < 120 || x >= w - 120 {
@@ -3281,7 +3285,13 @@ fn gpu_local_laplacian_jbu_upsampling_matches_cpu_across_sharp_edges() -> Result
             },
         ),
         ("clarity+100", {
+            let mut r = base.clone();
+            r.effects.clarity = 1.;
+            r
+        }),
+        ("highlights-100+clarity+100", {
             let mut r = base;
+            r.highlights = -1.;
             r.effects.clarity = 1.;
             r
         }),

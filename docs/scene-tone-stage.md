@@ -618,10 +618,13 @@ Replacing the guided-filter base with a local Laplacian base level (`local_tone.
 `LAPLACIAN_SIGMA = 1.5`) and decomposing all four Shadows/Highlights directions into an
 additive pair `G_base(base(x, y)) + G_pix(l(x, y))` removes the detail flattening of a
 base-only gain without introducing edge halos. At render resolution, Shadows and
-Highlights upsample the 512 px local Laplacian map via 2×2 joint bilateral upsampling
-(`JBU_RANGE_SIGMA = 0.75`, padding any weight sum below `JBU_SELF_FLOOR = 0.25` with the
-pixel's own level `l`, followed by the `LAPLACIAN_SIGMA` remapping) so multi-stop
-silhouettes do not bleed a map-cell halo into smooth backgrounds, while positive Clarity
+Highlights upsample the 512 px local Laplacian map via per-corner 3×3 local linear
+guided upsampling (`UPSAMPLE_RADIUS = 1`, `UPSAMPLE_EPSILON = 0.05`, clamping `lap`'s
+linear slope `a` to `[0, 1]` and using the self-guided slope `a_g = var / (var + ε)` for
+`g_hat` in the per-corner `LAPLACIAN_SIGMA` remapping before spatial bilinear blending)
+so multi-stop silhouettes do not bleed a map-cell halo into smooth backgrounds while
+soft bokeh transitions keep `∂base/∂l` near the bilinear remap's bound and free of
+solarization bands, whereas positive Clarity
 keeps the bilinear-remapped full-depth base (`LocalToneMap::clarity_base`) it was fitted
 on. Both ensembles take the same 32 features (the 28 histogram/texture descriptors plus
 `[top, q50, mean, x]`), trained as 4-member dual-head MLPs (`H = 64`, `local_tone_rule_data.rs` and `local_tone_rule_ext_data.rs`,

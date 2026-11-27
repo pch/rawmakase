@@ -24,19 +24,19 @@ pub(crate) const FLOOR: f32 = 6.103_515_6e-5;
 /// Measured renders show that split at every scale (docs/records/parity-gaps.md,
 /// 2026-11-20).
 pub(crate) const LAPLACIAN_SIGMA: f32 = 1.5;
-/// Range width (stops) of the 2×2 joint bilateral upsampling that reads the local
-/// Laplacian map at render resolution ([`LocalToneMap::base`]). Rejects multi-stop
-/// silhouette edges while keeping smooth gradients and moderate texture anchored to the
-/// map.
-pub(crate) const JBU_RANGE_SIGMA: f32 = 0.75;
-/// Minimum total weight of the 2×2 joint bilateral sample; when the four bilinear
-/// corners' range weights sum to less than this (e.g., a dark pixel inside a
-/// bright-dominated edge-straddling map cell, or an isolated multi-stop outlier), the
-/// shortfall `JBU_SELF_FLOOR - w_sum` is filled with the pixel's own level `l`. Keeps
-/// map cell centres exact (`w_sum = 1 ≥ 0.25`), leaves pixels within ±1.25 stops of
-/// their neighbourhood on pure 2×2 JBU (`pad = 0`), avoids any multi-cell fallback
-/// window shift, and prevents denominator underflow.
-pub(crate) const JBU_SELF_FLOOR: f32 = 0.25;
+/// Radius (map cells) of the local linear guided-filter upsampling that maps the 512 px
+/// local Laplacian base back to render resolution ([`LocalToneMap::base`]).
+///
+/// Fitting `lap ≈ a·logs + b` with `a ∈ [0, 1]` over each 3×3 map window keeps the linear
+/// fit's slope `≤ 1` and keeps total `∂base/∂l` (including the [`LAPLACIAN_SIGMA`]
+/// fine-detail remapping) near the bilinear remap's bound (`≈ 1.5`) instead of JBU's
+/// steep logistic fold (`≈ 2.5–3.7`), so soft multi-stop bokeh transitions stay free of
+/// solarization bands while sharp multi-stop silhouettes (`a → 1`) do not bleed dark
+/// halos into adjacent dark backgrounds.
+const UPSAMPLE_RADIUS: usize = 1;
+/// Variance regularization (log2 units squared) for the 3×3 guided-upsampling slope
+/// `a = (cov / (var + UPSAMPLE_EPSILON)).clamp(0., 1.)`.
+const UPSAMPLE_EPSILON: f32 = 0.05;
 /// Spacing, in stops, of the reference levels the filter is sampled at.
 const LAPLACIAN_STEP: f32 = 0.5;
 
@@ -111,11 +111,22 @@ impl Sliders {
         }
     }
 }
+/// Local linear guided-upsampling coefficients on the 512 px map grid, mapping
+/// `MapBase::laplacian` (`lap_hat = a·l + b`) and `MapBase::logs`
+/// (`(l − g_hat) / LAPLACIAN_SIGMA = sg·l + og`) to render resolution guided by full-res
+/// log2 luminance ([`LocalToneMap::base`]).
+struct GuidedUpsample {
+    a: Vec<f32>,
+    b: Vec<f32>,
+    sg: Vec<f32>,
+    og: Vec<f32>,
+}
 /// What a map takes from the photo whatever the slider values: the measurement copy's
 /// scene luminance and its log, the local Laplacian base level, and (built lazily on
-/// first use) negative Clarity's detail, positive Clarity's curves and the global rule's
-/// histogram statistics. It depends only on the copy and its scene luminance, so renders
-/// that change only the sliders keep it (`scene_tone::Measured::map_base`).
+/// first use) its guided upsampling coefficients, negative Clarity's detail, positive
+/// Clarity's curves and the global rule's histogram statistics. It depends only on the
+/// copy and its scene luminance, so renders that change only the sliders keep it
+/// (`scene_tone::Measured::map_base`).
 pub(crate) struct MapBase {
     width: usize,
     height: usize,
@@ -125,6 +136,9 @@ pub(crate) struct MapBase {
     /// `levels = ilog2(min(w, h).max(4)) - 1` (e.g. `4×3` on a `512×342` map) for
     /// Shadows and Highlights.
     laplacian: Vec<f32>,
+    /// Local linear upsampling coefficients (`a`, `b`, `sg`, `og`) for [`LocalToneMap::base`],
+    /// lazily computed once per `MapBase` when Shadows or Highlights is active.
+    guided: std::sync::OnceLock<GuidedUpsample>,
     /// Full-depth (`1×1`) symmetric local Laplacian base level ([`laplacian_base_sym`]),
     /// lazily computed when positive Clarity is active so Shadows and Highlights stay
     /// untouched and non-Clarity renders pay no extra cost.
@@ -188,6 +202,7 @@ impl MapBase {
             lum,
             logs,
             laplacian,
+            guided: Default::default(),
             clarity_laplacian: Default::default(),
             crop: None,
             rendered: false,
@@ -196,6 +211,55 @@ impl MapBase {
             clarity_rule: Default::default(),
             rule: Default::default(),
         }
+    }
+    /// Local linear guided-upsampling coefficients (`a`, `b`, `sg`, `og`) mapping
+    /// `self.laplacian` and `self.logs` to render resolution, lazily computed once per
+    /// `MapBase`.
+    fn guided(&self) -> &GuidedUpsample {
+        self.guided.get_or_init(|| {
+            let (w, h) = (self.width, self.height);
+            let n = self.logs.len();
+            if w == 0 || h == 0 || n == 0 {
+                return GuidedUpsample {
+                    a: Vec::new(),
+                    b: Vec::new(),
+                    sg: Vec::new(),
+                    og: Vec::new(),
+                };
+            }
+            let mean = |x: &[f32]| blur(x, w, h, UPSAMPLE_RADIUS);
+            let gg: Vec<f32> = self.logs.iter().map(|v| v * v).collect();
+            let gl: Vec<f32> = self
+                .logs
+                .iter()
+                .zip(&self.laplacian)
+                .map(|(g, lp)| g * lp)
+                .collect();
+            let ((mg, ml), (mgg, mgl)) = rayon::join(
+                || rayon::join(|| mean(&self.logs), || mean(&self.laplacian)),
+                || rayon::join(|| mean(&gg), || mean(&gl)),
+            );
+            let mut a = Vec::with_capacity(n);
+            let mut b = Vec::with_capacity(n);
+            let mut sg = Vec::with_capacity(n);
+            let mut og = Vec::with_capacity(n);
+            for i in 0..n {
+                let var = (mgg[i] - mg[i] * mg[i]).max(0.);
+                let denom = var + UPSAMPLE_EPSILON;
+                let cov = mgl[i] - mg[i] * ml[i];
+                let ai = (cov / denom).clamp(0., 1.);
+                // Self-guided prediction of `logs`: `g_hat = a_g·l + (1 − a_g)·mg` with
+                // `a_g = var / (var + ε)`, so `(l − g_hat) / σ = (ε / (var + ε))·(l − mg) / σ`.
+                // Using `a_g` (rather than `lap`'s slope `a`) ensures small bright lights
+                // attenuated by `lap` are not misread as sub-cell outliers.
+                let sgi = (UPSAMPLE_EPSILON / denom) / LAPLACIAN_SIGMA;
+                a.push(ai);
+                b.push(ml[i] - ai * mg[i]);
+                sg.push(sgi);
+                og.push(-sgi * mg[i]);
+            }
+            GuidedUpsample { a, b, sg, og }
+        })
     }
     /// The histogram statistics the global rule reads (of the base level).
     fn rule(&self) -> &super::local_tone_rule::RuleStats {
@@ -303,34 +367,50 @@ impl MapBase {
     }
 }
 /// A map's grids as the GPU reads them (`develop.wgsl`'s `grid`): the map's log2
-/// luminance, then its local Laplacian base level, then (when positive Clarity reads it)
-/// the full-depth `1×1` local Laplacian base. They depend only on the map's base, which
+/// luminance, then (when Shadows or Highlights reads it) its four guided-upsampling
+/// coefficient grids (`a`, `b`, `sg`, `og`), then (when positive Clarity reads it) the
+/// full-depth `1×1` local Laplacian base. They depend only on the map's base, which
 /// renders share while the sliders move, so the device keeps them per base instead of
 /// receiving them with every render.
 #[derive(Clone)]
 pub(crate) struct MapGrid {
     base: std::sync::Arc<MapBase>,
+    guided: bool,
     clarity_base: bool,
 }
 impl MapGrid {
     /// Whether `other` holds the same values.
     pub(crate) fn same(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.base, &other.base) && self.clarity_base == other.clarity_base
+        std::sync::Arc::ptr_eq(&self.base, &other.base)
+            && self.guided == other.guided
+            && self.clarity_base == other.clarity_base
     }
     /// Cells per grid.
     pub(crate) fn cells(&self) -> usize {
         self.base.logs.len()
     }
+    /// Offset of the guided-upsampling grids (`a`, `b`, `sg`, `og`), if present.
+    pub(crate) fn guided_at(&self) -> Option<usize> {
+        self.guided.then(|| self.cells())
+    }
     /// Offset of positive Clarity's full-depth `1×1` local Laplacian base, if present.
     pub(crate) fn clarity_base_at(&self) -> Option<usize> {
-        self.clarity_base.then(|| 2 * self.cells())
+        self.clarity_base
+            .then(|| (1 + 4 * usize::from(self.guided)) * self.cells())
     }
-    /// The values, in order: `logs`, `laplacian`, and optional `clarity_laplacian`.
+    /// The values, in order: `logs`, optional guided `a`/`b`/`sg`/`og`, and optional
+    /// `clarity_laplacian`.
     pub(crate) fn values(&self) -> Vec<f32> {
-        let grids = 2 + usize::from(self.clarity_base);
+        let grids = 1 + 4 * usize::from(self.guided) + usize::from(self.clarity_base);
         let mut v = Vec::with_capacity(grids * self.cells());
         v.extend(&self.base.logs);
-        v.extend(&self.base.laplacian);
+        if self.guided {
+            let g = self.base.guided();
+            v.extend(&g.a);
+            v.extend(&g.b);
+            v.extend(&g.sg);
+            v.extend(&g.og);
+        }
         if self.clarity_base {
             v.extend(self.base.clarity_laplacian());
         }
@@ -647,6 +727,8 @@ impl LocalToneMap {
         // Shadows and Highlights follow the photo's global rule (`local_tone_rule`);
         // the two-scale lift and the regional level are not read.
         let (rule, rule_pix) = if sliders.shadows != 0. || sliders.highlights != 0. || local {
+            // Prime guided upsampling before parallel per-pixel evaluation.
+            base.guided();
             let stats = base.rule();
             let rule = RuleCurve::ALL.map(|kind| Some(stats.curve(kind)));
             let rule_pix = std::array::from_fn(|k| {
@@ -840,15 +922,20 @@ impl LocalToneMap {
     pub(crate) fn grid(&self) -> MapGrid {
         MapGrid {
             base: self.base.clone(),
+            guided: self.shadows.is_some()
+                || self.highlights.is_some()
+                || self.rule.iter().any(Option::is_some),
             clarity_base: self.clarity_pos.is_some(),
         }
     }
-    /// The base level of a pixel: the map's local Laplacian level upsampled by 2×2 joint
-    /// bilateral filtering guided by the map's log2 luminance, padding any weight
-    /// shortfall below [`JBU_SELF_FLOOR`] with the pixel's own level `l` (so dark pixels
-    /// inside bright-contaminated edge-straddling cells do not inherit the bright cell,
-    /// without introducing a wider fallback stencil or denominator underflow), followed
-    /// by the filter's [`LAPLACIAN_SIGMA`] remapping for detail finer than the map.
+    /// The base level of a pixel: each of the four surrounding map corners predicts the
+    /// local Laplacian level at `l` via its 3×3 linear guided model (`a·l + b`, `a ∈ [0, 1]`)
+    /// with the [`LAPLACIAN_SIGMA`] remapping for detail finer than the map, and the four
+    /// predictions are blended bilinearly by spatial weight. Evaluating the remapping per
+    /// corner before spatial blending avoids mid-cell Jensen bumps where `a` changes across
+    /// an edge, keeps `∂base/∂l` bounded across soft bokeh transitions (preventing
+    /// solarization bands), and tracks sharp multi-stop silhouettes without bright-cell
+    /// bleed halos.
     fn base(&self, x: f32, y: f32, lum: f32) -> f32 {
         let l = level(lum);
         let (w, h) = (self.width, self.height);
@@ -857,31 +944,20 @@ impl LocalToneMap {
         let (ix, iy) = (fx as usize, fy as usize);
         let (jx, jy) = ((ix + 1).min(w - 1), (iy + 1).min(h - 1));
         let (tx, ty) = (fx - ix as f32, fy - iy as f32);
-        let logs = &self.base.logs;
-        let lap = &self.base.laplacian;
         let corners = [
             (iy * w + ix, (1. - tx) * (1. - ty)),
             (iy * w + jx, tx * (1. - ty)),
             (jy * w + ix, (1. - tx) * ty),
             (jy * w + jx, tx * ty),
         ];
-        let mut w_sum = 0f32;
-        let mut g_sum = 0f32;
-        let mut v_sum = 0f32;
+        let g = self.base.guided();
+        let mut out = 0f32;
         for (idx, sw) in corners {
-            let g = logs[idx];
-            let d = (l - g) / JBU_RANGE_SIGMA;
-            let weight = sw * (-0.5 * d * d).exp();
-            w_sum += weight;
-            g_sum += weight * g;
-            v_sum += weight * lap[idx];
+            let lap_hat = g.a[idx] * l + g.b[idx];
+            let d = g.sg[idx] * l + g.og[idx];
+            out += sw * (l + (-0.5 * d * d).exp() * (lap_hat - l));
         }
-        let pad = (JBU_SELF_FLOOR - w_sum).max(0.);
-        let w_tot = w_sum + pad;
-        let j_logs = (g_sum + pad * l) / w_tot;
-        let j_lap = (v_sum + pad * l) / w_tot;
-        let d = (l - j_logs) / LAPLACIAN_SIGMA;
-        l + (-0.5 * d * d).exp() * (j_lap - l)
+        out
     }
     /// Positive Clarity's base level for a pixel at log2 luminance `own`, using the
     /// full-depth (`1×1`) local Laplacian base with the same fine-detail remapping.
@@ -1621,7 +1697,452 @@ mod tests {
     }
 
     #[test]
-    fn jbu_upsampling_preserves_map_centers_and_stays_continuous_across_floor() {
+    fn highlights_do_not_solarize_soft_bokeh_edge_when_upsampling() {
+        // A 512 px map upsampled ~16x onto a high-resolution photo: a bright sky (0 EV)
+        // transitions across an out-of-focus bokeh treeline (smooth ramp over 28 full-res
+        // pixels, ~1.75 map cells) into dark foliage (-3.5 EV). Under Highlights -100 (and
+        // Shadows +100), the upsampled base slope `∂base/∂l` must stay bounded so
+        // `l + G_base(base)` stays monotone with no dark trough or bright outline band.
+        let (mw, mh) = (64usize, 32usize);
+        let scale = 16usize;
+        let (sw, sh) = (mw * scale, mh * scale);
+        let full_lum = |x: usize, y: usize| -> f32 {
+            // Left: bright sky (0 EV), ramp over x in [480..508] to dark treeline (-3.5 EV),
+            // far right: darker shadows (-6 EV) so the scene histogram drives a strong curve.
+            let t = if y < 64 {
+                0.
+            } else {
+                ((x as f32 - 480.) / 28.).clamp(0., 1.)
+            };
+            let s = t * t * (3. - 2. * t);
+            let ev = if x >= 800 { -6. } else { -3.5 * s };
+            ev.exp2()
+        };
+        let mut map_lum = vec![0f32; mw * mh];
+        for my in 0..mh {
+            for mx in 0..mw {
+                let mut sum = 0f32;
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        sum += full_lum(mx * scale + dx, my * scale + dy);
+                    }
+                }
+                map_lum[my * mw + mx] = sum / (scale * scale) as f32;
+            }
+        }
+        let base = std::sync::Arc::new(MapBase::new(map_lum, [mw as u32, mh as u32]));
+        for (label, sliders, tol) in [
+            (
+                "highlights-100",
+                Sliders {
+                    highlights: -1.,
+                    ..Default::default()
+                },
+                1e-4,
+            ),
+            (
+                "shadows+100",
+                Sliders {
+                    shadows: 1.,
+                    ..Default::default()
+                },
+                0.01,
+            ),
+        ] {
+            let m = LocalToneMap::from_base(&base, [sw as u32, sh as u32], sliders, false);
+            let y = 256usize;
+            // Across the falling bokeh ramp [480..=508], output luminance must stay
+            // monotone non-increasing (no dark trough + bright ridge solarization band;
+            // Shadows +100 allows ≤ 0.01 EV of normal coarse-base local-contrast lift
+            // near the flat toe of the smoothstep).
+            let mut prev = {
+                let l0 = full_lum(480, y);
+                (l0 * m.gain(480., y as f32, l0)).log2()
+            };
+            for x in 481..=508 {
+                let lum = full_lum(x, y);
+                let cur = (lum * m.gain(x as f32, y as f32, lum)).log2();
+                assert!(
+                    cur <= prev + tol,
+                    "{label}: solarization reversal at x={x}: {prev:+.4} -> {cur:+.4} EV (delta {:+.4} EV)",
+                    cur - prev
+                );
+                prev = cur;
+            }
+        }
+        // Verify MapGrid layout omits guided planes for Clarity-only and stacks them
+        // cleanly before clarity_laplacian when both are active.
+        let clarity_only = LocalToneMap::from_base(
+            &base,
+            [sw as u32, sh as u32],
+            Sliders {
+                clarity: 1.,
+                ..Default::default()
+            },
+            false,
+        )
+        .grid();
+        assert_eq!(clarity_only.guided_at(), None);
+        assert_eq!(clarity_only.clarity_base_at(), Some(clarity_only.cells()));
+        assert_eq!(clarity_only.values().len(), 2 * clarity_only.cells());
+
+        let hl_only = LocalToneMap::from_base(
+            &base,
+            [sw as u32, sh as u32],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        )
+        .grid();
+        assert_eq!(hl_only.guided_at(), Some(hl_only.cells()));
+        assert_eq!(hl_only.clarity_base_at(), None);
+        assert_eq!(hl_only.values().len(), 5 * hl_only.cells());
+        assert!(!hl_only.same(&clarity_only));
+
+        let both = LocalToneMap::from_base(
+            &base,
+            [sw as u32, sh as u32],
+            Sliders {
+                highlights: -1.,
+                clarity: 1.,
+                ..Default::default()
+            },
+            false,
+        )
+        .grid();
+        assert_eq!(both.guided_at(), Some(both.cells()));
+        assert_eq!(both.clarity_base_at(), Some(5 * both.cells()));
+        assert_eq!(both.values().len(), 6 * both.cells());
+        assert!(!both.same(&hl_only));
+    }
+
+    #[test]
+    fn upsampling_bokeh_and_edge_matrix_stays_monotone_and_bounded() {
+        // High-upsampling synthetic matrix (12x = 24 MP, 18x = 61 MP) covering sub-cell
+        // to multi-cell bokeh widths, 2.5–5.0 stop contrasts, sub-cell phase shifts, and
+        // all Shadows/Highlights directions. Also pins `∂base/∂l <= 1.15` across edges so
+        // no future change can reintroduce JBU's steep logistic fold (`∂base/∂l ≈ 2.8–3.7`).
+        let (mw, mh) = (48usize, 24usize);
+        for scale in [12usize, 18usize] {
+            let (sw, sh) = (mw * scale, mh * scale);
+            for (width_cells, contrast_ev, phase) in [
+                (0.4f32, 3.5f32, 0.0f32),
+                (0.8, 3.5, 0.33),
+                (1.5, 4.0, 0.67),
+                (2.5, 5.0, 0.25),
+                (1.2, 2.5, 0.5),
+            ] {
+                let x0 = (22. + phase) * scale as f32;
+                let rw = (width_cells * scale as f32).max(2.);
+                let full_lum = |x: usize, _y: usize| -> f32 {
+                    if x >= 36 * scale {
+                        (-6f32).exp2()
+                    } else {
+                        let t = ((x as f32 - x0) / rw).clamp(0., 1.);
+                        let s = t * t * (3. - 2. * t);
+                        (-contrast_ev * s).exp2()
+                    }
+                };
+                let mut map_lum = vec![0f32; mw * mh];
+                for my in 0..mh {
+                    for mx in 0..mw {
+                        let mut sum = 0f32;
+                        for dy in 0..scale {
+                            for dx in 0..scale {
+                                sum += full_lum(mx * scale + dx, my * scale + dy);
+                            }
+                        }
+                        map_lum[my * mw + mx] = sum / (scale * scale) as f32;
+                    }
+                }
+                let base = std::sync::Arc::new(MapBase::new(map_lum, [mw as u32, mh as u32]));
+                let y = (mh / 2) * scale;
+                // Numerical slope bound `∂base/∂l <= 1.15` across the transition cell.
+                let m_probe = LocalToneMap::from_base(
+                    &base,
+                    [sw as u32, sh as u32],
+                    Sliders {
+                        highlights: -1.,
+                        ..Default::default()
+                    },
+                    false,
+                );
+                let eps = 0.02f32;
+                for fx_off in [0.0f32, 0.25, 0.5, 0.75, 1.0] {
+                    let px = x0 + fx_off * rw;
+                    for step in 0..=20 {
+                        let l = -contrast_ev * (step as f32 / 20.);
+                        let b_hi = m_probe.base(px, y as f32, (l + eps).exp2());
+                        let b_lo = m_probe.base(px, y as f32, (l - eps).exp2());
+                        let slope = (b_hi - b_lo) / (2. * eps);
+                        assert!(
+                            slope <= 1.15,
+                            "scale={scale} w={width_cells} c={contrast_ev} p={phase}: ∂base/∂l={slope:.3} > 1.15 at px={px:.1} l={l:.2}"
+                        );
+                    }
+                }
+                // Upsampled `base` itself must stay strictly monotone non-increasing
+                // along every falling bokeh ramp, and Shadows/Highlights outputs must
+                // not fold into a solarization band.
+                let start = x0.floor() as usize;
+                let end = (x0 + rw).ceil() as usize;
+                let mut prev_base = m_probe.base(start as f32, y as f32, full_lum(start, y));
+                for x in (start + 1)..=end {
+                    let cur_base = m_probe.base(x as f32, y as f32, full_lum(x, y));
+                    assert!(
+                        cur_base <= prev_base + 0.02,
+                        "base reversal scale={scale} w={width_cells} c={contrast_ev} p={phase} x={x}: {prev_base:+.4} -> {cur_base:+.4}"
+                    );
+                    prev_base = cur_base;
+                }
+                for (label, sliders, tol) in [
+                    (
+                        "H-100",
+                        Sliders {
+                            highlights: -1.,
+                            ..Default::default()
+                        },
+                        0.04,
+                    ),
+                    (
+                        "H-50",
+                        Sliders {
+                            highlights: -0.5,
+                            ..Default::default()
+                        },
+                        0.04,
+                    ),
+                    (
+                        "S+100",
+                        Sliders {
+                            shadows: 1.,
+                            ..Default::default()
+                        },
+                        0.04,
+                    ),
+                    (
+                        "S-100",
+                        Sliders {
+                            shadows: -1.,
+                            ..Default::default()
+                        },
+                        0.025,
+                    ),
+                ] {
+                    let m = LocalToneMap::from_base(&base, [sw as u32, sh as u32], sliders, false);
+                    let mut prev = {
+                        let l0 = full_lum(start, y);
+                        (l0 * m.gain(start as f32, y as f32, l0)).log2()
+                    };
+                    for x in (start + 1)..=end {
+                        let lum = full_lum(x, y);
+                        let cur = (lum * m.gain(x as f32, y as f32, lum)).log2();
+                        assert!(
+                            cur <= prev + tol,
+                            "{label} scale={scale} w={width_cells} c={contrast_ev} p={phase} x={x}: {prev:+.4} -> {cur:+.4} EV (delta {:+.4})",
+                            cur - prev
+                        );
+                        prev = cur;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn upsampling_sharp_silhouettes_and_thin_features_have_no_halos() {
+        // 1) Sharp bright-on-dark silhouette across every sub-cell phase and curved
+        //    bird-head geometry at 12x and 18x upsampling: no dark halo down to 1 px.
+        let (mw, mh) = (48usize, 48usize);
+        for scale in [12usize, 18usize] {
+            let (sw, sh) = (mw * scale, mh * scale);
+            let bg = (-3.6f32).exp2();
+            // Sub-cell shifted vertical bright blocks.
+            for shift in [0usize, scale / 4, scale / 2, (3 * scale) / 4, scale - 1] {
+                let x0 = 20 * scale + shift;
+                let x1 = x0 + 10 * scale;
+                let full_lum = |x: usize, y: usize| -> f32 {
+                    if x < 6 * scale || x >= 42 * scale || y < 6 * scale || y >= 42 * scale {
+                        (-6f32).exp2()
+                    } else if (x0..x1).contains(&x) && (14 * scale..34 * scale).contains(&y) {
+                        1.0
+                    } else {
+                        bg
+                    }
+                };
+                let mut map_lum = vec![0f32; mw * mh];
+                for my in 0..mh {
+                    for mx in 0..mw {
+                        let mut sum = 0f32;
+                        for dy in 0..scale {
+                            for dx in 0..scale {
+                                sum += full_lum(mx * scale + dx, my * scale + dy);
+                            }
+                        }
+                        map_lum[my * mw + mx] = sum / (scale * scale) as f32;
+                    }
+                }
+                let m = LocalToneMap::from_luminance(
+                    map_lum,
+                    [mw as u32, mh as u32],
+                    [sw as u32, sh as u32],
+                    Sliders {
+                        highlights: -1.,
+                        ..Default::default()
+                    },
+                    false,
+                );
+                let y = 24 * scale;
+                let ref_dark = m.gain((x0 - 2 * scale) as f32, y as f32, bg).log2();
+                for dx in 1..=(2 * scale) {
+                    let drop = m.gain((x0 - dx) as f32, y as f32, bg).log2() - ref_dark;
+                    assert!(
+                        drop > -0.10,
+                        "scale={scale} shift={shift} -{dx}px: dark halo {drop:+.3} EV"
+                    );
+                }
+            }
+            // Curved circular silhouette (bird head) checked along 0°, 30°, 45°, 60°, 90°.
+            let cx = 24.3 * scale as f32;
+            let cy = 24.7 * scale as f32;
+            let r = 6.2 * scale as f32;
+            let full_circle = |x: usize, y: usize| -> f32 {
+                let d = (x as f32 - cx).hypot(y as f32 - cy);
+                if d <= r {
+                    1.0
+                } else if d > 18. * scale as f32 {
+                    (-6f32).exp2()
+                } else {
+                    bg
+                }
+            };
+            let mut map_lum = vec![0f32; mw * mh];
+            for my in 0..mh {
+                for mx in 0..mw {
+                    let mut sum = 0f32;
+                    for dy in 0..scale {
+                        for dx in 0..scale {
+                            sum += full_circle(mx * scale + dx, my * scale + dy);
+                        }
+                    }
+                    map_lum[my * mw + mx] = sum / (scale * scale) as f32;
+                }
+            }
+            let m = LocalToneMap::from_luminance(
+                map_lum,
+                [mw as u32, mh as u32],
+                [sw as u32, sh as u32],
+                Sliders {
+                    highlights: -1.,
+                    ..Default::default()
+                },
+                false,
+            );
+            for deg in [0f32, 30., 45., 60., 90.] {
+                let rad = deg.to_radians();
+                let (ux, uy) = (rad.cos(), rad.sin());
+                let ref_r = r + 3. * scale as f32;
+                let ref_dark = m.gain(cx + ref_r * ux, cy + ref_r * uy, bg).log2();
+                for dr in 1..=(2 * scale) {
+                    let rr = r + dr as f32;
+                    let drop = m.gain(cx + rr * ux, cy + rr * uy, bg).log2() - ref_dark;
+                    assert!(
+                        drop > -0.10,
+                        "circle scale={scale} deg={deg} +{dr}px: dark halo {drop:+.3} EV"
+                    );
+                }
+            }
+        }
+        // 2) Thin dark twig (3 px wide) on bright sky & thin bright specular (3 px wide)
+        //    on dark background at 16x upsampling: no ringing halo or dark moat.
+        let scale = 16usize;
+        let (sw, sh) = (mw * scale, mh * scale);
+        let sky = 1.0f32;
+        let twig = (-3.8f32).exp2();
+        let dark_scene = |x: usize, _y: usize| -> f32 {
+            if x >= 36 * scale {
+                (-6f32).exp2()
+            } else if (20 * scale + 5..20 * scale + 8).contains(&x) {
+                twig
+            } else {
+                sky
+            }
+        };
+        let mut map_lum = vec![0f32; mw * mh];
+        for my in 0..mh {
+            for mx in 0..mw {
+                let mut sum = 0f32;
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        sum += dark_scene(mx * scale + dx, my * scale + dy);
+                    }
+                }
+                map_lum[my * mw + mx] = sum / (scale * scale) as f32;
+            }
+        }
+        let m = LocalToneMap::from_luminance(
+            map_lum,
+            [mw as u32, mh as u32],
+            [sw as u32, sh as u32],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        let y = 24 * scale;
+        let sky_far = (sky * m.gain((16 * scale) as f32, y as f32, sky)).log2();
+        let twig_out = (twig * m.gain((20 * scale + 6) as f32, y as f32, twig)).log2();
+        assert!(
+            twig_out < sky_far - 1.0,
+            "thin dark twig should stay clearly darker than sky: twig={twig_out:+.2}, sky={sky_far:+.2}"
+        );
+        for x in [
+            20 * scale + 3,
+            20 * scale + 4,
+            20 * scale + 8,
+            20 * scale + 9,
+        ] {
+            let sky_near = (sky * m.gain(x as f32, y as f32, sky)).log2();
+            assert!(
+                (sky_near - sky_far).abs() < 0.12,
+                "sky ringing beside thin dark twig at x={x}: {sky_near:+.3} vs {sky_far:+.3}"
+            );
+        }
+        // 3) Small bright lamp (2x2 map cells at 0 EV) in a dark night scene (-8 EV):
+        //    `laplacian` attenuates the lamp well below 0 EV, so `a_lap < a_g`. Self-guided
+        //    `g_hat` (`a_g = var / (var + ε)`) must recognize the lamp as on-grid rather than
+        //    a sub-cell outlier, keeping `base` close to `laplacian` instead of pulling it
+        //    up toward 0 EV.
+        let mut night = vec![(-8f32).exp2(); mw * mh];
+        for dy in 0..2 {
+            for dx in 0..2 {
+                night[(24 + dy) * mw + (24 + dx)] = 1.0;
+            }
+        }
+        let m_night = LocalToneMap::from_luminance(
+            night,
+            [mw as u32, mh as u32],
+            [mw as u32, mh as u32],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        let lamp_idx = 24 * mw + 24;
+        let lamp_lap = m_night.base.laplacian[lamp_idx];
+        let lamp_base = m_night.base(24., 24., 1.0);
+        assert!(
+            (lamp_base - lamp_lap).abs() < 0.25,
+            "small bright lamp in dark scene pulled away from laplacian: base={lamp_base:+.3} vs lap={lamp_lap:+.3}"
+        );
+    }
+
+    #[test]
+    fn guided_upsampling_preserves_flat_centers_and_stays_continuous() {
         let (w, h) = (32usize, 32usize);
         let lum: Vec<f32> = (0..w * h)
             .map(|i| {
@@ -1643,21 +2164,45 @@ mod tests {
             },
             false,
         );
-        // At 1:1 map grid centers with matching luminance, JBU returns `laplacian`
-        // without blending in neighbours.
+        // Uniform maps match `laplacian` exactly (`a = 0`, `mean(lap) == lap`).
+        let flat = LocalToneMap::from_luminance(
+            vec![0.5; 64],
+            [8, 8],
+            [8, 8],
+            Sliders {
+                highlights: -1.,
+                ..Default::default()
+            },
+            false,
+        );
+        for y in 0..8 {
+            for x in 0..8 {
+                let got = flat.base(x as f32, y as f32, 0.5);
+                let want = flat.base.laplacian[y * 8 + x];
+                assert!((got - want).abs() < 1e-6, "flat ({x},{y}): {got} vs {want}");
+            }
+        }
+        // At 1:1 grid centers with matching luminance, the 3×3 guided fit stays close to
+        // `laplacian` across both the bright square interior (where `laplacian` still has
+        // gentle pyramid curvature) and the 4-stop sharp edge.
         for y in 0..h {
             for x in 0..w {
                 let idx = y * w + x;
                 let got = m.base(x as f32, y as f32, lum[idx]);
                 let want = m.base.laplacian[idx];
+                let tol = if (12..20).contains(&x) && (12..20).contains(&y) {
+                    0.05
+                } else {
+                    0.15
+                };
                 assert!(
-                    (got - want).abs() < 1e-6,
-                    "({x},{y}): got {got} against {want}"
+                    (got - want).abs() < tol,
+                    "({x},{y}): got {got} against {want} (tol {tol})"
                 );
             }
         }
-        // Varying `l` in 0.001-stop steps across the edge (crossing `JBU_SELF_FLOOR`)
-        // must stay continuous with no jump at the switch.
+        // Varying `l` in 0.001-stop steps across the edge must stay continuous with no
+        // jump anywhere in the dynamic range.
         let mut prev = m.base(9.5, 16., (-6f32).exp2());
         for step in 1..=6000 {
             let l = -6. + step as f32 * 0.001;
@@ -1671,11 +2216,11 @@ mod tests {
     }
 
     #[test]
-    fn jbu_upsampling_is_spatially_smooth_across_full_cells_and_edges() {
+    fn guided_upsampling_is_spatially_smooth_across_full_cells_and_edges() {
         // Dense 1/12-cell sweep (~1 full-res pixel at 24 MP) across every high-contrast
         // edge configuration (including the left border and isolated dark/bright stripes)
-        // on the real local Laplacian map. A 2×2 JBU with self-prior floor must never
-        // exhibit a narrow window-shift step or overshoot anywhere across a map cell.
+        // on the real local Laplacian map. Per-corner guided upsampling must never
+        // exhibit a narrow window-shift step or mid-cell Jensen bump across a map cell.
         let (w, h) = (12usize, 5usize);
         let cases: &[(&str, [f32; 12], f32)] = &[
             (
@@ -1728,10 +2273,10 @@ mod tests {
     }
 
     #[test]
-    fn jbu_upsampling_stays_continuous_through_range_underflow() {
-        // On a uniform 0 EV map, sweeping `l` from 0 down to -14 crosses `JBU_SELF_FLOOR`
-        // and the raw range-weight underflow zone. Padding `w_sum` up to `JBU_SELF_FLOOR`
-        // with `l` must keep `base(l)` strictly monotone, finite, and free of any jump.
+    fn guided_upsampling_stays_continuous_through_range_underflow() {
+        // On a uniform 0 EV map (`a = 0`, `g_hat = lap_hat = 0`), sweeping `l` from 0
+        // down to -14 crosses the `LAPLACIAN_SIGMA` Gaussian tail into underflow.
+        // `base(l)` must stay strictly monotone, finite, and free of any jump.
         let (w, h) = (8usize, 8usize);
         let m = LocalToneMap::from_luminance(
             vec![1.0f32; w * h],

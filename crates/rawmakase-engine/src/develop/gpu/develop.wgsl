@@ -1184,33 +1184,30 @@ fn local_gain(pos: vec2<f32>, clarity_lum: f32) -> f32 {
     let jy = min(iy + 1u, h - 1u);
     let tx = fx - f32(ix);
     let ty = fy - f32(iy);
-    // `LocalToneMap::base`: 2×2 joint bilateral upsampling of the map's local Laplacian
-    // level guided by its log2 luminance, padding any weight shortfall below
-    // `JBU_SELF_FLOOR` with the pixel's own level, followed by the `LAPLACIAN_SIGMA`
-    // remapping on the same pre-mask basis as the map.
+    // `LocalToneMap::base`: per-corner local linear guided upsampling (`a·l + b`,
+    // `a ∈ [0, 1]`) with `LAPLACIAN_SIGMA` remapping, blended bilinearly by spatial
+    // weight on the same pre-mask basis as the map.
     let logs_base = u32(offset(P_LOCAL_A));
-    let lap_base = u32(offset(P_LOCAL_A + 1u));
+    let guided_off = offset(P_LOCAL_A + 1u);
     let own = log2(min(max(clarity_lum, LOCAL_FLOOR), 1e12));
-    let b_indices = vec4(iy * w + ix, iy * w + jx, jy * w + ix, jy * w + jx);
-    let b_spatial = vec4((1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty);
-    var w_sum = 0.0;
-    var g_sum = 0.0;
-    var v_sum = 0.0;
-    for (var k = 0u; k < 4u; k++) {
-        let idx = b_indices[k];
-        let g = grid[logs_base + idx];
-        let d = (own - g) / JBU_RANGE_SIGMA;
-        let weight = b_spatial[k] * exp(-0.5 * d * d);
-        w_sum += weight;
-        g_sum += weight * g;
-        v_sum += weight * grid[lap_base + idx];
+    var base = own;
+    if guided_off >= 0 {
+        let cells = w * h;
+        let a_base = u32(guided_off);
+        let b_base = a_base + cells;
+        let sg_base = b_base + cells;
+        let og_base = sg_base + cells;
+        let b_indices = vec4(iy * w + ix, iy * w + jx, jy * w + ix, jy * w + jx);
+        let b_spatial = vec4((1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty);
+        var sum = 0.0;
+        for (var k = 0u; k < 4u; k++) {
+            let idx = b_indices[k];
+            let lap_hat = grid[a_base + idx] * own + grid[b_base + idx];
+            let off = grid[sg_base + idx] * own + grid[og_base + idx];
+            sum += b_spatial[k] * (own + exp(-0.5 * off * off) * (lap_hat - own));
+        }
+        base = sum;
     }
-    let pad = max(JBU_SELF_FLOOR - w_sum, 0.0);
-    let w_tot = w_sum + pad;
-    let j_logs = (g_sum + pad * own) / w_tot;
-    let j_lap = (v_sum + pad * own) / w_tot;
-    let off = (own - j_logs) / LAPLACIAN_SIGMA;
-    let base = own + exp(-0.5 * off * off) * (j_lap - own);
     // Joint bilateral upsampling of the calibrated Clarity gains. Fine luminance
     // selects neighbouring gains without extrapolating new contrast.
     var clarity = 0.0;
