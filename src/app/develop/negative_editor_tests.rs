@@ -300,6 +300,36 @@ fn negative_auto_clears_its_busy_state_whatever_its_end() {
     assert!(!editor.document.auto.is_running());
 }
 
+/// Auto black & white measures the photo through its conversion, and the colors kept
+/// for it are measured again when the conversion changes, never taken from before.
+#[test]
+fn the_auto_mix_colors_follow_the_conversion() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan(&ctx, false, true);
+    let image = editor.document.full().unwrap().clone();
+    let plain = editor.document.color_spread().unwrap();
+    assert_eq!(plain, crate::develop::ColorSpread::measure(&image, None));
+    for film in [FilmType::Colour, FilmType::BlackWhite] {
+        let n = NegativeConversion {
+            base: BASE,
+            ..NegativeConversion::new(film)
+        };
+        in_edit_frame(&ctx, &mut editor, |e| {
+            e.document.edit.recipe_mut().negative = Some(n.clone())
+        });
+        let converted = editor.document.color_spread().unwrap();
+        assert_eq!(
+            converted,
+            crate::develop::ColorSpread::measure(&image, Some(&n))
+        );
+        assert_ne!(converted, plain);
+    }
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().negative = None
+    });
+    assert_eq!(editor.document.color_spread().unwrap(), plain);
+}
+
 /// An HDR file's HDR master doesn't render a conversion: the panel says so, where
 /// the conversion is set, while HDR is on.
 #[test]

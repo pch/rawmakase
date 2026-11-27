@@ -403,7 +403,7 @@ impl crate::model::measures::PhotoMeasures for Measures<'_> {
         auto_white_balance(self.0, base, Cancel::NEVER)
     }
     fn auto_gray_mix(&self, r: &Recipe, m: &Metadata) -> [f32; 8] {
-        let spread = super::ColorSpread::measure(self.0);
+        let spread = super::ColorSpread::measure(self.0, r.negative.as_ref());
         super::AutoMix {
             spread: &spread,
             metadata: m,
@@ -1088,7 +1088,7 @@ mod tests {
         let preset = crate::xmp::parse(std::path::Path::new("auto.xmp"), &packet(attrs))?;
         let base = Recipe::default();
         let r = preset.apply(&base, &m, &[], Some(&Measures(&im)))?;
-        let spread = super::super::ColorSpread::measure(&im);
+        let spread = super::super::ColorSpread::measure(&im, None);
         let expected = super::super::AutoMix {
             spread: &spread,
             metadata: &m,

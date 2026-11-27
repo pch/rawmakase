@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 /// How the photo's colors spread, as Auto black & white measures them: the mean and
 /// covariance of its decoded camera values (white balanced as shot), without
-/// pixels near clipping. Measured once per photo; a white balance or profile is
-/// applied to the statistics, since both are linear.
+/// pixels near clipping, a scanned negative's converted first. Measured once per
+/// photo and conversion; a white balance or profile is applied to the statistics,
+/// since both are linear and come after the conversion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorSpread {
     pub mean: [f64; 3],
@@ -17,8 +18,14 @@ pub struct ColorSpread {
 
 impl ColorSpread {
     /// Measures every `step`-th pixel in each direction of a photo up to about 1024
-    /// pixels on its long edge.
-    pub fn measure(im: &CameraImage) -> Self {
+    /// pixels on its long edge, through `negative`'s conversion when there is one:
+    /// the positive, which the white balance and profile render.
+    pub fn measure(
+        im: &CameraImage,
+        negative: Option<&crate::model::negative::NegativeConversion>,
+    ) -> Self {
+        let negative =
+            negative.map(|n| super::negative::Inversion::new(n, im.metadata.is_rendered()));
         let step = (im.width.max(im.height) / 1024).max(1) as usize;
         let (mut n, mut sum, mut products) = (0f64, [0f64; 3], [[0f64; 3]; 3]);
         let width = im.width as usize;
@@ -33,7 +40,7 @@ impl ColorSpread {
                 if peak > CLIPPED || !p.iter().all(|v| v.is_finite()) {
                     continue;
                 }
-                let p = p.map(f64::from);
+                let p = negative.as_ref().map_or(*p, |n| n.apply(*p)).map(f64::from);
                 n += 1.;
                 for i in 0..3 {
                     sum[i] += p[i];

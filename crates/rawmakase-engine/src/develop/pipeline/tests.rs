@@ -3477,6 +3477,20 @@ fn auto_reads_a_converted_negatives_positive() {
     assert_eq!(got.negative, converted.negative);
 }
 
+/// The Auto black & white mix measures a scanned negative's positive: the same mix as
+/// for the positive it was made from, colours spread along the same axis.
+#[test]
+fn the_auto_black_and_white_mix_reads_a_converted_negatives_positive() {
+    use crate::model::measures::PhotoMeasures;
+    let (positive, negative, plain, converted) = scanned_scene(Recipe::default());
+    let want = crate::develop::Measures(&positive).auto_gray_mix(&plain, &positive.metadata);
+    let got = crate::develop::Measures(&negative).auto_gray_mix(&converted, &negative.metadata);
+    assert!(
+        (0..8).all(|band| (got[band] - want[band]).abs() < 0.015),
+        "{got:?} against {want:?}"
+    );
+}
+
 /// Point Color's dropper and the Targeted Adjustment Tool sample the positive.
 #[test]
 fn panel_samples_read_a_converted_negatives_positive() {

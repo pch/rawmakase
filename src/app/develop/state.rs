@@ -20,9 +20,10 @@ pub(in crate::app) struct Document {
     pub(in crate::app) path: Option<PathBuf>,
     pub(in crate::app) metadata: Option<Metadata>,
     image: Option<Arc<CameraImage>>,
-    /// How the decoded photo's colors spread, for Auto black & white; measured on
-    /// first use.
-    color_spread: std::cell::OnceCell<crate::develop::ColorSpread>,
+    /// How the decoded photo's colors spread, for Auto black & white, and the
+    /// negative conversion they were measured through; measured on first use, and
+    /// again for another conversion.
+    color_spread: ColorSpreadCell,
     /// A conversion to black & white waiting for the photo to decode, for its
     /// Auto mix.
     pub(in crate::app) pending_treatment: Option<PendingTreatment>,
@@ -1054,9 +1055,10 @@ impl Document {
             .then(|| self.ai.source().cloned())
             .flatten()
     }
-    /// How the decoded photo's colors spread, once it is decoded.
+    /// How the decoded photo's colors spread, through its edit's conversion, once it
+    /// is decoded.
     pub(in crate::app) fn color_spread(&self) -> Option<crate::develop::ColorSpread> {
-        self.colors().spread()
+        self.colors().spread(self.edit.recipe().negative.as_ref())
     }
     /// The recipe to edit, and what the photo's colors are measured from, borrowed
     /// apart so a panel can measure them only when it needs them.
@@ -1091,17 +1093,32 @@ pub(in crate::app) struct PendingTreatment {
 #[derive(Clone, Copy)]
 pub(in crate::app) struct PhotoColorSource<'a> {
     image: Option<&'a Arc<CameraImage>>,
-    spread: &'a std::cell::OnceCell<crate::develop::ColorSpread>,
+    spread: &'a ColorSpreadCell,
     pub(in crate::app) metadata: Option<&'a Metadata>,
 }
 impl PhotoColorSource<'_> {
-    /// How the photo's colors spread, measured on first use once it is decoded.
-    pub(in crate::app) fn spread(&self) -> Option<crate::develop::ColorSpread> {
+    /// How the photo's colors spread through `negative`, the edit's conversion,
+    /// measured on first use once it is decoded, and again for another conversion.
+    pub(in crate::app) fn spread(
+        &self,
+        negative: Option<&crate::model::negative::NegativeConversion>,
+    ) -> Option<crate::develop::ColorSpread> {
         let im = self.image?;
-        Some(
-            *self
-                .spread
-                .get_or_init(|| crate::develop::ColorSpread::measure(im)),
-        )
+        let mut cell = self.spread.borrow_mut();
+        if let Some((measured, spread)) = &*cell
+            && measured.as_ref() == negative
+        {
+            return Some(*spread);
+        }
+        let spread = crate::develop::ColorSpread::measure(im, negative);
+        *cell = Some((negative.cloned(), spread));
+        Some(spread)
     }
 }
+/// The photo's color spread and the conversion it was measured through.
+type ColorSpreadCell = std::cell::RefCell<
+    Option<(
+        Option<crate::model::negative::NegativeConversion>,
+        crate::develop::ColorSpread,
+    )>,
+>;

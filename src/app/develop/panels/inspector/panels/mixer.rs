@@ -42,16 +42,17 @@ pub(in crate::app::develop::panels::inspector) fn show(
         if black_white {
             let heading = subheading(ui, "Black & White Mix");
             // Measured (once) only while this panel is open.
-            let auto_mix = photo
-                .spread()
-                .zip(photo.metadata)
-                .map(|(spread, metadata)| {
-                    crate::develop::AutoMix {
-                        spread: &spread,
-                        metadata,
-                    }
-                    .for_recipe(r)
-                });
+            let auto_mix =
+                photo
+                    .spread(r.negative.as_ref())
+                    .zip(photo.metadata)
+                    .map(|(spread, metadata)| {
+                        crate::develop::AutoMix {
+                            spread: &spread,
+                            metadata,
+                        }
+                        .for_recipe(r)
+                    });
             let button = Rect::from_min_size(
                 Pos2::new(heading.right() - 52., heading.top() - 4.),
                 Vec2::new(52., 24.),
