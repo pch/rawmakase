@@ -1253,7 +1253,8 @@ pub(in crate::app) struct SliderStyle<'a> {
     /// descriptor's valid range, as Exposure's ±8 EV beside its ±5 rail. `None`
     /// keeps typing to the rail's range.
     pub typed: Option<(f32, f32)>,
-    /// The label stands out: the slider the Basic panel's keys step.
+    /// The label stands out: the slider the Basic panel's keys step, or the
+    /// one Slider Keys moves.
     pub selected: bool,
 }
 /// The Temp slider's rail, blue to yellow.
@@ -1305,20 +1306,30 @@ pub(in crate::app) fn keyed_setting_slider(
         selected,
     )
 }
-/// The slider for a mask's adjustment, as its descriptor describes it.
+/// The slider for a mask's adjustment, as its descriptor describes it: its
+/// label stands out while `selected`, the slider Slider Keys moves.
 pub(in crate::app) fn local_setting_slider(
     ui: &mut egui::Ui,
     step: &mut StepName,
     id: LocalParameterId,
     value: &mut f32,
     default: f32,
+    selected: bool,
 ) -> SliderEvent {
     let gradient = match id {
         LocalParameterId::Temperature => Some(TEMPERATURE_GRADIENT),
         LocalParameterId::Tint => Some(TINT_GRADIENT),
         _ => None,
     };
-    descriptor_slider(ui, step, id.descriptor(), value, default, gradient, false)
+    descriptor_slider(
+        ui,
+        step,
+        id.descriptor(),
+        value,
+        default,
+        gradient,
+        selected,
+    )
 }
 fn descriptor_slider<Id>(
     ui: &mut egui::Ui,

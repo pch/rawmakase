@@ -223,6 +223,11 @@ impl Editor {
                                 self.toggle_camera_thumbnail();
                                 ui.close();
                             }
+                            let keys = format!("{shift}K");
+                            if menu_item(ui, "Slider Keys", &keys, true, self.view.slider_keys.on) {
+                                self.view.slider_keys.on ^= true;
+                                ui.close();
+                            }
                             menu_separator(ui);
                             let new_preset = format!("{cmd}{shift}N");
                             if menu_item(ui, "New Develop Preset…", &new_preset, true, false) {

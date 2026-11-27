@@ -6,5 +6,6 @@ pub(in crate::app) mod history_panel;
 pub(in crate::app) mod inspector;
 pub(in crate::app) mod point_color_panel;
 pub(in crate::app) mod side_tabs;
+pub(in crate::app) mod slider_keys;
 pub(in crate::app) mod snapshots;
 pub(in crate::app) mod tone_drag;

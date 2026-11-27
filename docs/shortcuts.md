@@ -132,6 +132,35 @@ default shortcuts apply as above.
 If saving the file fails, the shortcuts in effect are whatever the file holds
 afterwards, and the message line says what happened.
 
+## Slider Keys
+
+Shift+K or Slider Keys in the photo's menu turns on Slider Keys in Develop:
+hold a slider's letter and press the arrows or turn the wheel to move it, Shift
+by more and Option by less. Up and Right raise it. While the mode is on, the
+status bar at the bottom says "Slider Keys On". The slider is lit in its panel
+while it moves, and the change is one History step once the letter is let go.
+With a mask selected in Masking, the mask's slider moves.
+
+| Letter | Slider | Letter | Slider |
+| --- | --- | --- | --- |
+| E | Exposure | T | Temp |
+| C | Contrast | G | Tint |
+| H | Highlights | X | Texture |
+| S | Shadows | L | Clarity |
+| W | Whites | D | Dehaze |
+| B | Blacks | V | Vibrance |
+| | | A | Saturation |
+
+Each slider's key is a command of its own (`slider_keys:exposure` and the
+rest), so Preferences > Shortcuts changes it or removes it like any other; a
+slider without a key is not moved from the keyboard. Slider Keys' keys win over
+Develop's on the same key while the mode is on, and a tool's keys win over
+them. The default letters go by their place on the keyboard, named as on a US
+keyboard, as the Basic panel's keys do. While the mode is on, these letters pressed alone
+run no command in Develop, and alone they change nothing. Pressed with a
+modifier they keep their commands (Shift+W still opens Masking), and an open
+tool keeps its own keys (Crop's X and A). It is off at each start.
+
 ## Keyboard layouts
 
 A shortcut goes by the character its key types, so it follows your layout: on
@@ -341,6 +370,20 @@ names where they have one. Fixed commands keep their keys.
 | `basic:previous` | Select the previous Basic slider |
 | `basic:increase` | Raise the selected Basic slider (Shift: more, Option: less) |
 | `basic:decrease` | Lower the selected Basic slider (Shift: more, Option: less) |
+| `slider_keys` | Turn Slider Keys on or off |
+| `slider_keys:exposure` | Slider Keys: the key held for Exposure (default E, by its place) |
+| `slider_keys:contrast` | Slider Keys: the key held for Contrast (default C, by its place) |
+| `slider_keys:highlights` | Slider Keys: the key held for Highlights (default H, by its place) |
+| `slider_keys:shadows` | Slider Keys: the key held for Shadows (default S, by its place) |
+| `slider_keys:whites` | Slider Keys: the key held for Whites (default W, by its place) |
+| `slider_keys:blacks` | Slider Keys: the key held for Blacks (default B, by its place) |
+| `slider_keys:temp` | Slider Keys: the key held for Temp (default T, by its place) |
+| `slider_keys:tint` | Slider Keys: the key held for Tint (default G, by its place) |
+| `slider_keys:texture` | Slider Keys: the key held for Texture (default X, by its place) |
+| `slider_keys:clarity` | Slider Keys: the key held for Clarity (default L, by its place) |
+| `slider_keys:dehaze` | Slider Keys: the key held for Dehaze (default D, by its place) |
+| `slider_keys:vibrance` | Slider Keys: the key held for Vibrance (default V, by its place) |
+| `slider_keys:saturation` | Slider Keys: the key held for Saturation (default A, by its place) |
 | `keyword_set:1` | Add or remove the keyword of Keyword Set slot 1 (to `keyword_set:9`, slot 9) |
 | `keyword_set:2` | Keyword Set slot 2 |
 | `keyword_set:3` | Keyword Set slot 3 |

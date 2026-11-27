@@ -1342,7 +1342,9 @@ fn rail_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
 
 /// [`setting_control`] for a Basic slider, which the `.` and `,` keys select for
 /// `+` and `-` to step (`basic_keys`): its label lights up while it is the
-/// `selected` one, and a click on the label selects it.
+/// `selected` one, and a click on the label selects it. While Slider Keys
+/// moves a slider (`moved`), that one alone is lit.
+#[expect(clippy::too_many_arguments)]
 fn basic_control(
     ui: &mut egui::Ui,
     step: &mut StepName,
@@ -1351,9 +1353,10 @@ fn basic_control(
     default: f32,
     photo: Option<&crate::camera_data::Metadata>,
     selected: &mut Option<ParameterId>,
+    moved: Option<ParameterId>,
 ) {
     let canonical = basic_keys::canonical(id);
-    let lit = *selected == Some(canonical) && basic_keys::enabled(id, photo);
+    let lit = moved.or(*selected) == Some(canonical) && basic_keys::enabled(id, photo);
     let event = crate::model::edit::change_setting(r, id, photo, |r| {
         keyed_setting_slider(ui, step, id, id.value_mut(r), default, lit)
     });

@@ -152,7 +152,8 @@ impl Editor {
         // A dial turned on a control surface is one too.
         let held = ctx.input(|i| i.pointer.primary_down())
             || self.view.wheel.active()
-            || self.automation.turning();
+            || self.automation.turning()
+            || self.view.slider_keys.held();
         let gesture = if held {
             crate::edit_session::Gesture::Held
         } else {

@@ -529,12 +529,16 @@ impl Fixture {
         let surround = self.surround;
         let mut left = None;
         let (e, field) = (&mut self.e, &mut self.field);
+        let mut input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1200., 800.))),
+            events,
+            ..Default::default()
+        };
+        // As eframe's `raw_input_hook`, where Slider Keys reads the keys: it
+        // runs on every frame.
+        e.slider_key_input(&ctx, &mut input);
         let mut output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1200., 800.))),
-                events,
-                ..Default::default()
-            },
+            input,
             |ui| {
                 match surround {
                     Surround::Button => {

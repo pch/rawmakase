@@ -417,17 +417,18 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         );
                     }), "White balance");
             });
+            let moved = view.slider_keys.moved();
             let selected = &mut view.selected_setting;
             if rendered {
                 let (temp, tint) = (
                     ParameterId::IncrementalTemperature,
                     ParameterId::IncrementalTint,
                 );
-                basic_control(ui, step, r, temp, 0., photo, selected);
-                basic_control(ui, step, r, tint, 0., photo, selected);
+                basic_control(ui, step, r, temp, 0., photo, selected, moved);
+                basic_control(ui, step, r, tint, 0., photo, selected, moved);
             } else {
-                basic_control(ui, step, r, ParameterId::Temperature, 6500., photo, selected);
-                basic_control(ui, step, r, ParameterId::Tint, 0., photo, selected);
+                basic_control(ui, step, r, ParameterId::Temperature, 6500., photo, selected, moved);
+                basic_control(ui, step, r, ParameterId::Tint, 0., photo, selected, moved);
             }
         });
         // Auto at the Tone heading's end, as in Lightroom, styled as the
@@ -469,7 +470,17 @@ pub(in crate::app::develop::panels::inspector) fn show(
             ParameterId::Whites,
             ParameterId::Blacks,
         ] {
-            basic_control(ui, step, r, id, 0., photo, &mut view.selected_setting);
+            let moved = view.slider_keys.moved();
+            basic_control(
+                ui,
+                step,
+                r,
+                id,
+                0.,
+                photo,
+                &mut view.selected_setting,
+                moved,
+            );
         }
         subheading(ui, "Presence");
         for id in [
@@ -479,7 +490,17 @@ pub(in crate::app::develop::panels::inspector) fn show(
             ParameterId::Vibrance,
             ParameterId::Saturation,
         ] {
-            basic_control(ui, step, r, id, 0., photo, &mut view.selected_setting);
+            let moved = view.slider_keys.moved();
+            basic_control(
+                ui,
+                step,
+                r,
+                id,
+                0.,
+                photo,
+                &mut view.selected_setting,
+                moved,
+            );
         }
     }) {
         r.wb = [1.; 3];

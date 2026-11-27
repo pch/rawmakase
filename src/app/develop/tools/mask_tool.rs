@@ -254,6 +254,16 @@ impl MaskTool {
         self.overlay = true;
         self.hidden_by_adjusting = false;
     }
+    /// As in Lightroom, adjusting the mask hides its red overlay, which would
+    /// otherwise cover what the sliders do. O or Show Overlay brings it back, as
+    /// does selecting or making another mask; hovering the mask's row or pin
+    /// still shows it. An overlay already turned off stays the user's choice.
+    pub(in crate::app) fn adjusted(&mut self) {
+        if self.overlay {
+            self.overlay = false;
+            self.hidden_by_adjusting = true;
+        }
+    }
     fn select(&mut self, mask: Option<usize>, component: Option<usize>) {
         if mask != self.selected && self.hidden_by_adjusting {
             self.overlay = true;
@@ -1383,6 +1393,12 @@ impl Editor {
     }
     /// Amount and the local adjustment sliders, in Lightroom's order.
     fn adjustment_sliders(&mut self, ui: &mut egui::Ui, m: usize) {
+        // The slider Slider Keys moves is lit, as in the Basic panel.
+        let moved = self
+            .view
+            .slider_keys
+            .moved()
+            .and_then(crate::app::develop::panels::slider_keys::local);
         let Some(mask) = &mut self.document.edit.recipe_mut().masks.get_mut(m) else {
             return;
         };
@@ -1402,7 +1418,14 @@ impl Editor {
         for group in LOCAL_GROUPS {
             ui.add_space(space::XS);
             for &id in group {
-                local_setting_slider(ui, &mut self.step_name, id, id.value_mut(a), 0.);
+                local_setting_slider(
+                    ui,
+                    &mut self.step_name,
+                    id,
+                    id.value_mut(a),
+                    0.,
+                    moved == Some(id),
+                );
             }
         }
         ui.add_space(space::XS);
@@ -1415,16 +1438,8 @@ impl Editor {
                 *a = LocalAdjust::default();
             }
         });
-        // As in Lightroom, adjusting the mask hides its red overlay, which would
-        // otherwise cover what the sliders do. O or Show Overlay brings it back, as
-        // does selecting or making another mask; hovering the mask's row or pin
-        // still shows it. An overlay already turned off stays the user's choice.
-        if (mask.amount, mask.adjust) != before
-            && !crate::app::ui::widgets::peeked(ui)
-            && self.view.masking.overlay
-        {
-            self.view.masking.overlay = false;
-            self.view.masking.hidden_by_adjusting = true;
+        if (mask.amount, mask.adjust) != before && !crate::app::ui::widgets::peeked(ui) {
+            self.view.masking.adjusted();
         }
     }
 }
@@ -1461,7 +1476,7 @@ fn drawn_live(recipe: &crate::model::recipe::Recipe, (m, ..): StrokeAt, s: &Brus
             .all(|c| c.op == MaskOp::Add && !c.invert)
 }
 /// "Mask 2", or the name the user gave it.
-fn mask_name(m: &MaskGroup, i: usize) -> String {
+pub(in crate::app) fn mask_name(m: &MaskGroup, i: usize) -> String {
     if m.name.is_empty() {
         format!("Mask {}", i + 1)
     } else {

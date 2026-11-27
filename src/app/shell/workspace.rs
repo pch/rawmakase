@@ -208,6 +208,11 @@ impl Editor {
             }
             Module::Develop => {
                 live.extend([Context::Develop, Context::LoupeZoom]);
+                // As `slider_keys` takes keys: not behind a dialog, while typing
+                // or while the photo is not ready.
+                if self.view.slider_keys.on && self.basic_keys_ready(ctx) {
+                    live.push(Context::SliderKeys);
+                }
                 live.extend(self.key_tool().map(Context::Tool));
             }
         }
@@ -373,6 +378,8 @@ impl Editor {
             self.keys(&ctx);
             self.messages.dismiss_key(&ctx);
         }
+        // Slider Keys took its keys in `raw_input_hook`; a step ends first.
+        self.slider_keys();
         if !modal {
             // Escape turns the lights back on, then leaves the whole-window
             // mode, as it does in Lightroom. It is taken here, before the
@@ -452,6 +459,9 @@ impl Editor {
             }
             self.follow_edit_frame(&mut frame);
             self.develop_photo(ui);
+            // Last in the frame's edit: the steps move the photo the frame ends on.
+            self.slider_key_steps(&ctx);
+            self.slider_keys_label(&ctx);
             self.finish_edit_frame(frame, &ctx);
         }
         // The sliders went (the Library, the panel hidden) with a label held.
@@ -1797,6 +1807,9 @@ impl Editor {
             if self.keys(ctx).take(&b::CLIPPING).is_some() {
                 self.view.clipping.toggle_both();
             }
+            if self.keys(ctx).take(&b::SLIDER_KEYS).is_some() {
+                self.view.slider_keys.on ^= true;
+            }
             if self.keys(ctx).take(&b::CAMERA_THUMBNAIL).is_some() {
                 self.toggle_camera_thumbnail();
             } else if self.keys(ctx).take(&b::BEFORE_ONLY).is_some() {
@@ -1977,6 +1990,12 @@ impl Editor {
                     if !self.preview.status.is_empty() {
                         ui.separator();
                         ui.small(&self.preview.status);
+                    }
+                    // Slider Keys, while it is on in Develop.
+                    if self.view.slider_keys.on && self.module == Module::Develop {
+                        ui.separator();
+                        ui.small("Slider Keys On")
+                            .on_hover_text("Hold a slider's key and press the arrows · Shift+K");
                     }
                     if self.document.opened_from_copy() {
                         ui.separator();

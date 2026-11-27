@@ -214,6 +214,9 @@ pub(in crate::app) enum Context {
     /// The Library's Loupe and Develop: the zoom keys.
     LoupeZoom,
     Develop,
+    /// Develop while Slider Keys is on: the sliders' keys, over Develop's
+    /// and under a tool's.
+    SliderKeys,
     Tool(Tool),
     /// The reference card, the one window with keys of its own.
     ShortcutSheet,
@@ -507,6 +510,11 @@ impl<'a> FrameKeys<'a> {
         let map = ctx
             .data(|d| d.get_temp::<Arc<Effective>>(effective_id()))
             .unwrap_or_default();
+        Self { ctx, map }
+    }
+    /// `map`'s chords, before the frame begins: for reading the raw input in
+    /// `raw_input_hook` with [`Self::has_chord`].
+    pub(in crate::app) fn before_frame(ctx: &'a egui::Context, map: Arc<Effective>) -> Self {
         Self { ctx, map }
     }
     /// Starts the frame with `map`'s chords in effect: nothing taken yet,

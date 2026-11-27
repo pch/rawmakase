@@ -214,6 +214,20 @@ pub(in crate::app) static COMMANDS: &[Command] = &[
     command("mask:new_radial", "New radial gradient mask"),
     command("mask:new_color_range", "New color range mask"),
     command("basic:next", "Select the next Basic slider"),
+    command("slider_keys", "Turn Slider Keys on or off"),
+    command("slider_keys:exposure", "Slider Keys: Exposure"),
+    command("slider_keys:contrast", "Slider Keys: Contrast"),
+    command("slider_keys:highlights", "Slider Keys: Highlights"),
+    command("slider_keys:shadows", "Slider Keys: Shadows"),
+    command("slider_keys:whites", "Slider Keys: Whites"),
+    command("slider_keys:blacks", "Slider Keys: Blacks"),
+    command("slider_keys:temp", "Slider Keys: Temp"),
+    command("slider_keys:tint", "Slider Keys: Tint"),
+    command("slider_keys:texture", "Slider Keys: Texture"),
+    command("slider_keys:clarity", "Slider Keys: Clarity"),
+    command("slider_keys:dehaze", "Slider Keys: Dehaze"),
+    command("slider_keys:vibrance", "Slider Keys: Vibrance"),
+    command("slider_keys:saturation", "Slider Keys: Saturation"),
     command("keyword_set:1", "Keyword Set: slot 1"),
     command("keyword_set:2", "Keyword Set: slot 2"),
     command("keyword_set:3", "Keyword Set: slot 3"),
@@ -718,6 +732,22 @@ pub(in crate::app) mod bindings {
         REFERENCE_VIEW = b("reference_view", Develop, &[d(&[Key::R], SHIFT)]);
         DEVELOP_INFO = b("info", Develop, &[d(&[Key::I], NONE).once_per_press()]);
         CLIPPING = b("clipping", Develop, &[d(&[Key::J], NONE)]);
+        SLIDER_KEYS = b("slider_keys", Develop, &[d(&[Key::K], SHIFT).once_per_press()]);
+        // Slider Keys' sliders (`Editor::slider_keys`), by their place: held,
+        // each moves its slider with the arrows and the wheel while the mode is on.
+        SLIDER_EXPOSURE = b("slider_keys:exposure", Context::SliderKeys, &[d(&[Key::E], NONE).placed()]);
+        SLIDER_CONTRAST = b("slider_keys:contrast", Context::SliderKeys, &[d(&[Key::C], NONE).placed()]);
+        SLIDER_HIGHLIGHTS = b("slider_keys:highlights", Context::SliderKeys, &[d(&[Key::H], NONE).placed()]);
+        SLIDER_SHADOWS = b("slider_keys:shadows", Context::SliderKeys, &[d(&[Key::S], NONE).placed()]);
+        SLIDER_WHITES = b("slider_keys:whites", Context::SliderKeys, &[d(&[Key::W], NONE).placed()]);
+        SLIDER_BLACKS = b("slider_keys:blacks", Context::SliderKeys, &[d(&[Key::B], NONE).placed()]);
+        SLIDER_TEMP = b("slider_keys:temp", Context::SliderKeys, &[d(&[Key::T], NONE).placed()]);
+        SLIDER_TINT = b("slider_keys:tint", Context::SliderKeys, &[d(&[Key::G], NONE).placed()]);
+        SLIDER_TEXTURE = b("slider_keys:texture", Context::SliderKeys, &[d(&[Key::X], NONE).placed()]);
+        SLIDER_CLARITY = b("slider_keys:clarity", Context::SliderKeys, &[d(&[Key::L], NONE).placed()]);
+        SLIDER_DEHAZE = b("slider_keys:dehaze", Context::SliderKeys, &[d(&[Key::D], NONE).placed()]);
+        SLIDER_VIBRANCE = b("slider_keys:vibrance", Context::SliderKeys, &[d(&[Key::V], NONE).placed()]);
+        SLIDER_SATURATION = b("slider_keys:saturation", Context::SliderKeys, &[d(&[Key::A], NONE).placed()]);
         // Shift+\ arrives as | on most layouts. A German Mac types | with
         // Option+7 and \ with Option+Shift+7: Alt is free on punctuation.
         CAMERA_THUMBNAIL = b("camera_thumbnail", Develop, &[

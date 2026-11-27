@@ -335,7 +335,7 @@ static GENERAL: [Row; 16] = [
     row(&[Keys(&b::PREFERENCES)], "Preferences"),
     row(&[Keys(&b::SHORTCUTS)], "These shortcuts"),
 ];
-static DEVELOP: [Row; 57] = [
+static DEVELOP: [Row; 71] = [
     row(&[Keys(&b::CROP)], "Crop & Straighten"),
     row(&[Keys(&b::FINISH_CROP)], "Finish the crop"),
     row(
@@ -420,6 +420,59 @@ static DEVELOP: [Row; 57] = [
         "Photo info overlay: Info 1, Info 2, off",
     ),
     row(&[Keys(&b::CLIPPING)], "Show shadow and highlight clipping"),
+    row(&[Keys(&b::SLIDER_KEYS)], "Slider Keys on / off"),
+    row(
+        &[Keys(&b::SLIDER_EXPOSURE)],
+        "Slider Keys: hold for Exposure, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_CONTRAST)],
+        "Slider Keys: hold for Contrast, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_HIGHLIGHTS)],
+        "Slider Keys: hold for Highlights, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_SHADOWS)],
+        "Slider Keys: hold for Shadows, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_WHITES)],
+        "Slider Keys: hold for Whites, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_BLACKS)],
+        "Slider Keys: hold for Blacks, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_TEMP)],
+        "Slider Keys: hold for Temp, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_TINT)],
+        "Slider Keys: hold for Tint, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_TEXTURE)],
+        "Slider Keys: hold for Texture, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_CLARITY)],
+        "Slider Keys: hold for Clarity, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_DEHAZE)],
+        "Slider Keys: hold for Dehaze, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_VIBRANCE)],
+        "Slider Keys: hold for Vibrance, press the arrows",
+    ),
+    row(
+        &[Keys(&b::SLIDER_SATURATION)],
+        "Slider Keys: hold for Saturation, press the arrows",
+    ),
     row(&[Keys(&b::ZOOM), Text("Space")], "Toggle zoom / fit"),
     row(
         &[
