@@ -1,10 +1,12 @@
-//! The Basic panel's Auto, estimated off the UI thread.
+//! The Basic panel's Auto, the White Balance menu's and the Negative panel's,
+//! estimated off the UI thread.
 use crate::app::{
     Editor,
     history::Step,
     worker::{AutoKind, Event},
 };
 use crate::develop::AutoTone;
+use crate::model::negative::NegativeConversion;
 use crate::model::recipe::Recipe;
 use rawmakase_cancel::Cancel;
 
@@ -21,6 +23,16 @@ fn inputs(kind: AutoKind, r: &Recipe) -> Recipe {
             incremental_temperature: 0.,
             incremental_tint: 0.,
             auto_white_balance: None,
+            ..r.clone()
+        },
+        // The levels are measured through the rest of the conversion: its film and
+        // base, and the crop it samples.
+        AutoKind::Negative => Recipe {
+            negative: r.negative.as_ref().map(|n| NegativeConversion {
+                dmin: [0.; 3],
+                dmax: [0.; 3],
+                ..n.clone()
+            }),
             ..r.clone()
         },
     }
@@ -46,12 +58,16 @@ impl Editor {
     }
 
     /// Starts Auto for the open photo; the estimate arrives as [`Event::Auto`]. Does
-    /// nothing while the photo is still decoding or an estimate is already running.
+    /// nothing while the photo is still decoding or an estimate is already running,
+    /// nor the Negative panel's for a photo without a conversion.
     pub(in crate::app) fn start_auto(&mut self, kind: AutoKind) {
         let Some(im) = self.document.full().cloned() else {
             return;
         };
         if self.document.auto.is_running() {
+            return;
+        }
+        if kind == AutoKind::Negative && self.document.edit.recipe().negative.is_none() {
             return;
         }
         let (_, cancel) = self.document.auto.start();
@@ -68,6 +84,14 @@ impl Editor {
                     }
                     AutoKind::WhiteBalance => {
                         crate::develop::auto_white_balance(&im, &base, Cancel::new(&cancel))
+                    }
+                    AutoKind::Negative => {
+                        crate::develop::auto_negative(&im, &base, Cancel::new(&cancel)).map(|n| {
+                            Recipe {
+                                negative: Some(n),
+                                ..base.clone()
+                            }
+                        })
                     }
                 }
                 .map(Box::new)
@@ -116,6 +140,7 @@ impl Editor {
         let step = match kind {
             AutoKind::Settings => Step::new("Auto Settings", ""),
             AutoKind::WhiteBalance => Step::new("White Balance", "Auto"),
+            AutoKind::Negative => Step::new("Negative", "Auto"),
         };
         let mut applied = self.document.edit.recipe().clone();
         match kind {
@@ -125,6 +150,7 @@ impl Editor {
                 self.document.auto_effect.take();
             }
             AutoKind::WhiteBalance => apply_white_balance(&auto, &mut applied),
+            AutoKind::Negative => apply_negative_levels(&auto, &mut applied),
         }
         // With Auto Sync on, the other selected photos get an Auto of their own:
         // the steps before are taken first, so only Auto's is measured.
@@ -145,6 +171,15 @@ pub(in crate::app) fn apply_white_balance(auto: &Recipe, to: &mut Recipe) {
     to.incremental_temperature = auto.incremental_temperature;
     to.incremental_tint = auto.incremental_tint;
     to.auto_white_balance = auto.auto_white_balance;
+}
+
+/// The Negative panel's Auto estimate `auto` set on `to`: only the conversion's
+/// levels, so its film and base stay as they are.
+pub(in crate::app) fn apply_negative_levels(auto: &Recipe, to: &mut Recipe) {
+    if let (Some(n), Some(a)) = (to.negative.as_mut(), auto.negative.as_ref()) {
+        n.dmin = a.dmin;
+        n.dmax = a.dmax;
+    }
 }
 
 #[cfg(test)]

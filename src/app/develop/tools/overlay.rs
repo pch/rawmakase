@@ -34,9 +34,12 @@ impl Editor {
             return true;
         }
         match self.view.tool() {
-            Tool::None | Tool::Crop | Tool::WhiteBalance | Tool::Defringe | Tool::PointColor => {
-                false
-            }
+            Tool::None
+            | Tool::Crop
+            | Tool::WhiteBalance
+            | Tool::Defringe
+            | Tool::PointColor
+            | Tool::FilmBase => false,
             Tool::Remove | Tool::AiRetouch => {
                 self.retouch_overlay(ui, response, rect);
                 true

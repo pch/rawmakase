@@ -182,6 +182,7 @@ impl BatchChange {
                 None => "Synchronize Settings".into(),
                 Some(crate::app::worker::AutoKind::Settings) => "Auto Settings".into(),
                 Some(crate::app::worker::AutoKind::WhiteBalance) => "Auto White Balance".into(),
+                Some(crate::app::worker::AutoKind::Negative) => "Auto Negative Levels".into(),
             },
             BatchChange::Preset(p) => format!("Apply Preset: {}", p.name),
             BatchChange::Proposed(p) => p.name.clone(),
@@ -197,6 +198,11 @@ impl BatchChange {
                 if c.measure == Some(crate::app::worker::AutoKind::WhiteBalance) =>
             {
                 Step::new("White Balance", "Auto")
+            }
+            BatchChange::AutoSync(c)
+                if c.measure == Some(crate::app::worker::AutoKind::Negative) =>
+            {
+                Step::new("Negative", "Auto")
             }
             // Develop names a turn by its panel.
             BatchChange::Turn(_) => Step::new("Crop", ""),
@@ -828,6 +834,18 @@ fn prepare(
                             let auto = crate::develop::auto_white_balance(image, &start, cancel)?;
                             let mut recipe = start.clone();
                             crate::app::develop::auto::apply_white_balance(&auto, &mut recipe);
+                            recipe
+                        }
+                        // Each frame's own levels, through its own conversion.
+                        AutoKind::Negative => {
+                            let mut recipe = start.clone();
+                            let auto = Recipe {
+                                negative: Some(crate::develop::auto_negative(
+                                    image, &start, cancel,
+                                )?),
+                                ..start.clone()
+                            };
+                            crate::app::develop::auto::apply_negative_levels(&auto, &mut recipe);
                             recipe
                         }
                     };

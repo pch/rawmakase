@@ -392,6 +392,8 @@ pub(in crate::app) enum Tool {
     Defringe,
     /// Point Color's dropper, which adds a swatch.
     PointColor,
+    /// The Negative panel's film base picker.
+    FilmBase,
     /// Spot removal: Heal and Clone.
     Remove,
     /// Experimental AI Retouch: extensions' retouch generators (AI Remove,
@@ -450,6 +452,9 @@ pub(in crate::app) struct ViewState {
     /// The tool open, read with [`ViewState::tool`] and set with
     /// [`ViewState::set_tool`] alone.
     pub(in crate::app) tool_slot: ToolSlot,
+    /// Why the film base picker's last click read no base, while it stays open:
+    /// the Negative panel says so under it. Any change of tool clears it.
+    pub(in crate::app) film_base_refusal: Option<crate::develop::FilmBaseRefusal>,
     /// A drag on the crop, from the press to the release.
     pub(in crate::app) crop_drag: Option<crate::app::develop::tools::crop_drag::CropDrag>,
     /// The aspect this photo's crop is locked to, in the Crop menu's values: the
@@ -541,6 +546,7 @@ impl Default for ViewState {
             readout: Default::default(),
             tone_drag: None,
             tool_slot: ToolSlot::default(),
+            film_base_refusal: None,
             crop_drag: None,
             aspect: -1.,
             aspect_read: false,
@@ -906,6 +912,7 @@ impl ViewState {
             self.tool_slot.taken += 1;
         }
         self.tool_slot.tool = tool;
+        self.film_base_refusal = None;
     }
     /// How many times a tool was taken up: what was begun with no tool open
     /// ends once it moves, though the tool is gone again by the time it is
@@ -921,12 +928,12 @@ impl ViewState {
     pub(crate) fn retouching(&self) -> bool {
         matches!(self.tool(), Tool::Remove | Tool::AiRetouch)
     }
-    /// An eyedropper is active: White Balance, the Fringe Color Selector or Point
-    /// Color's dropper.
+    /// An eyedropper is active: White Balance, the Fringe Color Selector, Point
+    /// Color's dropper or the film base picker.
     pub(crate) fn picks_color(&self) -> bool {
         matches!(
             self.tool(),
-            Tool::WhiteBalance | Tool::Defringe | Tool::PointColor
+            Tool::WhiteBalance | Tool::Defringe | Tool::PointColor | Tool::FilmBase
         )
     }
     /// What the eyedropper's loupe asks for.
@@ -934,6 +941,7 @@ impl ViewState {
         match self.tool() {
             Tool::Defringe => "Pick a purple or green fringe",
             Tool::PointColor => "Pick a color to adjust",
+            Tool::FilmBase => "Click the clear film edge",
             _ => "Pick a target neutral",
         }
     }

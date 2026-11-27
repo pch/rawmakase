@@ -63,6 +63,9 @@ pub(crate) enum AutoKind {
     Settings,
     /// White balance alone, the WB menu's Auto.
     WhiteBalance,
+    /// A scanned negative's levels, the Negative panel's Auto: the conversion's
+    /// density bounds measured from the frame.
+    Negative,
 }
 pub(crate) enum Event {
     /// A file dialog or background work of Preferences > Extensions.

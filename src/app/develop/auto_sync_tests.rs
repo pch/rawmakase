@@ -401,6 +401,49 @@ fn auto_is_measured_on_each_photo() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The Negative panel's Auto is measured on each photo through its own conversion,
+/// as Auto is: a roll's frames share their film and base, not their levels. The
+/// conversion turned on goes to the others as it is.
+#[test]
+fn negative_auto_is_measured_on_each_photo() -> anyhow::Result<()> {
+    use crate::model::negative::{FilmType, NegativeConversion};
+    let (_d, mut e, photos) = auto_syncing()?;
+    let mut chosen = e.sync_groups();
+    chosen.set(SettingGroup::NegativeConversion, GroupInclusion::Included);
+    e.session.sync_groups = Some(chosen);
+    let unlevelled = NegativeConversion::new(FilmType::BlackWhite);
+    edit(&mut e, |r| r.negative = Some(unlevelled.clone()));
+    settle(&mut e);
+    assert_eq!(saved(&e, &photos[1]).negative, Some(unlevelled.clone()));
+    e.start_auto(crate::app::worker::AutoKind::Negative);
+    wait(&mut e, "Auto", |e| !e.document.auto.is_running());
+    panel_frame(&mut e, Vec::new(), FocusedButton::No);
+    settle(&mut e);
+    let own = e.document.edit.recipe().negative.clone().unwrap();
+    let (b, c) = (
+        saved(&e, &photos[1]).negative.unwrap(),
+        saved(&e, &photos[2]).negative.unwrap(),
+    );
+    for n in [&own, &b, &c] {
+        assert_ne!(
+            (n.dmin, n.dmax),
+            (unlevelled.dmin, unlevelled.dmax),
+            "{n:?}"
+        );
+        assert_eq!((n.film, n.base), (unlevelled.film, unlevelled.base));
+    }
+    assert!(
+        b.dmax != own.dmax && c.dmax != b.dmax,
+        "{own:?} {b:?} {c:?}"
+    );
+    // Only the conversion: `b` keeps its own Contrast.
+    assert_eq!(saved(&e, &photos[1]).contrast, 0.3);
+    e.undo();
+    assert_eq!(e.document.edit.recipe().negative, Some(unlevelled.clone()));
+    assert_eq!(saved(&e, &photos[1]).negative, Some(unlevelled));
+    Ok(())
+}
+
 /// A step recorded in the frame the photo is left in (a drag still held, an edit
 /// just made) goes to the other photos before the save returns.
 #[test]

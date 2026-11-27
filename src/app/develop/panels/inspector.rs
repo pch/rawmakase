@@ -698,12 +698,25 @@ impl Editor {
             hdr: &hdr,
             hdr_second: hdr_second.as_ref(),
         };
+        let negative_view = panels::negative::View {
+            decoded: self.document.full().is_some(),
+            auto_running: self.document.auto.is_running(),
+        };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;
         let step = &mut self.step_name;
         let curve_histograms = &mut self.curve_histogram;
         let (r, photo) = self.document.recipe_and_colors();
         let metadata = metadata.as_ref();
+        // The negative conversion renders before everything else, so it comes first.
+        requests.add(panels::negative::show(
+            ui,
+            step,
+            r,
+            view,
+            &negative_view,
+            &palette,
+        ));
         requests.add(panels::basic::show(
             ui,
             step,
