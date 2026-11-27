@@ -221,16 +221,31 @@ fn curve_menu_choice(
             let Some((from, curve)) = view.copied_curve.clone() else {
                 return;
             };
-            *point_curves(r)[channel] = curve;
+            let curves = point_curves(r);
+            if *curves[channel] == curve {
+                return;
+            }
+            *curves[channel] = curve;
             format!("Paste {} into {name}", CURVE_CHANNEL_NAMES[from])
         }
         CurveMenuChoice::ResetChannel => {
-            *point_curves(r)[channel] = ToneCurve::default();
+            let curves = point_curves(r);
+            if *curves[channel] == ToneCurve::default() {
+                return;
+            }
+            *curves[channel] = ToneCurve::default();
             format!("Reset {name} Channel")
         }
         CurveMenuChoice::ResetAll => {
+            let mut changed = false;
             for curve in point_curves(r) {
-                *curve = ToneCurve::default();
+                if *curve != ToneCurve::default() {
+                    *curve = ToneCurve::default();
+                    changed = true;
+                }
+            }
+            if !changed {
+                return;
             }
             "Reset All Channels".into()
         }

@@ -318,6 +318,230 @@ fn an_alt_click_adds_a_point_on_the_curve_from_anywhere() {
     assert!((y - lut.evaluate(x)).abs() <= 0.5 / 255., "{x} → {y}");
 }
 
+/// Secondary-button drags (and Control-drags on macOS) must never insert or
+/// move curve points.
+#[test]
+fn a_secondary_or_control_drag_does_not_add_or_move_a_curve_point() {
+    let mut h = CurveHarness::new();
+    let at = Pos2::new(150., 160.);
+    let i = h.add(at);
+    let before = h.curve.points.clone();
+    // Drag with the secondary button starting on empty space.
+    let empty = Pos2::new(80., 80.);
+    h.frame(
+        vec![
+            egui::Event::PointerMoved(empty),
+            egui::Event::PointerButton {
+                pos: empty,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        egui::Modifiers::NONE,
+    );
+    h.frame(
+        vec![egui::Event::PointerMoved(empty + Vec2::new(30., -30.))],
+        egui::Modifiers::NONE,
+    );
+    h.frame(
+        vec![egui::Event::PointerButton {
+            pos: empty + Vec2::new(30., -30.),
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        egui::Modifiers::NONE,
+    );
+    assert_eq!(
+        h.curve.points, before,
+        "secondary drag on empty space must not edit the curve"
+    );
+    // Drag with the secondary button starting on the existing point.
+    h.frame(
+        vec![
+            egui::Event::PointerMoved(at),
+            egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        egui::Modifiers::NONE,
+    );
+    h.frame(
+        vec![egui::Event::PointerMoved(at + Vec2::new(0., -30.))],
+        egui::Modifiers::NONE,
+    );
+    h.frame(
+        vec![egui::Event::PointerButton {
+            pos: at + Vec2::new(0., -30.),
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        egui::Modifiers::NONE,
+    );
+    assert_eq!(
+        h.curve.points[i], before[i],
+        "secondary drag on a point must not move it"
+    );
+    if cfg!(target_os = "macos") {
+        let ctrl = egui::Modifiers::CTRL;
+        h.drag(empty, &[(empty + Vec2::new(30., -30.), ctrl)]);
+        assert_eq!(
+            h.curve.points, before,
+            "Control-drag on macOS must not add or move a point"
+        );
+    }
+}
+
+/// Deleting the point being dragged ends the drag rather than moving its
+/// neighbour (or the white endpoint) to where the pointer is.
+#[test]
+fn deleting_a_curve_point_mid_drag_does_not_move_its_neighbour() {
+    let mut h = CurveHarness::new();
+    let at = Pos2::new(150., 160.);
+    h.add(at);
+    let end = h.curve.points[2];
+    // Start dragging the interior point.
+    h.button(at, true, egui::Modifiers::NONE);
+    h.frame(
+        vec![egui::Event::PointerMoved(at + Vec2::new(0., -20.))],
+        egui::Modifiers::NONE,
+    );
+    // Press Delete while still holding the primary button, then move further.
+    h.frame(
+        vec![egui::Event::Key {
+            key: egui::Key::Delete,
+            physical_key: Some(egui::Key::Delete),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        egui::Modifiers::NONE,
+    );
+    h.frame(
+        vec![egui::Event::PointerMoved(at + Vec2::new(0., -40.))],
+        egui::Modifiers::NONE,
+    );
+    h.button(at + Vec2::new(0., -40.), false, egui::Modifiers::NONE);
+    assert_eq!(h.curve.points.len(), 2);
+    assert_eq!(
+        h.curve.points[1], end,
+        "white endpoint must not be hijacked after deleting the dragged point"
+    );
+}
+
+/// Pressing Alt after dragging a point past the well's top lets a small
+/// downward movement bring it back off 255 right away, without crossing 10×
+/// the overshoot.
+#[test]
+fn pressing_alt_after_dragging_past_the_top_responds_immediately() {
+    let mut h = CurveHarness::new();
+    let area = h.area();
+    let at = on_screen(area, 0.5, 0.8);
+    let i = h.add(at);
+    let far_above = Pos2::new(at.x, area.top() - 100.);
+    h.drag(
+        at,
+        &[
+            (far_above, egui::Modifiers::NONE),
+            (far_above, ALT),
+            (far_above + Vec2::new(0., 30.), ALT),
+        ],
+    );
+    assert!(
+        h.curve.points[i][1] < 1.,
+        "expected Alt-drag back down to leave 1.0, stayed at {}",
+        h.curve.points[i][1]
+    );
+}
+
+/// The Input and Output captions share one vertical middle with their fields,
+/// both before and after a point is selected.
+#[test]
+fn point_curve_input_and_output_labels_align_with_their_fields() {
+    let mut h = CurveHarness::new();
+    let area = h.area();
+    for select in [false, true] {
+        if select {
+            h.click(on_screen(area, 0.5, 0.5), egui::Modifiers::NONE);
+        }
+        let curve = &mut h.curve;
+        h.time += 0.05;
+        let mut output = h.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(320.))),
+                time: Some(h.time),
+                ..Default::default()
+            },
+            |ui| {
+                tone_curve_ui(ui, curve, &[[0; 256]; 3], 0, Default::default());
+            },
+        );
+        output.textures_delta.clear();
+        let tree = output.platform_output.accesskit_update.expect("on");
+        let mid_y = |role: egui::accesskit::Role, label: &str| {
+            let b = tree
+                .nodes
+                .iter()
+                .map(|(_, n)| n)
+                .find(|n| {
+                    n.role() == role && (n.label() == Some(label) || n.value() == Some(label))
+                })
+                .and_then(|n| n.bounds())
+                .unwrap_or_else(|| panic!("no {role:?} {label:?} (selected={select})"));
+            (b.y0 + b.y1) / 2.
+        };
+        let input_label = mid_y(egui::accesskit::Role::Label, "Input");
+        let output_label = mid_y(egui::accesskit::Role::Label, "Output");
+        assert!(
+            (input_label - output_label).abs() <= 0.5,
+            "Input ({input_label}) and Output ({output_label}) labels misaligned (selected={select})"
+        );
+        if select {
+            let field_mid_y = |label: &str| {
+                let b = tree
+                    .nodes
+                    .iter()
+                    .map(|(_, n)| n)
+                    .find(|n| n.role() != egui::accesskit::Role::Label && n.label() == Some(label))
+                    .and_then(|n| n.bounds())
+                    .unwrap_or_else(|| panic!("no field {label:?}"));
+                (b.y0 + b.y1) / 2.
+            };
+            let input_field = field_mid_y("Input");
+            let output_field = field_mid_y("Output");
+            assert!(
+                (input_label - input_field).abs() <= 1.0,
+                "Input label ({input_label}) off field middle ({input_field})"
+            );
+            assert!(
+                (output_label - output_field).abs() <= 1.0,
+                "Output label ({output_label}) off field middle ({output_field})"
+            );
+        } else {
+            let dashes: Vec<f64> = tree
+                .nodes
+                .iter()
+                .map(|(_, n)| n)
+                .filter(|n| n.role() == egui::accesskit::Role::Button && n.label() == Some("–"))
+                .filter_map(|n| n.bounds())
+                .map(|b| (b.y0 + b.y1) / 2.)
+                .collect();
+            assert_eq!(dashes.len(), 2, "two blank fields");
+            for field in dashes {
+                assert!(
+                    (input_label - field).abs() <= 1.0,
+                    "Input label ({input_label}) off blank field middle ({field})"
+                );
+            }
+        }
+    }
+}
+
 /// Runs one frame of `add` in a 360-point-wide window at `time`.
 fn widget_frame(
     ctx: &egui::Context,

@@ -722,6 +722,183 @@ fn the_point_curve_menu_copies_pastes_and_resets_channels() {
     );
 }
 
+/// Pasting a curve that already matches the channel records no History step and
+/// never leaks its name onto the next unnamed edit.
+#[test]
+fn pasting_the_same_curve_leaves_no_history_step_and_does_not_name_the_next_edit() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    ctx.all_styles_mut(|s| s.animation_time = 0.);
+    let mut e = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    e.view.parametric_curve = false;
+    e.document.edit.setup_mut().curve.points = vec![[0., 0.], [0.5, 0.7], [1., 1.]];
+    let frame = |e: &mut Editor, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 1200.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let edit = e.begin_edit_frame();
+                let (r, _) = e.document.recipe_and_colors();
+                super::panels::tone_curve::show(
+                    ui,
+                    &mut e.step_name,
+                    r,
+                    &mut e.view,
+                    || [[0; 256]; 3],
+                    None,
+                    &[],
+                );
+                e.finish_edit_frame(edit, ui.ctx());
+            },
+        );
+        output.textures_delta.clear();
+        output.platform_output.accesskit_update.expect("on")
+    };
+    let node = |tree: &egui::accesskit::TreeUpdate, label: &str| {
+        tree.nodes
+            .iter()
+            .map(|(_, n)| n)
+            .find(|n| n.label() == Some(label))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {label}"))
+    };
+    let right_click = |at: Pos2| {
+        [true, false].map(|pressed| {
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        })
+    };
+    let choose = |e: &mut Editor, item: &str| {
+        let tree = frame(e, vec![]);
+        let well = node(&tree, "Point curve").bounds().expect("placed");
+        let corner = Pos2::new(well.x0 as f32 + 20., well.y0 as f32 + 20.);
+        for events in right_click(corner) {
+            frame(e, events);
+        }
+        let menu = frame(e, vec![]);
+        for events in press_and_release(centre(&node(&menu, item))) {
+            frame(e, events);
+        }
+        frame(e, vec![]);
+    };
+    choose(&mut e, "Copy RGB Curve");
+    // Pasting RGB back onto RGB changes nothing: no History step, no leaked name.
+    choose(&mut e, "Paste RGB Curve");
+    assert_eq!(e.document.edit.history().steps().1, 0);
+    // The next unnamed edit keeps its own name rather than "Point Curve".
+    let edit = e.begin_edit_frame();
+    e.document.edit.recipe_mut().exposure = 0.5;
+    e.finish_edit_frame(edit, &ctx);
+    let (steps, applied) = e.document.edit.history().steps();
+    assert_eq!(applied, 1);
+    assert_ne!(
+        steps[0].name, "Point Curve",
+        "no-op paste leaked its step name: {:?}",
+        steps[0]
+    );
+}
+
+/// Clicking an uncovered spot in the curve well to dismiss an open curve menu
+/// only closes the menu and does not insert a curve point.
+#[test]
+fn clicking_the_curve_well_to_dismiss_its_menu_does_not_add_a_point() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    ctx.all_styles_mut(|s| s.animation_time = 0.);
+    let mut view = crate::app::develop::state::ViewState {
+        parametric_curve: false,
+        ..Default::default()
+    };
+    let mut recipe = crate::model::recipe::Recipe::default();
+    let mut step = crate::app::develop::step_name::StepName::default();
+    let mut frame = |recipe: &mut crate::model::recipe::Recipe, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 1200.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                super::panels::tone_curve::show(
+                    ui,
+                    &mut step,
+                    recipe,
+                    &mut view,
+                    || [[0; 256]; 3],
+                    None,
+                    &[],
+                );
+            },
+        );
+        output.textures_delta.clear();
+        output.platform_output.accesskit_update.expect("on")
+    };
+    let tree = frame(&mut recipe, vec![]);
+    let well = tree
+        .nodes
+        .iter()
+        .find(|(_, n)| n.label() == Some("Point curve"))
+        .and_then(|(_, n)| n.bounds())
+        .expect("the well");
+    // Open the menu near the well's top-left corner.
+    let corner = Pos2::new(well.x0 as f32 + 20., well.y0 as f32 + 20.);
+    for pressed in [true, false] {
+        frame(
+            &mut recipe,
+            vec![
+                egui::Event::PointerMoved(corner),
+                egui::Event::PointerButton {
+                    pos: corner,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    let menu = frame(&mut recipe, vec![]);
+    assert!(
+        menu.nodes
+            .iter()
+            .any(|(_, n)| n.label() == Some("Reset All Channels")),
+        "menu opened"
+    );
+    // Left-click the bottom-right corner of the well, outside the menu popup.
+    let outside_menu = Pos2::new(well.x1 as f32 - 30., well.y1 as f32 - 30.);
+    for events in press_and_release(outside_menu) {
+        frame(&mut recipe, events);
+    }
+    let after = frame(&mut recipe, vec![]);
+    assert_eq!(
+        recipe.curve.points.len(),
+        2,
+        "dismissing the menu must not add a point: {:?}",
+        recipe.curve.points
+    );
+    assert!(
+        !after
+            .nodes
+            .iter()
+            .any(|(_, n)| n.label() == Some("Reset All Channels")),
+        "menu closed"
+    );
+}
+
 /// Right-clicking a point still removes it, without opening the menu.
 #[test]
 fn right_clicking_a_point_curve_point_removes_it_without_the_menu() {
