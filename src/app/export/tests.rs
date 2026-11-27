@@ -2109,3 +2109,17 @@ fn a_destinations_options_are_their_defaults_until_chosen_and_while_they_fit() {
         &options, &values, &columns
     ));
 }
+
+/// The export queue, started with the first export, renders through the editor's
+/// backend, the one preview builds render through
+/// (`preview_build::tests::builds_and_exports_render_through_one_backend`).
+#[test]
+fn the_export_queue_renders_through_the_editors_backend() -> anyhow::Result<()> {
+    let (_dir, mut e, _, _) = editor()?;
+    let before = Arc::strong_count(&e.export_backend);
+    e.export_queue();
+    // The queue and its worker each hold a clone; a backend of their own would not
+    // count here.
+    assert!(Arc::strong_count(&e.export_backend) > before);
+    Ok(())
+}

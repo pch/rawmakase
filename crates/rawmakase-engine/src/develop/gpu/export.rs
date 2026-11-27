@@ -169,6 +169,9 @@ impl ExportBackendStatus {
 pub struct ExportBackend {
     exec: Mutex<ExecState>,
     meta: Mutex<StatusState>,
+    /// SDR renders that have asked for `exec`, so a test knows one is waiting for it.
+    #[cfg(test)]
+    exec_asked: std::sync::atomic::AtomicUsize,
 }
 
 // Compile-time check that ExportBackend is Send + Sync.
@@ -176,6 +179,19 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<ExportBackend>();
 };
+
+impl Drop for ExportBackend {
+    /// Drops a live GPU device on a detached thread. A cancel stops waiting for a
+    /// submitted band without waiting for the GPU, and `wgpu`'s `Queue::drop` waits
+    /// for the device to go idle with no deadline: dropped on the thread that drops
+    /// the last owner (in the app, the UI thread at exit), a stalled band would
+    /// hang it.
+    fn drop(&mut self) {
+        let exec = self.exec.get_mut().unwrap_or_else(PoisonError::into_inner);
+        let engine = std::mem::replace(&mut exec.engine, Engine::Disabled);
+        retire_engine(engine, true);
+    }
+}
 
 impl Default for ExportBackend {
     fn default() -> Self {
@@ -219,12 +235,25 @@ enum Engine {
     Mock(Box<dyn MockGpuDriver + Send>),
 }
 
+impl Engine {
+    /// Whether dropping this engine drops a device (or, in tests, a driver standing in
+    /// for one).
+    fn holds_device(&self) -> bool {
+        match self {
+            Engine::Gpu(_) => true,
+            #[cfg(test)]
+            Engine::Mock(_) => true,
+            Engine::Uninitialized | Engine::Disabled => false,
+        }
+    }
+}
+
 /// Drops a retired GPU engine outside any mutex. When `async_drop` is true (stalled
 /// driver timeout, device loss, or panic unwind), drops a real `wgpu::Device`/`Queue`
 /// on a detached thread so `wgpu`'s unbounded `Queue::drop` idle wait cannot stall the
 /// caller, sibling export lanes, or shutdown past the 5 s band deadline.
 fn retire_engine(engine: Engine, async_drop: bool) {
-    if async_drop && matches!(engine, Engine::Gpu(_)) {
+    if async_drop && engine.holds_device() {
         if let Err(err) = std::thread::Builder::new()
             .name("export-gpu-drop".into())
             .spawn(move || drop(engine))
@@ -408,6 +437,8 @@ impl ExportBackend {
                 max_binding_override: None,
             }),
             meta: Mutex::new(StatusState::new(policy, fallback)),
+            #[cfg(test)]
+            exec_asked: Default::default(),
         }
     }
 
@@ -596,6 +627,8 @@ impl ExportBackend {
         };
 
         // Acquire the serialized GPU execution lock (`meta` remains free for `status()`).
+        #[cfg(test)]
+        self.exec_asked.fetch_add(1, Ordering::SeqCst);
         let (gpu_outcome, retired) = {
             let mut exec = self.lock_exec();
             let guard = PanicGuard::new(&mut exec, &self.meta);
@@ -3603,6 +3636,7 @@ impl ExportBackend {
                 max_binding_override: None,
             }),
             meta: Mutex::new(meta),
+            exec_asked: Default::default(),
         }
     }
 

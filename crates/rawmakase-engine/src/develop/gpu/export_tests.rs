@@ -913,9 +913,12 @@ fn a_render_waiting_for_the_gpu_stops_once_cancelled_without_rendering() -> Resu
             .recv_timeout(Duration::from_secs(5))
             .expect("the export reached the GPU");
         let build = s.spawn(|| render(&build_cancel));
-        // Time for the build to finish its CPU preparation and wait for the GPU.
-        // Were it slower, it would see the cancel before waiting, with the same result.
-        std::thread::sleep(Duration::from_millis(200));
+        // The build has finished its CPU preparation and waits for the GPU.
+        let until = Instant::now() + Duration::from_secs(5);
+        while backend.exec_asked.load(Ordering::SeqCst) < 2 {
+            assert!(Instant::now() < until, "the build never asked for the GPU");
+            std::thread::sleep(Duration::from_millis(1));
+        }
         let quit = Instant::now();
         build_cancel.store(true, Ordering::SeqCst);
         export_cancel.store(true, Ordering::SeqCst);
@@ -934,6 +937,61 @@ fn a_render_waiting_for_the_gpu_stops_once_cancelled_without_rendering() -> Resu
     assert_eq!((st.gpu_renders, st.cpu_renders), (0, 0));
     assert!(st.gpu_active, "a cancel never turns the GPU off");
     Ok(())
+}
+
+/// A backend whose device is stalled on a cancelled band is dropped at exit on the
+/// thread that held it last: the drop returns at once, the device dropping on its
+/// own thread.
+#[test]
+fn dropping_a_backend_never_waits_for_its_device() {
+    use std::sync::mpsc;
+
+    /// Stands in for a device whose `Queue::drop` waits for a stalled GPU.
+    struct StalledDevice {
+        dropped: mpsc::Sender<std::thread::ThreadId>,
+        release: mpsc::Receiver<()>,
+    }
+    impl MockGpuDriver for StalledDevice {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            Err(GpuFailure::Cancelled)
+        }
+        fn release_buffers(&mut self) {}
+    }
+    impl Drop for StalledDevice {
+        fn drop(&mut self) {
+            let _ = self.release.recv_timeout(Duration::from_secs(5));
+            let _ = self.dropped.send(std::thread::current().id());
+        }
+    }
+
+    let (dropped_tx, dropped_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let backend = ExportBackend::with_mock(
+        "MockGPU",
+        Box::new(StalledDevice {
+            dropped: dropped_tx,
+            release: release_rx,
+        }),
+    );
+    let start = Instant::now();
+    drop(backend);
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "dropping waited {:?} for the device",
+        start.elapsed()
+    );
+    release_tx
+        .send(())
+        .expect("the device is still being dropped");
+    let on = dropped_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the device was dropped");
+    assert_ne!(on, std::thread::current().id());
 }
 
 #[test]
