@@ -260,11 +260,9 @@ fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) ->
         w.execute_sqlite(
             sqlite_sql!(
                 "INSERT INTO photos(id, folder, filename, original_path, captured, rating, flag,
-                     label, format, copy_name, master_id, orientation, lightroom_develop, recipe,
-                     export_options, identity, edited_at)
+                     label, format, copy_name, master_id, orientation, lightroom_develop)
                  SELECT id+?1, ?2, filename, ?3 || filename, captured, rating, flag, label,
-                     format, copy_name, master_id+?1, orientation, lightroom_develop, recipe,
-                     export_options, identity, edited_at
+                     format, copy_name, master_id+?1, orientation, lightroom_develop
                  FROM src.photos WHERE folder=?4"
             ),
             &[&photo, &to, &target.directory, from],
@@ -286,6 +284,8 @@ fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) ->
         .write()
         .read_one::<Option<i64>>(sql!("SELECT max(id) FROM stacks"), &[])?
         .unwrap_or(0);
+    // Their edits, as edit_rows alone writes them.
+    super::edit_rows::copy_attached(w, photo)?;
     // Each row of the photos added, with the ids it names shifted.
     for statement in [
         sqlite_sql!(
@@ -294,13 +294,6 @@ fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) ->
         sqlite_sql!(
             "INSERT INTO lightroom_history(photo, position, name, created, text)
              SELECT photo+?1, position, name, created, text FROM src.lightroom_history"
-        ),
-        sqlite_sql!(
-            "INSERT INTO local_edits(photo, data) SELECT photo+?1, data FROM src.local_edits"
-        ),
-        sqlite_sql!(
-            "INSERT INTO develop_history(photo, data)
-             SELECT photo+?1, data FROM src.develop_history"
         ),
         sqlite_sql!(
             "INSERT INTO photo_info(photo, camera, lens, focal, aperture, exposure, iso, width,

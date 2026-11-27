@@ -4,13 +4,14 @@
 //! edit live here, and nowhere else writes those rows; a backend that
 //! detected conflicting edits would do it here.
 //!
-//! Six operations: a checked save or clear ([`write_edit`]), of a photo
+//! Seven operations: a checked save or clear ([`write_edit`]), of a photo
 //! being added too ([`CheckedNew`]), an opaque copy for virtual copies
-//! ([`copy_edit`]), a checked identity refresh for a file found moved
+//! ([`copy_edit`]), an opaque copy of another catalog's edits for Import
+//! from Catalog ([`copy_attached`]), a checked identity refresh for a file found moved
 //! ([`refresh_identity`]), removal with a virtual copy ([`delete_edits`]),
 //! and the catalog upgrade's migration of every stored edit and History
 //! ([`migrate_edits`], [`migrate_histories`]).
-use super::db::{Reads, Write, sql};
+use super::db::{LightroomWrite, Reads, Write, sql, sqlite_sql};
 use super::format_upgrade::{BATCH, Rewrite, Upgrade};
 use super::value::row;
 use super::{Catalog, EditChange, HistoryUpdate, PhotoId};
@@ -279,6 +280,32 @@ pub(super) enum Refresh {
     /// Its edit was saved for another version of the file: it stays
     /// protected, as before the move.
     Protected,
+}
+
+/// Copies the edit of every photo of the catalog attached as `src` (see
+/// [`super::db::Db::with_catalog`]) to its photo here, whose id is `offset`
+/// more, as stored: the edit was checked where it was saved, for the same
+/// file, and its rows keep their bytes as [`copy_edit`]'s do. The photos
+/// are already inserted, without an edit.
+pub(super) fn copy_attached(w: &mut LightroomWrite<'_>, offset: i64) -> Result<()> {
+    for statement in [
+        sqlite_sql!(
+            "UPDATE photos SET (recipe, export_options, identity, edited_at) =
+                 (SELECT s.recipe, s.export_options, s.identity, s.edited_at
+                  FROM src.photos s WHERE s.id + ?1 = photos.id)
+             WHERE id IN (SELECT id + ?1 FROM src.photos)"
+        ),
+        sqlite_sql!(
+            "INSERT INTO local_edits(photo, data) SELECT photo + ?1, data FROM src.local_edits"
+        ),
+        sqlite_sql!(
+            "INSERT INTO develop_history(photo, data)
+             SELECT photo + ?1, data FROM src.develop_history"
+        ),
+    ] {
+        w.execute_sqlite(statement, &[&offset])?;
+    }
+    Ok(())
 }
 
 /// Gives the saved edit of `photo`, whose file was found moved, the identity
