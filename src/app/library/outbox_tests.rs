@@ -236,22 +236,58 @@ fn export_in_the_grid_menu_exports_the_selection() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// In Develop's filmstrip, Export… acts on the photo right-clicked, like the
-/// menu's other entries, not on the photo open or the selection.
+/// In Develop's filmstrip, Export… on a photo of a Cmd-clicked selection exports
+/// the whole selection, as in Lightroom; it exported the photo alone. A photo
+/// outside the selection is exported alone.
 #[test]
-fn export_in_the_filmstrip_menu_exports_the_photo_alone() -> anyhow::Result<()> {
+fn export_in_the_filmstrip_menu_exports_the_selection_its_photo_is_in() -> anyhow::Result<()> {
+    // Photo 0 open, 1 and 2 Cmd-clicked in the filmstrip; the menu of 0, 2, then 3.
+    for (clicked, exported) in [(0, 0..3), (2, 0..3), (3, 3..4)] {
+        let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF", "d.RAF"])?;
+        e.module = crate::app::Module::Develop;
+        let ctx = e.context.clone();
+        let library = e.library.as_mut().unwrap();
+        library.make_active(ids[0]);
+        for id in [ids[1], ids[2]] {
+            assert!(library.develop_select(id, Some(ids[0]), eframe::egui::Modifiers::COMMAND));
+        }
+        let photo = library.photo(ids[clicked]).unwrap().clone();
+        // As the filmstrip does outside the grid.
+        let whole_selection = false;
+        library.photo_action(
+            &ctx,
+            &photo,
+            PhotoAction::Export { previous: false },
+            whole_selection,
+        );
+        carry_out(&mut e);
+        assert_eq!(
+            e.export_dialog_photos().as_deref(),
+            Some(&ids[exported]),
+            "photo {clicked}: {}",
+            e.messages.line()
+        );
+    }
+    Ok(())
+}
+
+/// Develop's Export… and Cmd+Shift+E export the filmstrip's selection when the
+/// open photo is in it, and the open photo alone when nothing else is selected.
+#[test]
+fn export_in_develop_exports_the_filmstrip_selection() -> anyhow::Result<()> {
     let (_d, mut e, ids) = editor_with_catalog(&["a.RAF", "b.RAF", "c.RAF"])?;
     e.module = crate::app::Module::Develop;
-    let ctx = e.context.clone();
+    e.document.catalog_photo = Some(ids[0]);
     let library = e.library.as_mut().unwrap();
     library.make_active(ids[0]);
-    library.select_range_to(ids[1]);
-    let photo = library.photo(ids[2]).unwrap().clone();
-    library.photo_action(&ctx, &photo, PhotoAction::Export { previous: false }, false);
-    carry_out(&mut e);
+    e.open_export_dialog();
+    assert_eq!(e.export_dialog_photos().as_deref(), Some(&ids[..1]));
+    let library = e.library.as_mut().unwrap();
+    assert!(library.develop_select(ids[2], Some(ids[0]), eframe::egui::Modifiers::COMMAND));
+    e.open_export_dialog();
     assert_eq!(
         e.export_dialog_photos().as_deref(),
-        Some(&ids[2..]),
+        Some(&[ids[0], ids[2]][..]),
         "{}",
         e.messages.line()
     );

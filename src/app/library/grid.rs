@@ -391,12 +391,11 @@ impl Library {
                     self.messages.fail(format!("Collection not changed: {e:#}"));
                 }
             }
+            // As in Lightroom, Export takes the selection the photo is in from
+            // every menu, the filmstrip's in Develop and the Loupe too; a photo
+            // outside the selection is exported alone.
             PhotoAction::Export { previous } => {
-                let ids = if whole_selection && self.selection.selected.contains(&photo.id) {
-                    self.selected_ids()
-                } else {
-                    vec![photo.id]
-                };
+                let ids = self.menu_scope(photo.id);
                 self.ask(super::outbox::Request::ExportPhotos(ids, previous));
             }
             PhotoAction::EditIn(which) => {
