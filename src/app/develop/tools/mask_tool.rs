@@ -417,10 +417,10 @@ impl Editor {
             )
         };
         let to_image = |p: Pos2| {
-            clamp_pos(map.to_image(
+            map.to_image(
                 (p.x - rect.left()) / rect.width(),
                 (p.y - rect.top()) / rect.height(),
-            ))
+            )
         };
         if self.selection.prompting.is_some() {
             return self.prompt_overlay(ui, response, rect, &to_screen, &to_image);
@@ -493,9 +493,10 @@ impl Editor {
                 }
             } else if brushing {
                 let erase = alt || t.brush == 2;
-                match self.begin_stroke(at, erase) {
+                let dab = clamp_pos(at);
+                match self.begin_stroke(dab, erase) {
                     Some(stroke) => Drag::Stroke {
-                        points: vec![at],
+                        points: vec![dab],
                         stroke,
                     },
                     None => Drag::None,
@@ -515,12 +516,13 @@ impl Editor {
             let size = self.view.masking.brushes[self.view.masking.brush].size;
             match &mut self.view.masking.drag {
                 Drag::Stroke { points, stroke } => {
+                    let dab = clamp_pos(at);
                     let last = space.to(points[points.len() - 1]);
-                    let q = space.to(at);
+                    let q = space.to(dab);
                     if (q[0] - last[0]).hypot(q[1] - last[1]) >= size * 0.2
                         && points.len() < MAX_POINTS
                     {
-                        points.push(at);
+                        points.push(dab);
                         let (stroke, points) = (*stroke, points.as_slice().into());
                         self.extend_stroke(stroke, points);
                     }
@@ -689,7 +691,7 @@ impl Editor {
                 (*low, *high) = ((l - 0.1).max(0.), (l + 0.1).min(1.));
             }
             (MaskShape::Brush { .. }, _) => {
-                self.add_stroke(vec![at], erase);
+                self.add_stroke(vec![clamp_pos(at)], erase);
             }
             _ => {}
         }
@@ -1580,22 +1582,25 @@ fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
 }
 /// A gradient drawn by dragging from `start` to `end` (image space).
 fn new_shape(kind: Kind, space: Space, start: [f32; 2], end: [f32; 2]) -> MaskShape {
-    let start = clamp_pos(start);
-    let end = clamp_pos(end);
     match kind {
-        Kind::Linear => MaskShape::Linear {
-            from: start,
-            to: if start == end {
-                let dy = if end[1] >= 3.9 { -0.1 } else { 0.1 };
-                clamp_pos([end[0], end[1] + dy])
-            } else {
-                end
-            },
-        },
+        Kind::Linear => {
+            let start = clamp_pos(start);
+            let end = clamp_pos(end);
+            MaskShape::Linear {
+                from: start,
+                to: if start == end {
+                    let dy = if end[1] >= 3.9 { -0.1 } else { 0.1 };
+                    clamp_pos([end[0], end[1] + dy])
+                } else {
+                    end
+                },
+            }
+        }
         _ => {
-            let (a, b) = (space.to(start), space.to(end));
+            let center = clamp_pos(start);
+            let (a, b) = (space.to(center), space.to(end));
             MaskShape::Radial {
-                center: start,
+                center,
                 radii: [
                     (b[0] - a[0]).abs().clamp(0.01, 4.),
                     (b[1] - a[1]).abs().clamp(0.01, 4.),

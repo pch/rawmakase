@@ -860,6 +860,48 @@ fn radial_mask_can_be_drawn_and_edited_outside_a_zoomed_out_photo() {
     };
     assert_ne!(from, to, "clamped linear gradient must not collapse");
     editor.document.edit.recipe().validate().unwrap();
+    // A valid radial mask whose radius handle lies beyond ±4 (center at [0.5, 3],
+    // vertical radius 2 -> handle at [0.5, 5]) keeps its radius when that handle
+    // is dragged slightly instead of jumping to 1.
+    let radial_idx = editor.document.edit.recipe().masks.len();
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor
+            .document
+            .edit
+            .recipe_mut()
+            .masks
+            .push(crate::model::masks::MaskGroup {
+                components: vec![crate::model::masks::MaskComponent::new(MaskShape::Radial {
+                    center: [0.5, 3.0],
+                    radii: [0.3, 2.0],
+                    angle: 0.,
+                    feather: 0.5,
+                })],
+                ..Default::default()
+            });
+        editor.view.masking.selected = Some(radial_idx);
+        editor.view.masking.component = Some(0);
+    });
+    frame(&mut editor, vec![]);
+    // At 6.25% on a 400x400 image in a 400x400 viewport, the photo is 25x25
+    // snapped to [188..213, 188..213]; [0.5, 5.0] sits at (200.5, 313).
+    // Dragging down 12.5pt (+0.5 image units) grows the radius from 2.0 to 2.5.
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(200.5, 313.0),
+        Pos2::new(200.5, 325.5),
+    );
+    let MaskShape::Radial { radii, .. } =
+        editor.document.edit.recipe().masks[radial_idx].components[0].shape
+    else {
+        panic!("expected radial gradient");
+    };
+    assert!(
+        (radii[1] - 2.5).abs() < 0.05,
+        "dragging a radial handle past ±4 must not shrink it: {radii:?}"
+    );
+    editor.document.edit.recipe().validate().unwrap();
 }
 
 /// Visual check of a photo zoomed out below Fit with a radial gradient centred
