@@ -449,6 +449,7 @@ impl PreviewTextures {
                 copy: self.copies.get(&photo.id).cloned(),
                 source: defaults,
                 ahead: false,
+                develop: false,
                 display: self.display.clone(),
             })
             .is_ok()
@@ -541,6 +542,31 @@ impl PreviewTextures {
                 copy: self.copies.get(&photo.id).cloned(),
                 source,
                 ahead: false,
+                develop: false,
+                display: self.display.clone(),
+            })
+            .is_ok()
+        {
+            self.edits_pending += 1;
+        }
+    }
+    /// Queues the photo's edited preview rendered with Develop's edit `source`,
+    /// as the latest request for it, keeping the one shown until it comes;
+    /// rendered whether or not the photo is shown.
+    pub(super) fn render_edited(&mut self, photo: &Photo, source: EditSource) {
+        let ticket = self.ticket();
+        self.edited_requested.insert(photo.id, ticket);
+        self.unedited.remove(&photo.id);
+        if self
+            .edit_tx
+            .send(EditJob::Render {
+                id: photo.id,
+                ticket,
+                path: photo.path.clone(),
+                copy: self.copies.get(&photo.id).cloned(),
+                source,
+                ahead: false,
+                develop: true,
                 display: self.display.clone(),
             })
             .is_ok()
@@ -647,6 +673,7 @@ impl PreviewTextures {
                     copy: self.copies.get(&photo.id).cloned(),
                     source,
                     ahead: true,
+                    develop: false,
                     display: self.display.clone(),
                 })
                 .is_ok()

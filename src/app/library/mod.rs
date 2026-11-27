@@ -1719,6 +1719,21 @@ impl Library {
         self.cache
             .store_edited(ctx, id, path, stamp, &source, ai, image);
     }
+    /// Renders photo `id` with the edit `recipe` as its thumbnail, the one shown
+    /// staying until it comes: for an edit Develop shows but renders no
+    /// thumbnail of, as with the Crop tool open. Not kept in the preview cache
+    /// until rendered; the latest request for the photo wins.
+    pub(in crate::app) fn render_edited(
+        &mut self,
+        id: PhotoId,
+        recipe: &crate::model::recipe::Recipe,
+    ) {
+        let Some(photo) = self.photo(id).cloned() else {
+            return;
+        };
+        self.cache
+            .render_edited(&photo, EditSource::saved(recipe.clone()));
+    }
     /// An AI Denoise result was stored for the file at `path`: its photos' edited
     /// previews are asked for again, so one shown plain shows the result. What is
     /// shown stays until the new preview arrives.
