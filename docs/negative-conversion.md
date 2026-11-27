@@ -15,7 +15,8 @@ Everything after it (white balance, Basic, curves, the color mixer, grading, mas
 export) works on the positive, as for any photo, and so does everything that
 measures the photo: Auto tone, Auto white balance, the white balance selector, the
 scene tone stage's measures and white point, Shadows and Highlights, Contrast's
-pivot, Dehaze, Point Color and the Targeted Adjustment Tool.
+pivot, Dehaze, Point Color, the Targeted Adjustment Tool and the B&W panel's Auto
+mix.
 
 The original file is never changed: the conversion is part of the photo's edit.
 
@@ -69,8 +70,10 @@ percentiles of the densities. A colour negative's white is taken from its denses
 near-neutral tones where it has them, so a coloured highlight doesn't read as a cast.
 No-light samples, such as a sliver of the film holder inside the crop, are left out
 by the frame's own distribution: they sit apart from the frame's densest content,
-with only their blurred edge between, and lie along the crop's edges. A dense area
-inside the frame (a window, the sun) is kept. Auto refuses a blank or flat frame.
+with only their blurred edge between, and form a region that runs along the crop's
+edge for at least 40% of its length. A dense area of the frame's own (a window, the
+sun) is kept, inside the frame or near its edge or touching it briefly. Auto refuses
+a blank or flat frame.
 
 ## Where it applies
 
@@ -95,13 +98,16 @@ inside the frame (a window, the sun) is kept. Auto refuses a blank or flat frame
 - **What runs before the conversion sees the negative:** highlight recovery, noise
   reduction and AI Denoise, Texture, spot removal, lens corrections. They work on the
   scan as it is, which suits them.
-- **What still reads the negative:** the black & white panel's Auto mix and red eye
-  detection measure the camera values, so they measure the negative; Upright, Auto
+- **What still reads the negative:** red eye detection measures the camera values,
+  so it measures the negative; Upright, Auto
   Straighten and the brush's Auto Mask find edges in the camera values, which a
   negative keeps where they are; AI Remove sends the model the negative around the
   area, and turns its answer back the same way.
-- **An HDR file's master** (an HDR TIFF or AVIF) renders from the file's light, not
-  through the conversion's linear values.
+- **An HDR file's HDR master** (an HDR TIFF, AVIF or gain-map JPEG with HDR on)
+  doesn't render a conversion: it applies Exposure to the file's light before
+  anything reads it, so a conversion after it would run Exposure backwards. The
+  master is refused by name, as other settings it doesn't render are, and the photo
+  shows its SDR rendition, which converts; the Negative panel says so.
 
 ## Older releases
 
