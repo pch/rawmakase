@@ -74,7 +74,18 @@
 
     <section class="feature wrap" id="features">
       <header class="section-head">
-        <p class="kicker">Lightroom-compatible</p>
+        <h2>A complete RAW workflow.</h2>
+      </header>
+      <ul class="more">
+        {{- range .Params.more }}
+        <li><h3>{{ .name }}</h3><p>{{ .text }}</p></li>
+        {{- end }}
+      </ul>
+    </section>
+
+    <section class="feature wrap">
+      <header class="section-head">
+        <p class="kicker">Switching over</p>
         <h2>Bring your Lightroom work with you.</h2>
         <p>Years of catalogs, presets and profiles don't have to stay behind. RAWmakase reads them, and the Library and Develop layout will feel familiar from the first minute.</p>
       </header>
@@ -99,17 +110,6 @@
         <div><dt>{{ .name }}</dt><dd>{{ .text }}</dd></div>
         {{- end }}
       </dl>
-    </section>
-
-    <section class="feature wrap">
-      <header class="section-head">
-        <h2>A complete RAW workflow.</h2>
-      </header>
-      <ul class="more">
-        {{- range .Params.more }}
-        <li><h3>{{ .name }}</h3><p>{{ .text }}</p></li>
-        {{- end }}
-      </ul>
     </section>
 
     <section class="download wrap" id="download">
