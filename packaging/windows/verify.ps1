@@ -21,7 +21,7 @@ $install = Start-Process -FilePath $Setup -Wait -PassThru -ArgumentList @(
 if ($install.ExitCode -ne 0) { Get-Content $log; throw "Setup exited with $($install.ExitCode)" }
 
 $exe = Join-Path $directory 'rawmakase.exe'
-foreach ($file in $exe, (Join-Path $directory 'LICENSE'), (Join-Path $directory 'onnxruntime.dll')) {
+foreach ($file in $exe, (Join-Path $directory 'LICENSE'), (Join-Path $directory 'onnxruntime.dll'), (Join-Path $directory 'dxcompiler.dll')) {
     if (-not (Test-Path $file)) { throw "Setup did not install $file" }
 }
 if ((Get-Content (Join-Path $directory 'rawmakase-installer.txt')).Trim() -ne 'rawmakase-installer-v1') {
@@ -53,6 +53,7 @@ if ($uninstall.ExitCode -ne 0) { throw "Uninstall exited with $($uninstall.ExitC
 # The uninstaller removes its own copy after it exits.
 for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
 if (Test-Path $exe) { throw 'Uninstall left the app behind' }
+if (Test-Path (Join-Path $directory 'dxcompiler.dll')) { throw 'Uninstall left DXC behind' }
 if (Test-Path $mcpProgram) { throw 'Uninstall left the MCP program behind' }
 if (Test-Path $midiProgram) { throw 'Uninstall left the MIDI program behind' }
 if (Test-Path $aiMasksProgram) { throw 'Uninstall left the AI masks program behind' }

@@ -33,6 +33,13 @@ Copy-Item (Join-Path $root 'licenses\*') $licenses
 python (Join-Path $root 'packaging\onnxruntime.py') windows $(if ($arm64) { 'aarch64' } else { 'x86_64' }) $Output $licenses
 if (-not (Test-Path (Join-Path $Output 'onnxruntime.dll'))) { throw 'ONNX Runtime was not staged' }
 
+# Microsoft's DirectX Shader Compiler (DXC), loaded by absolute path from beside
+# the executable so Windows never searches PATH for another app's copy (#1254).
+# rawmakase.exe does not import it, so the updater's helper copy still starts alone
+# and falls back to FXC.
+python (Join-Path $root 'packaging\dxc.py') $(if ($arm64) { 'aarch64' } else { 'x86_64' }) $Output $licenses
+if (-not (Test-Path (Join-Path $Output 'dxcompiler.dll'))) { throw 'DXC was not staged' }
+
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $component, $bin = if ($arm64) { 'ARM64', 'Hostarm64\arm64' } else { 'x86.x64', 'Hostx64\x64' }
 $vs = & $vswhere -latest -products * -requires "Microsoft.VisualStudio.Component.VC.Tools.$component" -property installationPath

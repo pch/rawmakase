@@ -1605,6 +1605,7 @@ impl GpuExportContext {
         }
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: super::backends(),
+            backend_options: super::backend_options(),
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
