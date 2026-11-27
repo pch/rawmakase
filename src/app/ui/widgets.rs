@@ -89,6 +89,13 @@ pub(in crate::app) fn toolbar_action_sized(
     if let Some(glyph) = glyph {
         icons::paint_at(ui.painter(), glyph, c, 15., color);
     }
+    // A button with text is a button to screen readers, called by its text unless its
+    // caller names it ([`named`]), and enabled or not as it is drawn. An icon-only
+    // button is left to its caller, which alone knows what to call it.
+    if !label.is_empty() {
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    }
     if enabled {
         response.on_hover_cursor(egui::CursorIcon::PointingHand)
     } else {

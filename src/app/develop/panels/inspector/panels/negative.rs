@@ -136,7 +136,15 @@ pub(in crate::app::develop::panels::inspector) fn show(
                         palette.tone(Tone::OUTLINE_STRONG),
                     );
                 }
-                let response = crate::app::ui::widgets::named(response, "Film base picker");
+                // A button to screen readers, pressed while the picker is out.
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::WidgetType::Button,
+                        facts.decoded,
+                        picking,
+                        "Film base picker",
+                    )
+                });
                 if response
                     .on_hover_text("Film base picker: click the clear film edge, beside the frame")
                     .clicked()

@@ -479,6 +479,34 @@ fn negative_auto_says_when_the_crop_holds_the_holder() {
     ));
 }
 
+/// A screen reader hears the picker and Auto as buttons, which are off while the
+/// photo loads, Auto while it measures, and the picker as pressed while it is out.
+#[test]
+fn the_picker_and_auto_tell_screen_readers_their_state() {
+    use egui::accesskit::{Role, Toggled};
+    let ctx = egui::Context::default();
+    let state = |editor: &mut Editor| {
+        let shown = controls_frame(&ctx, editor, vec![]);
+        ["Film base picker", "Auto levels"].map(|label| {
+            let n = node(&shown, label);
+            assert_eq!(n.role(), Role::Button, "{label}");
+            (n.is_disabled(), n.toggled() == Some(Toggled::True))
+        })
+    };
+    let mut editor = editor_with_scan(&ctx, false, false);
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().negative = Some(NegativeConversion::new(FilmType::Colour))
+    });
+    assert_eq!(state(&mut editor), [(true, false), (true, false)]);
+    let mut editor = editor_with_scan(&ctx, false, true);
+    click(&ctx, &mut editor, "Color");
+    assert_eq!(state(&mut editor), [(false, false), (false, false)]);
+    click(&ctx, &mut editor, "Film base picker");
+    assert_eq!(state(&mut editor), [(false, true), (false, false)]);
+    editor.document.auto.start();
+    assert_eq!(state(&mut editor), [(false, true), (true, false)]);
+}
+
 /// A screen reader hears which film type is set: the switch's options are radio
 /// buttons, the set one selected, the others not.
 #[test]
