@@ -613,6 +613,16 @@ impl CameraProfile {
     /// The profile's look and tone curve: linear ProPhoto RGB from the scene tone stage
     /// in, linear sRGB-primaries display RGB out.
     pub fn finish(&self, pro: [f32; 3]) -> [f32; 3] {
+        self.finish_with(pro, |p| p)
+    }
+    /// [`Self::finish`], applying `between_look_and_tone` to linear ProPhoto RGB after
+    /// the profile's look tables and before its tone curve (where Camera Raw 18.7
+    /// applies Vibrance).
+    pub fn finish_with(
+        &self,
+        pro: [f32; 3],
+        between_look_and_tone: impl FnOnce([f32; 3]) -> [f32; 3],
+    ) -> [f32; 3] {
         let mut p = pro;
         if let Some(table) = &self.look {
             p = table.apply(p, None, 0.);
@@ -620,6 +630,7 @@ impl CameraProfile {
         if let Some(look) = &self.enhanced {
             p = look.apply_table(p);
         }
+        p = between_look_and_tone(p);
         let evaluate = |v: f32| evaluate_tone(&self.tone, v);
         // Map the darkest and brightest channels; preserve the middle channel's
         // relative position. This preserves hue without flattening saturation.

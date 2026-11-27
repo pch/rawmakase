@@ -718,6 +718,15 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
     measured.hsl = [[0.; 3]; 8];
     measured.vibrance = 0.;
     measured.saturation = -1.;
+    recipes.push(measured.clone());
+    // RAW SDR Vibrance across positive and negative extremes, with and without Saturation.
+    measured.saturation = 0.;
+    measured.vibrance = 1.;
+    recipes.push(measured.clone());
+    measured.vibrance = -1.;
+    recipes.push(measured.clone());
+    measured.saturation = -0.5;
+    measured.vibrance = 0.5;
     recipes.push(measured);
     // Black & white from the chart tables, with a mix between measured positions.
     let mut mono = r.clone();
@@ -879,10 +888,22 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
         sorted.sort_by(f32::total_cmp);
         let (p999, max) = (sorted[sorted.len() * 999 / 1000], sorted[sorted.len() - 1]);
         eprintln!("recipe {i}: max {max:.6}, 99.9% {p999:.6}, mean {mean:.8}");
-        // Near-neutral pixels have an unstable Oklab hue angle, which can move them to
-        // another Monochrome band; everything else agrees to float precision.
+        // Near-neutral pixels have an unstable Oklab/ProPhoto hue angle after the
+        // sRGB↔Oklab round-trip (`d ~ 1e-7`), which can pick a different `s = 0` hue
+        // cell of `black_white_chart.bin` (2^-0.00075 = 0.99948 vs 2^+0.00025 = 1.00017,
+        // a 0.00030 / 0.08-code-value step at white). Previously, post-curve Saturation/
+        // Vibrance in `ColorMixer` shifted clipped white slightly off [1, 1, 1]; with
+        // RAW SDR Saturation/Vibrance running before `ProfileToneCurve`, ~15% of test
+        // samples enter `black_white_stage` at exact [1, 1, 1] and hit this ~0.00030
+        // CPU-vs-Metal FMA rounding step (mean ~4.6e-5); every non-monochrome recipe
+        // stays below 2e-5 (actual <= 1.5e-6).
+        let mean_limit = if recipe.effects.monochrome {
+            6e-5
+        } else {
+            2e-5
+        };
         assert!(
-            p999 < 1e-3 && max < 0.02 && mean < 2e-5,
+            p999 < 1e-3 && max < 0.02 && mean < mean_limit,
             "recipe {i}: max {max}, 99.9% {p999}, mean {mean}"
         );
     }

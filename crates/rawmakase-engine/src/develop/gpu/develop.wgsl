@@ -694,13 +694,114 @@ fn hdr_finish(pro: vec3<f32>) -> vec3<f32> {
     return hdr_colour_stage(max(hdr_tone_controls(max(out, vec3(0.0))), vec3(0.0)), pro);
 }
 // CameraProfile::finish: linear ProPhoto in, linear sRGB primaries out.
+// color_mixer::apply_raw_saturation: Camera Raw 18.7's RAW SDR Saturation in linear
+// ProPhoto RGB, before the profile's look tables and tone curve.
+fn raw_saturation(pro: vec3<f32>, saturation: f32) -> vec3<f32> {
+    if saturation == 0.0 {
+        return pro;
+    }
+    let w = vec3(0.2880402, 0.7118741, 0.0000857);
+    let p = max(pro, vec3(0.0));
+    let y = dot(p, w);
+    let scale = max(max(p.x, max(p.y, p.z)), 1.0);
+    let k = 1.0 + clamp(saturation, -1.0, 1.0);
+    let lim = scale * (vec3(1.0) - w);
+    return max(vec3(y) + clamp(k * (p - vec3(y)), -lim, lim), vec3(0.0));
+}
+// color_mixer::RawVibrance::apply: RAW SDR Vibrance in linear ProPhoto HSV, after the
+// profile's look tables and before its tone curve (36 × 12 × 11 grid of [sf, vf]).
+fn raw_vibrance(pro: vec3<f32>, base: i32) -> vec3<f32> {
+    let q = max(pro, vec3(0.0));
+    let mx = max(q.x, max(q.y, q.z));
+    if mx <= 1e-6 {
+        return pro;
+    }
+    let mn = min(q.x, min(q.y, q.z));
+    let d = mx - mn;
+    var h = 0.0;
+    if d >= 1e-9 {
+        if mx == q.x {
+            h = (q.y - q.z) / d;
+        } else if mx == q.y {
+            h = (q.z - q.x) / d + 2.0;
+        } else {
+            h = (q.x - q.y) / d + 4.0;
+        }
+        h = rem_euclid(h / 6.0, 1.0);
+    }
+    let s = d / mx;
+    var sat_axis = array<f32, 12>(0.0, 0.02, 0.06, 0.12, 0.20, 0.32, 0.45, 0.58, 0.70, 0.82, 0.91, 1.0);
+    var val_axis = array<f32, 11>(0.0, 0.004, 0.015, 0.04, 0.08, 0.16, 0.30, 0.50, 0.75, 0.95, 1.0);
+    let fh = rem_euclid(h, 1.0) * 36.0;
+    let h0 = i32(floor(fh)) % 36;
+    let h1 = (h0 + 1) % 36;
+    let wh = fh - floor(fh);
+
+    let sc = clamp(s, 0.0, 1.0);
+    var s1 = 11;
+    for (var i = 1; i < 12; i++) {
+        if sat_axis[i] >= sc {
+            s1 = i;
+            break;
+        }
+    }
+    let s0 = s1 - 1;
+    let ws = clamp((sc - sat_axis[s0]) / max(sat_axis[s1] - sat_axis[s0], 1e-12), 0.0, 1.0);
+
+    let vc = clamp(mx, 0.0, 1.0);
+    var v1 = 10;
+    for (var i = 1; i < 11; i++) {
+        if val_axis[i] >= vc {
+            v1 = i;
+            break;
+        }
+    }
+    let v0 = v1 - 1;
+    let wv = clamp((vc - val_axis[v0]) / max(val_axis[v1] - val_axis[v0], 1e-12), 0.0, 1.0);
+
+    var out = vec2(0.0);
+    for (var dh = 0; dh < 2; dh++) {
+        let a = select(1.0 - wh, wh, dh == 1);
+        let hi = select(h0, h1, dh == 1);
+        for (var ds = 0; ds < 2; ds++) {
+            let b = select(1.0 - ws, ws, ds == 1);
+            let si = select(s0, s1, ds == 1);
+            for (var dv = 0; dv < 2; dv++) {
+                let c = select(1.0 - wv, wv, dv == 1);
+                let vi = select(v0, v1, dv == 1);
+                let idx = base + ((hi * 12 + si) * 11 + vi) * 2;
+                out += a * b * c * vec2(table(idx), table(idx + 1));
+            }
+        }
+    }
+    let h6 = rem_euclid(h, 1.0) * 6.0;
+    let s_out = clamp(s * out.x, 0.0, 1.0);
+    let v_out = max(mx * out.y, 0.0);
+    let c = v_out * s_out;
+    let x = c * (1.0 - abs(rem_euclid(h6, 2.0) - 1.0));
+    let sector = u32(h6);
+    var rgb: vec3<f32>;
+    switch sector {
+        case 0u: { rgb = vec3(c, x, 0.0); }
+        case 1u: { rgb = vec3(x, c, 0.0); }
+        case 2u: { rgb = vec3(0.0, c, x); }
+        case 3u: { rgb = vec3(0.0, x, c); }
+        case 4u: { rgb = vec3(x, 0.0, c); }
+        default: { rgb = vec3(c, 0.0, x); }
+    }
+    return rgb + vec3(v_out - c);
+}
 fn profile_finish(pro: vec3<f32>) -> vec3<f32> {
-    var q = pro;
+    var q = raw_saturation(pro, p(P_RAW_SATURATION));
     if offset(P_LOOK) >= 0 {
         q = table_apply(table_at(P_LOOK), q, -1, 0.0);
     }
     if offset(P_ENH) >= 0 {
         q = table_apply(table_at(P_ENH), clamp(q, vec3(0.0), vec3(1.0)), -1, 0.0);
+    }
+    let vib = offset(P_RAW_VIBRANCE);
+    if vib >= 0 {
+        q = raw_vibrance(q, vib);
     }
     q = clamp(q, vec3(0.0), vec3(1.0));
     let low = min(min(q.x, q.y), q.z);

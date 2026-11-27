@@ -732,7 +732,10 @@ fn the_display_render_replays_the_stages_after_the_scene_stage() {
         let pos = [(i % 12) as f32, (i / 12) as f32];
         let shown = process_pixel(*p, &r, &lut, camera, pos, None);
         let scene = process_pixel(*p, &r, &tap, camera, pos, None);
-        assert_eq!(shown, color_stage(profile_stage(scene, &r), &r, &lut, None));
+        assert_eq!(
+            shown,
+            color_stage(profile_stage(scene, &r, &lut), &r, &lut, None)
+        );
     }
 }
 /// A camera without color data (no matrix, no profile) renders through no profile:
@@ -745,7 +748,8 @@ fn a_camera_without_colour_data_renders_through_no_profile() {
     assert!(r.profile.is_none());
     assert!(!super::pixel_params::supported(&r));
     let pro = mul(crate::camera_profiles::RGB_TO_PRO, [0.4, 0.2, 0.1]);
-    let out = profile_stage(pro, &r);
+    let lut = CurveSet::new(&r);
+    let out = profile_stage(pro, &r, &lut);
     let y = crate::color::luminance([0.4, 0.2, 0.1]);
     let k = 1. / (y + 0.82);
     for (got, want) in out.iter().zip([0.4 * k, 0.2 * k, 0.1 * k]) {
@@ -1785,7 +1789,9 @@ fn rgb_tables_follow_the_colour_controls() {
         ..Default::default()
     };
     let spread = |r: &Recipe| {
-        let out = color_stage([0.05, 0.2, 0.1], r, &CurveSet::new(r), None);
+        let lut = CurveSet::new(r);
+        let rgb = profile_stage([0.05, 0.2, 0.1], r, &lut);
+        let out = color_stage(rgb, r, &lut, None);
         out.iter().fold(0f32, |a, v| a.max(*v)) - out.iter().fold(1f32, |a, v| a.min(*v))
     };
     assert!(spread(&r) > 0.01);
@@ -3080,4 +3086,47 @@ fn masked_texture_matches_global_texture_on_signed_pixels() -> anyhow::Result<()
 
     assert_eq!(global.pixels, masked.pixels);
     Ok(())
+}
+
+/// Camera Raw 18.7 runs RAW SDR Saturation before `ProfileLookTable` and RAW SDR
+/// Vibrance between `ProfileLookTable` and `ProfileToneCurve`.
+#[test]
+fn raw_sdr_saturation_precedes_profile_look_and_vibrance_follows_it() {
+    let m = Metadata {
+        make: "Test".into(),
+        model: "Camera".into(),
+        cam_xyz: [[0.8, -0.2, -0.1], [-0.3, 1.1, 0.2], [-0.05, 0.15, 0.6]],
+        ..Default::default()
+    };
+    let profile = Arc::new(
+        crate::camera_profiles::CameraProfile::camera_matrix_default(&m)
+            .unwrap()
+            .with_test_tables(),
+    );
+    let pro = [0.42, 0.24, 0.14];
+    let r = Recipe {
+        profile: Some(profile.clone()),
+        saturation: 0.6,
+        vibrance: -0.5,
+        ..Default::default()
+    };
+    let lut = CurveSet::new(&r);
+    let actual = profile_stage(pro, &r, &lut);
+    let sat = crate::develop::color_mixer::apply_raw_saturation(pro, 0.6);
+    let vib = crate::develop::color_mixer::RawVibrance::new(-0.5).unwrap();
+    let expected = profile.finish_with(sat, |p| vib.apply(p));
+    assert_eq!(actual, expected);
+    // Swapping Saturation after the profile's look tables produces a visibly different color.
+    let wrong_order = profile.finish_with(pro, |p| {
+        vib.apply(crate::develop::color_mixer::apply_raw_saturation(p, 0.6))
+    });
+    let diff: f32 = actual
+        .iter()
+        .zip(&wrong_order)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0., f32::max);
+    assert!(
+        diff > 1e-3,
+        "expected look-table ordering difference, got {diff}"
+    );
 }
