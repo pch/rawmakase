@@ -7,6 +7,11 @@
 //! the row obsolete. A result reaches the Library's grid only while the photo's
 //! texture ticket and edit identity are still the ones captured.
 //!
+//! Builds render through the export queue's [`ExportBackend`], on the GPU when it
+//! takes the edit and on the CPU reference otherwise, so the app keeps one headless
+//! GPU device and one budget of its memory. The backend renders one photo at a
+//! time: a build waits for an export's render and an export for a build's.
+//!
 //! The build never makes the editor busy, so navigation is never blocked. It stops
 //! between photos and inside the decode and the render when cancelled, and is
 //! joined at exit within the shutdown deadline (docs/shutdown.md).
@@ -17,6 +22,7 @@ use crate::app::ui::widgets::plural;
 use crate::camera_data::{Decode, Demosaic, Metadata};
 use crate::catalog::preview_cache::{PreviewCache, PreviewKind, Stamp};
 use crate::catalog::{CatalogLocation, PhotoId};
+use crate::develop::ExportBackend;
 use crate::edits::EditRecord;
 use crate::model::recipe::Recipe;
 use crate::photo::Opened;
@@ -125,14 +131,16 @@ pub(in crate::app) struct Finished {
     pub outcome: Outcome,
 }
 
-/// Renders `item` at its edge, giving up once the flag is set.
-pub(in crate::app) type Render = fn(&Item, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
+/// Renders `item` at its edge through the backend, giving up once the flag is set.
+pub(in crate::app) type Render =
+    fn(&Item, &ExportBackend, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
 
 /// Builds and stores one photo's preview, unless a fresh one is there.
 fn build_one(
     item: &Item,
     cache: Option<&mut PreviewCache>,
     render: Render,
+    backend: &ExportBackend,
     cancel: Cancel<'_>,
 ) -> Outcome {
     let Some(cache) = cache else {
@@ -150,7 +158,7 @@ fn build_one(
         Ok(stamp) => stamp,
         Err(e) => return Outcome::Failed(format!("{e:#}")),
     };
-    let image = match render(item, cancel) {
+    let image = match render(item, backend, cancel) {
         Ok(image) => image,
         Err(_) if cancel.is_cancelled() => return Outcome::Cancelled,
         Err(e) => return Outcome::Failed(format!("{e:#}")),
@@ -197,8 +205,13 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 
 /// Renders a catalog photo as batch export does: its edit resolved through the
 /// identity-checked record (a protected or unreadable edit fails, never falling
-/// back to the defaults), Upright completed, then a cancellable render.
-pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+/// back to the defaults), Upright completed, then a cancellable render through
+/// `backend`.
+pub(in crate::app) fn render(
+    item: &Item,
+    backend: &ExportBackend,
+    cancel: Cancel<'_>,
+) -> anyhow::Result<image::RgbImage> {
     let opened = crate::photo::open_source(&item.path, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
     let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
@@ -220,7 +233,7 @@ pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<
         Opened::Rendered(image) => image,
     };
     ensure!(!cancel.is_cancelled(), "Cancelled");
-    develop(&mut recipe, &image, item.edge, cancel)
+    develop(&mut recipe, &image, item.edge, backend, cancel)
 }
 
 /// The edit `item` captured, worked out for the photo as export does.
@@ -232,17 +245,29 @@ fn item_recipe(
     Ok(crate::edits::resolve(&item.record, &item.path, m, profiles, &item.defaults)?.recipe)
 }
 
-/// `recipe` rendered on the decoded photo at `edge`, its Upright and Straighten Auto
-/// completed first.
+/// `recipe` rendered on the decoded photo at `edge` in sRGB, as an export renders
+/// it, its Upright and Straighten Auto completed first. Like an export, it renders
+/// Point Color's edit even while Visualize Range is on, which a saved edit never is.
+/// The build has no AI Denoise source, as a preview before its result is ready.
 fn develop(
     recipe: &mut Recipe,
     image: &crate::camera_data::CameraImage,
     edge: u32,
+    backend: &ExportBackend,
     cancel: Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage> {
     crate::develop::upright::complete(recipe, image);
-    let out = crate::develop::render(image, &recipe.checked()?, edge, cancel)?;
-    image::RgbImage::from_raw(out.width, out.height, out.rgb8()).context("Invalid preview size")
+    let out = backend.render_export(
+        image,
+        &recipe.checked()?,
+        None,
+        edge,
+        crate::color::OutputSpace::Srgb,
+        crate::develop::ExportFormat::Rgb8,
+        cancel,
+    )?;
+    let (width, height) = (out.width(), out.height());
+    image::RgbImage::from_raw(width, height, out.into_rgb8()).context("Invalid preview size")
 }
 
 /// Whether the photo needs its full-size decode for `edge`: the half-size one,
@@ -321,11 +346,12 @@ pub(in crate::app) struct Builder {
 }
 
 impl Builder {
-    /// Starts the worker on the cache at `cache_path`; `changed` is called after
-    /// each photo.
+    /// Starts the worker on the cache at `cache_path`, rendering through `backend`;
+    /// `changed` is called after each photo.
     pub(in crate::app) fn start(
         cache_path: PathBuf,
         render: Render,
+        backend: Arc<ExportBackend>,
         changed: impl Fn() + Send + 'static,
     ) -> Self {
         let shared = Arc::new(Shared {
@@ -378,7 +404,7 @@ impl Builder {
                     Next::Build(item, cancel) => (item, cancel),
                 };
                 let held = cache.as_mut();
-                let build = || build_one(&item, held, render, Cancel::new(&cancel));
+                let build = || build_one(&item, held, render, &backend, Cancel::new(&cancel));
                 let caught =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match &pool {
                         Some(pool) => pool.install(build),
@@ -391,11 +417,16 @@ impl Builder {
                     Outcome::Failed(format!("stopped unexpectedly: {message}"))
                 });
                 let finished = Finished { item, outcome };
-                worker.finish(&finished);
+                let idle = worker.finish(&finished);
                 if tx.send(finished).is_err() {
                     break;
                 }
                 changed();
+                if idle {
+                    // As the export queue does when it drains: the device and its
+                    // pipelines stay, the photo's and the bands' memory goes.
+                    backend.release_buffers();
+                }
             }
             // Quitting waits for this thread: see [`PreviewCache::close_at_exit`].
             if let Some(cache) = cache {
@@ -629,17 +660,20 @@ impl Shared {
             state = self.wake.wait(state).ok()?;
         }
     }
-    fn finish(&self, finished: &Finished) {
-        if let Ok(mut state) = self.state.lock() {
-            state.running = None;
-            state.progress.done += 1;
-            if let Outcome::Failed(why) = &finished.outcome {
-                state
-                    .progress
-                    .failed
-                    .push((finished.item.name.clone(), why.clone()));
-            }
+    /// Records how a build ended; whether no other build is waiting.
+    fn finish(&self, finished: &Finished) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        state.running = None;
+        state.progress.done += 1;
+        if let Outcome::Failed(why) = &finished.outcome {
+            state
+                .progress
+                .failed
+                .push((finished.item.name.clone(), why.clone()));
         }
+        state.waiting.is_empty()
     }
     fn close(&self) {
         if let Ok(mut state) = self.state.lock() {
@@ -683,33 +717,47 @@ pub(in crate::app) struct PreviewBuilds {
     /// unused; `None` keeps them.
     pub(in crate::app) discard_one_to_one_after: Option<u32>,
     render: Render,
+    /// The export queue's backend, which builds render through.
+    backend: Arc<ExportBackend>,
     cache_path: PathBuf,
 }
 
 impl PreviewBuilds {
-    pub(in crate::app) fn new(standard_size: u32, discard_one_to_one_after: Option<u32>) -> Self {
+    pub(in crate::app) fn new(
+        standard_size: u32,
+        discard_one_to_one_after: Option<u32>,
+        backend: Arc<ExportBackend>,
+    ) -> Self {
         Self {
             builder: None,
             catalog: None,
             standard_size,
             discard_one_to_one_after,
             render,
+            backend,
             cache_path: PreviewCache::path(),
         }
     }
-    /// Builds in the cache at `cache_path`, rendered by `render`.
+    /// Builds in the cache at `cache_path`, rendered by `render` through a CPU-only
+    /// backend.
     #[cfg(test)]
     pub(in crate::app) fn for_tests(cache_path: PathBuf, render: Render) -> Self {
         Self {
             render,
             cache_path,
-            ..Self::new(DEFAULT_STANDARD_SIZE, DEFAULT_DISCARD_DAYS)
+            ..Self::new(
+                DEFAULT_STANDARD_SIZE,
+                DEFAULT_DISCARD_DAYS,
+                Arc::new(ExportBackend::cpu_only()),
+            )
         }
     }
     fn builder(&mut self, ctx: &egui::Context) -> &Builder {
         let (path, render, ctx) = (self.cache_path.clone(), self.render, ctx.clone());
-        self.builder
-            .get_or_insert_with(|| Builder::start(path, render, move || ctx.request_repaint()))
+        let backend = self.backend.clone();
+        self.builder.get_or_insert_with(|| {
+            Builder::start(path, render, backend, move || ctx.request_repaint())
+        })
     }
     pub(in crate::app) fn progress(&self) -> Option<Progress> {
         self.builder

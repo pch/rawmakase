@@ -145,7 +145,9 @@ impl Queue {
         }
     }
 
-    /// Snapshot of this queue's export backend state and cumulative telemetry.
+    /// Snapshot of this queue's export backend state and cumulative telemetry. A
+    /// backend shared with other callers (the app's preview builds) counts their
+    /// renders too.
     /// Never blocks on an in-flight GPU export.
     pub fn backend_status(&self) -> ExportBackendStatus {
         self.backend.status()

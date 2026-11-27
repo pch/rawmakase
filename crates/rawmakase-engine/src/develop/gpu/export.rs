@@ -135,9 +135,11 @@ pub struct ExportBackendStatus {
     pub fallback_reason: Option<String>,
     /// Structured Tier-2 fallback category, if session-disabled.
     pub fallback_kind: Option<ExportFallbackKind>,
-    /// Count of exports completed on the GPU.
+    /// Count of renders completed on the GPU, by every caller sharing the backend
+    /// (in the app, exports and preview builds alike).
     pub gpu_renders: u64,
-    /// Count of exports completed on the CPU reference.
+    /// Count of renders completed on the CPU reference, by every caller sharing the
+    /// backend.
     pub cpu_renders: u64,
     /// Per-reason fallback counts (both Tier-1 per-photo and Tier-2 session fallbacks).
     pub fallback_counts: Vec<(ExportFallbackKind, u64)>,
@@ -156,9 +158,12 @@ impl ExportBackendStatus {
 /// Thread-safe GPU export backend with deterministic CPU fallback.
 ///
 /// Owns no persistent background threads: GPU submissions execute synchronously on
-/// the calling export thread under `exec` so multiple CPU decode/encode lanes share
-/// one compute device and one working-set VRAM budget without contending with the UI
-/// device. Telemetry and status live under a separate short-lived `meta` lock so
+/// the calling thread under `exec` so multiple CPU decode/encode lanes (and, in the
+/// app, the preview build worker) share one compute device and one working-set VRAM
+/// budget without contending with the UI device. A caller waiting for `exec` can't
+/// be cancelled while it waits; it checks its cancel as soon as it holds `exec`,
+/// before any GPU work or CPU fallback. Telemetry and status live under a separate
+/// short-lived `meta` lock so
 /// [`Self::status`] and [`Self::reset_stats`] never wait on an in-flight GPU export.
 /// Lock ordering: `exec` may briefly lock `meta`; `meta` never locks `exec`.
 pub struct ExportBackend {

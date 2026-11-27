@@ -395,9 +395,11 @@ renders on the CPU. For exports, `develop::ExportBackend` provides a separate
 dedicated headless compute device (decoupled from eframe's UI device and
 `SURFACE` lock, with no `wgpu` types exported outside `rawmakase-engine`),
 executing banded SDR renders with deterministic two-tier fallback to the CPU
-`develop::render_export` oracle. Desktop exports share one `ExportBackend::auto()`
-instance through `export::queue::Queue` (releasing working GPU buffers when the
-queue drains to idle), while CLI `rawmakase render` and `render-batch` default to
+`develop::render_export` oracle. Desktop exports and Build Standard-Sized and 1:1
+Previews share one `ExportBackend::auto()` instance, which the editor creates and
+hands to `export::queue::Queue` and the preview build worker (each releasing
+working GPU buffers when it drains to idle; the backend renders one photo at a
+time, so either may wait for the other's render), while CLI `rawmakase render` and `render-batch` default to
 CPU and opt in with `--gpu`. Any GPU failure falls back to the CPU and turns the
 failing path off for the session. GPU work already submitted cannot be
 interrupted, so obsolete results are discarded before they are published;

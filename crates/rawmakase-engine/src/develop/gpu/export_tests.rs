@@ -850,6 +850,92 @@ fn status_does_not_block_while_gpu_export_is_in_flight() -> Result<()> {
     Ok(())
 }
 
+/// Exit with an export rendering and a preview build waiting for the GPU behind it:
+/// once both are cancelled, the export's render stops at its next check, and the
+/// build, given the GPU, stops before rendering anything, on the GPU or the CPU.
+#[test]
+fn a_render_waiting_for_the_gpu_stops_once_cancelled_without_rendering() -> Result<()> {
+    use std::sync::mpsc;
+
+    /// Renders until cancelled, checking as the real backend's poll slices do.
+    struct UntilCancelled {
+        entered: Option<mpsc::Sender<()>>,
+        calls: Arc<AtomicUsize>,
+    }
+    impl MockGpuDriver for UntilCancelled {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(tx) = self.entered.take() {
+                let _ = tx.send(());
+            }
+            let until = Instant::now() + Duration::from_secs(5);
+            while !cancel.is_cancelled() && Instant::now() < until {
+                std::thread::sleep(BAND_POLL_SLICE);
+            }
+            Err(GpuFailure::Cancelled)
+        }
+        fn release_buffers(&mut self) {}
+    }
+
+    let im = synthetic_photo(48, 32);
+    let recipe = profiled_recipe(&im);
+    let valid = recipe.checked()?;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let backend = ExportBackend::with_mock(
+        "MockGPU",
+        Box::new(UntilCancelled {
+            entered: Some(entered_tx),
+            calls: calls.clone(),
+        }),
+    );
+    let (export_cancel, build_cancel) = (AtomicBool::new(false), AtomicBool::new(false));
+    let render = |cancel: &AtomicBool| {
+        backend.render_export(
+            &im,
+            &valid,
+            None,
+            0,
+            OutputSpace::Srgb,
+            ExportFormat::Rgb8,
+            Cancel::new(cancel),
+        )
+    };
+
+    std::thread::scope(|s| {
+        let export = s.spawn(|| render(&export_cancel));
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the export reached the GPU");
+        let build = s.spawn(|| render(&build_cancel));
+        // Time for the build to finish its CPU preparation and wait for the GPU.
+        // Were it slower, it would see the cancel before waiting, with the same result.
+        std::thread::sleep(Duration::from_millis(200));
+        let quit = Instant::now();
+        build_cancel.store(true, Ordering::SeqCst);
+        export_cancel.store(true, Ordering::SeqCst);
+        for render in [export, build] {
+            let err = render.join().expect("joined").err().expect("cancelled");
+            assert!(err.to_string().contains("Render superseded"), "{err}");
+        }
+        assert!(
+            quit.elapsed() < Duration::from_secs(1),
+            "stopping took {:?}",
+            quit.elapsed()
+        );
+    });
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "the build never rendered");
+    let st = backend.status();
+    assert_eq!((st.gpu_renders, st.cpu_renders), (0, 0));
+    assert!(st.gpu_active, "a cancel never turns the GPU off");
+    Ok(())
+}
+
 #[test]
 fn visualize_range_is_stripped_on_export_backend() -> Result<()> {
     let im = synthetic_photo(48, 32);
