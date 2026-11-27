@@ -70,10 +70,12 @@ percentiles of the densities. A colour negative's white is taken from its denses
 near-neutral tones where it has them, so a coloured highlight doesn't read as a cast.
 No-light samples, such as a sliver of the film holder inside the crop, are left out
 by the frame's own distribution: they sit apart from the frame's densest content,
-with only their blurred edge between, and form a region that runs along the crop's
-edge for at least 40% of its length. A dense area of the frame's own (a window, the
-sun) is kept, inside the frame or near its edge or touching it briefly. Auto refuses
-a blank or flat frame.
+with only their blurred edge between, form a region that runs along the crop's edge
+for at least 40% of its length, and let through no light: at most 2<sup>−8</sup> of
+the sensor's white, where camera scans record 0.0005 to 0.002 of it inside a holder
+and film lets through more. A dense area of the frame's own (a window, the sun, a sky
+along an edge) still lets light through and is kept, wherever it is. Auto refuses a
+blank or flat frame.
 
 ## Where it applies
 
