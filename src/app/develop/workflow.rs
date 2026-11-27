@@ -743,7 +743,7 @@ pub(in crate::app) fn render_edges(
         [viewport.x as u32, viewport.y as u32],
     );
     let max_edge = if zoom.on && zoom.level < 1. {
-        (g.width.max(g.height) as f32 * zoom.level).round() as u32
+        ((g.width.max(g.height) as f32 * zoom.level).round() as u32).max(1)
     } else {
         fit
     };

@@ -322,10 +322,15 @@ impl Editor {
             crate::app::view::navigator::zoom_slider(ui, self.view.zoom, fit, width, height)
         });
         if let Some(choice) = slider.inner {
-            self.set_zoom(choice.level());
-            if let crate::app::view::navigator::ZoomChoice::Moved(_) = choice {
-                self.view.zoom_key = (self.view.zoom.on, self.view.zoom.level);
-                self.view.zoom_anim = None;
+            match choice {
+                crate::app::view::navigator::ZoomChoice::Moved(level) => {
+                    self.set_zoom_transient(level, fit);
+                    self.view.zoom_key = (self.view.zoom.on, self.view.zoom.level);
+                    self.view.zoom_anim = None;
+                }
+                crate::app::view::navigator::ZoomChoice::Picked(level) => {
+                    self.set_zoom(level);
+                }
             }
         }
         self.magnifier_controls(

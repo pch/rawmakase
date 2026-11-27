@@ -665,18 +665,16 @@ mod tests {
     #[test]
     fn zoom_and_pan_show_the_same_part_of_the_photo_on_both_sides() {
         let photo = Vec2::new(6000., 4000.);
+        let zoomed = |level, pan| {
+            let mut z = Zoom::default();
+            z.set(level);
+            z.pan = pan;
+            z
+        };
         for zoom in [
             Zoom::default(),
-            Zoom {
-                on: true,
-                level: 1.,
-                pan: [0.3, 0.7],
-            },
-            Zoom {
-                on: true,
-                level: 0.25,
-                pan: [0.9, 0.1],
-            },
+            zoomed(1., [0.3, 0.7]),
+            zoomed(0.25, [0.9, 0.1]),
         ] {
             for view in [
                 Compare::SideBySide(Axis::LeftRight),

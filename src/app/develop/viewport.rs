@@ -239,9 +239,29 @@ impl Editor {
             palette.tone(Tone::TEXT),
         );
     }
-    /// Sets a zoom level; 0 means Fit.
+    /// Sets an explicit zoom level (menu pick, `Cmd+0`, `Cmd+1`); 0 means Fit.
     pub(in crate::app) fn set_zoom(&mut self, level: f32) {
         self.view.zoom.set(level);
+        self.after_zoom_change();
+    }
+    /// Sets a zoom level chosen by stepping (`Cmd+-`/`Cmd+=`) or dragging the
+    /// slider; levels below `fit` preserve the prior click-to-zoom level.
+    pub(in crate::app) fn set_zoom_transient(&mut self, level: f32, fit: Option<f32>) {
+        match fit {
+            Some(fit) => self.view.zoom.set_transient(level, fit),
+            None => self.view.zoom.set(level),
+        }
+        self.after_zoom_change();
+    }
+    /// Toggles between Fit and the click-to-zoom level (`Z`, `Space`).
+    pub(in crate::app) fn toggle_zoom(&mut self) {
+        if self.view.zoom.on {
+            self.set_zoom(0.);
+        } else {
+            self.set_zoom(self.view.zoom.level);
+        }
+    }
+    fn after_zoom_change(&mut self) {
         // A JPEG, TIFF or PNG in the Loupe zooms on its own; the document
         // behind it is not rendered again.
         let raster_loupe = self.module == Module::Library
@@ -252,7 +272,12 @@ impl Editor {
         if raster_loupe {
             return;
         }
-        if self.view.zoom.on && self.view.is(Tool::Crop) {
+        if self.view.zoom.on
+            && self.view.is(Tool::Crop)
+            && !self
+                .fit_level()
+                .is_some_and(|fit| self.view.zoom.level <= fit * (1. + 1e-3))
+        {
             self.view.set_tool(Tool::None);
         }
         self.schedule();
@@ -301,7 +326,8 @@ impl Editor {
         } else {
             fit
         };
-        self.set_zoom(navigator::stepped(current, fit, direction > 0));
+        let next = navigator::stepped(current, fit, direction > 0);
+        self.set_zoom_transient(next, Some(fit));
     }
     /// Screen rectangle of the whole photo for the current zoom: see `Zoom::photo_rect`.
     fn photo_rect(&self, area: Rect, g: &Geometry, ppp: f32) -> Rect {
@@ -338,6 +364,19 @@ impl Editor {
         let available = area.size();
         let ppp = ui.ctx().pixels_per_point();
         self.view.viewport = available * ppp;
+        if let Some(fit) = self.fit_level() {
+            self.view.last_fit = Some(fit);
+            // If Crop is open and the photo became larger than the view
+            // (opening Crop on a cropped photo, showing panels, shrinking the
+            // window, rotating, or stepping to a larger photo), return to Fit
+            // so the crop frame stays visible and editable.
+            if self.view.is(Tool::Crop)
+                && self.view.zoom.on
+                && self.view.zoom.level > fit * (1. + 1e-3)
+            {
+                self.view.zoom.fit();
+            }
+        }
         if !self.view.zoom.on
             && let Some(im) = self.document.full().cloned()
         {
@@ -575,11 +614,19 @@ impl Editor {
         // Zoomed in, the minimap shows where, as Lightroom's Navigator does.
         let on_minimap = self.view.zoom.on && self.develop_minimap(ui, panes.after.clip);
         let tool_owns_pointer = self.tool_overlay(ui, &response, rect, area);
+        let zoomed_in = self.view.zoom.on
+            && (rect.width() > area.width() + 0.5 || rect.height() > area.height() + 0.5);
         // Holding Space pans while an eyedropper is open, as in Lightroom.
         let space = ui.input(|i| i.key_down(egui::Key::Space));
         let picking = self.view.picks_color() && !space && !self.view.compare.shows_before();
         let hand = !tool_owns_pointer && (!self.view.picks_color() || space);
-        if self.view.zoom.on && hand && response.dragged() && !on_reference && !on_minimap {
+        if zoomed_in
+            && hand
+            && response.dragged()
+            && !on_reference
+            && !on_minimap
+            && !self.view.is(Tool::Crop)
+        {
             let delta = ui.input(|i| i.pointer.delta());
             // Moved by the photo under the hand: Before's when the drag is on it.
             let on_before = response
@@ -591,14 +638,21 @@ impl Editor {
             pan[1] = (pan[1] - delta.y / dragged.height()).clamp(0., 1.);
         }
         if response.hovered() && hand && !self.view.is(Tool::Crop) {
-            ui.ctx().set_cursor_icon(if self.view.zoom.on {
-                egui::CursorIcon::Grab
+            ui.ctx().set_cursor_icon(if zoomed_in {
+                if response.dragged() {
+                    egui::CursorIcon::Grabbing
+                } else {
+                    egui::CursorIcon::Grab
+                }
+            } else if !self.view.zoom.on
+                && self
+                    .fit_level()
+                    .is_some_and(|fit| self.view.zoom.level < fit * (1. - 1e-3))
+            {
+                egui::CursorIcon::ZoomOut
             } else {
                 egui::CursorIcon::ZoomIn
             });
-            if response.dragged() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-            }
         }
         // The magnifier over the fitted edit, in Develop or the Library's Loupe,
         // when no tool owns the pointer.
@@ -630,7 +684,8 @@ impl Editor {
                     let size = Vec2::new(g.width as f32, g.height as f32);
                     self.view.zoom.toggle_at(pos, rect, area, size, ppp);
                 }
-                None => self.view.zoom.on = !self.view.zoom.on,
+                None if self.view.zoom.on => self.view.zoom.fit(),
+                None => self.view.zoom.on = true,
             }
             self.schedule();
         }
@@ -722,7 +777,7 @@ impl Editor {
                     .warn("Wait for the preview to update, then pick again"),
             }
         }
-        if self.view.is(Tool::Crop) && !self.view.zoom.on && self.document.full().is_some() {
+        if self.view.is(Tool::Crop) && !zoomed_in && self.document.full().is_some() {
             let c = self.document.edit.recipe().crop;
             let cr = Rect::from_min_max(
                 Pos2::new(

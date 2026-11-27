@@ -831,7 +831,12 @@ impl Editor {
     fn ask_library_thumbnail(&mut self) {
         if self.preview.mode != crate::app::develop::state::TextureMode::Whole
             || !self.view.is(crate::app::develop::state::Tool::Crop)
-            || !self.shows_library_edit_but_for_crop()
+            || self.library.is_none()
+            || self.document.catalog_photo.is_none()
+            || self.document.path.is_none()
+            || self.view.compare.shows_before()
+            || self.presets.preview.is_some()
+            || self.preview.peek.is_peeking()
             || self.preview.library_thumbnail.as_ref() == Some(self.document.edit.recipe())
         {
             return;

@@ -896,11 +896,19 @@ fn the_loupe_and_develop_share_the_zoom_keys() {
         assert!(zoom(Key::Num0, cmd_shift()).is_none());
         assert!(zoom(Key::Equals, cmd()).is_some(), "Cmd+= zooms in");
         assert!(zoom(Key::Plus, cmd()).is_some());
-        // Cmd+- zooms out, down to Fit and no further.
-        assert!(zoom(Key::Minus, cmd()).is_none(), "already at Fit");
+        // Cmd+- zooms out below Fit; from one step above Fit it stops at Fit.
+        assert!(
+            zoom(Key::Minus, cmd()).is_some_and(|z| z.starts_with("on")),
+            "Cmd+- zooms out below Fit"
+        );
         let mut f = Fixture::new(place);
         f.tap(Key::Equals, cmd());
-        assert!(tap_in(&mut f, Key::Minus, cmd()).get("zoom").is_some());
+        assert!(
+            tap_in(&mut f, Key::Minus, cmd())
+                .get("zoom")
+                .is_some_and(|z| z.starts_with("off")),
+            "Cmd+- stops at Fit from above"
+        );
         assert!(zoom(Key::Z, NONE).is_some());
         assert!(zoom(Key::Z, ALT).is_none());
     }

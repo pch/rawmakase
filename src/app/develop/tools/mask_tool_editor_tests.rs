@@ -684,3 +684,301 @@ fn the_range_pickers_sample_without_the_sdr_rendition_sliders() {
     editor.document.edit.setup_mut().hdr.sdr.brightness = 0.8;
     assert_eq!(editor.developed_lab(at, rect).unwrap(), plain);
 }
+
+/// Zoomed out below Fit, a radial gradient can be created and edited with its
+/// centre and handles in the backdrop outside the photo frame, and stays valid.
+#[test]
+fn radial_mask_can_be_drawn_and_edited_outside_a_zoomed_out_photo() {
+    use crate::model::masks::MaskShape;
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 400,
+        height: 400,
+        pixels: vec![[0.2; 3]; 160000].into(),
+        metadata: Metadata {
+            width: 400,
+            height: 400,
+            wb: [1.; 3],
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    editor.document.set_image(image);
+    editor.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([200, 200], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    // Viewport 400x400: Fit is 1.0, zoom at 0.5 draws the 200x200 photo centred
+    // at [100..300, 100..300] with 100pt of backdrop on every side.
+    editor.view.zoom.set(0.5);
+    editor.view.zoom_key = (true, 0.5);
+    let mut frame = |editor: &mut Editor, events: Vec<egui::Event>| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let frame = editor.begin_edit_frame();
+                editor.viewport_ui(ui);
+                editor.finish_edit_frame(frame, &ctx);
+            },
+        );
+        output.textures_delta.clear();
+    };
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let drag = |editor: &mut Editor,
+                frame: &mut dyn FnMut(&mut Editor, Vec<egui::Event>),
+                a: Pos2,
+                b: Pos2| {
+        frame(editor, vec![egui::Event::PointerMoved(a), button(a, true)]);
+        for k in 1..=8 {
+            frame(
+                editor,
+                vec![egui::Event::PointerMoved(a + (b - a) * k as f32 / 8.)],
+            );
+        }
+        frame(editor, vec![button(b, false)]);
+    };
+    frame(&mut editor, vec![]);
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Radial, None)
+    });
+    // Start at x=50 (50pt left of the photo's left edge at x=100, i.e. u = -0.25)
+    // and drag onto the photo at x=170, y=260.
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(50., 200.),
+        Pos2::new(170., 260.),
+    );
+    let MaskShape::Radial { center, radii, .. } =
+        editor.document.edit.recipe().masks[0].components[0].shape
+    else {
+        panic!("expected a radial gradient");
+    };
+    assert!(
+        (center[0] - (-0.25)).abs() < 0.02 && (center[1] - 0.5).abs() < 0.02,
+        "{center:?}"
+    );
+    assert!(
+        (radii[0] - 0.6).abs() < 0.02 && (radii[1] - 0.3).abs() < 0.02,
+        "{radii:?}"
+    );
+    editor.document.edit.recipe().validate().unwrap();
+    // Dragging the off-frame centre pin moves the radial gradient further out.
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(50., 200.),
+        Pos2::new(30., 180.),
+    );
+    let MaskShape::Radial { center, .. } =
+        editor.document.edit.recipe().masks[0].components[0].shape
+    else {
+        panic!();
+    };
+    assert!(
+        (center[0] - (-0.35)).abs() < 0.02 && (center[1] - 0.4).abs() < 0.02,
+        "{center:?}"
+    );
+    editor.document.edit.recipe().validate().unwrap();
+    // Zoomed all the way out to 6.25%, dragging across the whole viewport still
+    // stays within model::masks's validation bounds.
+    editor.view.zoom.set(0.0625);
+    editor.view.zoom_key = (true, 0.0625);
+    frame(&mut editor, vec![]);
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Radial, None)
+    });
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(2., 2.),
+        Pos2::new(398., 398.),
+    );
+    editor.document.edit.recipe().validate().unwrap();
+    // Clicking the backdrop while Color Range is armed keeps it armed rather
+    // than cancelling it without creating a mask.
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Color, None)
+    });
+    let masks_before = editor.document.edit.recipe().masks.len();
+    let outside = Pos2::new(10., 10.);
+    frame(
+        &mut editor,
+        vec![egui::Event::PointerMoved(outside), button(outside, true)],
+    );
+    frame(&mut editor, vec![button(outside, false)]);
+    assert!(
+        editor.view.masking.is_placing(),
+        "clicking backdrop must not cancel Color Range"
+    );
+    assert_eq!(editor.document.edit.recipe().masks.len(), masks_before);
+    // A linear gradient dragged far beyond the same ±4 edge does not collapse
+    // to a zero-length gradient, and pin-moving near ±4 translates rigidly.
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor.create_mask(crate::app::develop::tools::mask_tool::Kind::Linear, None)
+    });
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(390., 390.),
+        Pos2::new(398., 398.),
+    );
+    let MaskShape::Linear { from, to } = editor
+        .document
+        .edit
+        .recipe()
+        .masks
+        .last()
+        .unwrap()
+        .components[0]
+        .shape
+    else {
+        panic!("expected linear gradient");
+    };
+    assert_ne!(from, to, "clamped linear gradient must not collapse");
+    editor.document.edit.recipe().validate().unwrap();
+    // A valid radial mask whose radius handle lies beyond ±4 (center at [0.5, 3],
+    // vertical radius 2 -> handle at [0.5, 5]) keeps its radius when that handle
+    // is dragged slightly instead of jumping to 1.
+    let radial_idx = editor.document.edit.recipe().masks.len();
+    in_edit_frame(&ctx, &mut editor, |editor| {
+        editor
+            .document
+            .edit
+            .recipe_mut()
+            .masks
+            .push(crate::model::masks::MaskGroup {
+                components: vec![crate::model::masks::MaskComponent::new(MaskShape::Radial {
+                    center: [0.5, 3.0],
+                    radii: [0.3, 2.0],
+                    angle: 0.,
+                    feather: 0.5,
+                })],
+                ..Default::default()
+            });
+        editor.view.masking.selected = Some(radial_idx);
+        editor.view.masking.component = Some(0);
+    });
+    frame(&mut editor, vec![]);
+    // At 6.25% on a 400x400 image in a 400x400 viewport, the photo is 25x25
+    // snapped to [188..213, 188..213]; [0.5, 5.0] sits at (200.5, 313).
+    // Dragging down 12.5pt (+0.5 image units) grows the radius from 2.0 to 2.5.
+    drag(
+        &mut editor,
+        &mut frame,
+        Pos2::new(200.5, 313.0),
+        Pos2::new(200.5, 325.5),
+    );
+    let MaskShape::Radial { radii, .. } =
+        editor.document.edit.recipe().masks[radial_idx].components[0].shape
+    else {
+        panic!("expected radial gradient");
+    };
+    assert!(
+        (radii[1] - 2.5).abs() < 0.05,
+        "dragging a radial handle past ±4 must not shrink it: {radii:?}"
+    );
+    editor.document.edit.recipe().validate().unwrap();
+}
+
+/// Visual check of a photo zoomed out below Fit with a radial gradient centred
+/// outside the frame, for `RAWMAKASE_UI_SHOTS`.
+#[test]
+fn shots_of_radial_mask_outside_zoomed_out_photo() {
+    use crate::model::masks::{MaskComponent, MaskGroup, MaskShape};
+    use eframe::egui::{self, Color32, Vec2};
+    let Some(dir) = std::env::var_os("RAWMAKASE_UI_SHOTS").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(Vec2::new(720., 480.))
+        .with_pixels_per_point(2.)
+        .wgpu()
+        .build_ui_state(
+            |ui, editor: &mut Option<Editor>| {
+                let editor = editor.get_or_insert_with(|| {
+                    let text = fastframe_text::detect();
+                    crate::app::install_fonts(ui.ctx(), &text);
+                    crate::app::ui::icons::install(ui.ctx());
+                    let mut e = Editor::with_context(ui.ctx(), None, Default::default(), None);
+                    e.module = crate::app::Module::Develop;
+                    let image = Arc::new(CameraImage {
+                        recovered: Default::default(),
+                        width: 600,
+                        height: 400,
+                        pixels: vec![[0.25; 3]; 240_000].into(),
+                        metadata: Metadata {
+                            width: 600,
+                            height: 400,
+                            wb: [1.; 3],
+                            ..Default::default()
+                        },
+                        fast: false,
+                        scale_factor: 1.,
+                        scale_clipped: 0,
+                        hdr: Default::default(),
+                    });
+                    e.document.set_image(image);
+                    e.preview.texture = Some(
+                        ui.ctx()
+                            .load_texture(
+                                "photo",
+                                egui::ColorImage::filled(
+                                    [300, 200],
+                                    Color32::from_rgb(75, 92, 110),
+                                ),
+                                egui::TextureOptions::LINEAR,
+                            )
+                            .into(),
+                    );
+                    e.document.edit.setup_mut().masks.push(MaskGroup {
+                        components: vec![MaskComponent::new(MaskShape::Radial {
+                            center: [-0.2, 0.5],
+                            radii: [0.55, 0.3],
+                            angle: 0.,
+                            feather: 0.5,
+                        })],
+                        ..Default::default()
+                    });
+                    e.view.set_tool(crate::app::develop::state::Tool::Mask);
+                    e.view.masking.selected = Some(0);
+                    e.view.masking.component = Some(0);
+                    // Zoomed out below Fit so room appears around the photo.
+                    e.view.zoom.set(0.8);
+                    e.view.zoom_key = (true, 0.8);
+                    e
+                });
+                editor.viewport_ui(ui);
+            },
+            None,
+        );
+    harness.run_steps(4);
+    let image = harness.render().expect("wgpu could not draw the shot");
+    std::fs::create_dir_all(&dir).expect("the shots folder");
+    image
+        .save(dir.join("zoom-out-radial-mask.png"))
+        .expect("the shot");
+}

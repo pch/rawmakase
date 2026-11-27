@@ -703,8 +703,15 @@ impl Editor {
             if let Some(l) = &mut self.library {
                 l.make_active(id)
             }
-            // Zoomed in meanwhile (the zoom is shared): Crop cannot stay open.
-            if self.view.zoom.on && self.view.is(crate::app::develop::state::Tool::Crop) {
+            // Zoomed in past Fit meanwhile (the zoom is shared): Crop cannot stay open.
+            let zoomed_out = self
+                .fit_level()
+                .or(self.view.last_fit)
+                .is_some_and(|fit| self.view.zoom.level <= fit * (1. + 1e-3));
+            if self.view.zoom.on
+                && !zoomed_out
+                && self.view.is(crate::app::develop::state::Tool::Crop)
+            {
                 self.view.set_tool(crate::app::develop::state::Tool::None);
             }
             self.module = Module::Develop;

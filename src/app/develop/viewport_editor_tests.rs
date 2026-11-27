@@ -125,6 +125,152 @@ fn zoom_keys_go_to_100_percent_fit_and_step_by_a_factor() {
     press(egui::Key::Num1, egui::Key::Num1, cmd);
     press(egui::Key::Equals, egui::Key::Equals, cmd);
     assert!(!press(egui::Key::Minus, egui::Key::Minus, cmd).0);
+    // From Fit, Cmd+- steps below Fit down to 6.25%, and Cmd+= stops back at Fit.
+    let (on, level) = press(egui::Key::Minus, egui::Key::Minus, cmd);
+    assert!(on && (level - 0.2 / std::f32::consts::SQRT_2).abs() < 1e-4);
+    for _ in 0..8 {
+        press(egui::Key::Minus, egui::Key::Minus, cmd);
+    }
+    assert_eq!(
+        press(egui::Key::Minus, egui::Key::Minus, cmd),
+        (true, 0.0625)
+    );
+    // Stepping back up from 6.25% reaches Fit and stops there.
+    let mut at_fit = None;
+    for _ in 0..8 {
+        let (on, level) = press(egui::Key::Equals, egui::Key::Equals, cmd);
+        if !on {
+            at_fit = Some(level);
+            break;
+        }
+    }
+    // Returning to Fit after stepping below Fit restores the prior click/Z
+    // zoom-in target (here 0.2 * sqrt(2), from the Cmd+= above) rather than
+    // making a below-Fit step the toggle level.
+    let prior = 0.2 * std::f32::consts::SQRT_2;
+    assert!(
+        at_fit.is_some_and(|l| (l - prior).abs() < 1e-4),
+        "Cmd+= from below Fit stops at Fit and restores prior level: {at_fit:?}"
+    );
+    // Starting from 100% -> Fit -> Cmd+- -> Cmd+= -> Z zooms in to 100%.
+    press(egui::Key::Num0, egui::Key::Num0, cmd);
+    press(egui::Key::Num1, egui::Key::Num1, cmd);
+    press(egui::Key::Minus, egui::Key::Minus, cmd);
+    assert_eq!(
+        press(egui::Key::Equals, egui::Key::Equals, cmd),
+        (false, 1.)
+    );
+    assert_eq!(
+        press(egui::Key::Z, egui::Key::Z, egui::Modifiers::NONE),
+        (true, 1.)
+    );
+    // Quitting while temporarily zoomed out via Cmd+- does not save the
+    // transient below-Fit level either.
+    press(egui::Key::Num1, egui::Key::Num1, cmd);
+    let (on, level) = press(egui::Key::Minus, egui::Key::Minus, cmd);
+    assert!(on && level < 0.2);
+    assert_eq!(editor.view.zoom.saved_level(), 1.);
+}
+
+/// Crop stays open while zoomed out below Fit, returns to Fit if Fit shrinks
+/// below the current level (cropping a cropped photo, shrinking the window,
+/// or stepping to a larger photo), and closes when zoomed in past Fit.
+#[test]
+fn crop_stays_open_zoomed_out_and_closes_when_zoomed_in() {
+    use crate::app::develop::state::Tool;
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.module = Module::Develop;
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 1000,
+        height: 1000,
+        pixels: vec![[0.1; 3]; 1_000_000].into(),
+        metadata: Metadata {
+            width: 1000,
+            height: 1000,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    editor.document.set_image(image);
+    editor.preview.texture = Some(
+        ctx.load_texture(
+            "photo",
+            egui::ColorImage::filled([200, 200], egui::Color32::GRAY),
+            egui::TextureOptions::LINEAR,
+        )
+        .into(),
+    );
+    editor.view.viewport = Vec2::splat(400.); // Fit is 0.4.
+    editor.view.last_fit = Some(0.4);
+    editor.view.toggle(Tool::Crop);
+    assert!(editor.view.is(Tool::Crop));
+    // Zooming out below Fit keeps Crop open.
+    editor.step_zoom(-1);
+    assert!(editor.view.zoom.on);
+    assert!(editor.view.zoom.level < 0.4);
+    assert!(editor.view.is(Tool::Crop));
+    // Re-opening Crop while zoomed out keeps the zoomed-out view.
+    editor.view.toggle(Tool::Crop);
+    assert!(!editor.view.is(Tool::Crop));
+    editor.view.toggle(Tool::Crop);
+    assert!(editor.view.is(Tool::Crop));
+    assert!(editor.view.zoom.on && editor.view.zoom.level < 0.4);
+    // Shrinking the window so Fit drops below the zoomed-out level returns to
+    // Fit while keeping Crop open (never leaving Crop hidden on a zoomed-in photo).
+    let draw = |editor: &mut Editor, size: f32| {
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(size))),
+                ..Default::default()
+            },
+            |ui| {
+                editor.viewport_ui(ui);
+            },
+        );
+        out.textures_delta.clear();
+    };
+    draw(&mut editor, 400.);
+    assert!(editor.view.is(Tool::Crop) && editor.view.zoom.on);
+    draw(&mut editor, 200.); // Uncropped Fit is now 0.2 < 0.283.
+    assert!(editor.view.is(Tool::Crop), "Crop stays open");
+    assert!(
+        !editor.view.zoom.on,
+        "viewport returns to Fit instead of hiding the crop frame"
+    );
+    // Opening Crop on a cropped photo zoomed below its cropped Fit (0.4) but
+    // above its uncropped Fit (0.2) returns to Fit on the next frame with Crop open.
+    editor.view.toggle(Tool::Crop); // Close Crop.
+    editor.document.edit.setup_mut().crop = [0.25, 0.25, 0.75, 0.75];
+    draw(&mut editor, 200.); // Cropped Fit is 200/500 = 0.4.
+    editor.step_zoom(-1); // 0.4 / sqrt(2) = 0.283 (< 0.4 cropped, > 0.2 uncropped).
+    assert!(editor.view.zoom.on && editor.view.zoom.level > 0.2);
+    editor.view.toggle(Tool::Crop);
+    draw(&mut editor, 200.);
+    assert!(editor.view.is(Tool::Crop));
+    assert!(!editor.view.zoom.on);
+    // Zooming in past Fit closes Crop.
+    editor.set_zoom(1.);
+    assert!(!editor.view.is(Tool::Crop));
+    // Opening Crop while zoomed in returns to Fit.
+    editor.view.toggle(Tool::Crop);
+    assert!(editor.view.is(Tool::Crop));
+    assert!(!editor.view.zoom.on);
+    // Staying zoomed out below Fit keeps Crop open across `next_document`.
+    draw(&mut editor, 400.);
+    editor.step_zoom(-1);
+    assert!(editor.view.is(Tool::Crop) && editor.view.zoom.on);
+    editor.view.next_document(true);
+    assert!(editor.view.is(Tool::Crop) && editor.view.zoom.on);
 }
 
 #[test]

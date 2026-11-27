@@ -950,7 +950,12 @@ impl ViewState {
             tool
         });
         if matches!(self.tool(), Tool::Crop) {
-            self.zoom.on = false;
+            let zoomed_out = self
+                .last_fit
+                .is_some_and(|fit| self.zoom.level <= fit * (1. + 1e-3));
+            if !zoomed_out {
+                self.zoom.fit();
+            }
             self.aspect_read = false;
             self.aspect_reloaded = false;
         }
@@ -965,8 +970,12 @@ impl ViewState {
     /// the chosen aspect.
     pub(crate) fn next_document(&mut self, another: bool) {
         // Zoomed in meanwhile (the Loupe shares the zoom), the Crop tool cannot
-        // stay open, as when Develop shows a photo already open.
-        let crop = self.is(Tool::Crop) && !self.zoom.on;
+        // stay open, as when Develop shows a photo already open. Zoomed out below
+        // Fit, Crop stays open (and viewport_ui fits if the next photo is larger).
+        let zoomed_out = self
+            .last_fit
+            .is_some_and(|fit| self.zoom.level <= fit * (1. + 1e-3));
+        let crop = self.is(Tool::Crop) && (!self.zoom.on || zoomed_out);
         let (zoom, last_fit) = (self.zoom, self.last_fit);
         self.clear_document();
         (self.zoom, self.last_fit) = (zoom, last_fit);
@@ -977,7 +986,7 @@ impl ViewState {
         }
     }
     pub(crate) fn clear_document(&mut self) {
-        self.zoom.on = false;
+        self.zoom.fit();
         self.last_fit = None;
         self.zoom_anim = None;
         self.glide = None;

@@ -393,12 +393,15 @@ impl Editor {
         }
     }
     /// Pointer handling and drawing on the photo; returns whether the tool owns the
-    /// pointer (it does unless nothing would respond to it).
+    /// pointer (it does unless nothing would respond to it). `area` is the edit's
+    /// viewport pane, so gradients placed outside the photo frame show and edit
+    /// across the backdrop around it.
     pub(in crate::app) fn mask_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
         rect: Rect,
+        area: Rect,
     ) -> bool {
         let Some(im) = self.document.full().cloned() else {
             return false;
@@ -447,6 +450,8 @@ impl Editor {
             .enumerate()
             .filter_map(|(i, m)| anchor(m).map(|p| (i, to_screen(p))))
             .collect();
+        let view_clip = area.intersect(ui.clip_rect());
+        let photo_clip = rect.intersect(ui.clip_rect());
         let pointer = response.hover_pos();
         let near = |pos: Pos2| {
             handles
@@ -456,7 +461,9 @@ impl Editor {
         };
         let near_pin = |pos: Pos2| pins.iter().find(|(_, p)| p.distance(pos) < 9.).map(|p| p.0);
         let alt = ui.input(|i| i.modifiers.alt);
-        self.view.masking.hovered_pin = pointer.and_then(near_pin);
+        self.view.masking.hovered_pin = pointer
+            .filter(|p| view_clip.contains(*p))
+            .and_then(near_pin);
 
         // An Undo, Redo, History click or Delete while painting or moving a mask ends
         // the drag, the pointer moving or not.
@@ -465,6 +472,7 @@ impl Editor {
         }
         if response.drag_started()
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && view_clip.contains(origin)
         {
             let at = to_image(origin);
             let t = &self.view.masking;
@@ -485,9 +493,10 @@ impl Editor {
                 }
             } else if brushing {
                 let erase = alt || t.brush == 2;
-                match self.begin_stroke(at, erase) {
+                let dab = clamp_pos(at);
+                match self.begin_stroke(dab, erase) {
                     Some(stroke) => Drag::Stroke {
-                        points: vec![at],
+                        points: vec![dab],
                         stroke,
                     },
                     None => Drag::None,
@@ -507,12 +516,13 @@ impl Editor {
             let size = self.view.masking.brushes[self.view.masking.brush].size;
             match &mut self.view.masking.drag {
                 Drag::Stroke { points, stroke } => {
+                    let dab = clamp_pos(at);
                     let last = space.to(points[points.len() - 1]);
-                    let q = space.to(at);
+                    let q = space.to(dab);
                     if (q[0] - last[0]).hypot(q[1] - last[1]) >= size * 0.2
                         && points.len() < MAX_POINTS
                     {
-                        points.push(at);
+                        points.push(dab);
                         let (stroke, points) = (*stroke, points.as_slice().into());
                         self.extend_stroke(stroke, points);
                     }
@@ -529,7 +539,7 @@ impl Editor {
                     original,
                     moved,
                 } => {
-                    let delta = [at[0] - start[0], at[1] - start[1]];
+                    let delta = clamp_delta(original.iter(), [at[0] - start[0], at[1] - start[1]]);
                     *moved = original.iter().map(|s| shifted(s, delta)).collect();
                     let (mask, moved) = (*mask, moved.clone());
                     // `drag_kept` found the mask as last moved this frame.
@@ -555,21 +565,23 @@ impl Editor {
         }
         if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
+            && view_clip.contains(pos)
         {
             self.mask_click(pos, rect, to_image(pos), near_pin(pos), shape.as_ref(), ui);
         }
 
-        let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+        let photo_painter = ui.painter().with_clip_rect(photo_clip);
+        let painter = ui.painter().with_clip_rect(view_clip);
         for (texture, at, tint) in self.live_brush(
             ui.ctx(),
-            rect.intersect(ui.clip_rect()),
+            photo_clip,
             &to_image,
             &to_screen,
             &radius_on_screen,
             space,
         ) {
             let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
-            painter.image(texture, at, uv, tint);
+            photo_painter.image(texture, at, uv, tint);
         }
         if let Some(s) = &shape {
             draw_shape(&painter, s, space, &to_screen);
@@ -590,7 +602,12 @@ impl Editor {
         let moving = matches!(self.view.masking.drag, Drag::Move { .. });
         let on_handle =
             pointer.and_then(near).is_some() || pointer.and_then(near_pin).is_some() || moving;
-        if let Some(pos) = pointer.filter(|p| rect.contains(*p)) {
+        let range = pending.is_some_and(|p| p.kind == Kind::Color)
+            || matches!(
+                shape,
+                Some(MaskShape::ColorRange { .. } | MaskShape::LuminanceRange { .. })
+            );
+        if let Some(pos) = pointer.filter(|p| view_clip.contains(*p)) {
             if on_handle {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
             } else if brushing {
@@ -605,11 +622,8 @@ impl Editor {
                     );
                 }
                 ui.ctx().set_cursor_icon(egui::CursorIcon::None);
-            } else if pending.is_some()
-                || matches!(
-                    shape,
-                    Some(MaskShape::ColorRange { .. } | MaskShape::LuminanceRange { .. })
-                )
+            } else if pending.is_some_and(|p| matches!(p.kind, Kind::Linear | Kind::Radial))
+                || (range && rect.contains(pos))
             {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
             }
@@ -635,6 +649,9 @@ impl Editor {
             return;
         }
         if let Some(p) = pending.filter(|p| p.kind == Kind::Color) {
+            if !rect.contains(pos) {
+                return;
+            }
             if let Some(lab) = self.developed_lab(pos, rect) {
                 let shape = MaskShape::ColorRange {
                     samples: vec![lab],
@@ -652,7 +669,7 @@ impl Editor {
             shape,
             Some(MaskShape::ColorRange { .. } | MaskShape::LuminanceRange { .. })
         );
-        let lab = if range {
+        let lab = if range && rect.contains(pos) {
             self.developed_lab(pos, rect)
         } else {
             None
@@ -674,7 +691,7 @@ impl Editor {
                 (*low, *high) = ((l - 0.1).max(0.), (l + 0.1).min(1.));
             }
             (MaskShape::Brush { .. }, _) => {
-                self.add_stroke(vec![at], erase);
+                self.add_stroke(vec![clamp_pos(at)], erase);
             }
             _ => {}
         }
@@ -1493,9 +1510,60 @@ fn anchor(m: &MaskGroup) -> Option<[f32; 2]> {
         _ => None,
     })
 }
+/// Keeps an image-space position within the bounds `model::masks` accepts,
+/// even when dragging far into the backdrop around a zoomed-out photo.
+fn clamp_pos(p: [f32; 2]) -> [f32; 2] {
+    [p[0].clamp(-4., 4.), p[1].clamp(-4., 4.)]
+}
+/// Bounds `[min_x, min_y, max_x, max_y]` of all movable points in `shapes`,
+/// for clamping a translation delta without distorting any shape.
+fn shape_bounds<'a>(shapes: impl IntoIterator<Item = &'a MaskShape>) -> Option<[f32; 4]> {
+    let mut bounds: Option<[f32; 4]> = None;
+    let mut include = |p: [f32; 2]| {
+        bounds = Some(match bounds {
+            None => [p[0], p[1], p[0], p[1]],
+            Some([x0, y0, x1, y1]) => [x0.min(p[0]), y0.min(p[1]), x1.max(p[0]), y1.max(p[1])],
+        });
+    };
+    for shape in shapes {
+        match shape {
+            MaskShape::Brush { strokes } => {
+                for s in strokes {
+                    for &p in s.points.iter() {
+                        include(p);
+                    }
+                }
+            }
+            MaskShape::Linear { from, to } => {
+                include(*from);
+                include(*to);
+            }
+            MaskShape::Radial { center, .. } => include(*center),
+            _ => {}
+        }
+    }
+    bounds
+}
+/// Clamps a translation `delta` so every movable point in `shapes` stays within
+/// `[-4, 4]` without distorting the shapes.
+fn clamp_delta<'a>(shapes: impl IntoIterator<Item = &'a MaskShape>, delta: [f32; 2]) -> [f32; 2] {
+    let Some([x0, y0, x1, y1]) = shape_bounds(shapes) else {
+        return delta;
+    };
+    let axis = |d: f32, lo: f32, hi: f32| {
+        let min_d = -4. - lo;
+        let max_d = 4. - hi;
+        if min_d <= max_d {
+            d.clamp(min_d, max_d)
+        } else {
+            0.
+        }
+    };
+    [axis(delta[0], x0, x1), axis(delta[1], y0, y1)]
+}
 /// `shape` moved by `delta` (image space); color and tone ranges and bitmaps stay.
 fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
-    let shift = |p: [f32; 2]| [p[0] + delta[0], p[1] + delta[1]];
+    let shift = |p: [f32; 2]| clamp_pos([p[0] + delta[0], p[1] + delta[1]]);
     let mut shape = shape.clone();
     match &mut shape {
         MaskShape::Brush { strokes } => {
@@ -1515,19 +1583,28 @@ fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
 /// A gradient drawn by dragging from `start` to `end` (image space).
 fn new_shape(kind: Kind, space: Space, start: [f32; 2], end: [f32; 2]) -> MaskShape {
     match kind {
-        Kind::Linear => MaskShape::Linear {
-            from: start,
-            to: if start == end {
-                [end[0], end[1] + 0.1]
-            } else {
-                end
-            },
-        },
+        Kind::Linear => {
+            let start = clamp_pos(start);
+            let end = clamp_pos(end);
+            MaskShape::Linear {
+                from: start,
+                to: if start == end {
+                    let dy = if end[1] >= 3.9 { -0.1 } else { 0.1 };
+                    clamp_pos([end[0], end[1] + dy])
+                } else {
+                    end
+                },
+            }
+        }
         _ => {
-            let (a, b) = (space.to(start), space.to(end));
+            let center = clamp_pos(start);
+            let (a, b) = (space.to(center), space.to(end));
             MaskShape::Radial {
-                center: start,
-                radii: [(b[0] - a[0]).abs().max(0.01), (b[1] - a[1]).abs().max(0.01)],
+                center,
+                radii: [
+                    (b[0] - a[0]).abs().clamp(0.01, 4.),
+                    (b[1] - a[1]).abs().clamp(0.01, 4.),
+                ],
                 angle: 0.,
                 feather: 0.5,
             }
@@ -1583,15 +1660,16 @@ fn move_handle(
     at: [f32; 2],
 ) -> MaskShape {
     let delta = [at[0] - start[0], at[1] - start[1]];
-    let shift = |p: [f32; 2]| [p[0] + delta[0], p[1] + delta[1]];
+    let shift = |p: [f32; 2]| clamp_pos([p[0] + delta[0], p[1] + delta[1]]);
     let mut shape = original.clone();
     match &mut shape {
         MaskShape::Linear { from, to } => match h {
             Handle::Start => *from = shift(*from),
             Handle::End => *to = shift(*to),
             _ => {
-                *from = shift(*from);
-                *to = shift(*to);
+                let d = clamp_delta(std::iter::once(original), delta);
+                *from = clamp_pos([from[0] + d[0], from[1] + d[1]]);
+                *to = clamp_pos([to[0] + d[0], to[1] + d[1]]);
             }
         },
         MaskShape::Radial {
@@ -1604,7 +1682,7 @@ fn move_handle(
                 // The radius follows the pointer's distance; dragging around turns it.
                 let (c, p) = (space.to(*center), space.to(at));
                 let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
-                radii[k] = dx.hypot(dy).max(0.005);
+                radii[k] = dx.hypot(dy).clamp(0.005, 4.);
                 let turn = dy.atan2(dx).to_degrees() - if k == 0 { 0. } else { 90. };
                 *angle = (turn + 180.).rem_euclid(360.) - 180.;
             }
@@ -2039,6 +2117,20 @@ mod tests {
         e.view.set_tool(Tool::Mask);
         frame(&mut e, vec![key(egui::Key::Enter)]);
         assert_eq!(names(&e), ["Old"]);
+    }
+    #[test]
+    fn moving_a_gradient_to_the_limit_translates_rigidly() {
+        let shape = MaskShape::Linear {
+            from: [3.2, 3.0],
+            to: [3.6, 3.5],
+        };
+        let delta = clamp_delta(std::iter::once(&shape), [1.0, 2.0]);
+        let MaskShape::Linear { from, to } = shifted(&shape, delta) else {
+            panic!()
+        };
+        assert!((to[0] - 4.0).abs() < 1e-5 && (to[1] - 4.0).abs() < 1e-5);
+        assert!(((to[0] - from[0]) - 0.4).abs() < 1e-5);
+        assert!(((to[1] - from[1]) - 0.5).abs() < 1e-5);
     }
 }
 

@@ -83,7 +83,7 @@ pub(super) struct Loupe {
     pub(super) view: Vec2,
     /// The zoom before the last click toggled it, and when, for a
     /// double-click to undo.
-    before_click: Option<(bool, f64, Option<PhotoId>)>,
+    before_click: Option<(Zoom, f64, Option<PhotoId>)>,
     pub state: State,
     /// The photo's failure, until the Library says it in the top bar.
     unreported: Option<String>,
@@ -494,13 +494,13 @@ impl Library {
         Some((photo, shown))
     }
     /// A click in the Loupe toggled the zoom away from `before`.
-    pub(in crate::app) fn loupe_zoom_toggled(&mut self, before: bool) {
+    pub(in crate::app) fn loupe_zoom_toggled(&mut self, before: Zoom) {
         let at = self.ctx.input(|i| i.time);
         self.loupe.before_click = Some((before, at, self.selection.active));
     }
     /// A double-click: back to the grid, as in Lightroom. Returns the zoom
     /// from before its first click, which is undone.
-    pub(in crate::app) fn loupe_double_click(&mut self) -> Option<bool> {
+    pub(in crate::app) fn loupe_double_click(&mut self) -> Option<Zoom> {
         // Only a toggle by this double-click's own first click counts.
         let now = self.ctx.input(|i| i.time);
         let before = self
@@ -508,7 +508,7 @@ impl Library {
             .before_click
             .take()
             .filter(|(_, at, photo)| now - at < 1. && *photo == self.selection.active)
-            .map(|(on, ..)| on);
+            .map(|(zoom, ..)| zoom);
         self.close_loupe();
         before
     }
@@ -627,24 +627,24 @@ impl Library {
         let zoomable = available || stored.is_some();
         let context = crate::app::ui::widgets::context_clicked(&response);
         if response.clicked() && !double && !context && zoomable && (zoom.on || on_photo) {
-            if let Some((pos, fit)) = response
-                .interact_pointer_pos()
-                .zip(fit)
-                .filter(|_| !zoom.on)
-            {
-                zoom.pan = [
-                    ((pos.x - fit.left()) / fit.width()).clamp(0., 1.),
-                    ((pos.y - fit.top()) / fit.height()).clamp(0., 1.),
-                ];
+            self.loupe_zoom_toggled(*zoom);
+            if zoom.on {
+                zoom.fit();
+            } else {
+                if let Some((pos, fit)) = response.interact_pointer_pos().zip(fit) {
+                    zoom.pan = [
+                        ((pos.x - fit.left()) / fit.width()).clamp(0., 1.),
+                        ((pos.y - fit.top()) / fit.height()).clamp(0., 1.),
+                    ];
+                }
+                zoom.on = true;
             }
-            self.loupe_zoom_toggled(zoom.on);
-            zoom.on = !zoom.on;
         }
         // As in Lightroom, a double-click goes back to the grid; its first
         // click's zoom is undone.
         if double {
-            if let Some(on) = self.loupe_double_click() {
-                zoom.on = on;
+            if let Some(before) = self.loupe_double_click() {
+                *zoom = before;
             }
             return Action::None;
         }
@@ -760,7 +760,9 @@ impl Library {
                 crate::app::view::magnifier::paint_lens(ui, pos, &aim, level, sharp, preview, size);
             }
         }
-        if zoom.on && zoomable {
+        let pannable = shown
+            .is_some_and(|at| at.width() > rect.width() + 0.5 || at.height() > rect.height() + 0.5);
+        if zoom.on && zoomable && pannable {
             ui.ctx().set_cursor_icon(if response.dragged() {
                 egui::CursorIcon::Grabbing
             } else {
