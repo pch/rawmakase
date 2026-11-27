@@ -254,6 +254,28 @@ fn rgb_tone_values(q: vec3<f32>, a: f32, b: f32, lo: f32, hi: f32) -> vec3<f32> 
     }
     return vec3(a);
 }
+/// Camera Raw's PV2012 profile tone curve operator (`camera_profiles::pv2012_tone`).
+fn pv2012_tone_eval(q: vec3<f32>) -> vec3<f32> {
+    let lo = min(min(q.x, q.y), q.z);
+    let hi = max(max(q.x, q.y), q.z);
+    let span = hi - lo;
+    if span <= 1e-8 {
+        return vec3(clamp(tone_eval(hi), 0.0, 1.0));
+    }
+    let mid = max(min(q.x, q.y), min(max(q.x, q.y), q.z));
+    let r = clamp((mid - lo) / span, 0.0, 1.0);
+    let one_minus_r = 1.0 - r;
+    let alpha = 0.5 * r * r * one_minus_r;
+    let beta = 0.5 * r * one_minus_r * one_minus_r;
+    let x_hi = (1.0 - alpha) * hi + alpha * lo;
+    let x_lo = beta * hi + (1.0 - beta) * lo;
+    let y_hi = tone_eval(x_hi);
+    let y_lo = tone_eval(x_lo);
+    let denom = 1.0 - alpha - beta;
+    let o_hi = clamp(((1.0 - beta) * y_hi - alpha * y_lo) / denom, 0.0, 1.0);
+    let o_lo = clamp((-beta * y_hi + (1.0 - alpha) * y_lo) / denom, 0.0, 1.0);
+    return o_lo + (o_hi - o_lo) * ((q - lo) / span);
+}
 fn enhanced_curve(rgb: vec3<f32>) -> vec3<f32> {
     let q = vec3(
         srgb_encode(clamp(rgb.x, 0.0, 1.0)),
@@ -804,9 +826,13 @@ fn profile_finish(pro: vec3<f32>) -> vec3<f32> {
         q = raw_vibrance(q, vib);
     }
     q = clamp(q, vec3(0.0), vec3(1.0));
-    let low = min(min(q.x, q.y), q.z);
-    let high = max(max(max(q.x, q.y), q.z), 0.0);
-    q = rgb_tone_values(q, tone_eval(low), tone_eval(high), low, high);
+    if p(P_RENDERED_TONE) != 0.0 {
+        q = pv2012_tone_eval(q);
+    } else {
+        let low = min(min(q.x, q.y), q.z);
+        let high = max(max(max(q.x, q.y), q.z), 0.0);
+        q = rgb_tone_values(q, tone_eval(low), tone_eval(high), low, high);
+    }
     if offset(P_ENH_CURVE) >= 0 {
         q = enhanced_curve(q);
     }

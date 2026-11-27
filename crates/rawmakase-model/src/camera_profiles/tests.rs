@@ -752,3 +752,78 @@ fn profile_table_clamps_negative_channels_before_hue_conversion() {
         assert!(got.iter().all(|v| v.is_finite() && *v >= 0.), "{got:?}");
     }
 }
+
+#[test]
+fn default_tone_inv_at_inverts_default_tone_at() {
+    assert_eq!(default_tone_inv_at(0.), 0.);
+    assert_eq!(default_tone_inv_at(1.), 1.);
+    assert_eq!(default_tone_inv_at(-0.5), 0.);
+    assert_eq!(default_tone_inv_at(1.5), 1.);
+    assert_eq!(default_tone_inv_at(f32::NAN), 0.);
+    for i in 0..=2048 {
+        let x = i as f32 / 2048.;
+        let y = default_tone_at(x);
+        let back = default_tone_inv_at(y);
+        assert!((back - x).abs() <= 1e-5, "{x} -> {y} -> {back}");
+        let y2 = default_tone_at(back);
+        assert!((y2 - y).abs() <= 1e-6, "{y} -> {back} -> {y2}");
+    }
+}
+
+#[test]
+fn pv2012_tone_is_permutation_symmetric_clamps_before_mid_and_inverts_exactly() {
+    // Linear curve is the exact identity.
+    for p in [[0.8, 0.35, 0.05], [0.1, 0.9, 0.4], [0.5, 0.5, 0.5]] {
+        let got = pv2012_tone(p, |x| x);
+        for c in 0..3 {
+            assert!((got[c] - p[c]).abs() < 1e-6, "{p:?} -> {got:?}");
+        }
+    }
+    // Exact channel permutation symmetry and hue-ratio preservation.
+    let base = [0.78_f32, 0.27, 0.04];
+    let ref_out = pv2012_tone(base, default_tone_at);
+    let perms = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for perm in perms {
+        let q = [base[perm[0]], base[perm[1]], base[perm[2]]];
+        let out = pv2012_tone(q, default_tone_at);
+        for c in 0..3 {
+            assert!(
+                (out[c] - ref_out[perm[c]]).abs() < 1e-6,
+                "perm {perm:?}: {out:?} vs {ref_out:?}"
+            );
+        }
+        // Round-trip inversion with default_tone_inv_at.
+        let back = pv2012_tone(out, default_tone_inv_at);
+        for c in 0..3 {
+            assert!(
+                (back[c] - q[c]).abs() < 2e-5,
+                "{q:?} -> {out:?} -> {back:?}"
+            );
+        }
+    }
+    // Clamping order: extreme corner where unclamped o_lo < 0 clamps o_lo to 0 before mid.
+    let corner = [1.0_f32, 0.28125, 0.0];
+    let inv = pv2012_tone(corner, default_tone_inv_at);
+    assert_eq!(inv[2], 0.);
+    assert!((inv[1] - 0.28125 * inv[0]).abs() < 1e-6, "{inv:?}");
+    // Embedded profile finish_rendered matches pv2012_tone followed by PRO_TO_RGB,
+    // while finish stays on DNG RGBTone.
+    let embedded = CameraProfile::embedded(&Metadata::default());
+    let via_finish_rendered = embedded.finish_rendered(base);
+    let via_pv2012 = mul(PRO_TO_RGB, pv2012_tone(base, default_tone_at));
+    for c in 0..3 {
+        assert!((via_finish_rendered[c] - via_pv2012[c]).abs() < 1e-6);
+    }
+    let via_raw_finish = embedded.finish(base);
+    assert!(
+        (0..3).any(|c| (via_raw_finish[c] - via_finish_rendered[c]).abs() > 1e-3),
+        "finish_rendered should differ from DNG RGBTone finish on saturated input"
+    );
+}

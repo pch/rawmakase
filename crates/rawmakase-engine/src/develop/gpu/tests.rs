@@ -3711,3 +3711,104 @@ fn rendered_s3_tone_controls_match_cpu_and_preserve_default_identity() -> Result
     }
     Ok(())
 }
+
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn gpu_rendered_exposure_matches_cpu_and_identity() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata, Source as ImageSource},
+        develop::{
+            pipeline::{Samples, Source, develop_samples, pixel_params},
+            rendered,
+        },
+    };
+    use rawmakase_model::camera_profiles::RGB_TO_PRO;
+    use std::sync::Arc;
+    let patches: Vec<[u8; 3]> = [
+        [0, 0, 0],
+        [48, 48, 48],
+        [128, 128, 128],
+        [240, 240, 240],
+        [255, 255, 255],
+        [143, 1, 0],
+        [206, 0, 0],
+        [255, 0, 0],
+        [0, 143, 1],
+        [0, 255, 0],
+        [0, 0, 142],
+        [0, 0, 255],
+        [144, 143, 0],
+        [0, 143, 143],
+        [143, 0, 142],
+        [216, 108, 0],
+        [65, 0, 128],
+        [255, 250, 240],
+    ]
+    .to_vec();
+    let decode = |v: u8| crate::color::srgb_decode(f32::from(v) / 255.);
+    let w = patches.len() as u32;
+    let image = rendered::to_scene(CameraImage {
+        width: w,
+        height: 1,
+        pixels: patches
+            .iter()
+            .map(|p| crate::color::mul(RGB_TO_PRO, p.map(decode)))
+            .collect(),
+        metadata: Metadata {
+            width: w,
+            height: 1,
+            source: ImageSource::Rendered,
+            wb: [1.; 3],
+            daylight_wb: [1.; 3],
+            ..Default::default()
+        },
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    let samples = Arc::new(Samples {
+        width: w,
+        height: 1,
+        pixels: image.pixels.to_vec(),
+        positions: (0..w).map(|x| [x as f32, 0.]).collect(),
+    });
+    let mut gpu = Processor::new()?;
+    let cancel = AtomicBool::new(false);
+    let source = Source::new(&image);
+    for exposure in [-1., 0., 1., 2., 3.] {
+        let recipe = Recipe {
+            exposure,
+            ..Recipe::for_rendered(&image.metadata)
+        };
+        let params = pixel_params::pixel_params(source, &recipe).expect("supported");
+        assert_eq!(params.get(pixel_params::slot::RENDERED_TONE), &[1.]);
+        let cpu = develop_samples(source, &recipe, &samples, Cancel::new(&cancel), None)?;
+        let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
+        let max_diff = actual
+            .pixels
+            .iter()
+            .flatten()
+            .zip(cpu.pixels.iter().flatten())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(
+            max_diff < 1e-4,
+            "Rendered Exposure {exposure}: CPU/GPU max diff {max_diff}"
+        );
+        if exposure == 0. {
+            for (i, want) in patches.iter().enumerate() {
+                let got_gpu = actual.pixels[i].map(|v| (v.clamp(0., 1.) * 255.).round() as u8);
+                let got_cpu = cpu.pixels[i].map(|v| (v.clamp(0., 1.) * 255.).round() as u8);
+                for c in 0..3 {
+                    assert!(
+                        got_gpu[c].abs_diff(want[c]) <= 1 && got_cpu[c].abs_diff(want[c]) <= 1,
+                        "Default identity patch {i} ({want:?}): cpu={got_cpu:?} gpu={got_gpu:?}"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}

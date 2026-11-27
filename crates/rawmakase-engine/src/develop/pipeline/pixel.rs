@@ -198,6 +198,7 @@ pub(super) fn profile_stage(pro: [f32; 3], r: &Recipe, lut: &CurveSet) -> [f32; 
     let pro = crate::develop::color_mixer::apply_raw_saturation(pro, lut.raw_saturation);
     let vibrance = |p: [f32; 3]| lut.raw_vibrance.as_ref().map_or(p, |v| v.apply(p));
     match &r.profile {
+        Some(profile) if lut.rendered_tone => profile.finish_rendered(pro),
         Some(profile) => profile.finish_with(pro, vibrance),
         None => {
             let rgb = mul(crate::camera_profiles::PRO_TO_RGB, vibrance(pro));

@@ -16,6 +16,40 @@ These controls were fitted to Camera Raw renders and match within the default-re
 - **Point Curve menu** has Lightroom's Linear, Medium Contrast and Strong Contrast (points from Lightroom Classic's catalog), saved curves and Save…; saved curves live in RAWmakase's data folder, not in Lightroom's Curves folder, and the menu's curve name is not written to XMP ([tone controls](../tone-controls.md#point-curve-menu)). Whether Lightroom's built-in choices also reset the color curves was not checked; here they set the RGB curve only.
 - **Auto** tone is fitted to Lightroom Classic's own Auto values, from 452 Auto Settings steps on 439 catalog photos with every fifth photo held out; each slider is a linear fit of one or two display-encoded percentiles of luminance, of the brightest channel or of chroma, and the held-out error is a median 1 step on Contrast and 0.21 EV on Exposure. Lightroom changed Auto in mid-2019 and the catalog's history shows both versions, so the slopes are fitted on every photo and the levels, Contrast, Vibrance and Saturation on the current Auto alone. The WB menu's Auto white balance is fitted to Lightroom's Auto values (a median of 2.7 mired off on 133 photos); see [tone controls](../tone-controls.md#auto).
 
+### Rendered SDR Exposure saturated-color parity: PV2012 profile tone operator (2026-11-26)
+
+**Camera Raw 18.7 root cause.** Synthetic chart and real-photo ablations (sRGB vs. ProPhoto-v4 JPEGs, linear-profile DNGs, and `ProcessVersion = 5.7` vs. `15.4` across `ACR3`, filmic, `sqrt`, and `x^2` curves over all 6 RGB permutations) showed that Camera Raw 18.7's ProPhoto→sRGB gamut clipping is plain per-channel `[0, 1]` clipping (`0.004–0.010` mean ΔE00) and its S3 `white_curve` is pure DNG `RGBTone`, while S4 `ProfileToneCurve` under PV2012 (`ProcessVersion = 15.4`) conjugates `curve` by a channel-permutation-symmetric 2×2 mixing matrix parameterized by the linear hue ratio `r = (mid - lo) / (hi - lo)`:
+
+`α = 0.5 r²(1 − r)`, `β = 0.5 r(1 − r)²`, `x_hi = (1 − α) hi + α lo`, `x_lo = β hi + (1 − β) lo`,
+`o_hi = clamp(((1 − β) f(x_hi) − α f(x_lo)) / (1 − α − β), 0, 1)`,
+`o_lo = clamp((−β f(x_hi) + (1 − α) f(x_lo)) / (1 − α − β), 0, 1)`,
+`o_mid = o_lo + r (o_hi − o_lo)`.
+
+Because the matrix has determinant `1 − 0.5 r(1 − r) >= 0.875` and preserves `r`, its exact closed-form inverse on unclipped pixels is the same operator with `f⁻¹` (`default_tone_inv_at`). Applying `pv2012_tone` to SDR renders of rendered files (`is_rendered() && hdr.is_none()`) in `rendered::scene_from_rendered` (followed by `rgb_tone(_, white_scene_value)`), `CameraProfile::finish_rendered` (CPU), `develop.wgsl` (`P_RENDERED_TONE`, GPU), `pipeline::tone::contrast_pivot`, and `retouch::rendition::Rendition::forward` leaves RAW develop rendering (`--release --test color` 416/416) and HDR masters (`scene_from_light`, `hdr.is_some()`) 100% bit-identical while preserving gain-map SDR base equality, default rendered identity (`<= 1/255`) across all physical gamuts (sRGB, Adobe RGB, Display P3, Rec.2020), and Metal GPU == CPU parity (`max |GPU − CPU| = 2.1e-5` across 56 renders). Extreme out-of-Rec.2020 imaginary ProPhoto corners (encoded brightest channel `>= 0.94`, darkest near `0`) lie outside PV2012 ACR3's `[0, 1]³` image and clamp identically to Camera Raw 18.7 at `Exposure = 0` (measured on a ProPhoto-v4 JPEG: linear `[1.0, 0.2811, 0.0]` → `[0.9991, 0.3077, 0.0374]` and `[1.0, 0.4974, 0.0]` → `[0.9992, 0.5046, 0.0151]`, matching our clamped inverse/forward to `< 0.001`). Experimental AI Remove patches saved on rendered files prior to this change store legacy RGBTone pseudo-scene samples and may show slight interior color shifts under the new PV2012 forward pass (Heal's border membrane still blends boundaries to the photo; versioned patch migration is left as a follow-up).
+
+**Synthetic 160-patch charts vs. Camera Raw 18.7 (sRGB ΔE00, `mean / p95 / max`):**
+
+| Chart & setting | Before | After | Δ max |
+| --- | ---: | ---: | ---: |
+| `chart_srgb.jpg` default | 0.028 / 0.113 / 0.738 | 0.028 / 0.113 / 0.738 | 0.000 |
+| `chart_srgb.jpg` `Exposure −1` | 0.468 / 1.104 / 2.053 | 0.283 / 0.477 / 0.580 | −72% |
+| `chart_srgb.jpg` `Exposure +1` | 0.837 / 3.422 / 4.713 | 0.141 / 0.356 / 1.193 | −75% |
+| `chart_srgb.jpg` `Exposure +2` | 1.619 / 6.738 / 9.275 | 0.142 / 0.364 / 0.932 | −90% |
+| `chart_srgb.jpg` `Exposure +3` | 2.114 / 9.575 / 13.317 | 0.156 / 0.461 / 1.272 | −90% |
+| `chart_srgb.jpg` `Exposure +4` | 2.103 / 10.575 / 17.291 | 0.205 / 0.530 / 1.176 | −93% |
+| `chart_srgb.tif` (16-bit) `Exposure +2 / +3` | 1.616 / 9.275 — 2.116 / 13.317 | 0.143 / 0.932 — 0.158 / 1.272 | −90% |
+| `chart_p3.jpg` `Exposure +1` | 0.718 / 3.603 / 4.922 | 0.137 / 0.352 / 1.175 | −76% |
+| `chart_p3.jpg` `Exposure +2` | 1.979 / 8.792 / 11.900 | 0.126 / 0.307 / 0.718 | −94% |
+| `chart_p3.jpg` `Exposure +3` | 3.027 / 13.811 / 20.072 | 0.135 / 0.306 / 1.130 | −94% |
+
+**Real colorful CC0 JPEGs (10 photos: 8 sRGB + 2 Display P3, 1024 px, vs. Camera Raw 18.7):**
+- Every one of the 10 photos improved on saturated pixels (`C* > 40`) across all four exposures (`−1, +1, +2, +3`; 40/40 photo-exposure pairs better, 0 worse):
+  - `Exposure −1`: `C* > 40` mean `0.612 → 0.448` (−27%), all-pixel mean `0.662 → 0.638`.
+  - `Exposure +1`: `C* > 40` mean `0.536 → 0.425` (−21%), all-pixel mean `0.694 → 0.678`.
+  - `Exposure +2`: `C* > 40` mean `0.807 → 0.555` (−31%), all-pixel mean `0.721 → 0.683`, p99 `3.333 → 3.187` (colorful gladiolus sRGB `C* > 40`: `1.178 → 0.450`, Display P3: `1.285 → 0.570`).
+  - `Exposure +3`: `C* > 40` mean `1.172 → 0.766` (−35%), all-pixel mean `0.719 → 0.663`, p99 `3.891 → 3.614` (gladiolus sRGB `C* > 40`: `1.622 → 0.662`, p99 `3.859 → 2.491`; Display P3: `1.892 → 0.818`, p99 `4.188 → 2.950`).
+- Default (`0.592 → 0.592`), `Contrast +50` (`1.060 → 1.060`), `Saturation +100` (`0.909 → 0.909`), and `Vibrance +100` (`0.974 → 0.974`) stayed flat; `Whites +100` (`2.814 → 2.749`) and `Blacks −100` (`2.546 → 2.492`) also improved slightly.
+
 ### Look Profile Amount > 100% odds scaling (2026-11-26)
 
 **Camera Raw 18.7 measurement.** A 166-job sweep and an 84-job precision probe on `synthetic-d65.dng` (16-bit gamma-1.8 ProPhoto RGB, Camera Raw 18.7) measured every look slider across Profile Amounts 100, 125, 150, 175 and 200% against direct user-slider renders: Contrast (+10 to +100 in steps of 10, ±30), Exposure (+0.25 to +5.00 EV and −0.50/−2.00 EV), Parametric regions (each single region ±30, Lights +60/+80, and combo D−15/L−20/H−33), Split Toning (saturations 30/40/80, Balance 0/+20), Vignette (−30), Shadows (+30), Highlights (−30), Whites (±30), Blacks (±30), Clarity (+30), Texture (+30), Vibrance (+30), Saturation (±20), HSL (Hue Blue +30, Sat/Lum Orange −30), and Calibration (Red Hue +20, Blue Sat +20, Shadow Tint +20). Above 100%, every look slider normalized to `v ∈ [−1, 1]` (or `v = exposure / 5.0` for Exposure) follows one exact odds curve:
