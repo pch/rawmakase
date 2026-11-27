@@ -467,6 +467,15 @@ impl LaunchGuard {
     }
 }
 
+impl Drop for LaunchGuard {
+    fn drop(&mut self) {
+        // Explicitly unlock before closing so a forked child that briefly
+        // inherited this open file description before `exec` (e.g. an extension
+        // launched via `pre_exec`) cannot keep the `flock` held after we drop.
+        let _ = self.file.unlock();
+    }
+}
+
 /// The Thumbnail Cache sizes offered, in MiB: the default 512 MiB holds about
 /// 6,000 thumbnails.
 pub(in crate::app) const THUMBNAIL_CACHE_SIZES: [u32; 6] = [512, 1024, 2048, 4096, 8192, 16384];
@@ -1294,5 +1303,26 @@ mod launch_guard_tests {
         let (guard, unclean) = LaunchGuard::enter(&session);
         assert!(!unclean);
         guard.unwrap().mark_clean();
+    }
+
+    /// A duplicate descriptor sharing the same open file description (as a
+    /// `fork()` before `exec()` creates on Unix) must not keep the `flock`
+    /// alive after the guard drops.
+    #[cfg(unix)]
+    #[test]
+    fn dropping_the_guard_unlocks_even_with_a_duplicated_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.json");
+
+        let (guard1, unclean1) = LaunchGuard::enter(&session);
+        assert!(!unclean1);
+        let guard1 = guard1.unwrap();
+        let inherited = guard1.file.try_clone().unwrap();
+        drop(guard1);
+
+        let (guard2, unclean2) = LaunchGuard::enter(&session);
+        assert!(unclean2, "duplicated fd must not block the next launch");
+        guard2.unwrap().mark_clean();
+        drop(inherited);
     }
 }
