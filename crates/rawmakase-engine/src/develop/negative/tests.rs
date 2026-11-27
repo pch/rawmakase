@@ -263,11 +263,13 @@ fn a_coloured_highlight_does_not_cast_the_greys() {
     assert!(out[0] < out[1] * 0.95, "{out:?}");
 }
 
-/// A sliver of the film holder inside the crop, which recorded (nearly) no light,
-/// along one edge with a blurred border, covering up to about 5% of the crop.
-fn with_holder(im: &CameraImage, film: &Film, side: usize, share: f32) -> CameraImage {
+/// A sliver of the film holder inside the crop, which recorded no light (a thousandth
+/// of the sensor's white, as camera scans of film in a holder record it: flare and the
+/// black level's noise), along one edge with a blurred border, covering up to about 5%
+/// of the crop.
+fn with_holder(im: &CameraImage, _film: &Film, side: usize, share: f32) -> CameraImage {
     let (w, h) = (im.width as f32, im.height as f32);
-    let holder = film.base.map(|b| b * 10f32.powf(-2.5));
+    let holder = [0.001; 3];
     let mut out = im.clone();
     for (i, p) in out.pixels.iter_mut().enumerate() {
         let (x, y) = ((i as u32 % im.width) as f32, (i as u32 / im.width) as f32);
@@ -288,9 +290,14 @@ fn with_holder(im: &CameraImage, film: &Film, side: usize, share: f32) -> Camera
 
 /// No-light pixels inside the crop are left out: a holder's sliver covering up to
 /// about 5% of the crop, along any edge, leaves the bounds as the frame alone gives
-/// them, for either film. Measured on a real scan, such a sliver (density 2.5 above
-/// the base, against the frame's 0.8) was taken as the white and rendered the frame
+/// them, for either film. On a real scan such a sliver (about 2.5 above the base's
+/// density, against the frame's 0.8) was taken as the white and rendered the frame
 /// black.
+///
+/// Auto leaves out 3% at each side, so a sliver covering 4.5% of the crop shows 1.5%
+/// of it, a few pixels of the reduced copy Auto reads; one covering 3.5% (as this
+/// test first had it) shows little more than its two-pixel blurred edge, which lets
+/// the frame's light through and is no evidence of a holder: Auto keeps it.
 #[test]
 fn auto_leaves_out_a_holder_sliver_inside_the_crop() {
     for (film, kind) in [
@@ -301,7 +308,7 @@ fn auto_leaves_out_a_holder_sliver_inside_the_crop() {
         let frame = auto_scan(film, None);
         let want = auto_negative(&frame, &r, Cancel::NEVER).unwrap();
         for side in 0..4 {
-            for share in [0.035, 0.05] {
+            for share in [0.045, 0.05] {
                 let im = with_holder(&frame, film, side, share);
                 let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
                 assert_bounds(&got, &want, 0.02);
@@ -339,6 +346,42 @@ fn auto_keeps_a_separate_dense_area_inside_the_frame() {
         (got.dmax[0] - window_density).abs() < 0.02,
         "{got:?} {window_density}"
     );
+}
+
+/// A bright sky along a whole edge, apart from the rest of the frame by a gap in
+/// density, still lets light through: it is the photo's own, not a holder, which
+/// lets through none. The review's case, for either film: a 256 × 192 frame of
+/// densities 0.1 to 0.7 above a base of 0.8, its top 16 rows at 1.5, was levelled to
+/// 0.68 and its sky rendered at 23 times white.
+#[test]
+fn auto_keeps_a_bright_sky_along_an_edge() {
+    for kind in [FilmType::BlackWhite, FilmType::Colour] {
+        let r = Recipe {
+            negative: Some(NegativeConversion {
+                base: [0.8; 3],
+                ..NegativeConversion::new(kind)
+            }),
+            ..Default::default()
+        };
+        let im = image(256, 192, |x, y| {
+            let d = if y < 16 {
+                1.5
+            } else {
+                0.1 + 0.6 * x as f32 / 255.
+            };
+            [0.8 * 10f32.powf(-d); 3]
+        });
+        let got = auto_negative(&im, &r, Cancel::NEVER).unwrap();
+        assert!(
+            got.dmax.iter().all(|d| (d - 1.5).abs() < 0.02),
+            "{kind:?}: {got:?}"
+        );
+        let sky = Inversion::new(&got, false).apply([0.8 * 10f32.powf(-1.5); 3]);
+        assert!(
+            sky.iter().all(|v| (v - 1.).abs() < 0.05),
+            "{kind:?}: the sky renders at {sky:?}"
+        );
+    }
 }
 
 /// A highlight near the crop's edge, apart from the rest of the frame by a gap in

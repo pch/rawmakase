@@ -168,14 +168,22 @@ fn transmitted(v: [f32; 3], rendered: bool) -> [f32; 3] {
 /// Whether camera sample `v` of a photo with `m` has a channel at the sensor's clip
 /// (or isn't a number), so it records the light rather than the film.
 pub(super) fn clipped(v: [f32; 3], m: &Metadata) -> bool {
+    let v = of_white(v, m);
+    // Written so NaN counts as clipped.
+    !(0..3).all(|c| v[c] < CLIPPED)
+}
+
+/// Camera sample `v` of a photo with `m` as each channel's share of the sensor's
+/// white: a camera value over the as-shot white balance (`Metadata::wb`), a rendered
+/// file's linear value as it is.
+fn of_white(v: [f32; 3], m: &Metadata) -> [f32; 3] {
     let v = transmitted(v, m.is_rendered());
     let white = if m.is_rendered() {
         [1.; 3]
     } else {
         m.wb.map(|w| w.max(1e-3))
     };
-    // Written so NaN counts as clipped.
-    !(0..3).all(|c| v[c] / white[c] < CLIPPED)
+    std::array::from_fn(|c| v[c] / white[c])
 }
 
 /// Why the film base picker read no base.
@@ -253,10 +261,11 @@ const MIN_SAMPLES: usize = 64;
 /// densest [`NO_LIGHT_SHARE`] of the samples: a run of nearly empty bins
 /// [`NO_LIGHT_GAP`] decades long or longer. What lies above it is left out only where
 /// it is a holder: a connected region that runs along the crop's edge, its outermost
-/// samples, for [`HOLDER_RUN`] of that edge's length or more. A highlight of the
-/// frame's own (a window, the sun), inside the frame or near or briefly touching its
-/// edge, is kept. A fixed density cap can't tell them apart: a thin negative's white
-/// is far below a dense one's.
+/// samples, for [`HOLDER_RUN`] of that edge's length or more, and that let through no
+/// light ([`NO_LIGHT_FLOOR`]). A highlight of the frame's own (a window, the sun, a
+/// sky along an edge), inside the frame, near its edge or along it, still lets light
+/// through, and is kept. A fixed density cap can't tell them apart: a thin negative's
+/// white is far below a dense one's.
 const NO_LIGHT_SHARE: f32 = 0.1;
 /// The width of a density bin when looking for the gap, in decades.
 const NO_LIGHT_BIN: f32 = 0.02;
@@ -267,9 +276,18 @@ const NO_LIGHT_GAP: f32 = 0.3;
 const NO_LIGHT_SPARSE: f32 = 0.0005;
 /// The share of an edge of the crop a holder runs along, unbroken, at the least.
 const HOLDER_RUN: f32 = 0.4;
-/// How far a holder's blurred edge reaches into the frame, in grid cells: samples in
-/// the gap this close to it are left out with it.
+/// How far a holder's blurred edge reaches into the frame, in grid cells: samples this
+/// close to it mix its darkness with the frame's light, and are left out with it.
 const HOLDER_EDGE: i64 = 2;
+/// The most light a holder lets through, as its brightest channel's mean share of the
+/// sensor's white: 2^-8, eight stops below white. No film is opaque. Camera scans of
+/// film in a holder were measured to record 0.0005 to 0.002 of the white there (the
+/// lens's flare and the black level's noise), while the base sits within about two
+/// stops of white so a scan uses the sensor's range: film 1.5 above such a base lets
+/// through 0.008 or more, and a frame's densest content is seldom denser than that.
+/// Dense film above a dark base can fall below it; it is left out only where it also
+/// runs along the crop's edge apart from the rest of the frame.
+const NO_LIGHT_FLOOR: f32 = 1. / 256.;
 /// For a colour negative, the share of the frame, by mean density, in which Auto looks
 /// for the dense end's near-neutral tones…
 const DENSE_BAND: f32 = 0.02;
@@ -285,6 +303,8 @@ const MAX_NEUTRAL_SPREAD: f32 = 0.2;
 struct Density {
     cell: [u32; 2],
     d: [f32; 3],
+    /// Its brightest channel's share of the sensor's white.
+    light: f32,
 }
 impl Density {
     fn mean(&self) -> f32 {
@@ -332,6 +352,7 @@ pub fn auto_negative(
         .map(|(cell, p)| Density {
             cell,
             d: inversion.density(p),
+            light: of_white(p, &small.metadata).into_iter().fold(0., f32::max),
         })
         .collect();
     ensure!(
@@ -382,7 +403,6 @@ fn without_no_light(mut samples: Vec<Density>, size: [u32; 2]) -> Vec<Density> {
     for (bin, count) in counts.iter().enumerate() {
         if *count > sparse {
             if run >= needed {
-                let start = lo + (bin - run) as f32 * NO_LIGHT_BIN;
                 let end = lo + bin as f32 * NO_LIGHT_BIN;
                 let above = samples.partition_point(|s| s.mean() < end);
                 let holder = holder_cells(&samples[above..], size);
@@ -401,8 +421,7 @@ fn without_no_light(mut samples: Vec<Density>, size: [u32; 2]) -> Vec<Density> {
                         }
                     }
                     samples.retain(|s| {
-                        let at = i64::from(s.cell[1]) * columns + i64::from(s.cell[0]);
-                        s.mean() < start || !near[at as usize]
+                        !near[(i64::from(s.cell[1]) * columns + i64::from(s.cell[0])) as usize]
                     });
                     return samples;
                 }
@@ -417,12 +436,16 @@ fn without_no_light(mut samples: Vec<Density>, size: [u32; 2]) -> Vec<Density> {
 
 /// The cells of `cluster` (in a `size` grid) that make up a film holder: each region
 /// of them, connected side to side, that runs unbroken along one of the grid's
-/// outermost rows or columns for [`HOLDER_RUN`] of its length or more.
+/// outermost rows or columns for [`HOLDER_RUN`] of its length or more, and lets
+/// through no more light than [`NO_LIGHT_FLOOR`].
 fn holder_cells(cluster: &[Density], size: [u32; 2]) -> Vec<[u32; 2]> {
     let [columns, rows] = size.map(|v| v as usize);
     let mut marked = vec![false; columns * rows];
+    let mut light = vec![0f32; columns * rows];
     for s in cluster {
-        marked[s.cell[1] as usize * columns + s.cell[0] as usize] = true;
+        let at = s.cell[1] as usize * columns + s.cell[0] as usize;
+        marked[at] = true;
+        light[at] = s.light;
     }
     // Each marked cell's region, numbered from 1, found by flooding side to side.
     let mut region = vec![0usize; columns * rows];
@@ -470,7 +493,13 @@ fn holder_cells(cluster: &[Density], size: [u32; 2]) -> Vec<[u32; 2]> {
             || along(&mut ((rows - 1) * columns..rows * columns), columns, id)
             || along(&mut (0..rows).map(|r| r * columns), rows, id)
             || along(&mut (0..rows).map(|r| r * columns + columns - 1), rows, id);
-        if edge {
+        // Judged by its darkest tenth: a holder's own cells are its darkest, and a thin
+        // sliver is mostly its blurred inner edge, which mixes in the frame's light. A
+        // sky's darkest cells are its densest film, which still lets light through.
+        let mut lights: Vec<f32> = cells.iter().map(|at| light[*at]).collect();
+        let tenth = lights.len() / 10;
+        let dark = *lights.select_nth_unstable_by(tenth, f32::total_cmp).1 <= NO_LIGHT_FLOOR;
+        if edge && dark {
             holder.extend(
                 cells
                     .iter()
