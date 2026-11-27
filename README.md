@@ -4,7 +4,7 @@
 
 RAWmakase is a fast, non-destructive RAW photo developer for Linux, macOS and Windows, written in Rust. It develops RAW, JPEG, PNG, TIFF, WebP, AVIF, HEIF/HEIC and JPEG XL files with a Lightroom-style set of controls and exports JPEG, 16-bit TIFF, PNG or JPEG XL, with HDR edits exported as HDR TIFF or JPEG XL or as JPEG with a gain map (exporting to WebP, AVIF and HEIF is not available yet). It can also import a Lightroom Classic catalog with its ratings, flags, labels, keywords and compatible develop settings, without ever writing to the original catalog or your photos.
 
-![RAWmakase Develop view with presets, the photo, and the Basic and Tone Curve panels](docs/images/screenshot-2026-10-13-1111.png)
+![RAWmakase Develop view with presets, the photo, and the Basic and Tone Curve panels](docs/images/screenshot-2026-11-27-1441.png)
 
 <p align="center">
   <a href="https://github.com/pch/rawmakase/releases/latest"><strong>⬇ Download the latest version</strong></a><br>
