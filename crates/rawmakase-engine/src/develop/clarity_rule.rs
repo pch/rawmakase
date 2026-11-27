@@ -31,13 +31,36 @@ const LEVEL_MIN: usize = 50;
 /// (90th percentile 1.17 EV), whereas a <1% dead-black optical border or lens corner sits
 /// 6–8 stops below `q01` and would otherwise pull `bot`, `range` and `b_skew` out of range.
 const DARK_TAIL_GAP: f32 = 1.0;
+/// SDR rendered-file positive Clarity adjustments: the ensemble was trained on RAW
+/// scenes where `default_black` shifts down under Clarity +100, so on `F⁻¹`-inverted
+/// SDR rendered files `G_flat` systematically over-lifts shadows/midtones relative to
+/// `bq90` and `G_pix` is slightly weak. Clamping `x - bq90` to `[-3.5, 1.0]` keeps deep
+/// dark tails from extrapolating; both adjustments are shift-invariant in log2 luminance
+/// and applied before monotone projection.
+const RENDERED_FLAT_SLOPE: f32 = 0.06;
+const RENDERED_FLAT_DELTA_MIN: f32 = -3.5;
+const RENDERED_FLAT_DELTA_MAX: f32 = 1.0;
+const RENDERED_PIX_SCALE: f32 = 1.08;
+
+/// Test shorthand for [`unit_curves_for`] on a RAW measurement map.
+#[cfg(test)]
+pub(super) fn unit_curves(logs: &[f32], base: &[f32], w: usize, h: usize) -> [Curve; 2] {
+    unit_curves_for(logs, base, w, h, false)
+}
 
 /// Full-strength (+100) positive Clarity curves `(G_base, G_pix)` for a photo's
 /// measurement map (`logs` and local-Laplacian `base`, `w` × `h`).
 ///
 /// A constant image (`hi - lo < 1e-4`) returns exact zero curves so flat frames and
-/// mask color/exposure adjustments never introduce spurious gain.
-pub(super) fn unit_curves(logs: &[f32], base: &[f32], w: usize, h: usize) -> [Curve; 2] {
+/// mask color/exposure adjustments never introduce spurious gain. When `rendered` is
+/// `true`, applies the SDR rendered-file slope and detail-contrast adjustment.
+pub(super) fn unit_curves_for(
+    logs: &[f32],
+    base: &[f32],
+    w: usize,
+    h: usize,
+    rendered: bool,
+) -> [Curve; 2] {
     let n = logs.len();
     if n == 0 || base.len() != n {
         return zero_curves(0., 1.);
@@ -349,8 +372,15 @@ pub(super) fn unit_curves(logs: &[f32], base: &[f32], w: usize, h: usize) -> [Cu
         ];
         let z: [f32; FEATURES] =
             std::array::from_fn(|k| ((feat[k] - MU[k]) / SD[k]).clamp(-Z_CLAMP, Z_CLAMP));
-        flat_table[i] = eval_ensemble(&z, &FW1, &FB1, &FW2, &FB2, &FW3, &FB3);
-        pix_table[i] = eval_ensemble(&z, &PW1, &PB1, &PW2, &PB2, &PW3, &PB3);
+        let mut flat = eval_ensemble(&z, &FW1, &FB1, &FW2, &FB2, &FW3, &FB3);
+        let mut pix = eval_ensemble(&z, &PW1, &PB1, &PW2, &PB2, &PW3, &PB3);
+        if rendered {
+            flat += RENDERED_FLAT_SLOPE
+                * (x - bq90).clamp(RENDERED_FLAT_DELTA_MIN, RENDERED_FLAT_DELTA_MAX);
+            pix *= RENDERED_PIX_SCALE;
+        }
+        flat_table[i] = flat;
+        pix_table[i] = pix;
     }
 
     // Project both smooth-gradient output (`x + G_flat(x)`) and fine-detail output
@@ -563,5 +593,49 @@ mod tests {
                 assert!((half[k].table[i] - 0.5 * unit[k].table[i]).abs() < 1e-6);
             }
         }
+    }
+
+    #[test]
+    fn rendered_positive_clarity_preserves_invariants_and_reduces_shadow_lift() {
+        let (w, h) = (64, 48);
+        // Flat image stays exact zero.
+        let flat = vec![-2.5; w * h];
+        let [fb, fp] = unit_curves_for(&flat, &flat, w, h, true);
+        assert!(fb.table.iter().all(|&v| v == 0.));
+        assert!(fp.table.iter().all(|&v| v == 0.));
+
+        // Shift invariance in log2 luminance.
+        let (logs0, base0) = sample_scene(w, h, -4.0);
+        let (logs1, base1) = sample_scene(w, h, -1.5);
+        let [rb0, rp0] = unit_curves_for(&logs0, &base0, w, h, true);
+        let [rb1, rp1] = unit_curves_for(&logs1, &base1, w, h, true);
+        for i in 0..LEVELS {
+            assert!((rb0.table[i] - rb1.table[i]).abs() < 1e-4);
+            assert!((rp0.table[i] - rp1.table[i]).abs() < 1e-4);
+        }
+
+        // Monotone flat and pix curves.
+        let step = (rb0.hi - rb0.lo) / LEVELS as f32;
+        for i in 1..LEVELS {
+            let prev_flat = (i - 1) as f32 * step + rb0.table[i - 1] + rp0.table[i - 1];
+            let cur_flat = i as f32 * step + rb0.table[i] + rp0.table[i];
+            assert!(
+                cur_flat + 1e-5 >= prev_flat,
+                "rendered flat inverted at {i}"
+            );
+            let prev_pix = (i - 1) as f32 * step + rp0.table[i - 1];
+            let cur_pix = i as f32 * step + rp0.table[i];
+            assert!(cur_pix + 1e-5 >= prev_pix, "rendered pix inverted at {i}");
+        }
+
+        // Shadow/midtone flat lift is lower than RAW (compensating for absent default_black).
+        let [raw_b, raw_p] = unit_curves_for(&logs0, &base0, w, h, false);
+        let shadow_x = -5.5;
+        let raw_flat = raw_b.eval(shadow_x) + raw_p.eval(shadow_x);
+        let ren_flat = rb0.eval(shadow_x) + rp0.eval(shadow_x);
+        assert!(
+            ren_flat < raw_flat - 0.05,
+            "expected lower shadow lift on rendered: raw={raw_flat}, ren={ren_flat}"
+        );
     }
 }

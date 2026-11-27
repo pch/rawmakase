@@ -119,9 +119,38 @@ Contrast with `basic_tone::RENDERED_PIVOT_OFFSET`. White balance is a matrix and
 in S1 (`model::white_balance::rendered_white_balance`, see
 [color pipeline](color-pipeline.md)). Saturation and Vibrance use rendered-file tables in
 `ColorMixer` (`rendered_sat_vib.bin`, see [color mixer](color-mixer.md#rendered-files)).
-Known gaps: Highlights/Shadows on very dark or bright files, Clarity, Dehaze, fully
-saturated colors at large Exposure, and parts of the cool magenta corner of Temp and
-Tint.
+
+For SDR rendered files (`is_rendered() && hdr_source.is_none()`; HDR rendered masters
+stay on the RAW/HDR path), S3 scene tone applies rendered-specific adjustments to account
+for the `F⁻¹`-inverted pseudo-scene (no sensor headroom above 1.0 and no `default_black`
+toe):
+
+- **Dehaze (`scene_tone/haze.rs`, `pipeline/tone.rs`, `gpu/develop.wgsl`):** estimates
+  optical depth with a Fast Guided Filter on linear relative luminance
+  `clamp(Y / Y_A, 0, 2)` (`r = 0.06 × long_edge`, `eps = 0.02`), storing `[mean_a, mean_b]`
+  and reconstructing per-pixel depth against full-resolution `clamp(Y / Y_A, 0, 2)` so
+  horizon and sky edges stay sharp and Exposure-invariant; uses `omega_rendered` (below
+  RAW at +25: `0.26` vs. `0.27`, higher at +50/+75: `0.50`/`0.72` vs. `0.46`/`0.67`, same
+  +100 endpoint `0.88`) and rational negative transmission `t = 1 / (1 + κ(|s|) · d)`
+  with `neg_strength_rendered` and `Ycap`.
+- **Clarity (`clarity_rule.rs`, `local_tone.rs`):** positive Clarity applies a
+  shift-invariant slope (`+0.06 × clamp(x − q90(base), −3.5, 1.0)`) to `G_flat` and
+  `1.08×` detail gain to `G_pix` before monotone projection so rendered midtones and
+  shadows do not over-lift; negative Clarity tapers `ClarityField` and `ClarityDetail`
+  in deep shadows (`smoothstep(−7.5, −5.0, log2(Y))`) where there is no `default_black`
+  toe.
+- **Shadows and Highlights (`local_tone_rule.rs`):** anchored to pre-Exposure file levels
+  (`x_pre = x − exposure`), `Shadows +` tapers in deep shadows
+  (`0.65 + 0.35 · smoothstep(−11, −7, x_pre)`) and `Highlights +` tapers near the 1.0
+  ceiling (`1 − 0.20 · smoothstep(−2.5, 0, x_pre)`) before monotone projection; `Shadows −`
+  and `Highlights −` stay unchanged.
+
+Remaining known gaps on rendered files: Dehaze (reduced across positive and negative
+amounts, though positive Dehaze still averages ~2.0–2.6 ΔE00 on held-out JPEGs), Clarity
+(reduced, ~1.8 ΔE00 mean at +100 on held-out JPEGs), Highlights/Shadows on very dark or
+bright files (reduced at `Shadows +` / `Highlights +` extremes), extreme-exposure
+saturated primaries (ProPhoto→sRGB gamut rolloff rather than S3), and parts of the cool
+magenta corner of Temp and Tint.
 
 ### Whites and Blacks
 

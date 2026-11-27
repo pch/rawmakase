@@ -116,12 +116,18 @@ impl SceneTone {
             };
         let pro = if dehaze > 0. {
             // The photo's haze, removed in proportion to the amount.
-            let omega = if self.hdr {
-                haze::omega_hdr(dehaze)
-            } else {
-                haze::omega(dehaze)
-            };
             self.haze.as_ref().map_or(pro, |haze| {
+                debug_assert!(
+                    !(self.hdr && haze.haze.rendered),
+                    "rendered haze is SDR-only"
+                );
+                let omega = if self.hdr {
+                    haze::omega_hdr(dehaze)
+                } else if haze.haze.rendered {
+                    haze::omega_rendered(dehaze)
+                } else {
+                    haze::omega(dehaze)
+                };
                 haze.apply(
                     pro,
                     omega,
@@ -130,8 +136,16 @@ impl SceneTone {
                 )
             })
         } else if dehaze < 0. {
-            let strength = haze::neg_strength(-dehaze);
             self.haze.as_ref().map_or(pro, |haze| {
+                debug_assert!(
+                    !(self.hdr && haze.haze.rendered),
+                    "rendered haze is SDR-only"
+                );
+                let strength = if haze.haze.rendered {
+                    haze::neg_strength_rendered(-dehaze)
+                } else {
+                    haze::neg_strength(-dehaze)
+                };
                 haze.apply_negative(
                     pro,
                     strength,

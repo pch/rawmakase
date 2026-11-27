@@ -38,9 +38,11 @@ pub(crate) mod slot {
         // Global Dehaze slider amount (`SceneTone::dehaze`).
         DEHAZE: 1,
         // Dehaze's haze model (`scene_tone::Dehazing`): its density's table, or -1, the
-        // grid's size and scale, then the airlight at the render's Exposure.
+        // grid's size and scale, the airlight at the render's Exposure, and whether the
+        // haze is for an SDR rendered file (1) or RAW/HDR (0).
         HAZE: 5,
         HAZE_AIR: 3,
+        HAZE_RENDERED: 1,
         LOOK: 5,
         ENH: 5,
         ENH_CURVE: 1,
@@ -595,8 +597,15 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
                 ],
             );
             p.set(slot::HAZE_AIR, &h.air);
+            p.set(
+                slot::HAZE_RENDERED,
+                &[if h.haze.rendered { 1. } else { 0. }],
+            );
         }
-        None => p.set(slot::HAZE, &[-1., 0., 0., 0., 0.]),
+        None => {
+            p.set(slot::HAZE, &[-1., 0., 0., 0., 0.]);
+            p.set(slot::HAZE_RENDERED, &[0.]);
+        }
     }
     p.table(slot::LOOK, t.look);
     p.table(slot::ENH, t.enhanced);

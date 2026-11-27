@@ -3540,3 +3540,167 @@ fn preview_renderer_uses_shared_gpu_pyramids_for_nr_and_texture_with_cpu_and_exp
     );
     Ok(())
 }
+
+/// SDR rendered-file S3 tone controls (default identity, Dehaze ±, Clarity ±, Highlights ±,
+/// Shadows ±, and Shadows+Highlights) must match between CPU and GPU within 1e-4, and default
+/// settings must round-trip the rendered pixels within ±1/255.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn rendered_s3_tone_controls_match_cpu_and_preserve_default_identity() -> Result<()> {
+    use crate::{
+        camera_data::{CameraImage, Metadata},
+        develop::pipeline::{Samples, Source, develop_samples, pixel_params::pixel_params},
+    };
+    use std::sync::Arc;
+    let (w, h) = (160u32, 120u32);
+    let metadata = Metadata {
+        width: w,
+        height: h,
+        source: crate::camera_data::Source::Rendered,
+        wb: [1.; 3],
+        daylight_wb: [1.; 3],
+        ..Default::default()
+    };
+    // Synthetic linear sRGB rendered image (hazy bright sky on top, dark textured foreground below)
+    // converted to linear ProPhoto and inverted via `scene_from_rendered`, as `photo::open_source` does.
+    let orig_srgb_lin: Vec<[f32; 3]> = (0..w * h)
+        .map(|i| {
+            let (x, y) = ((i % w) as f32 / w as f32, (i / w) as f32 / h as f32);
+            if y < 0.45 {
+                [0.65 + 0.25 * x, 0.70 + 0.20 * x, 0.80 + 0.15 * x]
+            } else {
+                let tex = if ((i % w) / 3 + (i / w) / 3) % 2 == 0 {
+                    1.2
+                } else {
+                    0.8
+                };
+                [
+                    (0.03 + 0.20 * x) * tex,
+                    (0.04 + 0.18 * x) * tex,
+                    (0.03 + 0.14 * x) * tex,
+                ]
+            }
+        })
+        .collect();
+    let scene_pixels: Vec<[f32; 3]> = orig_srgb_lin
+        .iter()
+        .map(|&p| {
+            let pro = crate::color::mul(crate::camera_profiles::RGB_TO_PRO, p);
+            crate::develop::rendered::scene_from_rendered(pro)
+        })
+        .collect();
+    let image = CameraImage {
+        width: w,
+        height: h,
+        pixels: scene_pixels.into(),
+        metadata: metadata.clone(),
+        recovered: Default::default(),
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    let samples = Arc::new(Samples {
+        width: w,
+        height: h,
+        pixels: image.pixels.to_vec(),
+        positions: (0..w * h)
+            .map(|i| [(i % w) as f32, (i / w) as f32])
+            .collect(),
+    });
+    let base = Recipe::for_rendered(&metadata);
+    let mut gpu = Processor::new()?;
+    let cancel = AtomicBool::new(false);
+    let source = Source::new(&image);
+
+    let cases: [(&str, Recipe); 10] = [
+        ("default", base.clone()),
+        ("dehaze+75", {
+            let mut r = base.clone();
+            r.effects.dehaze = 0.75;
+            r
+        }),
+        ("dehaze+100", {
+            let mut r = base.clone();
+            r.effects.dehaze = 1.;
+            r
+        }),
+        ("dehaze-75", {
+            let mut r = base.clone();
+            r.effects.dehaze = -0.75;
+            r
+        }),
+        ("clarity+100", {
+            let mut r = base.clone();
+            r.effects.clarity = 1.;
+            r
+        }),
+        ("clarity-100", {
+            let mut r = base.clone();
+            r.effects.clarity = -1.;
+            r
+        }),
+        (
+            "highlights-100",
+            Recipe {
+                highlights: -1.,
+                ..base.clone()
+            },
+        ),
+        (
+            "highlights+100",
+            Recipe {
+                highlights: 1.,
+                ..base.clone()
+            },
+        ),
+        (
+            "shadows+100",
+            Recipe {
+                shadows: 1.,
+                ..base.clone()
+            },
+        ),
+        (
+            "s+100_h-100",
+            Recipe {
+                shadows: 1.,
+                highlights: -1.,
+                ..base
+            },
+        ),
+    ];
+
+    for (name, edit) in cases {
+        let params = pixel_params(source, &edit).expect("supported rendered recipe");
+        let expected = develop_samples(source, &edit, &samples, Cancel::new(&cancel), None)?;
+        let actual = gpu.develop(&samples, &params, Cancel::new(&cancel))?;
+        let max = actual
+            .pixels
+            .iter()
+            .flatten()
+            .zip(expected.pixels.iter().flatten())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0., f32::max);
+        assert!(max < 1e-4, "rendered {name}: CPU/GPU difference {max}");
+        if name == "default" {
+            // Verify default identity against the original rendered sRGB values within ±1/255
+            // (`develop_samples` outputs sRGB-encoded values in `[0, 1]`).
+            let max_id = expected
+                .pixels
+                .iter()
+                .zip(&orig_srgb_lin)
+                .flat_map(|(out_srgb, orig_lin)| {
+                    (0..3).map(move |c| {
+                        (out_srgb[c] - crate::color::srgb_encode(orig_lin[c].clamp(0., 1.))).abs()
+                    })
+                })
+                .fold(0f32, f32::max);
+            assert!(
+                max_id <= 1. / 255.,
+                "rendered default identity drifted: {max_id}"
+            );
+        }
+    }
+    Ok(())
+}
