@@ -38,6 +38,10 @@ pub(in crate::app::library) enum EditJob {
         /// at [`Pace::Full`], after every photo shown, and answered
         /// [`EditResult::Kept`] unless the photo is shown by then.
         ahead: bool,
+        /// Develop's edit, which its own renders can't show (the Crop tool
+        /// open): rendered whether or not the photo is shown, as the edit it
+        /// shows may not be in the catalog yet when the photo is next shown.
+        develop: bool,
         /// What the preview shown is converted to; the cache keeps sRGB.
         display: DisplayProfile,
     },
@@ -467,6 +471,7 @@ impl Renders {
                     source,
                     ahead,
                     display,
+                    develop: _,
                 } => (
                     *id,
                     *ticket,
@@ -752,9 +757,9 @@ fn next_step(shared: &Shared, wanted: &Wanted, full_renders: usize) -> Step {
         // Out of view, or asked ahead at a pace that renders none ahead, or for
         // a list no longer shown.
         if let Some(index) = state.jobs.iter().position(|q| match &q.job {
-            EditJob::Render { id, ahead, .. } => {
-                !shown.contains(id) && (!ahead || !full || q.dropped)
-            }
+            EditJob::Render {
+                id, ahead, develop, ..
+            } => !develop && !shown.contains(id) && (!ahead || !full || q.dropped),
             EditJob::Store { .. } | EditJob::Convert { .. } => false,
         }) {
             let EditJob::Render { id, ticket, .. } = state.jobs.remove(index).job else {

@@ -196,6 +196,7 @@ fn a_panicking_edited_preview_fails_and_the_next_one_is_rendered() -> anyhow::Re
         copy: None,
         source: source.clone(),
         ahead: false,
+        develop: false,
         display: Default::default(),
     };
     tx.send(job(PhotoId(1), &panics))?;
@@ -237,6 +238,7 @@ fn a_stored_render_of_a_file_replaced_since_is_not_kept() -> anyhow::Result<()> 
         copy: None,
         source: EditSource::saved(Recipe::default()),
         ahead: false,
+        develop: false,
         display: Default::default(),
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
@@ -286,6 +288,7 @@ fn render_of_the_defaults(
         copy: None,
         source: source.clone(),
         ahead: false,
+        develop: false,
         display: Default::default(),
     })?;
     // The render's answer comes after its store, so the cache is as it left it.
@@ -385,6 +388,7 @@ fn a_render_from_an_editable_preview_is_found_only_under_the_copy() -> anyhow::R
         copy,
         source: source.clone(),
         ahead: false,
+        develop: false,
         display: Default::default(),
     };
     // Offline: under the copy, and only when the lookup names it.
@@ -478,6 +482,7 @@ fn preview_of(
         copy: None,
         source: source.clone(),
         ahead: false,
+        develop: false,
         display: Default::default(),
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
@@ -701,6 +706,7 @@ pub(super) fn render_job(id: i64, path: &Path, ahead: bool) -> EditJob {
             ..Default::default()
         }),
         ahead,
+        develop: false,
         display: Default::default(),
     }
 }
@@ -912,6 +918,7 @@ fn closing_cancels_the_edited_preview_under_way() -> anyhow::Result<()> {
         copy: None,
         source: EditSource::saved(Recipe::default()),
         ahead: false,
+        develop: false,
         display: Default::default(),
     };
     tx.send(job(0))?;
@@ -1059,6 +1066,7 @@ fn render_for(
         copy: None,
         source: source.clone(),
         ahead: false,
+        develop: false,
         display: Default::default(),
     })?;
     match rx.recv_timeout(Duration::from_secs(10))? {
@@ -1152,6 +1160,7 @@ fn edited_previews_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow:
             copy,
             source,
             ahead,
+            develop: false,
             ..
         } => EditJob::Render {
             id,
@@ -1160,6 +1169,7 @@ fn edited_previews_are_converted_for_the_monitor_and_cached_as_srgb() -> anyhow:
             copy,
             source,
             ahead,
+            develop: false,
             display,
         },
         _ => unreachable!(),
