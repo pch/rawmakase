@@ -937,3 +937,228 @@ fn scene_probes_do_not_regress() {
         "further from Camera Raw than the baseline (run with --nocapture for the table): {failures:?}"
     );
 }
+
+/// Out-of-focus treeline and sharp optical transitions against bright sky must stay
+/// monotone under Highlights and Shadows when upsampling the 512 px local Laplacian map
+/// (no dark trough + bright outline solarization band like 2×2 JBU produced).
+#[test]
+fn highlights_bokeh_edges_do_not_solarize() {
+    let (w, h) = (3072u32, 256u32);
+    // Four 64 px horizontal bands (isolated vertically across the 3×3 map window):
+    // (name, y_band, x0, ramp_width, bright, dark)
+    let bands: [(&str, u32, u32, u32, f64, f64); 4] = [
+        ("tight-bokeh-cell-aligned", 0, 1536, 12, 0.85, 0.06),
+        ("medium-bokeh-shifted", 1, 1539, 24, 0.85, 0.05),
+        ("sub-cell-optical-edge", 2, 1538, 4, 0.85, 0.04),
+        ("high-contrast-backlit", 3, 1540, 18, 0.95, 0.02),
+    ];
+    let scene: Vec<[f64; 3]> = (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            let (_, _, x0, rw, bright, dark) = bands[(y / 64) as usize];
+            let v = if x >= 2560 {
+                // Dark shadow strip so Highlights -100 develops a strong slope across the ramp.
+                0.008
+            } else if x <= x0 {
+                bright
+            } else if x >= x0 + rw {
+                dark
+            } else {
+                let t = (x - x0) as f64 / rw as f64;
+                let s = t * t * (3. - 2. * t);
+                let ev = bright.log2() * (1. - s) + dark.log2() * s;
+                ev.exp2()
+            };
+            [v; 3]
+        })
+        .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("highlights-bokeh-edges.dng");
+    std::fs::write(
+        &path,
+        dng::write_probe_black_render(w, h, &scene, 0., dng::BlackRender::None),
+    )
+    .unwrap();
+    let im = develop(&path);
+    let profiles = embedded_profiles(&im);
+
+    let cases = [
+        (
+            "highlights-100",
+            BTreeMap::from([("Highlights2012".into(), "-100".into())]),
+            BTreeMap::new(),
+            0.005,
+        ),
+        (
+            "highlights-60",
+            BTreeMap::from([("Highlights2012".into(), "-60".into())]),
+            BTreeMap::new(),
+            0.005,
+        ),
+        (
+            "shadows+100",
+            BTreeMap::from([("Shadows2012".into(), "100".into())]),
+            BTreeMap::new(),
+            0.015,
+        ),
+        (
+            "mask-highlights-100",
+            BTreeMap::new(),
+            BTreeMap::from([("LocalHighlights2012".into(), "-1.0".into())]),
+            0.005,
+        ),
+    ];
+
+    for (edit_name, settings, mask, rev_tol) in cases {
+        let out = scene_output(
+            &im,
+            &profiles,
+            &xmp(&ProbeCase {
+                probe: String::new(),
+                settings,
+                mask,
+                camera_raw: Vec::new(),
+            }),
+        );
+        for (band_name, band_idx, x0, rw, _, _) in bands {
+            let row = (band_idx * 64 + 32) as usize;
+            let lum_ev = |x: u32| -> f64 {
+                let p = out.pixels[row * w as usize + x as usize];
+                (Y[0] * p[0] as f64 + Y[1] * p[1] as f64 + Y[2] * p[2] as f64)
+                    .max(1e-8)
+                    .log2()
+            };
+            // Across the falling ramp, output luminance must stay monotone non-increasing
+            // (no solarization brightness reversal).
+            let mut prev = lum_ev(x0);
+            for x in (x0 + 1)..=(x0 + rw) {
+                let cur = lum_ev(x);
+                assert!(
+                    cur <= prev + rev_tol,
+                    "{edit_name} / {band_name}: solarization reversal at x={x}: {prev:+.4} -> {cur:+.4} EV (delta {:+.4} EV)",
+                    cur - prev
+                );
+                prev = cur;
+            }
+            // Sky approaching the ramp must not dip sharply into a dark trough.
+            let far_sky = lum_ev(x0 - 96);
+            for x in (x0 - 48)..x0 {
+                let dip = lum_ev(x) - far_sky;
+                assert!(
+                    dip > -0.15,
+                    "{edit_name} / {band_name}: dark sky trough at x={x}: {dip:+.3} EV vs far sky"
+                );
+            }
+        }
+    }
+}
+
+/// Sharp bright silhouettes on smooth dark backgrounds (including curved bird-head
+/// silhouettes and sub-cell-shifted vertical steps) must not bleed a dark halo outside the
+/// edge under Highlights -100 at the full RAW/XMP boundary.
+#[test]
+fn highlights_sharp_silhouettes_do_not_halo_dark_background() {
+    let (w, h) = (3072u32, 384u32);
+    let bright = 0.88;
+    let dark_bg = 0.065;
+    let outer = 0.012;
+    let shifts: [u32; 5] = [0, 1, 2, 3, 5];
+    let circle_cx = 1600.0f64;
+    let circle_cy = 5. * 64. + 32.;
+    let circle_r = 22.0f64;
+    let scene: Vec<[f64; 3]> = (0..w * h)
+        .map(|i| {
+            let (x, y) = (i % w, i / w);
+            let band = (y / 64) as usize;
+            let v = if x < 512 || x >= w - 512 {
+                outer
+            } else if band < shifts.len() {
+                let x0 = 1536 + shifts[band];
+                if x >= x0 && x < x0 + 512 {
+                    bright
+                } else {
+                    dark_bg
+                }
+            } else {
+                let d = (x as f64 - circle_cx).hypot(y as f64 - circle_cy);
+                if d <= circle_r { bright } else { dark_bg }
+            };
+            [v; 3]
+        })
+        .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("highlights-sharp-silhouettes.dng");
+    std::fs::write(
+        &path,
+        dng::write_probe_black_render(w, h, &scene, 0., dng::BlackRender::None),
+    )
+    .unwrap();
+    let im = develop(&path);
+    let profiles = embedded_profiles(&im);
+
+    for (edit_name, settings, mask) in [
+        (
+            "highlights-100",
+            BTreeMap::from([("Highlights2012".into(), "-100".into())]),
+            BTreeMap::new(),
+        ),
+        (
+            "mask-highlights-100",
+            BTreeMap::new(),
+            BTreeMap::from([("LocalHighlights2012".into(), "-1.0".into())]),
+        ),
+    ] {
+        let out = scene_output(
+            &im,
+            &profiles,
+            &xmp(&ProbeCase {
+                probe: String::new(),
+                settings,
+                mask,
+                camera_raw: Vec::new(),
+            }),
+        );
+        let lum_ev = |x: u32, y: u32| -> f64 {
+            let p = out.pixels[y as usize * w as usize + x as usize];
+            (Y[0] * p[0] as f64 + Y[1] * p[1] as f64 + Y[2] * p[2] as f64)
+                .max(1e-8)
+                .log2()
+        };
+        // Bands 0..5: shifted vertical bright silhouettes.
+        for (band, &shift) in shifts.iter().enumerate() {
+            let y = (band as u32) * 64 + 32;
+            let x0 = 1536 + shift;
+            let far_dark = lum_ev(x0 - 72, y);
+            // Skip dx=1..2 for the 2 px Bayer demosaic edge; dx=3..48 covers the entire
+            // straddling map cell and neighbour cells where bilinear bleed halos appear.
+            for dx in 3..=48 {
+                let drop = lum_ev(x0 - dx, y) - far_dark;
+                assert!(
+                    drop > -0.10,
+                    "{edit_name} shift={shift}: dark halo -{dx}px outside edge: {drop:+.3} EV"
+                );
+            }
+            let far_bright = lum_ev(x0 + 72, y);
+            for dx in 3..=36 {
+                let diff = lum_ev(x0 + dx, y) - far_bright;
+                assert!(
+                    diff.abs() < 0.25,
+                    "{edit_name} shift={shift}: bright edge rim/crush +{dx}px: {diff:+.3} EV"
+                );
+            }
+        }
+        // Band 5: curved circular bright silhouette (bird-head geometry). Compare against
+        // the nearest pure-dark map cell (3 map cells = 18 px away) so the check isolates
+        // upsampling bleed from the coarse local Laplacian pyramid's gentle spatial decay.
+        let cy = circle_cy as u32;
+        let edge_x = (circle_cx - circle_r).floor() as u32;
+        let near_dark = lum_ev(edge_x - 18, cy);
+        for dx in 3..=18 {
+            let drop = lum_ev(edge_x - dx, cy) - near_dark;
+            assert!(
+                drop > -0.10,
+                "{edit_name} circle: dark halo -{dx}px outside silhouette: {drop:+.3} EV"
+            );
+        }
+    }
+}
