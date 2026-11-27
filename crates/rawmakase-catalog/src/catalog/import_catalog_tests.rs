@@ -34,7 +34,7 @@ const TABLES: &[(&str, Carried)] = &[
     ("keywords", Carried::Matched),
     ("keyword_synonyms", Carried::Copied),
     ("photo_keywords", Carried::Copied),
-    ("folder_mappings", Carried::Matched),
+    ("folder_mappings", Carried::Left),
     ("lightroom_history", Carried::Copied),
     ("local_edits", Carried::Copied),
     ("develop_history", Carried::Copied),
@@ -46,6 +46,7 @@ const TABLES: &[(&str, Carried)] = &[
     ("editable_previews", Carried::Left),
     ("photo_sequences", Carried::Copied),
     ("import_batches", Carried::Left),
+    // The photos added make an import batch of their own.
     ("photo_imports", Carried::Left),
     ("import_burst_stacks", Carried::Left),
     ("photo_import_facts", Carried::Copied),
@@ -402,6 +403,97 @@ fn a_saved_edit_and_the_mask_rasters_it_names_come_with_their_photo() -> Result<
     assert!(
         s.main.bitmap(&mask)?.is_some(),
         "the snapshot's raster came"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_folder_located_on_its_own_comes_from_where_it_is() -> Result<()> {
+    let mut s = setup()?;
+    // The trip catalog has its folder `day 2` somewhere outside its root.
+    let elsewhere = s.dir.join("elsewhere").join("second day");
+    std::fs::create_dir_all(&elsewhere)?;
+    std::fs::rename(s.dir.join("trip/day 2/t2.ARW"), elsewhere.join("t2.ARW"))?;
+    {
+        let mut trip = Catalog::open(s.trip.as_path())?;
+        let root = trip.roots()?[0].0;
+        trip.relink_folder_at(root, "day 2", &elsewhere, Overrides::Keep)?;
+    }
+
+    let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
+
+    assert_eq!((report.added, report.missing.len()), (2, 0));
+    let t2 = id_of(&s.main, "t2.ARW")?;
+    let t2 = s
+        .main
+        .photos()?
+        .into_iter()
+        .find(|p| p.id == t2)
+        .context("t2")?;
+    assert_eq!(t2.path, elsewhere.join("t2.ARW"));
+    let roots: Vec<String> = s.main.roots()?.into_iter().map(|r| r.1).collect();
+    assert_eq!(
+        roots.len(),
+        3,
+        "home, trip and the folder on its own: {roots:?}"
+    );
+    assert!(
+        roots.contains(&elsewhere.to_string_lossy().into_owned()),
+        "the folder on its own is its root, not the folder above it: {roots:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_collection_named_as_another_kind_here_gets_a_number() -> Result<()> {
+    let mut s = setup()?;
+    s.main
+        .create_collection(CollectionKind::Set, "Lisbon", None)?;
+    {
+        let mut trip = Catalog::open(s.trip.as_path())?;
+        let t1 = id_of(&trip, "t1.ARW")?;
+        trip.create_collection_of("Lisbon", None, &[t1])?;
+    }
+
+    s.main.import_catalog(&s.trip, || true)?;
+
+    let mut names: Vec<String> = s
+        .main
+        .collections()?
+        .into_iter()
+        .filter(|c| c.name.starts_with("Lisbon"))
+        .map(|c| c.name)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Lisbon", "Lisbon 2"]);
+    Ok(())
+}
+
+#[test]
+fn rows_left_behind_by_a_removed_photo_stay_behind() -> Result<()> {
+    let mut s = setup()?;
+    {
+        let trip = Catalog::open(s.trip.as_path())?;
+        // An older release removed photo 999 without its rows.
+        trip.db_for_tests().execute(
+            "INSERT INTO local_edits(photo, data) VALUES (999, '{}')",
+            [],
+        )?;
+        trip.db_for_tests().execute(
+            "INSERT INTO photo_info(photo, camera) VALUES (999, 'Ghost')",
+            [],
+        )?;
+    }
+
+    s.main.import_catalog(&s.trip, || true)?;
+
+    assert_eq!(count(&s.main, "SELECT count(*) FROM local_edits")?, 0);
+    assert_eq!(
+        count(
+            &s.main,
+            "SELECT count(*) FROM photo_info WHERE camera='Ghost'"
+        )?,
+        0
     );
     Ok(())
 }

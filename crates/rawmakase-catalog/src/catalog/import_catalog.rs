@@ -71,11 +71,12 @@ impl Catalog {
         );
         let staging = tempfile::tempdir()?;
         let working = staging.path().join("import.rawmakase");
-        super::db::Db::open(&source.to_path_buf().into())?
-            .copy_to(&working)
-            .context("Could not read the catalog")?;
+        super::db::Db::copy_file(source, &working).context("Could not read the catalog")?;
         let mut copy = Catalog::open_as(working.as_path(), &self.computer)?;
-        copy.ensure_known_tables()?;
+        ensure!(
+            copy.ensure_known_tables().is_ok(),
+            "A later release of RAWmakase added to that catalog; import it with that release"
+        );
         ensure!(
             !super::file_ops::any_unresolved(&copy.db)?,
             "A file operation in that catalog is unfinished; open it to finish it first"
@@ -86,7 +87,10 @@ impl Catalog {
             return Ok(None);
         }
         let mut report = report;
-        report.added = self.db.with_catalog(&working, |w| copy_rows(w, &targets))?;
+        let computer = self.computer.id.clone();
+        report.added = self
+            .db
+            .with_catalog(&working, |w| copy_rows(w, &targets, &computer))?;
         Ok(Some(report))
     }
 
@@ -115,10 +119,30 @@ impl Catalog {
                 .or_default()
                 .push(p.id);
         }
-        let folders: HashMap<FolderId, super::Folder> =
-            copy.folders()?.into_iter().map(|f| (f.id, f)).collect();
+        let folder_of: HashMap<PhotoId, FolderId> =
+            photos.iter().map(|p| (p.id, p.folder)).collect();
+        let root_of: HashMap<FolderId, RootId> = copy
+            .folders()?
+            .into_iter()
+            .map(|f| (f.id, f.root))
+            .collect();
+        // Where each root is on this computer, as the other catalog has it.
+        let roots: HashMap<RootId, PathBuf> = copy
+            .roots()?
+            .into_iter()
+            .filter_map(|(id, original, here)| {
+                Some((
+                    id,
+                    PathBuf::from(here.unwrap_or(original))
+                        .canonicalize()
+                        .ok()?,
+                ))
+            })
+            .collect();
         let mut leave: BTreeSet<PhotoId> = BTreeSet::new();
-        // Each master's file as it is on disk, by the folder its root is.
+        // Each master's file as it is on disk, by the folder chosen for it
+        // as Add Folder is given one: its root's, or its own for a folder
+        // located on its own outside its root.
         let mut by_root: BTreeMap<PathBuf, Vec<(PhotoId, PathBuf)>> = BTreeMap::new();
         for p in photos.iter().filter(|p| p.master.is_none()) {
             let family = &families[&p.id];
@@ -143,10 +167,17 @@ impl Catalog {
                 continue;
             }
             let found = p.path.canonicalize().ok().filter(|f| f.is_file());
-            let root = folders.get(&p.folder).and_then(root_of);
-            match (found, root) {
-                (Some(file), Some(root)) => by_root.entry(root).or_default().push((p.id, file)),
-                _ => {
+            let root = root_of.get(&p.folder).and_then(|r| roots.get(r));
+            match found {
+                Some(file) => {
+                    let directory = file.parent().expect("a file is in a folder");
+                    let chosen = match root {
+                        Some(root) if directory.starts_with(root) => root.clone(),
+                        _ => directory.to_path_buf(),
+                    };
+                    by_root.entry(chosen).or_default().push((p.id, file));
+                }
+                None => {
                     report.missing.push(p.path.clone());
                     leave.extend(family);
                 }
@@ -173,11 +204,7 @@ impl Catalog {
                     leave.extend(family);
                     continue;
                 }
-                let folder = photos
-                    .iter()
-                    .find(|p| p.id == id)
-                    .map(|p| p.folder)
-                    .context("A photo left the catalog")?;
+                let folder = folder_of[&id];
                 let mut directory = directory.to_string_lossy().into_owned();
                 directory.push(std::path::MAIN_SEPARATOR);
                 // Photos are copied folder by folder, so a folder's photos
@@ -214,20 +241,30 @@ impl Catalog {
     }
 }
 
-/// The folder on disk the root of `folder` is: its path without the names
-/// of its logical path.
-fn root_of(folder: &super::Folder) -> Option<PathBuf> {
-    let depth = super::locations::names(&folder.relative)
-        .filter(|n| !n.is_empty())
-        .count();
-    let root = folder.path.ancestors().nth(depth)?;
-    root.canonicalize().ok()
-}
-
 /// Copies every photo of the attached catalog `src`, and what is about
 /// them, into this one, the folders going to `targets`. Returns how many
 /// photos were added.
-fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) -> Result<usize> {
+fn copy_rows(
+    w: &mut LightroomWrite<'_>,
+    targets: &HashMap<FolderId, Target>,
+    computer: &str,
+) -> Result<usize> {
+    // A file an unfinished Import Photos of this computer is copying is
+    // that import's to add, as Add Folder leaves it.
+    let reserved = super::file_ops::reserved_for_import(w.write(), computer)?;
+    for (from, target) in targets {
+        let names: Vec<String> = w.read_sqlite(
+            sqlite_sql!("SELECT filename FROM src.photos WHERE folder=? AND master_id IS NULL"),
+            &[from],
+        )?;
+        for name in names {
+            let file = format!("{}{name}", target.directory);
+            ensure!(
+                !reserved.contains(&super::sidecar::caseless(std::ffi::OsStr::new(&file))),
+                "{file} is being imported by Import Photos; finish or recover that import first"
+            );
+        }
+    }
     let count: i64 = w.read_sqlite::<i64>(sqlite_sql!("SELECT count(*) FROM src.photos"), &[])?[0];
     if count == 0 {
         return Ok(0);
@@ -289,52 +326,63 @@ fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) ->
     // Each row of the photos added, with the ids it names shifted.
     for statement in [
         sqlite_sql!(
-            "INSERT INTO photo_uuids(photo, uuid) SELECT photo+?1, uuid FROM src.photo_uuids"
+            "INSERT INTO photo_uuids(photo, uuid) SELECT photo+?1, uuid FROM src.photo_uuids
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO lightroom_history(photo, position, name, created, text)
-             SELECT photo+?1, position, name, created, text FROM src.lightroom_history"
+             SELECT photo+?1, position, name, created, text FROM src.lightroom_history
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_info(photo, camera, lens, focal, aperture, exposure, iso, width,
                  height)
              SELECT photo+?1, camera, lens, focal, aperture, exposure, iso, width, height
-             FROM src.photo_info"
+             FROM src.photo_info
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_checksums(photo, size, quick_hash, full_hash, identity, version)
              SELECT photo+?1, size, quick_hash, full_hash, identity, version
-             FROM src.photo_checksums"
+             FROM src.photo_checksums
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_sequences(photo, camera, burst, frame, size, modified_ns, version)
              SELECT photo+?1, camera, burst, frame, size, modified_ns, version
-             FROM src.photo_sequences"
+             FROM src.photo_sequences
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_import_facts(photo, original_name, exif_captured, size, exif_read)
              SELECT photo+?1, original_name, exif_captured, size, exif_read
-             FROM src.photo_import_facts"
+             FROM src.photo_import_facts
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_fields(photo, field, state)
-             SELECT photo+?1, field, state FROM src.photo_fields"
+             SELECT photo+?1, field, state FROM src.photo_fields
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_text(photo, field, lang, position, value)
-             SELECT photo+?1, field, lang, position, value FROM src.photo_text"
+             SELECT photo+?1, field, lang, position, value FROM src.photo_text
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_creators(photo, position, name)
-             SELECT photo+?1, position, name FROM src.photo_creators"
+             SELECT photo+?1, position, name FROM src.photo_creators
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_capture(photo, captured, subsec, \"offset\")
-             SELECT photo+?1, captured, subsec, \"offset\" FROM src.photo_capture"
+             SELECT photo+?1, captured, subsec, \"offset\" FROM src.photo_capture
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO photo_location(photo, lat, lon, alt, cleared)
-             SELECT photo+?1, lat, lon, alt, cleared FROM src.photo_location"
+             SELECT photo+?1, lat, lon, alt, cleared FROM src.photo_location
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
     ] {
         w.execute_sqlite(statement, &[&photo])?;
@@ -346,7 +394,8 @@ fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) ->
     w.execute_sqlite(
         sqlite_sql!(
             "INSERT INTO develop_snapshots(id, photo, name, recipe, lightroom)
-             SELECT id+?2, photo+?1, name, recipe, lightroom FROM src.develop_snapshots"
+             SELECT id+?2, photo+?1, name, recipe, lightroom FROM src.develop_snapshots
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         &[&photo, &snapshot],
     )?;
@@ -357,7 +406,8 @@ fn copy_rows(w: &mut LightroomWrite<'_>, targets: &HashMap<FolderId, Target>) ->
     w.execute_sqlite(
         sqlite_sql!(
             "INSERT INTO stack_photos(photo, stack, position)
-             SELECT photo+?1, stack+?2, position FROM src.stack_photos"
+             SELECT photo+?1, stack+?2, position FROM src.stack_photos
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         &[&photo, &stack],
     )?;
@@ -523,7 +573,7 @@ fn copy_collections(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
             })
             .collect(),
     );
-    let existing: Vec<Row> = w
+    let mut existing: Vec<Row> = w
         .write()
         .read(sql!("SELECT id, name, parent, kind FROM collections"), &[])?;
     let mut mapped: HashMap<i64, CollectionId> = HashMap::new();
@@ -536,7 +586,26 @@ fn copy_collections(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
         let (id, made) = match found {
             Some(id) => (id, false),
             None => {
-                let id = super::collections::insert(w.write(), &row.name, parent, &row.kind)?;
+                // A name is unique among a set's children, whatever their
+                // kind: one taken by another kind gets a number.
+                let taken = |name: &str| {
+                    existing
+                        .iter()
+                        .any(|c| c.parent == parent.map(|p| p.0) && c.name == name)
+                };
+                let mut name = row.name.clone();
+                let mut n = 2;
+                while taken(&name) {
+                    name = format!("{} {n}", row.name);
+                    n += 1;
+                }
+                let id = super::collections::insert(w.write(), &name, parent, &row.kind)?;
+                existing.push(Row {
+                    id: id.0,
+                    name,
+                    parent: parent.map(|p| p.0),
+                    kind: row.kind.clone(),
+                });
                 for statement in [
                     sqlite_sql!(
                         "INSERT INTO collection_options(collection, sort, direction)

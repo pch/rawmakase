@@ -1130,8 +1130,6 @@ pub(in crate::app) fn upgrade_progress<'a>(
     }
 }
 
-/// A Lightroom catalog just imported and opened: says how many of its smart
-/// collections have rules RAWmakase can't evaluate.
 /// Says on the Library's status line what Import from Catalog added from
 /// catalog `name`, and what it left out and why.
 fn catalog_imported(mut event: Event, name: &str, added: &crate::catalog::CatalogImport) -> Event {
@@ -1146,11 +1144,10 @@ fn catalog_imported(mut event: Event, name: &str, added: &crate::catalog::Catalo
         }
     };
     let mut said = format!("Imported {} from {name}.", photos(added.added));
-    if added.present > 0 {
-        said.push_str(&format!(
-            " {} were in this catalog already.",
-            photos(added.present)
-        ));
+    match added.present {
+        0 => {}
+        1 => said.push_str(" 1 photo was in this catalog already."),
+        n => said.push_str(&format!(" {n} photos were in this catalog already.")),
     }
     let left: Vec<String> = [
         (&added.missing, "not found on this computer"),
@@ -1176,6 +1173,8 @@ fn catalog_imported(mut event: Event, name: &str, added: &crate::catalog::Catalo
     }
     event
 }
+/// A Lightroom catalog just imported and opened: says how many of its smart
+/// collections have rules RAWmakase can't evaluate.
 fn imported(mut event: Event) -> Event {
     if let Event::CatalogReady(Ok(library)) = &mut event {
         library.note_unsupported_smart();

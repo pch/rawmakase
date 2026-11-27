@@ -320,11 +320,34 @@ impl Db {
         lightroom: &Path,
         f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
     ) -> Result<R> {
+        self.with_attached(lightroom, "lr", f)
+    }
+
+    /// Runs `f` in one write with another RAWmakase catalog at `catalog`
+    /// attached as `src`, for Import from Catalog. It is detached again when
+    /// `f` returns, fails or panics.
+    pub(in crate::catalog) fn with_catalog<R>(
+        &mut self,
+        catalog: &Path,
+        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
+    ) -> Result<R> {
+        self.with_attached(catalog, "src", f)
+    }
+
+    fn with_attached<R>(
+        &mut self,
+        path: &Path,
+        alias: &'static str,
+        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
+    ) -> Result<R> {
         match &mut self.backend {
             Backend::Sqlite(db) => {
                 // SQLite attaches only outside a transaction.
-                db.execute("ATTACH DATABASE ? AS lr", [lightroom.to_string_lossy()])?;
-                let attached = Attached { db, alias: "lr" };
+                db.execute(
+                    &format!("ATTACH DATABASE ? AS {alias}"),
+                    [path.to_string_lossy()],
+                )?;
+                let attached = Attached { db, alias };
                 let tx = attached.db.transaction()?;
                 let result = f(&mut LightroomWrite {
                     write: Write { db: &tx },
@@ -336,27 +359,27 @@ impl Db {
         }
     }
 
-    /// Runs `f` in one write with another RAWmakase catalog at `catalog`
-    /// attached as `src`, for Import from Catalog. It is detached again when
-    /// `f` returns, fails or panics.
-    pub(in crate::catalog) fn with_catalog<R>(
-        &mut self,
-        catalog: &Path,
-        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
-    ) -> Result<R> {
-        match &mut self.backend {
-            Backend::Sqlite(db) => {
-                db.execute("ATTACH DATABASE ? AS src", [catalog.to_string_lossy()])?;
-                let attached = Attached { db, alias: "src" };
-                let tx = attached.db.transaction()?;
-                let result = f(&mut LightroomWrite {
-                    write: Write { db: &tx },
-                })?;
-                tx.commit()?;
-                drop(attached);
-                Ok(result)
-            }
-        }
+    /// Writes a consistent copy of the catalog at `source` to `path` (where
+    /// nothing exists), as [`Db::copy_to`] does, without writing to
+    /// `source`: it is opened read-only, so one a crash left mid-write is
+    /// refused rather than rolled back. It must be a catalog this release
+    /// reads.
+    pub(in crate::catalog) fn copy_file(source: &Path, path: &Path) -> Result<()> {
+        ensure!(!path.exists(), "A file already exists: {}", path.display());
+        let db = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        ensure!(
+            db.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? == APPLICATION_ID,
+            "Not a RAWmakase catalog"
+        );
+        ensure!(
+            opens(
+                db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?,
+                NEWEST
+            ),
+            "Unsupported RAWmakase catalog version"
+        );
+        db.busy_timeout(Duration::from_secs(5))?;
+        copy_into(&db, path)
     }
 }
 

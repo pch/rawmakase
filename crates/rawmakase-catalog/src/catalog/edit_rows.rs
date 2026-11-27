@@ -296,11 +296,13 @@ pub(super) fn copy_attached(w: &mut LightroomWrite<'_>, offset: i64) -> Result<(
              WHERE id IN (SELECT id + ?1 FROM src.photos)"
         ),
         sqlite_sql!(
-            "INSERT INTO local_edits(photo, data) SELECT photo + ?1, data FROM src.local_edits"
+            "INSERT INTO local_edits(photo, data) SELECT photo + ?1, data FROM src.local_edits
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
         sqlite_sql!(
             "INSERT INTO develop_history(photo, data)
-             SELECT photo + ?1, data FROM src.develop_history"
+             SELECT photo + ?1, data FROM src.develop_history
+             WHERE photo IN (SELECT id FROM src.photos)"
         ),
     ] {
         w.execute_sqlite(statement, &[&offset])?;
