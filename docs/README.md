@@ -37,6 +37,7 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Masking](masking.md) | Current (experimental feature) | The Masking tool, including Select Subject, Sky and Background |
 | [Retouching](retouching.md) | Current (experimental feature) | Remove (Heal and Clone) and Red Eye |
 | [Transform](transform.md) | Current | Crop, Straighten, the Transform sliders and Upright |
+| [Negative conversion](negative-conversion.md) | Current | Turning scanned film negatives into positives: the Negative panel, the film base picker, Auto, syncing a roll, limits |
 | [Lens corrections](lens-corrections.md) | Current | Built-in, DNG, Adobe LCP and Lensfun corrections, CA and Defringe |
 | [Keyboard shortcuts](shortcuts.md) | Current | Changing shortcuts in Preferences, `keymap.toml`, reserved keys, conflicts and keyboard layouts |
 | [Automation](automation.md) | Current | The local control protocol, `rawmakase control` and scripts |

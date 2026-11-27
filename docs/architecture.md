@@ -226,7 +226,7 @@ between top-level modules (see [boundaries](#boundaries-to-preserve)).
 | `lens` | Readers that fill the `optics` model: imported Adobe LCPs, Lensfun's database (read, matched, installed) and lateral CA measurement, plus profile selection; an edit's Lensfun lens carries its calibration (which a catalog stores once and names by content id), so rendering never reads the database. The tables cameras embed in their RAWs are read next to the RAW containers, by the decode crate's `raw::lens` | `lcp.rs`, `lensfun/`, `auto_ca.rs`, `choice.rs` |
 | `rendered` | Developed pixels as values: an output image, its histogram and clipping overlay, which the renderer produces and export and watermarks use; depends on nothing | `rendered.rs` |
 | `model` | What an edit is, as values shared by the renderer, the catalog and file formats: the `Recipe` with its validation (`ValidRecipe`), saved versions and migration, panel switches, and the settings it is made of: Effects, Heal and Clone, Red Eye, Point Color, masks, Transform with Upright, white balance from metadata, the image space positions are kept in (`image_frame.rs`), the sliders as parameters, the rules an edit follows, the setting groups Copy Settings, Sync and presets use, and Camera Raw's keys for the sliders (`camera_raw.rs`). Depends on camera profiles, lenses and optics, never on rendering | `recipe.rs`, `valid.rs`, `saved_format.rs`, `panels.rs`, `operators.rs`, `effects.rs`, `masks.rs`, `transform.rs` |
-| `develop` | Rendering a recipe: geometry, color processing, the scene tone stage, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `scene_tone/`, `quality/`, `geometry.rs`, `gpu/` |
+| `develop` | Rendering a recipe: geometry, color processing (a scanned negative's conversion first, `negative.rs`), the scene tone stage, curves, effects, local adjustments, detail rendering and the GPU port | `pipeline/`, `scene_tone/`, `quality/`, `geometry.rs`, `gpu/`, `negative.rs` |
 | `xmp` | Namespace-aware Adobe settings parsing and application to recipes. Settings that ask for Auto measure the photo through the model's `PhotoMeasures` (`model::measures`), which `develop::Measures` provides, and packets take the crop as rendered from the caller, so XMP needs no rendering code | `parse.rs`, `apply.rs` |
 | `raw_defaults` | Lightroom's Raw Defaults: the master and per-camera choices and a photo's starting settings. Above `presets`, whose library it reads | `raw_defaults.rs` |
 | `presets` | Native JSON recipe presets, installed XMP collections, favorites and preset import, and a preset's application to one photo, which Develop and the Library's batch share | `native.rs`, `library.rs`, `photo.rs` |
@@ -771,7 +771,12 @@ in one transaction, and its schema only ever gains tables, applied idempotently 
 open; see [catalogs](catalogs.md#sqlite-format-versions-1-to-7). A catalog stores
 each camera profile and Lensfun calibration once and its recipes name them by
 content id; that stored form never leaves the catalog, so presets, sidecars and the
-session keep holding them inline. An AI Denoise
+session keep holding them inline. A film negative conversion (`Recipe::negative`) is
+written only when on and needs no new version: releases that predate it keep it as an
+unknown setting and render the scan unconverted ([negative
+conversion](negative-conversion.md#older-releases)). Copy Settings groups added since
+v0.4.10, which reads `session.json`'s `copy_groups` strictly, are saved apart from it
+(`copy_ai_denoise`, `copy_hdr`, `copy_negative`). An AI Denoise
 result is never part of the saved data: the recipe names no model, and results are
 cached under a key holding the model's SHA-256 and the adapter version.
 
