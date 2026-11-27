@@ -994,6 +994,52 @@ fn dropping_a_backend_never_waits_for_its_device() {
     assert_ne!(on, std::thread::current().id());
 }
 
+/// When the thread a retired device drops on can't start, the device is leaked, not
+/// dropped on the caller, whose drop could wait for a stalled GPU.
+#[test]
+fn a_device_is_never_dropped_on_the_caller_when_its_thread_cant_start() {
+    struct StalledDevice(Arc<AtomicBool>);
+    impl MockGpuDriver for StalledDevice {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            Err(GpuFailure::Cancelled)
+        }
+        fn release_buffers(&mut self) {}
+    }
+    impl Drop for StalledDevice {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let dropped = Arc::new(AtomicBool::new(false));
+    let engine = Engine::Mock(Box::new(StalledDevice(dropped.clone())));
+    retire_engine_on(engine, true, |_| {
+        Err(std::io::Error::from(std::io::ErrorKind::WouldBlock))
+    });
+    assert!(!dropped.load(Ordering::SeqCst), "dropped on the caller");
+
+    // Started, the thread is handed the engine and drops it there.
+    let engine = Engine::Mock(Box::new(StalledDevice(dropped.clone())));
+    let (on_tx, on_rx) = std::sync::mpsc::channel();
+    retire_engine_on(engine, true, move |rx| {
+        std::thread::spawn(move || {
+            drop(rx.recv());
+            let _ = on_tx.send(std::thread::current().id());
+        });
+        Ok(())
+    });
+    let on = on_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("dropped on its thread");
+    assert_ne!(on, std::thread::current().id());
+    assert!(dropped.load(Ordering::SeqCst));
+}
+
 #[test]
 fn visualize_range_is_stripped_on_export_backend() -> Result<()> {
     let im = synthetic_photo(48, 32);

@@ -249,19 +249,42 @@ impl Engine {
 }
 
 /// Drops a retired GPU engine outside any mutex. When `async_drop` is true (stalled
-/// driver timeout, device loss, or panic unwind), drops a real `wgpu::Device`/`Queue`
-/// on a detached thread so `wgpu`'s unbounded `Queue::drop` idle wait cannot stall the
-/// caller, sibling export lanes, or shutdown past the 5 s band deadline.
+/// driver timeout, device loss, panic unwind, or the backend itself dropped), drops a
+/// real `wgpu::Device`/`Queue` on a detached thread so `wgpu`'s unbounded `Queue::drop`
+/// idle wait cannot stall the caller, sibling export lanes, or shutdown past the 5 s
+/// band deadline.
 fn retire_engine(engine: Engine, async_drop: bool) {
-    if async_drop && engine.holds_device() {
-        if let Err(err) = std::thread::Builder::new()
+    retire_engine_on(engine, async_drop, |rx| {
+        std::thread::Builder::new()
             .name("export-gpu-drop".into())
-            .spawn(move || drop(engine))
-        {
-            eprintln!("RAWmakase export GPU async drop spawn failed: {err}");
-        }
-    } else {
+            .spawn(move || drop(rx.recv()))
+            .map(drop)
+    });
+}
+
+/// [`retire_engine`], starting the thread the engine drops on with `spawn`, which
+/// is handed the engine only once it has started. When the thread can't start, the
+/// engine is leaked: its device's memory is lost, where dropping it here could hang.
+fn retire_engine_on(
+    engine: Engine,
+    async_drop: bool,
+    spawn: impl FnOnce(mpsc::Receiver<Engine>) -> std::io::Result<()>,
+) {
+    if !(async_drop && engine.holds_device()) {
         drop(engine);
+        return;
+    }
+    let (tx, rx) = mpsc::channel();
+    match spawn(rx) {
+        Ok(()) => {
+            if let Err(mpsc::SendError(engine)) = tx.send(engine) {
+                std::mem::forget(engine);
+            }
+        }
+        Err(err) => {
+            eprintln!("RAWmakase export GPU async drop spawn failed, leaking the device: {err}");
+            std::mem::forget(engine);
+        }
     }
 }
 
