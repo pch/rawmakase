@@ -158,6 +158,15 @@ pub struct PreviewUsage {
     pub one_to_one: u64,
 }
 pub use crate::storage::Stamp;
+/// What became of a preview offered to [`PreviewCache::store_tagged`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoreOutcome {
+    Stored,
+    /// The file differs from the [`Stamp`] it was rendered from, is gone or
+    /// can't be reached: nothing was stored, and nothing is wrong with the
+    /// cache.
+    Stale,
+}
 pub struct PreviewCache {
     db: Connection,
     writes: u32,
@@ -432,6 +441,14 @@ impl PreviewCache {
     /// Keeps `image` as the file's own thumbnail: a RAW's embedded preview, or
     /// a JPEG, PNG or TIFF as it is.
     pub fn store(&mut self, path: &Path, stamp: &Stamp, image: &image::RgbImage) -> Result<()> {
+        ensure!(
+            image.width() <= 1024 && image.height() <= 1024,
+            "Preview exceeds cache size limit"
+        );
+        ensure!(
+            Stamp::read(path)? == *stamp,
+            "Source changed while generating preview"
+        );
         self.put(path, "", "", stamp, image)
     }
     /// Keeps `image` as the file's thumbnail rendered with an edit: under
@@ -443,6 +460,12 @@ impl PreviewCache {
     /// than an LRU: a file with more live edits than that, as virtual copies
     /// and catalogs give it, has the edit used longest ago made again when it
     /// is shown, and while the file is offline it can't be.
+    ///
+    /// A file changed, removed or unreachable since `stamp` was read is
+    /// [`StoreOutcome::Stale`], not an error: nothing is stored, and nothing
+    /// is wrong with the cache. The file is compared in the same call that
+    /// writes the row, so callers need not check it first. A preview too
+    /// large to keep, or a failure to encode or write it, is still an error.
     pub fn store_tagged(
         &mut self,
         path: &Path,
@@ -450,14 +473,24 @@ impl PreviewCache {
         tag: &str,
         stamp: &Stamp,
         image: &image::RgbImage,
-    ) -> Result<()> {
+    ) -> Result<StoreOutcome> {
         debug_assert!(
             !family.is_empty() && tag.starts_with(family),
             "{tag} is not a variant of {family}"
         );
         ensure!(!family.is_empty(), "An edited preview has no edit family");
-        self.put(path, family, tag, stamp, image)
+        ensure!(
+            image.width() <= 1024 && image.height() <= 1024,
+            "Preview exceeds cache size limit"
+        );
+        if Stamp::read(path).ok().as_ref() != Some(stamp) {
+            return Ok(StoreOutcome::Stale);
+        }
+        self.put(path, family, tag, stamp, image)?;
+        Ok(StoreOutcome::Stored)
     }
+    /// Writes `image` under `tag` of `family`, for a file the caller has
+    /// checked against `stamp`.
     fn put(
         &mut self,
         path: &Path,
@@ -466,14 +499,6 @@ impl PreviewCache {
         stamp: &Stamp,
         image: &image::RgbImage,
     ) -> Result<()> {
-        ensure!(
-            image.width() <= 1024 && image.height() <= 1024,
-            "Preview exceeds cache size limit"
-        );
-        ensure!(
-            Stamp::read(path)? == *stamp,
-            "Source changed while generating preview"
-        );
         let mut jpeg = Vec::new();
         image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 88).encode(
             image.as_raw(),
@@ -1054,6 +1079,90 @@ mod tests {
             (16, 16)
         );
         assert!(cache.load_tagged(&raw, "edit-2")?.is_none());
+        Ok(())
+    }
+    /// An edited preview of a file changed or removed while it rendered is
+    /// stale, not a failure, and is not kept; an unchanged file's is.
+    #[test]
+    fn edited_previews_of_a_file_changed_since_are_stale() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let raw = d.path().join("photo.ARW");
+        std::fs::write(&raw, b"original raw")?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        let im = image::RgbImage::new(8, 8);
+        let rendered = Stamp::read(&raw)?;
+        std::fs::write(&raw, b"rewritten while it rendered")?;
+        assert_eq!(
+            cache.store_tagged(&raw, "edit-1", "edit-1", &rendered, &im)?,
+            StoreOutcome::Stale
+        );
+        assert!(keys(&cache, "")?.is_empty());
+        let stamp = Stamp::read(&raw)?;
+        std::fs::remove_file(&raw)?;
+        assert_eq!(
+            cache.store_tagged(&raw, "edit-1", "edit-1", &stamp, &im)?,
+            StoreOutcome::Stale
+        );
+        assert!(keys(&cache, "")?.is_empty());
+        std::fs::write(&raw, b"original raw")?;
+        let stamp = Stamp::read(&raw)?;
+        assert_eq!(
+            cache.store_tagged(&raw, "edit-1", "edit-1", &stamp, &im)?,
+            StoreOutcome::Stored
+        );
+        assert!(cache.load_tagged(&raw, "edit-1")?.is_some());
+        // The file's own thumbnail still reports a change as an error.
+        std::fs::write(&raw, b"rewritten again")?;
+        assert!(cache.store(&raw, &stamp, &im).is_err());
+        Ok(())
+    }
+    /// An edited preview of a file whose folder became unreadable while it
+    /// rendered is stale too, while the file's own thumbnail and an oversized
+    /// preview are still errors.
+    #[cfg(unix)]
+    #[test]
+    fn edited_previews_of_an_unreachable_file_are_stale() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        /// Opens the folder again, so the temporary directory can be removed.
+        struct Reopen<'a>(&'a Path);
+        impl Drop for Reopen<'_> {
+            fn drop(&mut self) {
+                let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o755));
+            }
+        }
+        let d = tempfile::tempdir()?;
+        let folder = d.path().join("shoot");
+        std::fs::create_dir(&folder)?;
+        let raw = folder.join("photo.ARW");
+        std::fs::write(&raw, b"original raw")?;
+        let mut cache = PreviewCache::open(&d.path().join("previews.sqlite3"))?;
+        let im = image::RgbImage::new(8, 8);
+        let stamp = Stamp::read(&raw)?;
+        let reopen = Reopen(&folder);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000))?;
+        if Stamp::read(&raw).is_ok() {
+            // Root reads it regardless.
+            return Ok(());
+        }
+        assert_eq!(
+            cache.store_tagged(&raw, "edit-1", "edit-1", &stamp, &im)?,
+            StoreOutcome::Stale
+        );
+        assert!(keys(&cache, "")?.is_empty());
+        assert!(cache.store(&raw, &stamp, &im).is_err());
+        assert!(
+            cache
+                .store_tagged(
+                    &raw,
+                    "edit-1",
+                    "edit-1",
+                    &stamp,
+                    &image::RgbImage::new(2048, 8)
+                )
+                .is_err()
+        );
+        drop(reopen);
+        assert!(Stamp::read(&raw).is_ok());
         Ok(())
     }
     #[test]
@@ -1638,7 +1747,8 @@ mod tests {
             &format!("{family}{suffix}"),
             &Stamp::read(path)?,
             &im,
-        )
+        )?;
+        Ok(())
     }
     /// The keys of the rows whose key starts with `prefix`, sorted.
     fn keys(cache: &PreviewCache, prefix: &str) -> Result<Vec<String>> {
