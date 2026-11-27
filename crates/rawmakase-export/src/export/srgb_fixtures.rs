@@ -33,111 +33,111 @@ const SRGB_ICC: &str = "d68baed8428c7b500c33a60da52a08a845b4bf4ae4745cbda046811e
 const RECORDED: &[(&str, &str)] = &[
     (
         "plain.jpg",
-        "a5a6badc1db38036997b5a05f8c7b9c56dc862394dfe4bd65797ba944eafbac9",
+        "e468a0b28c16b38c043a2fbc47f4e0076254e52ef0c5f4db69444faa281014b9",
     ),
     (
         "plain.tif",
-        "8946a7722f6502b24bd404ee15a16c4f79a770b3012070ca09fa68e1dd5aab8d",
+        "ac0d7e6429b895d493ae3f91a741185debf4bd89a4a17c9a2ce0b16b99457a38",
     ),
     (
         "plain.png",
-        "7aaff78d6e5fb0f8b500c1d183bc90f4c7dc84fd366b55feab3f6fe52adabd44",
+        "4260d7075e713f6313635c9bd2c232c3b90ea4f0cb38e0f72aa659dc5df894e7",
     ),
     (
         "resized.jpg",
-        "e05bd963c4e1e63491e7493b44ad82a24c6ac2a24ce52612b1e4cad899f49777",
+        "d62295148a64dfb733fb8484fd733a3380e4061a643aa8797fcc916fd100c798",
     ),
     (
         "resized.tif",
-        "59adb0baa0145ad27141dc216c7b4616a8c92fc951afb06aa7e57c753ca9a642",
+        "cdc48210bfbc6fd3e7bc375d2d14718868bdd4d207f85019ea1c1e6591abb2b7",
     ),
     (
         "resized.png",
-        "8cd1b92cad6407b12bbf6f8c239cc121a5723f20d3ebffc2b0f2af9caff49580",
+        "bb2ea3fd010c83ae3cc236fbb85faa8cbc5426c840c4b56c36bb6a3328dab7de",
     ),
     (
         "sharpened.jpg",
-        "ebe1182b9af3c1d3b0e9d44d0c12df28b003dc6db57dc66976ca310bc214b9c6",
+        "fbd282edc9710cc028130a1735187bf384081f25f0b96baeb7199412c5e9dad2",
     ),
     (
         "sharpened.tif",
-        "73a1a4ef743fa2d48df1e715c2d299448adb7c5cbbe61f8f7e4031b9aebe6746",
+        "bfe3fd1a011ed397ec3b34145d44d93637800ca55c63a406ffb49c3726b59653",
     ),
     (
         "sharpened.png",
-        "9876ff68759504d611943ed1b163c8e5f3fd04ab436ba0d6a9147a59a92515e9",
+        "4c2f3d4c4ee5af94994b5392fdfcb37883657166674fa0f7cf9b4e903f59a916",
     ),
     (
         "local-detail.jpg",
-        "10454048bf28eb59800a0a0b9892632ca6ba8dd33876c98cd7879d7ae6784399",
+        "d4ed1c8aae85a41c9d8b5e00990443cf1408aeb0f1996dfb749625a7f9d85231",
     ),
     (
         "local-detail.tif",
-        "2db20ac09edf673926d4957a7ea212ee4e91f47a7880f38a81e9c79882818aa5",
+        "77c34130a6da5dddd7b1e0835ce3df74192653a3a34b263f1bf30724383ca462",
     ),
     (
         "local-detail.png",
-        "3f71f951cf19cddbbce4411193bbe645dac7d0561c1107cd11d78a543fcafcc2",
+        "b3ec5b9844e31542f2bda940a908bd9ef6a2e8efe273b272410e76a0e23d67f3",
     ),
     (
         "grain.jpg",
-        "199cb4aea2144d741177206678d88c345976cc18825bcb8dc50678ee67a1519a",
+        "d11081ad73e58962a7cdc106a3cb68d4404535177ef5a983f2ea12999a07254e",
     ),
     (
         "grain.tif",
-        "843da5ea1342ddd43f2ae1e4f3c7cdd5ca94bc8a129678b7e10a28e2c9ffef8e",
+        "6a9d1ac1cd8adf99215c07c3229e8eef153675071c442fab1943bdaf522dcc01",
     ),
     (
         "grain.png",
-        "c2b64d80d8a83e9cc0ec503c0a5de3161c89c3a3a80d1ce7a8ae01df76a8ce18",
+        "4485a381378e687e972efb6393346bcc3bcb155ed5947742e5649f7969ca808b",
     ),
     (
         "vignette-highlight.jpg",
-        "9c5cef9e958c761d157e7513276514cd8c8fb47161baeb3b8bf68ef0be60458d",
+        "f624ed1544c450968b243d0d3b9370b39c3f7d801de3590b5f4ece4a913ce6a5",
     ),
     (
         "vignette-highlight.tif",
-        "4d6bf5028e0d1c979a21c78312cbecc60b97391cefd411506fd78b12528e873f",
+        "57c56f0f0f4fb4c40b267c4448dc1ee082e67760609bde32355a1b9aba5b6d4d",
     ),
     (
         "vignette-highlight.png",
-        "3c3a1c8b5275ec34460c6902af0713c61b213039c13ab52bc0d3c84a62b4ac29",
+        "75cb2ad9763a33eff4ac08da5714c3613868639c65c063898488203ff69af348",
     ),
     (
         "vignette-color.jpg",
-        "20918094dda4d654da7b6dd3decbe243b85bdb4edc083827ff83b0855d532e63",
+        "e667900b2096574e5f114d1c191d4b0fc570f39735bb80c06699b8287d0e787c",
     ),
     (
         "vignette-color.tif",
-        "dc7a3f312b84fb4c35f54139f4a1a461a4881477d629e8e695333811c3d5829c",
+        "4f1356e8254beacf22dff31377290b063894f0e8baf391a208aa174306d480ec",
     ),
     (
         "vignette-color.png",
-        "970f224472a9af86f23a57da6506177e303518d2205c1345adbb65281a0128e9",
+        "ea2b7791cb675888d4c1a37563c22d0b5d3dd17c24b5ae809dc276bdd0aa8d6d",
     ),
     (
         "vignette-paint.jpg",
-        "ecd5a3555ba3eed1252a565ecb1c86f0e370506cc6613dc11e2d9af03159974f",
+        "177af70d67e790b9023c88d1493cd8dfcc678845cd983a18a288a033f3984845",
     ),
     (
         "vignette-paint.tif",
-        "57ee1f2a96c273a01a369a6d394cd8571b97060d9222e63f99ef73b1377bb2fe",
+        "7da553eaff05544be2c430805f7ac65d55bd857c6d932250deec7f585940776a",
     ),
     (
         "vignette-paint.png",
-        "fd66457179603826dedcc76133c26f2509289d7d0152b434a27f9688b44146e2",
+        "8f86ef19ad72586b9ba812d66b635606905769f6bb045a649c9440238003b27a",
     ),
     (
         "watermark.jpg",
-        "96ca9c0806124d3a6b847a9b9f0eb9e1c1541e627d5672eac8f982b174d5de1d",
+        "42376dd0a42edf699f36c174f8109028da6628fb04a2f1bbabbfa32136d1a2aa",
     ),
     (
         "watermark.tif",
-        "d4f14f7efe2c56b8651d2b31be8c5271159226db35628584455fc08e36b65ee6",
+        "af191b6f19dbea143bf178250e4c900291a2ec97cc516cb6e1f1a7b0cda39aa7",
     ),
     (
         "watermark.png",
-        "f347b7035799026b34065baa64f569caab09b20cffe8d983ef3cb5236d393e1d",
+        "416b045ef92e43e266e0401be24bf4fa6d9ae964203f7ef05f015253793fa9f1",
     ),
     (
         "chart.jpg",
@@ -471,14 +471,14 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
 const RECORDED_GRAPHIC: &[(&str, &str)] = &[
     (
         "graphic.jpg",
-        "ba5eb056b2062f077c1a6d605caa0e26230613e718be020fca9b4470194a9bc5",
+        "30c8b42e8c1dde691430e48b167ececedae642d29b99acf7dc30cff87d747ddd",
     ),
     (
         "graphic.tif",
-        "ff54cf94d03d0103ea75f7697af1740fbcc7fdb0822224ad1fab53ea11dca8bc",
+        "64b5980d6a3abdb9dfd1d0c8f9e4c021e5ae31f7e5aa8899195dc29515936c94",
     ),
     (
         "graphic.png",
-        "d24a1f315d8f2f1dd85f0a6dc59660127569d502a17ed7aeff91cee9b4195497",
+        "4ce87b552c999fc5bae9f03936e8844fb26154b7704f2202a484f73eb3c3d177",
     ),
 ];

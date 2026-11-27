@@ -841,7 +841,14 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
             r.update_wb(&rendered.metadata);
             r
         },
-        // The cool magenta corner, where the camera stage holds blue at 0.
+        // The cool-magenta 16× transition (`clip[2] = 0.375`, blue attenuated but
+        // positive) and the deep cool-magenta corner (`clip[2] = 0.375`, where the
+        // 16×-capped matrix takes grey blue below 0 into `scene_tone::rgb_tone`).
+        Recipe {
+            incremental_temperature: -25.,
+            incremental_tint: 100.,
+            ..untouched.clone()
+        },
         Recipe {
             incremental_temperature: -75.,
             incremental_tint: 75.,
