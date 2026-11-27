@@ -52,6 +52,9 @@ pub enum SettingGroup {
     SpotRemoval,
     Crop,
     Masking,
+    /// Film negative conversion: RAWmakase's own, not in Lightroom's dialog. A roll's
+    /// frames share their film, so Paste and Sync carry it.
+    NegativeConversion,
 }
 
 /// A heading in Copy Settings, with the groups under it.
@@ -62,7 +65,7 @@ pub struct Section {
 }
 
 impl SettingGroup {
-    pub const ALL: [SettingGroup; 35] = [
+    pub const ALL: [SettingGroup; 36] = [
         SettingGroup::WhiteBalance,
         SettingGroup::Exposure,
         SettingGroup::Contrast,
@@ -98,6 +101,7 @@ impl SettingGroup {
         SettingGroup::SpotRemoval,
         SettingGroup::Crop,
         SettingGroup::Masking,
+        SettingGroup::NegativeConversion,
     ];
     /// Whether this group's settings scale with a preset's Amount, so a preset
     /// holding it may offer one. Adobe's own presets with lens or chromatic
@@ -117,12 +121,18 @@ impl SettingGroup {
                 | Crop
                 | Masking
                 | HighDynamicRange
+                | NegativeConversion
         )
     }
-    /// Copy Settings' sections, in Lightroom's order.
-    pub const SECTIONS: [Section; 14] = {
+    /// Copy Settings' sections: Negative Conversion, which Lightroom lacks and which
+    /// renders before everything else, then Lightroom's, in its order.
+    pub const SECTIONS: [Section; 15] = {
         use SettingGroup::*;
         [
+            Section {
+                title: "Negative Conversion",
+                groups: &[NegativeConversion],
+            },
             Section {
                 title: "White Balance",
                 groups: &[WhiteBalance],
@@ -225,6 +235,7 @@ impl SettingGroup {
             SpotRemoval => "Spot Removal",
             Crop => "Crop",
             Masking => "Masking",
+            NegativeConversion => "Negative Conversion",
         }
     }
     /// The panel whose switch travels with this group: every group of a panel with a
@@ -386,6 +397,7 @@ impl SettingGroup {
                 to.constrain_crop = from.constrain_crop;
             }
             Masking => to.masks = from.masks.clone(),
+            NegativeConversion => to.negative = from.negative.clone(),
         }
         if let Some(panel) = self.panel() {
             to.panels.set(panel, from.panels.state(panel));
@@ -582,6 +594,16 @@ pub(crate) fn transfer_with_lensfun(
         recipe.keep_white_balance_and_profile(to);
         notes.push("White balance and profile apply to RAW and rendered files separately".into());
     }
+    // A conversion's film base is in the decoded values of its scan, which a RAW's
+    // camera RGB and a rendered file's linear ProPhoto RGB don't share: between them,
+    // the target keeps its own.
+    if selection.contains(SettingGroup::NegativeConversion)
+        && source.metadata.is_rendered() != m.is_rendered()
+        && from.negative != to.negative
+    {
+        recipe.negative = to.negative.clone();
+        notes.push("Negative Conversion applies to RAW and rendered files separately".into());
+    }
     // Masks made from a selection are rasters of the photo they were made on: the
     // source's do not come along, and the target keeps its own.
     if selection.contains(SettingGroup::Masking) {
@@ -719,6 +741,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         lens_vignetting: _,
         lens_manual_distortion: _,
         lens_ca: _,
+        negative: _,
         effects,
         preset_name: _,
         profile: _,
@@ -811,6 +834,7 @@ pub(crate) fn every_setting(r: &Recipe) -> Vec<(&'static str, Kind)> {
         ("lens_vignetting", Group(LensProfileCorrections)),
         ("lens_manual_distortion", Group(LensProfileCorrections)),
         ("lens_ca", Group(ChromaticAberration)),
+        ("negative", Group(NegativeConversion)),
         ("preset_name", PhotosOwn),
         ("profile", Group(TreatmentAndProfile)),
         ("profile_amount", Group(TreatmentAndProfile)),

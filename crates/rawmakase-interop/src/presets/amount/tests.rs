@@ -55,8 +55,16 @@ fn only_presets_that_offer_one_get_an_amount() {
 fn presets_changing_settings_that_dont_scale_get_no_amount() {
     let before = Recipe::default();
     type Change = (fn(&mut Recipe), SettingGroup);
-    let changes: [Change; 6] = [
+    let changes: [Change; 7] = [
         (|r| r.crop = [0.1, 0.1, 0.9, 0.9], SettingGroup::Crop),
+        (
+            |r| {
+                r.negative = Some(crate::model::negative::NegativeConversion::new(
+                    crate::model::negative::FilmType::Colour,
+                ))
+            },
+            SettingGroup::NegativeConversion,
+        ),
         (
             |r| r.lens_profile = true,
             SettingGroup::LensProfileCorrections,

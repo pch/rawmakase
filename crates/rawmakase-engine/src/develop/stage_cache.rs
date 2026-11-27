@@ -193,8 +193,9 @@ struct StageRecipes {
     samples: Recipe,
     measures: Recipe,
 }
-/// The recipe as the camera color (S1: white balance, the profile's matrix and
-/// HueSatMap, Camera Calibration) reads it: the measures' fields, which hold them.
+/// The recipe as the camera color (S1: a negative's conversion, white balance, the
+/// profile's matrix and HueSatMap, Camera Calibration) reads it: the measures' fields,
+/// which hold them.
 pub(crate) fn color_recipe(r: &Recipe) -> Recipe {
     stage_recipes(r).measures
 }
@@ -211,6 +212,10 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         lens_vignetting,
         lens_manual_distortion,
         lens_ca,
+        // The film negative conversion renders first in the per-pixel stage, and the
+        // photo's measures read the positive it makes. The samples are of the camera
+        // image before it, and don't.
+        negative,
         crop,
         rotation,
         straighten,
@@ -348,8 +353,10 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             },
             ..Default::default()
         },
-        // White balance, the profile's color and calibration, at the camera's exposure.
+        // The negative conversion, white balance, the profile's color and calibration,
+        // at the camera's exposure.
         measures: Recipe {
+            negative: negative.clone(),
             wb: *wb,
             temperature: *temperature,
             tint: *tint,
@@ -510,8 +517,16 @@ mod tests {
         };
         let changes = |r: &Recipe| stage_recipes(&base).samples != stage_recipes(r).samples;
         // (edit, changes the samples)
-        let cases: [(&str, Recipe, bool); 16] = [
+        let negative = Some(crate::model::negative::NegativeConversion::new(
+            crate::model::negative::FilmType::Colour,
+        ));
+        let cases: [(&str, Recipe, bool); 17] = [
             ("temperature", edit(&|r| r.temperature = 3000.), false),
+            (
+                "negative conversion",
+                edit(&|r| r.negative = negative.clone()),
+                false,
+            ),
             (
                 "file's lens correction",
                 edit(&|r| r.lens_file_correction = false),
@@ -549,7 +564,25 @@ mod tests {
         }
         // (edit, changes the photo's measures)
         let measures = |r: &Recipe| stage_recipes(&base).measures != stage_recipes(r).measures;
-        let cases: [(&str, Recipe, bool); 14] = [
+        let cases: [(&str, Recipe, bool); 16] = [
+            (
+                "negative conversion",
+                edit(&|r| r.negative = negative.clone()),
+                true,
+            ),
+            (
+                "film base",
+                edit(&|r| {
+                    r.negative =
+                        negative
+                            .clone()
+                            .map(|n| crate::model::negative::NegativeConversion {
+                                base: [0.9, 0.55, 0.3],
+                                ..n
+                            })
+                }),
+                true,
+            ),
             ("white balance", edit(&|r| r.wb = [1.2, 1., 0.8]), true),
             ("temperature", edit(&|r| r.temperature = 3000.), true),
             ("tint", edit(&|r| r.tint = 10.), true),

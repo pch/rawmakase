@@ -7,6 +7,7 @@ pub mod hdr;
 pub mod image_frame;
 pub mod masks;
 pub mod measures;
+pub mod negative;
 pub mod operators;
 pub mod panels;
 pub mod params;

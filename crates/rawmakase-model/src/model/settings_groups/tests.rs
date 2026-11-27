@@ -127,6 +127,12 @@ fn everything_changed() -> Recipe {
     r.panels.set(Panel::Detail, PanelState::Off);
     r.curve_saturation = 0.4;
     r.profile_amount = 0.6;
+    r.negative = Some(crate::model::negative::NegativeConversion {
+        base: [0.9, 0.55, 0.3],
+        dmin: [0.1, 0.12, 0.15],
+        dmax: [1.2, 1.3, 1.4],
+        ..crate::model::negative::NegativeConversion::new(crate::model::negative::FilmType::Colour)
+    });
     r.unknown
         .insert("from_a_newer_release".into(), Value::Bool(true));
     let e = &mut r.effects;
@@ -1146,4 +1152,51 @@ fn copy_as_set_copies_only_the_selection() {
     assert_eq!(to.contrast, Recipe::default().contrast);
     assert!(exposure.complement().contains(SettingGroup::Contrast));
     assert!(!exposure.complement().contains(SettingGroup::Exposure));
+}
+
+/// The Negative Conversion group carries the conversion, and only it: a roll's frames
+/// share their film, so Paste and Sync move it. Copied from a photo without one, it
+/// turns the target's off. Between a RAW and a rendered file, whose decoded values
+/// differ, the target keeps its own, and says so.
+#[test]
+fn the_negative_conversion_group_moves_the_conversion_and_nothing_else() {
+    let m = camera("Fujifilm", "X100F");
+    let target = Target {
+        metadata: &m,
+        profiles: &[],
+    };
+    let source = everything_changed();
+    let mut selection = GroupSelection::none();
+    selection.set(SettingGroup::NegativeConversion, GroupInclusion::Included);
+    let to = Recipe::default();
+    let out = transfer(from(&source, &m), &to, &selection, target);
+    assert_eq!(out.recipe.negative, source.negative);
+    assert_eq!(
+        changed(&to, &out.recipe),
+        BTreeSet::from(["negative".to_string()])
+    );
+    assert!(out.notes.is_empty(), "{:?}", out.notes);
+    let back = transfer(from(&to, &m), &out.recipe, &selection, target).recipe;
+    assert_eq!(back, to);
+    // Paste's default carries it; a preset's Amount doesn't scale it.
+    assert!(GroupSelection::default().contains(SettingGroup::NegativeConversion));
+    assert!(!SettingGroup::NegativeConversion.scales_with_amount());
+    assert_eq!(SettingGroup::SECTIONS[0].title, "Negative Conversion");
+    // A RAW's conversion onto a scanned TIFF: kept as the TIFF had it.
+    let tiff = jpeg();
+    let own = Recipe::for_rendered(&tiff);
+    let out = transfer(
+        from(&source, &m),
+        &own,
+        &selection,
+        Target {
+            metadata: &tiff,
+            profiles: &[],
+        },
+    );
+    assert_eq!(out.recipe.negative, None);
+    assert_eq!(
+        out.notes,
+        vec!["Negative Conversion applies to RAW and rendered files separately".to_string()]
+    );
 }

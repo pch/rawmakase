@@ -476,7 +476,7 @@ fn bar_button_sized(
 /// left column holds.
 const COLUMN: f32 = 230.;
 const GAP: f32 = 28.;
-const LEFT_SECTIONS: usize = 7;
+const LEFT_SECTIONS: usize = 8;
 
 /// A section's checkbox, which checks or clears all of it, and one indented checkbox per
 /// group when it has several.
@@ -487,6 +487,8 @@ fn section_checkboxes(
     purpose: Transfer,
 ) {
     // A preset never carries one photo's Upright correction: it names the mode only.
+    // Nor AI Denoise, nor a negative conversion, which Lightroom has no setting for and
+    // an XMP preset can't hold: its section is left out.
     let shown: Vec<SettingGroup> = section
         .groups
         .iter()
@@ -495,10 +497,15 @@ fn section_checkboxes(
             purpose != Transfer::NewPreset
                 || !matches!(
                     *g,
-                    SettingGroup::UprightTransforms | SettingGroup::AiDenoise
+                    SettingGroup::UprightTransforms
+                        | SettingGroup::AiDenoise
+                        | SettingGroup::NegativeConversion
                 )
         })
         .collect();
+    if shown.is_empty() {
+        return;
+    }
     let chosen = shown.iter().filter(|g| groups.contains(**g)).count();
     let mut all = chosen == shown.len();
     let checkbox = egui::Checkbox::new(&mut all, section.title)

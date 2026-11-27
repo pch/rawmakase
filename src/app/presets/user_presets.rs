@@ -75,12 +75,18 @@ impl Editor {
             return;
         };
         let info = PresetInfo::new(&form.name, &form.group);
-        // Presets do not carry AI Denoise (docs/rendering-quality.md#ai-denoise).
+        // Presets do not carry AI Denoise (docs/rendering-quality.md#ai-denoise), nor
+        // a negative conversion, which an XMP preset can't hold.
         let mut groups = groups.clone();
-        groups.set(
+        for group in [
             crate::model::settings_groups::SettingGroup::AiDenoise,
-            crate::model::settings_groups::GroupInclusion::Excluded,
-        );
+            crate::model::settings_groups::SettingGroup::NegativeConversion,
+        ] {
+            groups.set(
+                group,
+                crate::model::settings_groups::GroupInclusion::Excluded,
+            );
+        }
         if groups.is_empty() {
             self.messages.warn("Preset not created: no settings chosen");
             return;
@@ -325,6 +331,19 @@ mod tests {
         };
         e.create_preset_in(&user, &form, &ai_only);
         assert!(!user.dir.join("Mine/Denoised.xmp").exists());
+        assert!(
+            e.messages.line().contains("no settings chosen"),
+            "{}",
+            e.messages.line()
+        ); // Nor a negative conversion, which Lightroom has no setting for.
+        let mut negative_only = GroupSelection::none();
+        negative_only.set(SettingGroup::NegativeConversion, GroupInclusion::Included);
+        let form = PresetForm {
+            name: "Roll".into(),
+            group: "Mine".into(),
+        };
+        e.create_preset_in(&user, &form, &negative_only);
+        assert!(!user.dir.join("Mine/Roll.xmp").exists());
         assert!(
             e.messages.line().contains("no settings chosen"),
             "{}",

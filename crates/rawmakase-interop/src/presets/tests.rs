@@ -232,3 +232,26 @@ fn builtin_presets_offer_an_amount() {
         }
     }
 }
+
+/// A native preset carries a film negative conversion, as it carries the whole recipe,
+/// at the schema every release since the one engine reads.
+#[test]
+fn a_native_preset_carries_a_negative_conversion() -> Result<()> {
+    use crate::model::negative::{FilmType, NegativeConversion};
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("roll.json");
+    let recipe = Recipe {
+        negative: Some(NegativeConversion {
+            base: [0.8, 0.5, 0.3],
+            dmin: [0.1; 3],
+            dmax: [0.9; 3],
+            ..NegativeConversion::new(FilmType::BlackWhite)
+        }),
+        ..Default::default()
+    };
+    save_preset(&path, &recipe, &Default::default())?;
+    assert_eq!(load_preset(&path)?.recipe, recipe);
+    let saved: serde_json::Value = serde_json::from_reader(File::open(&path)?)?;
+    assert_eq!(saved["schema"], crate::model::saved_format::SCHEMA);
+    Ok(())
+}

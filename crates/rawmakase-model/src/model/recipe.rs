@@ -55,6 +55,13 @@ pub struct Recipe {
     /// photo itself, in place of any lens data's lateral CA (`crs:AutoLateralCA`).
     #[serde(default)]
     pub lens_ca: bool,
+    /// Film negative conversion: a scanned negative turned into a positive first in
+    /// the per-pixel stage, before white balance (`develop::negative`). RAWmakase's
+    /// own, so XMP neither reads nor writes it. Omitted when off, so a recipe without
+    /// it is written as before; releases that predate it keep it as an unknown setting
+    /// and render the scan as the negative it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub negative: Option<crate::model::negative::NegativeConversion>,
     pub effects: crate::model::effects::Effects,
     pub preset_name: String,
     /// A saved Embedded profile loads with today's tone curve (`CameraProfile::loaded`),
@@ -215,6 +222,7 @@ impl Default for Recipe {
             lens_vignetting: 1.,
             lens_manual_distortion: 0.,
             lens_ca: false,
+            negative: None,
             effects: Default::default(),
             preset_name: String::new(),
             profile: None,
@@ -500,6 +508,9 @@ impl Recipe {
     }
     pub fn validate(&self) -> Result<()> {
         self.effects.validate()?;
+        if let Some(negative) = &self.negative {
+            negative.validate()?;
+        }
         ensure!(
             self.lens_profile_choice
                 .lensfun()
@@ -1618,5 +1629,96 @@ mod tests {
         r.noise_chroma = 0.4;
         r.switch_ai_denoise(false);
         assert_eq!(r.noise_chroma, 0.4);
+    }
+
+    /// A film negative conversion round-trips under its stored name; a recipe without
+    /// one writes nothing for it, byte for byte as before, and stays at the schema
+    /// every release since the one engine reads.
+    #[test]
+    fn a_negative_conversion_round_trips_and_is_omitted_when_off() {
+        use crate::model::negative::{FilmType, NegativeConversion};
+        let plain = Recipe {
+            exposure: 0.5,
+            ..Default::default()
+        };
+        let before = serde_json::to_string(&plain).unwrap();
+        assert!(!before.contains("negative"), "{before}");
+        let read: Recipe = serde_json::from_str(&before).unwrap();
+        assert_eq!(read.negative, None);
+        assert_eq!(serde_json::to_string(&read).unwrap(), before);
+
+        let converted = Recipe {
+            negative: Some(NegativeConversion {
+                base: [0.9, 0.55, 0.3],
+                dmin: [0.05, 0.1, 0.15],
+                dmax: [1.1, 1.3, 1.4],
+                ..NegativeConversion::new(FilmType::Colour)
+            }),
+            ..plain
+        };
+        let saved = serde_json::to_value(&converted).unwrap();
+        assert_eq!(saved["negative"]["film"], "colour");
+        let back: Recipe = serde_json::from_value(saved).unwrap();
+        assert!(back.unknown.is_empty(), "{:?}", back.unknown.keys());
+        assert_eq!(back, converted);
+        back.validate().unwrap();
+        assert_eq!(
+            crate::model::saved_format::schema_for(&converted),
+            crate::model::saved_format::SCHEMA
+        );
+    }
+
+    /// How a release that predates the conversion reads a recipe holding one: as a
+    /// setting it doesn't know, kept and written back as it was, so going back to this
+    /// release finds the conversion again. That release renders the scan unconverted.
+    #[test]
+    fn a_release_before_the_conversion_keeps_it_as_an_unknown_setting() {
+        use crate::model::negative::{FilmType, NegativeConversion};
+        /// The part of `Recipe` that matters here, as every release since unknown
+        /// settings were kept reads it.
+        #[derive(Deserialize, Serialize)]
+        struct Older {
+            exposure: f32,
+            #[serde(flatten)]
+            unknown: std::collections::BTreeMap<String, serde_json::Value>,
+        }
+        let converted = Recipe {
+            exposure: 0.25,
+            negative: Some(NegativeConversion {
+                base: [0.8, 0.5, 0.3],
+                ..NegativeConversion::new(FilmType::BlackWhite)
+            }),
+            ..Default::default()
+        };
+        let written = serde_json::to_value(&converted).unwrap();
+        let older: Older = serde_json::from_value(written.clone()).unwrap();
+        assert_eq!(older.unknown["negative"], written["negative"]);
+        assert!(!crate::model::saved_format::is_obsolete("negative"));
+        let rewritten = serde_json::to_value(&older).unwrap();
+        let back: Recipe = serde_json::from_value(rewritten).unwrap();
+        assert_eq!(back.negative, converted.negative);
+    }
+
+    /// `Recipe::validate` refuses a conversion its own validation refuses, and a
+    /// conversion with a field this release doesn't know is not read as one.
+    #[test]
+    fn a_recipe_with_an_invalid_negative_conversion_is_refused() {
+        use crate::model::negative::{FilmType, NegativeConversion};
+        let mut r = Recipe {
+            negative: Some(NegativeConversion::new(FilmType::Colour)),
+            ..Default::default()
+        };
+        r.validate().unwrap();
+        r.negative.as_mut().unwrap().base[1] = 0.;
+        assert!(r.validate().is_err());
+        r.negative.as_mut().unwrap().base[1] = 0.5;
+        r.negative.as_mut().unwrap().dmax[2] = r.negative.as_ref().unwrap().dmin[2];
+        assert!(r.validate().is_err());
+        let json = serde_json::json!({"negative": {
+            "film": "colour", "base": [1.0, 1.0, 1.0],
+            "dmin": [0.0, 0.0, 0.0], "dmax": [1.0, 1.0, 1.0],
+            "from_a_later_release": 1,
+        }});
+        assert!(serde_json::from_value::<Recipe>(json).is_err());
     }
 }
