@@ -25,6 +25,8 @@ pub(in crate::app) enum CatalogDialog {
     Create,
     Open,
     ImportLightroom,
+    /// Another RAWmakase catalog's photos added to the open one.
+    ImportCatalog,
     Folder(FolderAction),
 }
 

@@ -404,7 +404,7 @@ fn known_tables() -> BTreeSet<&'static str> {
 /// batch's bursts still to stack), the Lightroom
 /// catalog it was imported from (every other photo's too), and the journal of
 /// file operations, all finished.
-fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
+pub(super) fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
     for statement in [
         sql!(
             "WITH RECURSIVE used(id) AS (
@@ -474,7 +474,7 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
 /// snapshot left names, by the rule rasters follow ([`super::mask_assets::named`]):
 /// one is kept if its id appears anywhere in them, and every one is kept if a
 /// History can't be read.
-fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
+pub(super) fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
     let ids: Vec<String> = w.read(sql!("SELECT id FROM recipe_assets"), &[])?;
     if ids.is_empty() {
         return Ok(());

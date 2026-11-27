@@ -771,7 +771,7 @@ impl Editor {
 
     /// The catalog menu under the catalog's name: where it is, adding photos,
     /// other catalogs, Lightroom, and its settings.
-    fn catalog_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    pub(in crate::app) fn catalog_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         use crate::app::ui::icons::Icon;
         let palette = theme::palette(ctx);
         ui.set_width(268.);
@@ -908,6 +908,18 @@ impl Editor {
             .clicked()
         {
             self.open_onboarding();
+            ui.close();
+        }
+        if menu_row(
+            ui,
+            Icon::Collection,
+            "Import from Catalog…",
+            self.library.is_some(),
+        )
+        .on_hover_text("Another RAWmakase catalog's photos, added to this one")
+        .clicked()
+        {
+            self.catalog_dialog(CatalogDialog::ImportCatalog, ctx);
             ui.close();
         }
         ui.add_space(space::XS);

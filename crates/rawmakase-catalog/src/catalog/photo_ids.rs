@@ -40,6 +40,16 @@ pub(super) fn reserve(w: &mut Write<'_>) -> Result<()> {
     Ok(())
 }
 
+/// The amount to add to the ids of photos from elsewhere, numbered up to
+/// `highest` (another catalog's), so each lands above every id given
+/// before; the ids they take are kept from being given again.
+pub(super) fn reserve_block(w: &mut Write<'_>, highest: i64) -> Result<i64> {
+    let used: Option<i64> = w.read_one(sql!("SELECT max(id) FROM photos"), &[])?;
+    let base = used.max(high(w)?).unwrap_or(0);
+    super::set_meta(w, ID_HIGH, &(base + highest.max(0)).to_string())?;
+    Ok(base)
+}
+
 fn high(w: &Write<'_>) -> Result<Option<i64>> {
     let high: Option<String> =
         w.read_optional(sql!("SELECT value FROM meta WHERE key=?"), &[&ID_HIGH])?;

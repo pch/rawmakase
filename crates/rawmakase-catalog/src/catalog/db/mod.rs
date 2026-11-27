@@ -324,7 +324,30 @@ impl Db {
             Backend::Sqlite(db) => {
                 // SQLite attaches only outside a transaction.
                 db.execute("ATTACH DATABASE ? AS lr", [lightroom.to_string_lossy()])?;
-                let attached = Attached { db };
+                let attached = Attached { db, alias: "lr" };
+                let tx = attached.db.transaction()?;
+                let result = f(&mut LightroomWrite {
+                    write: Write { db: &tx },
+                })?;
+                tx.commit()?;
+                drop(attached);
+                Ok(result)
+            }
+        }
+    }
+
+    /// Runs `f` in one write with another RAWmakase catalog at `catalog`
+    /// attached as `src`, for Import from Catalog. It is detached again when
+    /// `f` returns, fails or panics.
+    pub(in crate::catalog) fn with_catalog<R>(
+        &mut self,
+        catalog: &Path,
+        f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
+    ) -> Result<R> {
+        match &mut self.backend {
+            Backend::Sqlite(db) => {
+                db.execute("ATTACH DATABASE ? AS src", [catalog.to_string_lossy()])?;
+                let attached = Attached { db, alias: "src" };
                 let tx = attached.db.transaction()?;
                 let result = f(&mut LightroomWrite {
                     write: Write { db: &tx },
@@ -396,16 +419,19 @@ impl super::Catalog {
     }
 }
 
-/// Detaches the Lightroom catalog when dropped, whatever happened.
+/// Detaches the attached database when dropped, whatever happened.
 struct Attached<'a> {
     db: &'a mut Connection,
+    alias: &'static str,
 }
 
 impl Drop for Attached<'_> {
     fn drop(&mut self) {
         // Nothing to do if it fails: the connection is dropped with the
         // catalog, and a later attach would report it.
-        let _ = self.db.execute_batch("DETACH DATABASE lr");
+        let _ = self
+            .db
+            .execute_batch(&format!("DETACH DATABASE {}", self.alias));
     }
 }
 
@@ -568,7 +594,8 @@ impl Write<'_> {
 }
 
 /// A write with a Lightroom catalog attached as `lr` (see
-/// [`Db::with_lightroom`]): the only place [`SqliteSql`] runs.
+/// [`Db::with_lightroom`]), or another RAWmakase catalog as `src` (see
+/// [`Db::with_catalog`]): the only place [`SqliteSql`] runs.
 pub(in crate::catalog) struct LightroomWrite<'db> {
     write: Write<'db>,
 }
