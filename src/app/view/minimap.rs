@@ -21,6 +21,28 @@ pub(in crate::app) enum Corner {
     BottomRight,
 }
 impl Corner {
+    /// The corner's stable name in the session.
+    pub(in crate::app) fn key(self) -> &'static str {
+        match self {
+            Self::TopLeft => "top-left",
+            Self::TopRight => "top-right",
+            Self::BottomLeft => "bottom-left",
+            Self::BottomRight => "bottom-right",
+        }
+    }
+    /// The corner saved as `key`; none, or a name this version does not know, is
+    /// the default.
+    pub(in crate::app) fn from_key(key: Option<&str>) -> Self {
+        [
+            Self::TopLeft,
+            Self::TopRight,
+            Self::BottomLeft,
+            Self::BottomRight,
+        ]
+        .into_iter()
+        .find(|c| Some(c.key()) == key)
+        .unwrap_or_default()
+    }
     /// Where a block of `size` starts in this corner of `area`.
     fn min(self, area: Rect, size: Vec2) -> Pos2 {
         let left = matches!(self, Self::TopLeft | Self::BottomLeft);
@@ -54,6 +76,12 @@ impl Corner {
 pub(in crate::app) struct Minimap {
     pub(in crate::app) corner: Corner,
     held: Option<Vec2>,
+}
+impl Minimap {
+    /// The minimap resting in `corner`, as the session last saved it.
+    pub(in crate::app) fn in_corner(corner: Corner) -> Self {
+        Self { corner, held: None }
+    }
 }
 
 impl Editor {
@@ -119,8 +147,11 @@ impl Editor {
         {
             place.held = Some(p - rect.min);
         }
+        let mut moved = false;
         if handle.drag_stopped() {
-            place.corner = Corner::nearest(rect.center(), area);
+            let corner = Corner::nearest(rect.center(), area);
+            moved = corner != place.corner;
+            place.corner = corner;
             place.held = None;
         }
         if handle.dragged() {
@@ -181,6 +212,11 @@ impl Editor {
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
+        // Saved once it is let go in another corner, so the next launch opens it
+        // there.
+        if moved {
+            let _ = self.save_session();
+        }
         (on_map || response.dragged(), inspect)
     }
 }
@@ -192,15 +228,18 @@ mod tests {
     use std::sync::Arc;
 
     /// Dragging the minimap's grip and letting go leaves it in the corner it was
-    /// dropped nearest, not back where it started.
+    /// dropped nearest, not back where it started, and the next launch opens it
+    /// there (#1336).
     #[test]
     fn a_minimap_dragged_by_its_grip_stays_in_its_new_corner() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
         let ctx = egui::Context::default();
         let mut editor = Editor::with_context(
             &ctx,
             None,
             crate::app::preferences::session::Session::default(),
-            None,
+            Some(path.clone()),
         );
         let image = Arc::new(CameraImage {
             recovered: Default::default(),
@@ -269,6 +308,26 @@ mod tests {
         frame(vec![]);
         assert_eq!(editor.view.minimap.corner, Corner::TopLeft);
         assert!(editor.view.minimap.held.is_none());
+        let saved: crate::app::preferences::session::Session =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let relaunched = Editor::with_context(&egui::Context::default(), None, saved, None);
+        assert_eq!(relaunched.view.minimap.corner, Corner::TopLeft);
+    }
+
+    /// A corner is saved by a stable name; a name this version does not know, or
+    /// none, is the bottom right.
+    #[test]
+    fn a_corner_reads_back_from_its_name() {
+        for corner in [
+            Corner::TopLeft,
+            Corner::TopRight,
+            Corner::BottomLeft,
+            Corner::BottomRight,
+        ] {
+            assert_eq!(Corner::from_key(Some(corner.key())), corner);
+        }
+        assert_eq!(Corner::from_key(Some("middle")), Corner::BottomRight);
+        assert_eq!(Corner::from_key(None), Corner::BottomRight);
     }
 
     /// A minimap let go snaps to the corner it is nearest.

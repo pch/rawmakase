@@ -393,6 +393,9 @@ impl Editor {
                 // The level the view last drew at, so the first frame doesn't
                 // take the restored level for a change and render again.
                 zoom_key: (zoom.on, zoom.level),
+                minimap: crate::app::view::minimap::Minimap::in_corner(
+                    crate::app::view::minimap::Corner::from_key(session.minimap_corner.as_deref()),
+                ),
                 crop_guides: crate::app::develop::tools::crop_tool::CropGuides::from_session(
                     &session.crop_guides,
                 ),
@@ -561,6 +564,7 @@ impl Editor {
                 favorite_profiles: self.profile_menu.favorites.clone(),
                 preset_list: self.presets.view == crate::app::presets::PresetView::List,
                 backdrop: self.view.backdrop.key().map(str::to_owned),
+                minimap_corner: Some(self.view.minimap.corner.key().into()),
                 crop_guides: self.view.crop_guides.to_session(),
                 crop_aspect: crate::app::develop::panels::inspector::aspect_key(
                     self.view.chosen_aspect,
