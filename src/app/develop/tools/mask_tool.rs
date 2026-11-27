@@ -393,12 +393,15 @@ impl Editor {
         }
     }
     /// Pointer handling and drawing on the photo; returns whether the tool owns the
-    /// pointer (it does unless nothing would respond to it).
+    /// pointer (it does unless nothing would respond to it). `area` is the edit's
+    /// viewport pane, so gradients placed outside the photo frame show and edit
+    /// across the backdrop around it.
     pub(in crate::app) fn mask_overlay(
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
         rect: Rect,
+        area: Rect,
     ) -> bool {
         let Some(im) = self.document.full().cloned() else {
             return false;
@@ -414,10 +417,10 @@ impl Editor {
             )
         };
         let to_image = |p: Pos2| {
-            map.to_image(
+            clamp_pos(map.to_image(
                 (p.x - rect.left()) / rect.width(),
                 (p.y - rect.top()) / rect.height(),
-            )
+            ))
         };
         if self.selection.prompting.is_some() {
             return self.prompt_overlay(ui, response, rect, &to_screen, &to_image);
@@ -447,6 +450,8 @@ impl Editor {
             .enumerate()
             .filter_map(|(i, m)| anchor(m).map(|p| (i, to_screen(p))))
             .collect();
+        let view_clip = area.intersect(ui.clip_rect());
+        let photo_clip = rect.intersect(ui.clip_rect());
         let pointer = response.hover_pos();
         let near = |pos: Pos2| {
             handles
@@ -456,7 +461,9 @@ impl Editor {
         };
         let near_pin = |pos: Pos2| pins.iter().find(|(_, p)| p.distance(pos) < 9.).map(|p| p.0);
         let alt = ui.input(|i| i.modifiers.alt);
-        self.view.masking.hovered_pin = pointer.and_then(near_pin);
+        self.view.masking.hovered_pin = pointer
+            .filter(|p| view_clip.contains(*p))
+            .and_then(near_pin);
 
         // An Undo, Redo, History click or Delete while painting or moving a mask ends
         // the drag, the pointer moving or not.
@@ -465,6 +472,7 @@ impl Editor {
         }
         if response.drag_started()
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && view_clip.contains(origin)
         {
             let at = to_image(origin);
             let t = &self.view.masking;
@@ -555,21 +563,23 @@ impl Editor {
         }
         if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
+            && view_clip.contains(pos)
         {
             self.mask_click(pos, rect, to_image(pos), near_pin(pos), shape.as_ref(), ui);
         }
 
-        let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+        let photo_painter = ui.painter().with_clip_rect(photo_clip);
+        let painter = ui.painter().with_clip_rect(view_clip);
         for (texture, at, tint) in self.live_brush(
             ui.ctx(),
-            rect.intersect(ui.clip_rect()),
+            photo_clip,
             &to_image,
             &to_screen,
             &radius_on_screen,
             space,
         ) {
             let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1., 1.));
-            painter.image(texture, at, uv, tint);
+            photo_painter.image(texture, at, uv, tint);
         }
         if let Some(s) = &shape {
             draw_shape(&painter, s, space, &to_screen);
@@ -590,7 +600,12 @@ impl Editor {
         let moving = matches!(self.view.masking.drag, Drag::Move { .. });
         let on_handle =
             pointer.and_then(near).is_some() || pointer.and_then(near_pin).is_some() || moving;
-        if let Some(pos) = pointer.filter(|p| rect.contains(*p)) {
+        let range = pending.is_some_and(|p| p.kind == Kind::Color)
+            || matches!(
+                shape,
+                Some(MaskShape::ColorRange { .. } | MaskShape::LuminanceRange { .. })
+            );
+        if let Some(pos) = pointer.filter(|p| view_clip.contains(*p)) {
             if on_handle {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
             } else if brushing {
@@ -605,11 +620,8 @@ impl Editor {
                     );
                 }
                 ui.ctx().set_cursor_icon(egui::CursorIcon::None);
-            } else if pending.is_some()
-                || matches!(
-                    shape,
-                    Some(MaskShape::ColorRange { .. } | MaskShape::LuminanceRange { .. })
-                )
+            } else if pending.is_some_and(|p| matches!(p.kind, Kind::Linear | Kind::Radial))
+                || (range && rect.contains(pos))
             {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
             }
@@ -635,7 +647,9 @@ impl Editor {
             return;
         }
         if let Some(p) = pending.filter(|p| p.kind == Kind::Color) {
-            if let Some(lab) = self.developed_lab(pos, rect) {
+            if rect.contains(pos)
+                && let Some(lab) = self.developed_lab(pos, rect)
+            {
                 let shape = MaskShape::ColorRange {
                     samples: vec![lab],
                     amount: 0.5,
@@ -652,7 +666,7 @@ impl Editor {
             shape,
             Some(MaskShape::ColorRange { .. } | MaskShape::LuminanceRange { .. })
         );
-        let lab = if range {
+        let lab = if range && rect.contains(pos) {
             self.developed_lab(pos, rect)
         } else {
             None
@@ -1493,9 +1507,14 @@ fn anchor(m: &MaskGroup) -> Option<[f32; 2]> {
         _ => None,
     })
 }
+/// Keeps an image-space position within the bounds `model::masks` accepts,
+/// even when dragging far into the backdrop around a zoomed-out photo.
+fn clamp_pos(p: [f32; 2]) -> [f32; 2] {
+    [p[0].clamp(-4., 4.), p[1].clamp(-4., 4.)]
+}
 /// `shape` moved by `delta` (image space); color and tone ranges and bitmaps stay.
 fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
-    let shift = |p: [f32; 2]| [p[0] + delta[0], p[1] + delta[1]];
+    let shift = |p: [f32; 2]| clamp_pos([p[0] + delta[0], p[1] + delta[1]]);
     let mut shape = shape.clone();
     match &mut shape {
         MaskShape::Brush { strokes } => {
@@ -1514,11 +1533,13 @@ fn shifted(shape: &MaskShape, delta: [f32; 2]) -> MaskShape {
 }
 /// A gradient drawn by dragging from `start` to `end` (image space).
 fn new_shape(kind: Kind, space: Space, start: [f32; 2], end: [f32; 2]) -> MaskShape {
+    let start = clamp_pos(start);
+    let end = clamp_pos(end);
     match kind {
         Kind::Linear => MaskShape::Linear {
             from: start,
             to: if start == end {
-                [end[0], end[1] + 0.1]
+                clamp_pos([end[0], end[1] + 0.1])
             } else {
                 end
             },
@@ -1527,7 +1548,10 @@ fn new_shape(kind: Kind, space: Space, start: [f32; 2], end: [f32; 2]) -> MaskSh
             let (a, b) = (space.to(start), space.to(end));
             MaskShape::Radial {
                 center: start,
-                radii: [(b[0] - a[0]).abs().max(0.01), (b[1] - a[1]).abs().max(0.01)],
+                radii: [
+                    (b[0] - a[0]).abs().clamp(0.01, 4.),
+                    (b[1] - a[1]).abs().clamp(0.01, 4.),
+                ],
                 angle: 0.,
                 feather: 0.5,
             }
@@ -1583,7 +1607,7 @@ fn move_handle(
     at: [f32; 2],
 ) -> MaskShape {
     let delta = [at[0] - start[0], at[1] - start[1]];
-    let shift = |p: [f32; 2]| [p[0] + delta[0], p[1] + delta[1]];
+    let shift = |p: [f32; 2]| clamp_pos([p[0] + delta[0], p[1] + delta[1]]);
     let mut shape = original.clone();
     match &mut shape {
         MaskShape::Linear { from, to } => match h {
@@ -1604,7 +1628,7 @@ fn move_handle(
                 // The radius follows the pointer's distance; dragging around turns it.
                 let (c, p) = (space.to(*center), space.to(at));
                 let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
-                radii[k] = dx.hypot(dy).max(0.005);
+                radii[k] = dx.hypot(dy).clamp(0.005, 4.);
                 let turn = dy.atan2(dx).to_degrees() - if k == 0 { 0. } else { 90. };
                 *angle = (turn + 180.).rem_euclid(360.) - 180.;
             }

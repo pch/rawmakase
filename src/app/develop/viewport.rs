@@ -252,7 +252,12 @@ impl Editor {
         if raster_loupe {
             return;
         }
-        if self.view.zoom.on && self.view.is(Tool::Crop) {
+        if self.view.zoom.on
+            && self.view.is(Tool::Crop)
+            && !self
+                .fit_level()
+                .is_some_and(|fit| self.view.zoom.level <= fit * (1. + 1e-3))
+        {
             self.view.set_tool(Tool::None);
         }
         self.schedule();
@@ -338,6 +343,9 @@ impl Editor {
         let available = area.size();
         let ppp = ui.ctx().pixels_per_point();
         self.view.viewport = available * ppp;
+        if let Some(fit) = self.fit_level() {
+            self.view.last_fit = Some(fit);
+        }
         if !self.view.zoom.on
             && let Some(im) = self.document.full().cloned()
         {
@@ -575,11 +583,19 @@ impl Editor {
         // Zoomed in, the minimap shows where, as Lightroom's Navigator does.
         let on_minimap = self.view.zoom.on && self.develop_minimap(ui, panes.after.clip);
         let tool_owns_pointer = self.tool_overlay(ui, &response, rect, area);
+        let zoomed_in = self.view.zoom.on
+            && (rect.width() > area.width() + 0.5 || rect.height() > area.height() + 0.5);
         // Holding Space pans while an eyedropper is open, as in Lightroom.
         let space = ui.input(|i| i.key_down(egui::Key::Space));
         let picking = self.view.picks_color() && !space && !self.view.compare.shows_before();
         let hand = !tool_owns_pointer && (!self.view.picks_color() || space);
-        if self.view.zoom.on && hand && response.dragged() && !on_reference && !on_minimap {
+        if zoomed_in
+            && hand
+            && response.dragged()
+            && !on_reference
+            && !on_minimap
+            && !self.view.is(Tool::Crop)
+        {
             let delta = ui.input(|i| i.pointer.delta());
             // Moved by the photo under the hand: Before's when the drag is on it.
             let on_before = response
@@ -591,14 +607,15 @@ impl Editor {
             pan[1] = (pan[1] - delta.y / dragged.height()).clamp(0., 1.);
         }
         if response.hovered() && hand && !self.view.is(Tool::Crop) {
-            ui.ctx().set_cursor_icon(if self.view.zoom.on {
-                egui::CursorIcon::Grab
+            ui.ctx().set_cursor_icon(if zoomed_in {
+                if response.dragged() {
+                    egui::CursorIcon::Grabbing
+                } else {
+                    egui::CursorIcon::Grab
+                }
             } else {
                 egui::CursorIcon::ZoomIn
             });
-            if response.dragged() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-            }
         }
         // The magnifier over the fitted edit, in Develop or the Library's Loupe,
         // when no tool owns the pointer.
@@ -722,7 +739,7 @@ impl Editor {
                     .warn("Wait for the preview to update, then pick again"),
             }
         }
-        if self.view.is(Tool::Crop) && !self.view.zoom.on && self.document.full().is_some() {
+        if self.view.is(Tool::Crop) && !zoomed_in && self.document.full().is_some() {
             let c = self.document.edit.recipe().crop;
             let cr = Rect::from_min_max(
                 Pos2::new(

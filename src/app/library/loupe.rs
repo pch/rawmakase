@@ -760,7 +760,9 @@ impl Library {
                 crate::app::view::magnifier::paint_lens(ui, pos, &aim, level, sharp, preview, size);
             }
         }
-        if zoom.on && zoomable {
+        let pannable = shown
+            .is_some_and(|at| at.width() > rect.width() + 0.5 || at.height() > rect.height() + 0.5);
+        if zoom.on && zoomable && pannable {
             ui.ctx().set_cursor_icon(if response.dragged() {
                 egui::CursorIcon::Grabbing
             } else {

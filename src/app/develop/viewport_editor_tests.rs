@@ -125,6 +125,77 @@ fn zoom_keys_go_to_100_percent_fit_and_step_by_a_factor() {
     press(egui::Key::Num1, egui::Key::Num1, cmd);
     press(egui::Key::Equals, egui::Key::Equals, cmd);
     assert!(!press(egui::Key::Minus, egui::Key::Minus, cmd).0);
+    // From Fit, Cmd+- steps below Fit down to 6.25%, and Cmd+= stops back at Fit.
+    let (on, level) = press(egui::Key::Minus, egui::Key::Minus, cmd);
+    assert!(on && (level - 0.2 / std::f32::consts::SQRT_2).abs() < 1e-4);
+    for _ in 0..8 {
+        press(egui::Key::Minus, egui::Key::Minus, cmd);
+    }
+    assert_eq!(
+        press(egui::Key::Minus, egui::Key::Minus, cmd),
+        (true, 0.0625)
+    );
+    // Stepping back up from 6.25% reaches Fit and stops there.
+    let mut hit_fit = false;
+    for _ in 0..8 {
+        if !press(egui::Key::Equals, egui::Key::Equals, cmd).0 {
+            hit_fit = true;
+            break;
+        }
+    }
+    assert!(hit_fit, "Cmd+= from below Fit stops at Fit");
+}
+
+/// Crop stays open while zoomed out below Fit, and closes once zoomed in past Fit.
+#[test]
+fn crop_stays_open_zoomed_out_and_closes_when_zoomed_in() {
+    use crate::app::develop::state::Tool;
+    let ctx = egui::Context::default();
+    let mut editor = Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.module = Module::Develop;
+    let image = Arc::new(CameraImage {
+        recovered: Default::default(),
+        width: 1000,
+        height: 1000,
+        pixels: vec![[0.1; 3]; 1_000_000].into(),
+        metadata: Metadata {
+            width: 1000,
+            height: 1000,
+            ..Default::default()
+        },
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    });
+    editor.document.set_image(image);
+    editor.view.viewport = Vec2::splat(400.); // Fit is 0.4.
+    editor.view.last_fit = Some(0.4);
+    editor.view.toggle(Tool::Crop);
+    assert!(editor.view.is(Tool::Crop));
+    // Zooming out below Fit keeps Crop open.
+    editor.step_zoom(-1);
+    assert!(editor.view.zoom.on);
+    assert!(editor.view.zoom.level < 0.4);
+    assert!(editor.view.is(Tool::Crop));
+    // Re-opening Crop while zoomed out keeps the zoomed-out view.
+    editor.view.toggle(Tool::Crop);
+    assert!(!editor.view.is(Tool::Crop));
+    editor.view.toggle(Tool::Crop);
+    assert!(editor.view.is(Tool::Crop));
+    assert!(editor.view.zoom.on && editor.view.zoom.level < 0.4);
+    // Zooming in past Fit closes Crop.
+    editor.set_zoom(1.);
+    assert!(!editor.view.is(Tool::Crop));
+    // Opening Crop while zoomed in returns to Fit.
+    editor.view.toggle(Tool::Crop);
+    assert!(editor.view.is(Tool::Crop));
+    assert!(!editor.view.zoom.on);
 }
 
 #[test]

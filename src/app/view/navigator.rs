@@ -9,10 +9,14 @@ use crate::catalog::PhotoId;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 /// The closest zoom the slider and Cmd+= reach: 1600%, or twice Fit for a photo
-/// tiny beside the view; and the farthest Cmd+- reaches below Fit, for a photo
-/// smaller than the view.
+/// tiny beside the view; and the farthest the slider and Cmd+- reach below Fit:
+/// 6.25%, or half Fit for a huge photo that fits even smaller.
 const MAX_LEVEL: f32 = 16.;
 const MIN_LEVEL: f32 = 1. / 16.;
+/// The farthest zoom out for a photo that fits at `fit`; the slider's start.
+fn min_level(fit: f32) -> f32 {
+    MIN_LEVEL.min(fit / 2.)
+}
 /// The closest zoom for a photo that fits at `fit`; the slider's end.
 fn max_level(fit: f32) -> f32 {
     MAX_LEVEL.max(fit * 2.)
@@ -28,10 +32,9 @@ const REGION_EDGE: u32 = 8192;
 const STEP: f32 = std::f32::consts::SQRT_2;
 
 /// The level one zoom step in (`up`) or out from `current` reaches, for a photo
-/// that fits at `fit`; 0 is Fit. A step across 100% stops there, and one that
-/// reaches the fitted size fits, going either way. Zooming out never enlarges:
-/// from Fit or above it stops at Fit, and below Fit (a photo smaller than the
-/// view, at 100%) it goes on down, to `MIN_LEVEL`.
+/// that fits at `fit`; 0 is Fit. A step across 100% or Fit stops there, going
+/// either way; from Fit itself, zooming out steps below it, down to
+/// `min_level(fit)`.
 pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
     const NEAR: f32 = 1e-3;
     let next = if up { current * STEP } else { current / STEP };
@@ -41,19 +44,15 @@ pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
         current > 1. + NEAR && next < 1. - NEAR
     };
     let below_fit = current < fit * (1. - NEAR);
+    let above_fit = current > fit * (1. + NEAR);
     let at_fit = if up {
         below_fit && next >= fit * (1. - NEAR)
     } else {
-        !below_fit && next <= fit * (1. + NEAR)
+        above_fit && next <= fit * (1. + NEAR)
     };
     // A step reaching both stops at the nearer one it moves to: going in, the
-    // lower; going out, Fit when it lies between, and 100% from a level
-    // already at Fit's size.
-    let fit_first = if up {
-        fit < 1.
-    } else {
-        fit > 1. && current > fit * (1. + NEAR)
-    };
+    // lower; going out, the higher.
+    let fit_first = if up { fit < 1. } else { fit > 1. };
     match (at_100, at_fit) {
         (true, true) => return if fit_first { 0. } else { 1. },
         (true, false) => return 1.,
@@ -61,7 +60,7 @@ pub(in crate::app) fn stepped(current: f32, fit: f32, up: bool) -> f32 {
         (false, false) => {}
     }
     // At a limit, a step stays put rather than going the other way.
-    let next = next.clamp(MIN_LEVEL.min(fit), max_level(fit));
+    let next = next.clamp(min_level(fit), max_level(fit));
     if (up && next < current) || (!up && next > current) {
         current
     } else {
@@ -287,9 +286,10 @@ impl Photo {
 }
 
 /// The zoom levels the slider's menu offers besides Fit, as Lightroom's
-/// Navigator menu does. 12.5% and 25% are below Fit for most photos, which
-/// leaves room around the frame.
-const PRESETS: [(f32, &str); 8] = [
+/// Navigator menu does. 6.25%, 12.5% and 25% are below Fit for most photos,
+/// leaving room around the frame.
+const PRESETS: [(f32, &str); 9] = [
+    (0.0625, "6.25%"),
     (0.125, "12.5%"),
     (0.25, "25%"),
     (0.5, "50%"),
@@ -318,9 +318,10 @@ impl ZoomChoice {
 }
 
 /// The zoom slider, in a toolbar button's shape `height` high: `−`, a track from
-/// Fit to 1600% on a log scale, `+`, and the level shown, which opens a menu of
-/// Fit and [`PRESETS`]. `zoom` is on a photo that fits at `fit` screen pixels
-/// per image pixel (a nominal level until the photo's size is known).
+/// `min_level(fit)` (6.25% for most photos) to 1600% on a log scale with ticks
+/// at Fit and 100%, `+`, and the level shown, which opens a menu of Fit and
+/// [`PRESETS`]. `zoom` is on a photo that fits at `fit` screen pixels per image
+/// pixel (a nominal level until the photo's size is known).
 pub(in crate::app) fn zoom_slider(
     ui: &mut egui::Ui,
     zoom: Zoom,
@@ -332,11 +333,12 @@ pub(in crate::app) fn zoom_slider(
     const LABEL: f32 = 52.;
     let palette = theme::palette(ui.ctx());
     let fit = fit.filter(|f| f.is_finite() && *f > 0.).unwrap_or(0.1);
+    let min = min_level(fit);
     let max = max_level(fit);
     let current = if zoom.on { zoom.level } else { fit };
-    let span = (max / fit).ln();
-    let to_t = |level: f32| ((level / fit).ln() / span).clamp(0., 1.);
-    let from_t = |t: f32| fit * (span * t).exp();
+    let span = (max / min).ln();
+    let to_t = |level: f32| ((level / min).ln() / span).clamp(0., 1.);
+    let from_t = |t: f32| min * (span * t).exp();
     let (outer, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     ui.painter()
         .rect_filled(outer, radius::CONTROL, palette.tone(Tone::CARD));
@@ -381,15 +383,23 @@ pub(in crate::app) fn zoom_slider(
         && let Some(p) = drag.interact_pointer_pos()
     {
         let t = ((p.x - track.left()) / track.width()).clamp(0., 1.);
-        // 100% is easy to hit: the knob holds there for a few points.
-        let at_100 = fit < 1. && (track.left() + to_t(1.) * track.width() - p.x).abs() < 4.;
-        chosen = Some(ZoomChoice::Moved(if t <= 0.005 {
-            0.
-        } else if at_100 {
-            1.
+        let x_of = |level: f32| track.left() + to_t(level) * track.width();
+        // Fit and 100% are easy to hit: the knob holds on each for a few points.
+        let fit_dist = (x_of(fit) - p.x).abs();
+        let hundred_dist = if min < 1. && 1. < max {
+            (x_of(1.) - p.x).abs()
         } else {
-            from_t(t)
-        }));
+            f32::INFINITY
+        };
+        chosen = Some(ZoomChoice::Moved(
+            if fit_dist < 4. && fit_dist <= hundred_dist {
+                0.
+            } else if hundred_dist < 4. {
+                1.
+            } else {
+                from_t(t)
+            },
+        ));
     }
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&menu));
     let menu_hovered = menu.hovered() || open;
@@ -445,16 +455,21 @@ pub(in crate::app) fn zoom_slider(
         2.,
         palette.accent(),
     );
-    // A tick at 100%, where it falls on the track.
-    if fit < 1. {
-        let x100 = track.left() + to_t(1.) * track.width();
+    // Ticks at Fit and 100%, where each falls on the track.
+    let tick = |level: f32| {
+        let tx = track.left() + to_t(level) * track.width();
         painter.line_segment(
             [
-                Pos2::new(x100, track.top() - 3.),
-                Pos2::new(x100, track.bottom() + 3.),
+                Pos2::new(tx, track.top() - 3.),
+                Pos2::new(tx, track.bottom() + 3.),
             ],
             Stroke::new(1., palette.tone(Tone::LABEL)),
         );
+        tx
+    };
+    let x_fit = tick(fit);
+    if min < 1. && 1. < max && (track.left() + to_t(1.) * track.width() - x_fit).abs() >= 3. {
+        tick(1.);
     }
     painter.circle_filled(Pos2::new(x, track.center().y), 6., Color32::WHITE);
     let text = if chosen_level.map_or(!zoom.on, |l| l == 0.) {
@@ -476,11 +491,13 @@ pub(in crate::app) fn zoom_slider(
     chosen
 }
 
-/// A level as the slider names it: whole percent, or a tenth below 20%, where
-/// whole percent would round 12.5% to 13%.
+/// A level as the slider names it: whole percent, a tenth below 20% (where
+/// 12.5% would round to 13%), and 6.25% kept exact.
 fn level_text(level: f32) -> String {
     let percent = level * 100.;
-    if percent < 19.95 && (percent * 10.).round() % 10. != 0. {
+    if (level / MIN_LEVEL - 1.).abs() < 1e-3 {
+        "6.25%".to_owned()
+    } else if percent < 19.95 && (percent * 10.).round() % 10. != 0. {
         format!("{percent:.1}%")
     } else {
         format!("{percent:.0}%")
@@ -491,8 +508,8 @@ fn level_text(level: f32) -> String {
 mod tests {
     use super::stepped;
 
-    /// Steps multiply the level, stop at 100% on the way across it, and fit once
-    /// they reach the fitted size.
+    /// Steps multiply the level, stop at 100% and Fit on the way across them,
+    /// and zoom out past Fit down to `min_level(fit)`.
     #[test]
     fn zoom_steps_are_a_factor_that_stops_at_100_and_fit() {
         let fit = 0.2;
@@ -503,9 +520,14 @@ mod tests {
         assert!((stepped(1., fit, true) - std::f32::consts::SQRT_2).abs() < 1e-5);
         assert_eq!(stepped(0.25, fit, false), 0.);
         assert_eq!(stepped(16., fit, true), 16.);
-        // A photo smaller than the view fits above 100%: zooming out reaches
-        // 100%, and never enlarges it to Fit after that.
-        assert_eq!(stepped(2., 2., false), 0.);
+        // From Fit itself, zooming out steps below Fit, down to 6.25%.
+        let down = stepped(fit, fit, false);
+        assert!((down - fit / std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert_eq!(stepped(0.07, fit, false), 1. / 16.);
+        assert_eq!(stepped(1. / 16., fit, false), 1. / 16.);
+        // A photo smaller than the view fits above 100%: zooming out from Fit
+        // steps down, stops at 100%, and goes on down to 6.25%.
+        assert!((stepped(2., 2., false) - 2. / std::f32::consts::SQRT_2).abs() < 1e-5);
         assert_eq!(stepped(1.2, 1.2, false), 1.);
         assert!((stepped(1., 1.2, false) - 1. / std::f32::consts::SQRT_2).abs() < 1e-5);
         // Zooming in from below Fit steps on and stops at Fit, not past it
@@ -522,14 +544,17 @@ mod tests {
         assert_eq!(stepped(1.1, 0.9, false), 1.);
         assert_eq!(stepped(1.3, 1.2, false), 0.);
         assert_eq!(stepped(0.07, 1.2, false), 1. / 16.);
-        // A large photo stops at Fit, whether zoomed in at it or above it.
-        assert_eq!(stepped(0.2, 0.2, false), 0.);
+        // A large photo stops at Fit from above, then steps below it from Fit.
         assert_eq!(stepped(0.25, 0.2, false), 0.);
-        // A huge one, fitting below the floor for small photos, still steps down
-        // to Fit without turning back.
+        assert!((stepped(0.2, 0.2, false) - 0.2 / std::f32::consts::SQRT_2).abs() < 1e-5);
+        // A huge one, fitting below 6.25%, stops at Fit from above and then
+        // steps down to half Fit without turning back.
         assert!(stepped(0.04, 0.02, false) < 0.04);
         assert!(stepped(0.0625, 0.04, false) < 0.0625);
         assert_eq!(stepped(0.044, 0.04, false), 0.);
+        assert!((stepped(0.04, 0.04, false) - 0.04 / std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert_eq!(stepped(0.025, 0.04, false), 0.02);
+        assert_eq!(stepped(0.02, 0.04, false), 0.02);
         // A tiny one zooms in to the slider's end, twice Fit, and stays there.
         assert!(stepped(14., 10., true) > 14.);
         assert_eq!(stepped(20., 10., true), 20.);
@@ -608,7 +633,12 @@ mod tests {
         };
         let fit = editor.fit_level().expect("the photo's size is known");
         assert!(fit > 0.125, "fits at {fit}");
-        for (pick, level) in [("50%", Some(0.5)), ("12.5%", Some(0.125)), ("Fit", None)] {
+        for (pick, level) in [
+            ("50%", Some(0.5)),
+            ("12.5%", Some(0.125)),
+            ("6.25%", Some(0.0625)),
+            ("Fit", None),
+        ] {
             click(&mut editor, "Zoom level");
             click(&mut editor, pick);
             let zoom = editor.view.zoom;
@@ -622,12 +652,12 @@ mod tests {
         editor.remember_zoom_level();
         let saved: crate::app::preferences::session::Session =
             serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-        assert_eq!(saved.zoom_level, Some(0.125));
+        assert_eq!(saved.zoom_level, Some(0.0625));
         let reopened = Editor::with_context(&ctx, None, saved, None);
-        assert_eq!(reopened.view.zoom.level, 0.125);
+        assert_eq!(reopened.view.zoom.level, 0.0625);
         assert!(!reopened.view.zoom.on);
         // The first frame draws it as it was: nothing to render again.
-        assert_eq!(reopened.view.zoom_key, (false, 0.125));
+        assert_eq!(reopened.view.zoom_key, (false, 0.0625));
         // A saved level out of reach reads back within it and isn't written
         // again until the zoom changes; an unreadable one reads as 100%.
         for (saved, read) in [(Some(20.), 16.), (Some(-2.), 1.), (Some(f32::NAN), 1.)] {
@@ -673,6 +703,8 @@ mod tests {
             return;
         };
         for (name, level, open) in [
+            ("zoom-6", 0.0625, false),
+            ("zoom-6-menu", 0.0625, true),
             ("zoom-fit", 0., false),
             ("zoom-fit-menu", 0., true),
             ("zoom-50", 0.5, false),
@@ -725,12 +757,98 @@ mod tests {
     #[test]
     fn levels_are_named_in_whole_percent_but_below_20() {
         use super::level_text;
+        assert_eq!(level_text(0.0625), "6.25%");
+        assert_eq!(level_text(0.0884), "8.8%");
         assert_eq!(level_text(0.125), "12.5%");
         assert_eq!(level_text(0.25), "25%");
         assert_eq!(level_text(0.2), "20%");
         assert_eq!(level_text(1. / 3.), "33%");
         assert_eq!(level_text(0.1), "10%");
         assert_eq!(level_text(16.), "1600%");
+    }
+
+    /// Dragging the zoom slider left of Fit zooms below Fit down to 6.25%,
+    /// snapping cleanly to Fit and 100% on the way.
+    #[test]
+    fn the_zoom_slider_drags_below_fit_and_snaps_to_fit_and_100() {
+        use super::{Zoom, ZoomChoice, zoom_slider};
+        use eframe::egui::{self, Pos2, Rect, Vec2};
+        let ctx = egui::Context::default();
+        let fit = 0.25;
+        let width = 236.;
+        let height = 32.;
+        // Track geometry inside `zoom_slider`: outer=0..236, shrink(6)=6..230,
+        // minus=6..26, track.left=33, label=178..230, plus=158..178, track.right=151.
+        let track_left = 33.;
+        let track_right = 151.;
+        let track_y = height / 2.;
+        let click_at = |x: f32, zoom: Zoom| {
+            let at = Pos2::new(x, track_y);
+            let mut chosen = None;
+            for events in [
+                vec![],
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            ] {
+                let mut out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(300., 64.))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let c = zoom_slider(ui, zoom, Some(fit), width, height);
+                        if c.is_some() {
+                            chosen = c;
+                        }
+                    },
+                );
+                out.textures_delta.clear();
+            }
+            chosen
+        };
+        // Far left of the track reaches 6.25% (below Fit).
+        let left = click_at(track_left, Zoom::default()).expect("left end");
+        assert_eq!(left, ZoomChoice::Moved(0.0625));
+        // Between 6.25% and Fit (25%): halfway is 12.5%.
+        let mid_below = click_at(
+            track_left + (track_right - track_left) * 0.125,
+            Zoom::default(),
+        )
+        .expect("below fit");
+        assert!((mid_below.level() - 0.125).abs() < 0.01, "{mid_below:?}");
+        // Clicking near Fit's tick (25% of the track) snaps to Fit (0).
+        let fit_x = track_left + (track_right - track_left) * 0.25;
+        let at_fit = click_at(
+            fit_x + 2.,
+            Zoom {
+                on: true,
+                level: 0.0625,
+                pan: [0.5, 0.5],
+            },
+        )
+        .expect("snap to fit");
+        assert_eq!(at_fit, ZoomChoice::Moved(0.));
+        // Clicking near 100%'s tick (50% of the track) snaps to 100%.
+        let x100 = track_left + (track_right - track_left) * 0.5;
+        let at_100 = click_at(x100 - 2., Zoom::default()).expect("snap to 100");
+        assert_eq!(at_100, ZoomChoice::Moved(1.));
+        // Clicking the minus button at Fit steps below Fit.
+        let minus = click_at(16., Zoom::default()).expect("minus from fit");
+        assert!((minus.level() - fit / std::f32::consts::SQRT_2).abs() < 1e-4);
     }
 
     /// A minimap drag eases the view to where it points, frame by frame, and

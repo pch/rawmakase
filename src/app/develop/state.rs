@@ -945,7 +945,12 @@ impl ViewState {
             tool
         });
         if matches!(self.tool(), Tool::Crop) {
-            self.zoom.on = false;
+            let zoomed_out = self
+                .last_fit
+                .is_some_and(|fit| self.zoom.level <= fit * (1. + 1e-3));
+            if !zoomed_out {
+                self.zoom.on = false;
+            }
             self.aspect_read = false;
             self.aspect_reloaded = false;
         }
