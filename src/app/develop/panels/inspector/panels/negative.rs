@@ -8,7 +8,7 @@ use crate::app::develop::state::{Tool, ViewState};
 use crate::app::develop::step_name::StepName;
 use crate::app::ui::design::{Tone, radius, size, space, text};
 use crate::app::ui::theme;
-use crate::app::ui::widgets::{adjustment_section, segmented_named, toolbar_action_sized};
+use crate::app::ui::widgets::{adjustment_section, segmented, toolbar_action_sized};
 use crate::app::worker::AutoKind;
 use crate::model::negative::{FilmType, NegativeConversion};
 use crate::model::recipe::Recipe;
@@ -67,7 +67,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
         let mut film = shown;
         control_row(ui, "Film", |ui| {
             let options = [Film::Off, Film::Colour, Film::BlackWhite].map(|f| (f, f.label()));
-            segmented_named(ui, &mut film, &options, ui.available_width())
+            segmented(ui, &mut film, &options, ui.available_width())
         });
         if film != shown {
             let kind = match film {

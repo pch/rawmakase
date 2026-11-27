@@ -363,6 +363,31 @@ fn the_negative_panel_says_an_hdr_files_master_has_no_conversion() {
     assert!(!says(&controls_frame(&ctx, &mut editor, vec![])));
 }
 
+/// A screen reader hears which film type is set: the switch's options are radio
+/// buttons, the set one selected, the others not.
+#[test]
+fn the_film_switch_tells_screen_readers_which_film_is_set() {
+    use egui::accesskit::{Role, Toggled};
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan(&ctx, false, true);
+    let state = |shown: &egui::accesskit::TreeUpdate| {
+        ["Off", "Color", "B&W"].map(|label| {
+            let n = node(shown, label);
+            assert_eq!(n.role(), Role::RadioButton, "{label}");
+            n.toggled() == Some(Toggled::True)
+        })
+    };
+    assert_eq!(
+        state(&controls_frame(&ctx, &mut editor, vec![])),
+        [true, false, false]
+    );
+    click(&ctx, &mut editor, "B&W");
+    assert_eq!(
+        state(&controls_frame(&ctx, &mut editor, vec![])),
+        [false, false, true]
+    );
+}
+
 /// The film base picker and Auto end where the film switch's track ends (its last
 /// segment sits 2 points inside it), and the switch's segments share one row.
 #[test]

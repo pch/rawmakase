@@ -1970,7 +1970,19 @@ fn segment_track(
     }
     responses
         .into_iter()
-        .map(|response| {
+        .zip(labels)
+        .enumerate()
+        .map(|(index, (response, label))| {
+            // A screen reader hears each option as a radio button, by its label, and
+            // which one is set: it sees no text painted on it.
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(
+                    egui::WidgetType::RadioButton,
+                    enabled,
+                    selected == Some(index),
+                    *label,
+                )
+            });
             if enabled {
                 response.on_hover_cursor(egui::CursorIcon::PointingHand)
             } else {
@@ -2067,25 +2079,6 @@ pub(in crate::app) fn segmented<T: PartialEq + Copy>(
     options: &[(T, &str)],
     width: f32,
 ) -> bool {
-    segmented_with(ui, value, options, width, false)
-}
-/// [`segmented`] whose segments screen readers call by their labels, which they
-/// otherwise see no text of.
-pub(in crate::app) fn segmented_named<T: PartialEq + Copy>(
-    ui: &mut egui::Ui,
-    value: &mut T,
-    options: &[(T, &str)],
-    width: f32,
-) -> bool {
-    segmented_with(ui, value, options, width, true)
-}
-fn segmented_with<T: PartialEq + Copy>(
-    ui: &mut egui::Ui,
-    value: &mut T,
-    options: &[(T, &str)],
-    width: f32,
-    name: bool,
-) -> bool {
     let labels: Vec<&str> = options.iter().map(|(_, label)| *label).collect();
     let preferred = segments_width(ui, &labels, &COMPACT_SEGMENTS);
     let tightest = tightest_segments_width(ui, &labels, &COMPACT_SEGMENTS);
@@ -2093,14 +2086,7 @@ fn segmented_with<T: PartialEq + Copy>(
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(width, COMPACT_SEGMENTS.height), Sense::hover());
     let selected = options.iter().position(|(option, _)| *option == *value);
-    let mut responses = segment_track(ui, rect, response.id, &labels, selected, &COMPACT_SEGMENTS);
-    if name {
-        responses = responses
-            .into_iter()
-            .zip(&labels)
-            .map(|(response, label)| named(response, label))
-            .collect();
-    }
+    let responses = segment_track(ui, rect, response.id, &labels, selected, &COMPACT_SEGMENTS);
     for (response, (option, _)) in responses.iter().zip(options) {
         if response.clicked() && *value != *option {
             *value = *option;

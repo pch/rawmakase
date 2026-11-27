@@ -209,6 +209,9 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     let labels: Vec<String> = menu
         .nodes
         .iter()
+        // Not the panels' segmented controls' options (Upright's Auto among them),
+        // which are radio buttons, not the menu's.
+        .filter(|(_, n)| n.role() != Role::RadioButton)
         // A drop-down shows the choice it holds beside its name.
         .flat_map(|(_, n)| [n.label(), n.value()])
         .flatten()
