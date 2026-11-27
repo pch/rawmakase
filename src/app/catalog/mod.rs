@@ -14,8 +14,15 @@ use std::path::PathBuf;
 /// arrives as the rules below say, not by whoever comes next.
 #[derive(Default)]
 pub(in crate::app) struct Waiting {
-    restore: Option<crate::app::CatalogPlace>,
+    restore: Option<Restore>,
     photo: Option<PendingPhoto>,
+}
+
+/// The launch place waiting for the session's catalog, and whether recovery
+/// from an unclean exit should clear the Library's default initial selection.
+pub(in crate::app) struct Restore {
+    pub(in crate::app) place: crate::app::CatalogPlace,
+    pub(in crate::app) clear_selection: bool,
 }
 
 /// A photo from outside the Library, to open once the catalog is ready.
@@ -43,7 +50,21 @@ impl Waiting {
     /// Waiting to go back to `place` once the session's catalog opens.
     pub(in crate::app) fn restoring(place: crate::app::CatalogPlace) -> Self {
         Self {
-            restore: Some(place),
+            restore: Some(Restore {
+                place,
+                clear_selection: false,
+            }),
+            photo: None,
+        }
+    }
+    /// Waiting to open the session's catalog in Library Grid with no photo
+    /// selected after the previous launch did not exit cleanly.
+    pub(in crate::app) fn restoring_after_crash(place: crate::app::CatalogPlace) -> Self {
+        Self {
+            restore: Some(Restore {
+                place,
+                clear_selection: true,
+            }),
             photo: None,
         }
     }
@@ -73,7 +94,7 @@ impl Waiting {
     }
     /// For a catalog that opened (not one read again keeping the open photo): the place
     /// to go back to, once.
-    pub(in crate::app) fn take_restore(&mut self) -> Option<crate::app::CatalogPlace> {
+    pub(in crate::app) fn take_restore(&mut self) -> Option<Restore> {
         self.restore.take()
     }
     /// For the catalog that arrived: what the waiting photo needs, `listed` saying where

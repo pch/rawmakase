@@ -185,6 +185,12 @@ macOS run their panel on the main thread, so they are never joined from it.
       already passed or a stopper was left detached.
    6. Delete the temporary files of exports still being written, on a thread of
       its own waited for 0.5 s: they are on the folder an export may have stalled on.
+   7. Clear the active marker in `session.lock` and release its advisory lock
+      (`SessionState::mark_clean_exit`), so the next launch knows this one exited
+      cleanly. A crash (or a forced termination that bypasses `on_exit`, such as
+      `SIGTERM` on Unix or Windows session shutdown) leaves the marker in place
+      while the OS releases the lock, telling the next launch to open in Library
+      Grid without restoring the last photo or view.
 3. eframe drops the editor, then the painter. The detached workers end with the
    process.
 4. The process exits. Where HEIC photos decode through the system's libheif (Linux

@@ -399,6 +399,90 @@ impl Session {
             _ => DEFAULT_DISCARD_DAYS,
         }
     }
+    /// Whether restoring this session would reopen Develop, a non-Grid Library
+    /// view (Loupe, Compare or Survey) or a selected photo.
+    pub(in crate::app) fn has_photo_or_view(&self) -> bool {
+        self.develop
+            || self.selected_photo.is_some()
+            || (!self.library_layout.view.is_empty() && self.library_layout.view != "grid")
+    }
+}
+
+/// Written to the lock file while an instance owns the session guard; cleared
+/// to empty only on a clean shutdown.
+const ACTIVE_MARKER: &[u8] = b"running\n";
+
+/// Detects when the previous desktop launch did not exit cleanly, using an OS
+/// advisory lock beside `session.json` (`session.lock`).
+///
+/// The lock file is never deleted: its contents say whether the last lock
+/// holder exited cleanly (empty) or died mid-session (`running\n`). The OS
+/// releases the lock automatically if the process crashes, leaving the marker
+/// behind for the next launch. A second concurrent instance gets `WouldBlock`
+/// and fails open without mistaking the running instance for a crash.
+pub(in crate::app) struct LaunchGuard {
+    file: std::fs::File,
+}
+
+impl LaunchGuard {
+    /// The lock file beside `session_file`.
+    pub(in crate::app) fn path_for(session_file: &std::path::Path) -> PathBuf {
+        session_file.with_extension("lock")
+    }
+    /// Acquires the launch guard beside `session_file`. Returns the held guard
+    /// (marked clean only by [`Self::mark_clean`]) and whether the previous
+    /// owner did not exit cleanly.
+    ///
+    /// Fails open when the lock file cannot be opened or locked, or when
+    /// another live instance already holds it.
+    pub(in crate::app) fn enter(session_file: &std::path::Path) -> (Option<Self>, bool) {
+        use std::io::{Read, Seek, SeekFrom, Write};
+        let path = Self::path_for(session_file);
+        if std::fs::create_dir_all(crate::storage::parent_dir(&path)).is_err() {
+            return (None, false);
+        }
+        let Ok(mut file) = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+        else {
+            return (None, false);
+        };
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock | std::fs::TryLockError::Error(_)) => {
+                return (None, false);
+            }
+        }
+        let mut buf = Vec::new();
+        let _ = (&mut file).take(64).read_to_end(&mut buf);
+        let previous_unclean = buf.iter().any(|b| !b.is_ascii_whitespace());
+        // Leave an existing dirty marker in place so a crash during recovery
+        // startup cannot briefly leave the file empty before rewriting it.
+        if !previous_unclean {
+            let _ = file
+                .seek(SeekFrom::Start(0))
+                .and_then(|_| file.set_len(0))
+                .and_then(|_| file.write_all(ACTIVE_MARKER))
+                .and_then(|_| file.sync_data());
+        }
+        (Some(Self { file }), previous_unclean)
+    }
+    /// Clears the active marker and releases the lock on a clean shutdown.
+    pub(in crate::app) fn mark_clean(self) {
+        let _ = self.file.set_len(0).and_then(|_| self.file.sync_data());
+    }
+}
+
+impl Drop for LaunchGuard {
+    fn drop(&mut self) {
+        // Explicitly unlock before closing so a forked child that briefly
+        // inherited this open file description before `exec` (e.g. an extension
+        // launched via `pre_exec`) cannot keep the `flock` held after we drop.
+        let _ = self.file.unlock();
+    }
 }
 
 /// The Thumbnail Cache sizes offered, in MiB: the default 512 MiB holds about
@@ -433,6 +517,9 @@ pub(crate) struct CropGuideLayout {
 pub(in crate::app) struct SessionState {
     /// Where the session is written; none writes nothing.
     file: Option<PathBuf>,
+    /// Held while running when this instance owns `session.lock`; cleared only
+    /// on a clean exit.
+    guard: Option<LaunchGuard>,
     /// Fields a newer release wrote, carried to every write.
     unknown: Unknown,
     /// The path the session opened with, saved while no catalog or photo is open.
@@ -463,20 +550,33 @@ pub(in crate::app) struct SessionState {
 
 impl SessionState {
     /// The state `session` was loaded as, written to `file`, with the editor's own
-    /// starting values for the ones it works out at launch.
+    /// starting values for the ones it works out at launch. When `recovered` is
+    /// true, the remembered Library view resets to Grid and a non-catalog
+    /// `last_path` is not carried forward.
     pub(in crate::app) fn new(
         session: &Session,
         file: Option<PathBuf>,
+        guard: Option<LaunchGuard>,
         place: crate::app::CatalogPlace,
         onboarding_done: bool,
         copy_groups: crate::model::settings_groups::GroupSelection,
+        recovered: bool,
     ) -> Self {
+        let mut layout = session.library_layout.clone();
+        if recovered {
+            layout.view = "grid".into();
+        }
+        let fallback_path = session
+            .last_path
+            .clone()
+            .filter(|p| !recovered || p.extension().is_some_and(|e| e == "rawmakase"));
         Self {
             file,
+            guard,
             unknown: session.unknown.clone(),
-            fallback_path: session.last_path.clone(),
+            fallback_path,
             place,
-            layout: session.library_layout.clone(),
+            layout,
             maximized: session.maximized,
             collapsed: session.collapsed.clone(),
             solo: session.solo.clone(),
@@ -493,6 +593,12 @@ impl SessionState {
                 crate::app::develop::treatment::FirstConversion::AutoMix
             },
             zoom_level: session.zoom_level,
+        }
+    }
+    /// Records that this launch exited cleanly and releases the launch guard.
+    pub(in crate::app) fn mark_clean_exit(&mut self) {
+        if let Some(guard) = self.guard.take() {
+            guard.mark_clean();
         }
     }
     /// Where the session is written, if anywhere.
@@ -1121,5 +1227,111 @@ mod external_editing_tests {
         let malformed: Session =
             serde_json::from_str(r#"{"external_editors":7,"auto_advance":true}"#).unwrap();
         assert!(malformed.external_editors.is_empty() && malformed.auto_advance);
+    }
+}
+
+#[cfg(test)]
+mod launch_guard_tests {
+    use super::LaunchGuard;
+
+    #[test]
+    fn fresh_launch_and_clean_exit_report_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.json");
+        let lock = LaunchGuard::path_for(&session);
+
+        let (guard, unclean) = LaunchGuard::enter(&session);
+        assert!(!unclean);
+        // Check size via metadata while held: Windows LockFileEx blocks reads
+        // through a second handle until the lock is released.
+        assert!(std::fs::metadata(&lock).unwrap().len() > 0);
+        guard.unwrap().mark_clean();
+        assert!(std::fs::read(&lock).unwrap().is_empty());
+
+        let (guard2, unclean2) = LaunchGuard::enter(&session);
+        assert!(!unclean2);
+        guard2.unwrap().mark_clean();
+    }
+
+    #[test]
+    fn unclean_exit_is_detected_and_stays_dirty_until_a_clean_shutdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.json");
+        let lock = LaunchGuard::path_for(&session);
+
+        let (guard1, unclean1) = LaunchGuard::enter(&session);
+        assert!(!unclean1);
+        drop(guard1);
+        assert!(!std::fs::read(&lock).unwrap().is_empty());
+
+        let (guard2, unclean2) = LaunchGuard::enter(&session);
+        assert!(unclean2, "dropped without mark_clean must be detected");
+        // A second crash before clean shutdown keeps the dirty marker.
+        drop(guard2);
+
+        let (guard3, unclean3) = LaunchGuard::enter(&session);
+        assert!(unclean3);
+        guard3.unwrap().mark_clean();
+
+        let (guard4, unclean4) = LaunchGuard::enter(&session);
+        assert!(!unclean4);
+        guard4.unwrap().mark_clean();
+    }
+
+    #[test]
+    fn a_concurrent_instance_fails_open_without_clearing_the_owners_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.json");
+
+        let (owner, unclean1) = LaunchGuard::enter(&session);
+        assert!(!unclean1);
+        assert!(owner.is_some());
+
+        let (second, unclean2) = LaunchGuard::enter(&session);
+        assert!(!unclean2, "a live owner is not a crash");
+        assert!(second.is_none(), "second instance does not take ownership");
+        drop(second);
+
+        // If the owner later crashes, the next launch still detects it.
+        drop(owner);
+        let (third, unclean3) = LaunchGuard::enter(&session);
+        assert!(unclean3);
+        third.unwrap().mark_clean();
+    }
+
+    #[test]
+    fn an_unwritable_path_fails_open_and_whitespace_counts_as_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("file");
+        std::fs::write(&blocker, b"").unwrap();
+        let (guard, unclean) = LaunchGuard::enter(&blocker.join("session.json"));
+        assert!(guard.is_none() && !unclean);
+
+        let session = dir.path().join("session.json");
+        std::fs::write(LaunchGuard::path_for(&session), b"   \n").unwrap();
+        let (guard, unclean) = LaunchGuard::enter(&session);
+        assert!(!unclean);
+        guard.unwrap().mark_clean();
+    }
+
+    /// A duplicate descriptor sharing the same open file description (as a
+    /// `fork()` before `exec()` creates on Unix) must not keep the `flock`
+    /// alive after the guard drops.
+    #[cfg(unix)]
+    #[test]
+    fn dropping_the_guard_unlocks_even_with_a_duplicated_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.json");
+
+        let (guard1, unclean1) = LaunchGuard::enter(&session);
+        assert!(!unclean1);
+        let guard1 = guard1.unwrap();
+        let inherited = guard1.file.try_clone().unwrap();
+        drop(guard1);
+
+        let (guard2, unclean2) = LaunchGuard::enter(&session);
+        assert!(unclean2, "duplicated fd must not block the next launch");
+        guard2.unwrap().mark_clean();
+        drop(inherited);
     }
 }
