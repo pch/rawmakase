@@ -265,6 +265,8 @@ fn retire_engine(engine: Engine, async_drop: bool) {
 /// [`retire_engine`], starting the thread the engine drops on with `spawn`, which
 /// is handed the engine only once it has started. When the thread can't start, the
 /// engine is leaked: its device's memory is lost, where dropping it here could hang.
+/// Nothing is written to stderr there: a closed or full pipe would panic (dropping
+/// the engine here after all) or block.
 fn retire_engine_on(
     engine: Engine,
     async_drop: bool,
@@ -275,16 +277,12 @@ fn retire_engine_on(
         return;
     }
     let (tx, rx) = mpsc::channel();
-    match spawn(rx) {
-        Ok(()) => {
-            if let Err(mpsc::SendError(engine)) = tx.send(engine) {
-                std::mem::forget(engine);
-            }
-        }
-        Err(err) => {
-            eprintln!("RAWmakase export GPU async drop spawn failed, leaking the device: {err}");
-            std::mem::forget(engine);
-        }
+    let unsent = match spawn(rx) {
+        Ok(()) => tx.send(engine).err().map(|mpsc::SendError(engine)| engine),
+        Err(_) => Some(engine),
+    };
+    if let Some(engine) = unsent {
+        std::mem::forget(engine);
     }
 }
 
