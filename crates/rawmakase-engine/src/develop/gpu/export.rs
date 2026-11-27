@@ -189,7 +189,7 @@ impl Drop for ExportBackend {
     fn drop(&mut self) {
         let exec = self.exec.get_mut().unwrap_or_else(PoisonError::into_inner);
         let engine = std::mem::replace(&mut exec.engine, Engine::Disabled);
-        retire_engine(engine, true);
+        retire_engine(engine);
     }
 }
 
@@ -248,13 +248,15 @@ impl Engine {
     }
 }
 
-/// Drops a retired GPU engine outside any mutex. When `async_drop` is true (stalled
-/// driver timeout, device loss, panic unwind, or the backend itself dropped), drops a
-/// real `wgpu::Device`/`Queue` on a detached thread so `wgpu`'s unbounded `Queue::drop`
-/// idle wait cannot stall the caller, sibling export lanes, or shutdown past the 5 s
-/// band deadline.
-fn retire_engine(engine: Engine, async_drop: bool) {
-    retire_engine_on(engine, async_drop, |rx| {
+/// Drops a retired GPU engine outside any mutex, on a detached thread. A retired
+/// engine may still have GPU work outstanding (after a band that timed out or was
+/// cancelled, a lost device, a validation or internal error, or a panic), and
+/// `wgpu`'s `Queue::drop` waits for the device to go idle with no deadline: dropped
+/// on the caller, it could stall that caller's CPU fallback, the renders waiting for
+/// `exec`, or shutdown. A retired engine is never reused, so nothing waits for its
+/// drop.
+fn retire_engine(engine: Engine) {
+    retire_engine_on(engine, |rx| {
         std::thread::Builder::new()
             .name("export-gpu-drop".into())
             .spawn(move || drop(rx.recv()))
@@ -269,10 +271,9 @@ fn retire_engine(engine: Engine, async_drop: bool) {
 /// the engine here after all) or block.
 fn retire_engine_on(
     engine: Engine,
-    async_drop: bool,
     spawn: impl FnOnce(mpsc::Receiver<Engine>) -> std::io::Result<()>,
 ) {
-    if !(async_drop && engine.holds_device()) {
+    if !engine.holds_device() {
         drop(engine);
         return;
     }
@@ -296,7 +297,7 @@ enum GpuFailure {
     PerPhoto(ExportFallbackKind, String),
     /// Tier 1 retryable OOM: release cached buffers and retry once with halved band height.
     OutOfMemory(String),
-    /// Tier 2: session-wide CPU fallback; drop GPU device and stay on CPU.
+    /// Tier 2: session-wide CPU fallback; retire the GPU device and stay on CPU.
     Session(ExportFallbackKind, String),
 }
 
@@ -356,7 +357,7 @@ impl Drop for PanicGuard<'_> {
                     "GPU export panicked; disabled GPU for remainder of session".into(),
                 );
             }
-            retire_engine(old, true);
+            retire_engine(old);
         }
     }
 }
@@ -658,15 +659,15 @@ impl ExportBackend {
                 Err(GpuFailure::Session(kind, reason)) => {
                     let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
                     self.lock_meta().mark_disabled(*kind, reason.clone());
-                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                    Some(old)
                 }
                 _ => None,
             };
             guard.disarm();
             (outcome, retired)
         };
-        if let Some((old_engine, async_drop)) = retired {
-            retire_engine(old_engine, async_drop);
+        if let Some(old_engine) = retired {
+            retire_engine(old_engine);
         }
 
         match gpu_outcome {
@@ -812,15 +813,15 @@ impl ExportBackend {
                 Err(GpuFailure::Session(kind, reason)) => {
                     let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
                     self.lock_meta().mark_disabled(*kind, reason.clone());
-                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                    Some(old)
                 }
                 _ => None,
             };
             guard.disarm();
             (outcome, retired)
         };
-        if let Some((old_engine, async_drop)) = retired {
-            retire_engine(old_engine, async_drop);
+        if let Some(old_engine) = retired {
+            retire_engine(old_engine);
         }
 
         match gpu_outcome {
@@ -1011,15 +1012,15 @@ impl ExportBackend {
                 Err(GpuFailure::Session(kind, reason)) => {
                     let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
                     self.lock_meta().mark_disabled(*kind, reason.clone());
-                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                    Some(old)
                 }
                 _ => None,
             };
             guard.disarm();
             (outcome, retired)
         };
-        if let Some((old_engine, async_drop)) = retired {
-            retire_engine(old_engine, async_drop);
+        if let Some(old_engine) = retired {
+            retire_engine(old_engine);
         }
 
         match gpu_outcome {

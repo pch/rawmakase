@@ -994,6 +994,130 @@ fn dropping_a_backend_never_waits_for_its_device() {
     assert_ne!(on, std::thread::current().id());
 }
 
+/// A validation or internal error turns the GPU off for the session. The render's
+/// CPU fallback doesn't wait for the device's drop, which waits for outstanding GPU
+/// work: the device drops on its own thread, on the SDR, HDR and gain-map paths alike.
+#[test]
+fn a_driver_error_never_waits_for_the_device_it_retires() -> Result<()> {
+    use std::sync::mpsc;
+
+    /// Fails every render with a driver error, and stands in for a device whose
+    /// `Queue::drop` waits for outstanding work.
+    struct BusyDevice {
+        dropped: mpsc::Sender<std::thread::ThreadId>,
+        release: mpsc::Receiver<()>,
+    }
+    fn driver_error() -> GpuFailure {
+        GpuFailure::Session(ExportFallbackKind::DriverError, "validation error".into())
+    }
+    impl MockGpuDriver for BusyDevice {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            Err(driver_error())
+        }
+        fn render_hdr_banded(
+            &mut self,
+            _job: &PreparedHdrExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<crate::rendered::HdrImage, GpuFailure> {
+            Err(driver_error())
+        }
+        fn render_pair_banded(
+            &mut self,
+            _hdr: &PreparedHdrExport<'_>,
+            _sdr: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<(crate::rendered::HdrImage, ExportImage), GpuFailure> {
+            Err(driver_error())
+        }
+        fn release_buffers(&mut self) {}
+    }
+    impl Drop for BusyDevice {
+        fn drop(&mut self) {
+            let _ = self.release.recv_timeout(Duration::from_secs(5));
+            let _ = self.dropped.send(std::thread::current().id());
+        }
+    }
+
+    let sdr = synthetic_photo(48, 32);
+    let sdr_recipe = profiled_recipe(&sdr);
+    let sdr_recipe = sdr_recipe.checked()?;
+    let hdr = synthetic_hdr_photo(48, 32);
+    let hdr_recipe = hdr_profiled_recipe(&hdr);
+    let hdr_recipe = hdr_recipe.checked()?;
+    type Render<'a> = Box<dyn Fn(&ExportBackend) -> Result<()> + 'a>;
+    let paths: [(&str, Render); 3] = [
+        (
+            "SDR",
+            Box::new(|b| {
+                b.render_export(
+                    &sdr,
+                    &sdr_recipe,
+                    None,
+                    0,
+                    OutputSpace::Srgb,
+                    ExportFormat::Rgb8,
+                    Cancel::NEVER,
+                )
+                .map(drop)
+            }),
+        ),
+        (
+            "HDR",
+            Box::new(|b| {
+                b.render_hdr(&hdr, &hdr_recipe, None, 0, Cancel::NEVER)
+                    .map(drop)
+            }),
+        ),
+        (
+            "gain map",
+            Box::new(|b| {
+                b.render_hdr_and_sdr(&hdr, &hdr_recipe, None, 0, Cancel::NEVER)
+                    .map(drop)
+            }),
+        ),
+    ];
+
+    for (path, render) in paths {
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let backend = ExportBackend::with_mock(
+            "MockGPU",
+            Box::new(BusyDevice {
+                dropped: dropped_tx,
+                release: release_rx,
+            }),
+        );
+        render(&backend)?;
+        let st = backend.status();
+        assert!(!st.gpu_active, "{path}: the GPU stays on");
+        assert_eq!(
+            st.fallback_kind,
+            Some(ExportFallbackKind::DriverError),
+            "{path}"
+        );
+        assert_eq!((st.gpu_renders, st.cpu_renders), (0, 1), "{path}");
+        release_tx
+            .send(())
+            .unwrap_or_else(|_| panic!("{path}: the render waited for the device's drop"));
+        let on = dropped_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|_| panic!("{path}: the device was never dropped"));
+        assert_ne!(
+            on,
+            std::thread::current().id(),
+            "{path}: dropped on the render"
+        );
+    }
+    Ok(())
+}
+
 /// When the thread a retired device drops on can't start, the device is leaked, not
 /// dropped on the caller, whose drop could wait for a stalled GPU.
 #[test]
@@ -1018,7 +1142,7 @@ fn a_device_is_never_dropped_on_the_caller_when_its_thread_cant_start() {
 
     let dropped = Arc::new(AtomicBool::new(false));
     let engine = Engine::Mock(Box::new(StalledDevice(dropped.clone())));
-    retire_engine_on(engine, true, |_| {
+    retire_engine_on(engine, |_| {
         Err(std::io::Error::from(std::io::ErrorKind::WouldBlock))
     });
     assert!(!dropped.load(Ordering::SeqCst), "dropped on the caller");
@@ -1026,7 +1150,7 @@ fn a_device_is_never_dropped_on_the_caller_when_its_thread_cant_start() {
     // Started, the thread is handed the engine and drops it there.
     let engine = Engine::Mock(Box::new(StalledDevice(dropped.clone())));
     let (on_tx, on_rx) = std::sync::mpsc::channel();
-    retire_engine_on(engine, true, move |rx| {
+    retire_engine_on(engine, move |rx| {
         std::thread::spawn(move || {
             drop(rx.recv());
             let _ = on_tx.send(std::thread::current().id());
