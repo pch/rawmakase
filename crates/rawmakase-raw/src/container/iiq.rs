@@ -43,12 +43,13 @@ pub(crate) struct IiqPlan {
 }
 
 /// Whether the file in `bytes` is a TIFF holding a Phase One block.
-pub(crate) fn is_iiq(bytes: &[u8]) -> bool {
-    matches!(bytes.get(8..12), Some(b"IIII" | b"MMMM")) && notes::read(bytes, BLOCK).is_some()
+pub(crate) fn is_iiq(bytes: crate::io::Source<'_>) -> bool {
+    matches!(bytes.array::<4>(8).as_ref(), Some(b"IIII" | b"MMMM"))
+        && notes::read(bytes, BLOCK).is_some()
 }
 
 /// Reads the header facts. `t` is the parsed TIFF.
-pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
+pub(crate) fn open(bytes: crate::io::Source<'_>, t: TiffFile) -> Result<RawInfo> {
     let n = notes::read(bytes, BLOCK).ok_or_else(|| corrupt("Phase One directory"))?;
     let [width, height] = n.raw_size;
     crate::io::samples(width, height, 1)?;
@@ -70,9 +71,8 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
         if size / 4 < u64::from(height) {
             return Err(corrupt("IIQ row offsets"));
         }
-        let b = Bytes::new(bytes, order);
         (0..u64::from(height))
-            .map(|r| b.u32(at + 4 * r))
+            .map(|r| bytes.read_u32(order, at + 4 * r))
             .collect::<Result<Vec<u32>>>()?
     };
     if n.data.1 == 0 {

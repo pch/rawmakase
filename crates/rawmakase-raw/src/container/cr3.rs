@@ -17,7 +17,7 @@ use crate::codec::crx;
 use crate::error::{Error, Result, corrupt};
 use crate::exif_tiffs::ExifTiffs;
 use crate::info::{Cfa, RawInfo};
-use crate::io::{Bytes, Pieces};
+use crate::io::{Bytes, Order, Pieces, Source};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use crate::vendor::canon_cr3 as notes;
@@ -31,7 +31,7 @@ const CANON_UUID: [u8; 16] = [
 const MAX_BOXES: usize = 4096;
 /// The children of a `CRAW` sample entry start after its visual sample entry
 /// fields (ISO/IEC 14496-12's 78 bytes) and 4 more bytes.
-const CRAW_CHILDREN: usize = 82;
+const CRAW_CHILDREN: u64 = 82;
 
 /// Where a CR3's raw image is and how it is coded.
 #[derive(Clone, Debug)]
@@ -54,8 +54,8 @@ pub(crate) enum Black {
 }
 
 /// Whether `bytes` is a CR3 file.
-pub(crate) fn is_cr3(bytes: &[u8]) -> bool {
-    bytes.get(4..12) == Some(b"ftypcrx ".as_slice())
+pub(crate) fn is_cr3<'a>(bytes: impl Into<Source<'a>>) -> bool {
+    bytes.into().starts_with_at(4, b"ftypcrx ")
 }
 
 /// A box: its type, and where its payload (after the header and a `uuid`'s
@@ -63,50 +63,42 @@ pub(crate) fn is_cr3(bytes: &[u8]) -> bool {
 struct Bx {
     kind: [u8; 4],
     uuid: Option<[u8; 16]>,
-    body: usize,
-    end: usize,
+    body: u64,
+    end: u64,
 }
 
 /// The boxes in `bytes[from..to]`, up to the first malformed one.
-fn boxes(bytes: &[u8], from: usize, to: usize, budget: &mut usize) -> Vec<Bx> {
+fn boxes(bytes: Source<'_>, from: u64, to: u64, budget: &mut usize) -> Vec<Bx> {
     let to = to.min(bytes.len());
     let mut out = Vec::new();
     let mut at = from;
     while at.saturating_add(8) <= to && *budget > 0 {
         *budget -= 1;
-        let u32_at = |a: usize| {
-            bytes
-                .get(a..a + 4)
-                .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+        let Some(size) = bytes.u32(Order::Big, at) else {
+            break;
         };
-        let Some(size) = u32_at(at) else { break };
-        let mut kind = [0; 4];
-        kind.copy_from_slice(&bytes[at + 4..at + 8]);
+        let Some(kind) = bytes.array::<4>(at + 4) else {
+            break;
+        };
         let (len, mut head) = match size {
             0 => (to - at, 8),
-            1 => match bytes
-                .get(at + 8..at + 16)
-                .map(|b| u64::from_be_bytes(b.try_into().unwrap_or([0; 8])))
-                .and_then(|v| usize::try_from(v).ok())
-            {
+            1 => match bytes.u64(Order::Big, at + 8) {
                 Some(len) => (len, 16),
                 None => break,
             },
-            n => (n as usize, 8),
+            n => (u64::from(n), 8),
         };
         let Some(end) = at.checked_add(len).filter(|&e| e <= to && len >= head) else {
             break;
         };
         let mut uuid = None;
         if &kind == b"uuid" {
-            let Some(u) = bytes
-                .get(at + head..at + head + 16)
+            let Some(id) = bytes
+                .array::<16>(at + head)
                 .filter(|_| at + head + 16 <= end)
             else {
                 break;
             };
-            let mut id = [0; 16];
-            id.copy_from_slice(u);
             uuid = Some(id);
             head += 16;
         }
@@ -128,20 +120,19 @@ struct Track {
     width: u32,
     height: u32,
     /// Child boxes of the sample entry: `CMP1`'s and `IAD1`'s payloads.
-    cmp1: Option<(usize, usize)>,
-    iad1: Option<(usize, usize)>,
+    cmp1: Option<(u64, u64)>,
+    iad1: Option<(u64, u64)>,
     jpeg: bool,
     hevc: bool,
     /// The first sample: offset and size.
     sample: Option<(u64, u64)>,
 }
 
-fn be32(b: &[u8], at: usize) -> Option<u32> {
-    b.get(at..at.checked_add(4)?)
-        .map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
+fn be32(b: Source<'_>, at: u64) -> Option<u32> {
+    b.u32(Order::Big, at)
 }
 
-fn track(bytes: &[u8], trak: &Bx, budget: &mut usize) -> Track {
+fn track(bytes: Source<'_>, trak: &Bx, budget: &mut usize) -> Track {
     let mut t = Track::default();
     let mut stack = vec![(trak.body, trak.end, 0)];
     let (mut size, mut offset) = (None, None);
@@ -165,9 +156,7 @@ fn track(bytes: &[u8], trak: &Bx, budget: &mut usize) -> Track {
                     };
                 }
                 b"co64" if be32(bytes, b.body + 4).is_some_and(|n| n > 0) => {
-                    offset = bytes
-                        .get(b.body + 8..b.body + 16)
-                        .map(|s| u64::from_be_bytes(s.try_into().unwrap_or([0; 8])));
+                    offset = bytes.u64(Order::Big, b.body + 8);
                 }
                 b"stco" if be32(bytes, b.body + 4).is_some_and(|n| n > 0) => {
                     offset = be32(bytes, b.body + 8).map(u64::from);
@@ -180,16 +169,12 @@ fn track(bytes: &[u8], trak: &Bx, budget: &mut usize) -> Track {
     t
 }
 
-fn entry(bytes: &[u8], e: &Bx, t: &mut Track, budget: &mut usize) {
+fn entry(bytes: Source<'_>, e: &Bx, t: &mut Track, budget: &mut usize) {
     t.entry = e.kind;
     if &e.kind != b"CRAW" {
         return;
     }
-    let u16_at = |a: usize| {
-        bytes
-            .get(a..a + 2)
-            .map_or(0, |b| u32::from(u16::from_be_bytes([b[0], b[1]])))
-    };
+    let u16_at = |a: u64| u32::from(bytes.u16(Order::Big, a).unwrap_or(0));
     t.width = u16_at(e.body + 24);
     t.height = u16_at(e.body + 26);
     for c in boxes(bytes, e.body + CRAW_CHILDREN, e.end, budget) {
@@ -213,11 +198,11 @@ fn entry(bytes: &[u8], e: &Bx, t: &mut Track, budget: &mut usize) {
 /// The parts of a CR3 read here.
 struct Cr3<'a> {
     /// `CMT1` to `CMT4`.
-    cmt: [Option<&'a [u8]>; 4],
+    cmt: [Option<Source<'a>>; 4],
     tracks: Vec<Track>,
 }
 
-fn parse(bytes: &[u8]) -> Cr3<'_> {
+fn parse(bytes: Source<'_>) -> Cr3<'_> {
     let mut budget = MAX_BOXES;
     let mut out = Cr3 {
         cmt: [None; 4],
@@ -238,7 +223,7 @@ fn parse(bytes: &[u8]) -> Cr3<'_> {
                             b"CMT4" => 3,
                             _ => continue,
                         };
-                        out.cmt[i] = bytes.get(c.body..c.end);
+                        out.cmt[i] = bytes.slice_exact(c.body, c.end - c.body);
                     }
                 }
                 b"trak" => out.tracks.push(track(bytes, &m, &mut budget)),
@@ -262,7 +247,7 @@ fn top_level<T>(
     let mut at = 0u64;
     for _ in 0..MAX_TOP_BOXES {
         let head = f.read_upto(at, 32).filter(|h| h.len() >= 8)?;
-        let len = match be32(&head, 0)? {
+        let len = match be32(head.as_slice().into(), 0)? {
             0 => f.len - at,
             1 => u64::from_be_bytes(head.get(8..16)?.try_into().ok()?),
             n => u64::from(n),
@@ -284,7 +269,9 @@ pub(crate) fn exif_tiffs(f: &mut Pieces) -> ExifTiffs {
     top_level(f, |f, at, len, head| {
         (&head[4..8] == b"moov").then(|| {
             f.read(at, len).map_or_else(ExifTiffs::default, |moov| {
-                let [main, exif, _, gps] = parse(&moov).cmt.map(|cmt| cmt.map(<[u8]>::to_vec));
+                let [main, exif, _, gps] = parse(moov.as_slice().into())
+                    .cmt
+                    .map(|cmt| cmt.and_then(|s| s.get(0, s.len()).map(|b| b.into_owned())));
                 ExifTiffs { main, exif, gps }
             })
         })
@@ -303,7 +290,11 @@ const XMP_UUID: [u8; 16] = [
 pub(crate) fn xmp(f: &mut Pieces) -> Option<Vec<u8>> {
     top_level(f, |f, at, len, head| {
         // A large size takes 8 more bytes of the header.
-        let header = if be32(head, 0) == Some(1) { 16 } else { 8 };
+        let header = if be32(head.into(), 0) == Some(1) {
+            16
+        } else {
+            8
+        };
         let body = header + 16;
         (&head[4..8] == b"uuid" && head.get(header..body) == Some(XMP_UUID.as_slice()))
             .then(|| f.read(at + body as u64, len.checked_sub(body as u64)?))
@@ -321,7 +312,7 @@ const MAX_TIMED_NOTES: usize = 16;
 /// stream) that `f` reads something from. Each sample is read once, however
 /// many tracks name it, and the work is bounded.
 fn first_timed_note<T>(
-    bytes: &[u8],
+    bytes: Source<'_>,
     tracks: &[Track],
     mut f: impl FnMut(&[u8]) -> Option<T>,
 ) -> Option<T> {
@@ -338,14 +329,11 @@ fn first_timed_note<T>(
         // At most one entry per track, and the tracks are bounded by the box
         // budget.
         seen.push(key);
-        let Some(sample) = usize::try_from(key.0)
-            .ok()
-            .and_then(|at| bytes.get(at..at.checked_add(usize::try_from(key.1).ok()?)?))
-        else {
+        let Some(sample) = bytes.get(key.0, key.1) else {
             continue;
         };
         let mut at = 0;
-        while let Some(len) = le(sample, at).map(|l| l as usize) {
+        while let Some(len) = le(&sample, at).map(|l| l as usize) {
             items += 1;
             if items > MAX_TIMED_ITEMS {
                 return None;
@@ -387,13 +375,13 @@ fn first_timed_note<T>(
 /// sample of each timed metadata track, megabytes in, whose maker notes hold
 /// the white balance and the levels ([`first_timed_note`]). Empty until the
 /// `moov` box is read.
-pub(crate) fn header_parts(bytes: &[u8]) -> Vec<(u64, u64)> {
+pub(crate) fn header_parts(bytes: Source<'_>) -> Vec<(u64, u64)> {
     let timed = |t: &Track| (&t.entry == b"CTMD").then_some(t.sample).flatten();
     parse(bytes).tracks.iter().filter_map(timed).collect()
 }
 
 /// Reads a CR3's header facts.
-pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
+pub(crate) fn open(bytes: Source<'_>) -> Result<RawInfo> {
     let c = parse(bytes);
     // The full raw image: the first of the largest raw tracks (a Dual Pixel
     // file's second image is as large).
@@ -412,7 +400,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
         })
         .ok_or_else(|| Error::Unsupported("CR3 without a raw image".into()))?;
     let (start, end) = raw.cmp1.ok_or_else(|| corrupt("CR3 image header"))?;
-    let header = crx::Header::parse(bytes.get(start..end).unwrap_or_default())?;
+    let cmp1 = bytes.get(start, end - start);
+    let header = crx::Header::parse(cmp1.as_deref().unwrap_or_default())?;
     let variant = match header.levels {
         0 => Variant::Cr3Lossless,
         _ => Variant::Cr3Craw,
@@ -439,7 +428,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     // left and top masked borders and the active area; inclusive corners.
     let areas = raw
         .iad1
-        .and_then(|(s, e)| bytes.get(s..e))
+        .and_then(|(s, e)| bytes.get(s, e - s))
         .unwrap_or_default();
     // Four 16-bit corners from word `at` on.
     let rect = |at: usize| -> Option<[u32; 4]> {

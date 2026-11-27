@@ -25,8 +25,8 @@ pub(crate) struct HeaderlessPlan {
 }
 
 /// The header facts of a headerless file the table knows by its size.
-pub(crate) fn open(bytes: &[u8]) -> Option<RawInfo> {
-    let row = crate::facts::headerless(bytes.len() as u64)?;
+pub(crate) fn open(bytes: crate::io::Source<'_>) -> Option<RawInfo> {
+    let row = crate::facts::headerless(bytes.len())?;
     let [width, height] = row.raw_size;
     let [left, top, visible_width, visible_height] = row.visible;
     let colors: Vec<u8> = row

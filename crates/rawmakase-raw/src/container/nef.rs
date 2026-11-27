@@ -82,7 +82,7 @@ pub(crate) fn header_parts(t: &TiffFile) -> Vec<(u64, u64)> {
 }
 
 /// Reads a NEF's header facts.
-pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
+pub(crate) fn open(bytes: crate::io::Source<'_>, t: TiffFile) -> Result<RawInfo> {
     let raw =
         raw_directory(&t).ok_or_else(|| Error::Unsupported("NEF without a raw image".into()))?;
     let ifd = &t.ifds[raw];
@@ -101,9 +101,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     let strips = strips(&t, ifd)?;
     let size: u64 = strips.iter().map(|s| s.1).sum();
     let notes = crate::vendor::nikon::read(&t, &model);
-    let first = strips
-        .first()
-        .and_then(|&(at, _)| bytes.get(at as usize..(at as usize).checked_add(4)?));
+    let first = strips.first().and_then(|&(at, _)| bytes.array::<4>(at));
     let pixels = u64::from(width) * u64::from(height);
     let rows = u64::from(height);
     let row = |b: u64| (u64::from(width) * b).div_ceil(8);
@@ -118,7 +116,7 @@ pub(crate) fn open(bytes: &[u8], t: TiffFile) -> Result<RawInfo> {
     } else {
         Layout::Msb
     };
-    let (variant, mut layout, stride) = if first == Some(&[0xff, 0x10, 0xff, 0x50][..]) {
+    let (variant, mut layout, stride) = if first == Some([0xff, 0x10, 0xff, 0x50]) {
         // JPEG XS's SOC and CAP: High Efficiency, whatever the body.
         (Variant::NefHighEfficiency, Layout::Coded, 0)
     } else if compression == 34713 && size == pixels * 3 {
@@ -264,20 +262,25 @@ fn raw_directory(t: &TiffFile) -> Option<usize> {
 
 /// The pixels of the JPEG at `at` from its frame header (ITU T.81 B.2.2);
 /// 0 when it has none before the scan.
-fn jpeg_pixels(bytes: &[u8], at: u64, len: u64) -> u64 {
+fn jpeg_pixels(bytes: crate::io::Source<'_>, at: u64, len: u64) -> u64 {
+    // The JPEG's end must fit in `usize` before it is clamped to the file,
+    // so a 32-bit build rejects the same lengths it always has.
     let Some(jpeg) = usize::try_from(at)
         .ok()
         .zip(usize::try_from(at.saturating_add(len)).ok())
-        .and_then(|(start, end)| bytes.get(start..end.min(bytes.len())))
+        .and_then(|(_, end)| {
+            let end = (end as u64).min(bytes.len());
+            bytes.slice_exact(at, end.checked_sub(at)?)
+        })
     else {
         return 0;
     };
-    let mut i = 2;
-    while let Some(&[0xff, marker, hi, lo]) = jpeg.get(i..i + 4) {
-        let size = usize::from(u16::from_be_bytes([hi, lo]));
+    let mut i = 2u64;
+    while let Some([0xff, marker, hi, lo]) = jpeg.array::<4>(i) {
+        let size = u64::from(u16::from_be_bytes([hi, lo]));
         match marker {
             0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf => {
-                return jpeg.get(i + 5..i + 9).map_or(0, |d| {
+                return jpeg.array::<4>(i + 5).map_or(0, |d| {
                     u64::from(u16::from_be_bytes([d[0], d[1]]))
                         * u64::from(u16::from_be_bytes([d[2], d[3]]))
                 });
@@ -552,6 +555,26 @@ fn uncompressed(
 pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// A preview's end must fit in `usize` before it is clamped to the
+    /// file, so a 32-bit build ranks no preview whose length it can't hold.
+    #[test]
+    fn preview_pixels_need_an_end_inside_the_address_range() {
+        let mut bytes = vec![0; 16];
+        bytes.extend([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08]);
+        bytes.extend(480u16.to_be_bytes());
+        bytes.extend(640u16.to_be_bytes());
+        bytes.extend([0; 12]);
+        bytes.extend([0xff, 0xd9]);
+        let source = crate::io::Source::from(&bytes[..]);
+        let fits = |len: u64| usize::try_from(16u64.saturating_add(len)).is_ok();
+        for len in [u64::from(u32::MAX), usize::MAX as u64] {
+            let expected = if fits(len) { 640 * 480 } else { 0 };
+            assert_eq!(jpeg_pixels(source, 16, len), expected, "len {len}");
+        }
+        assert_eq!(jpeg_pixels(source, 16, bytes.len() as u64 - 16), 640 * 480);
+        assert_eq!(jpeg_pixels(source, bytes.len() as u64 + 1, 4), 0);
+    }
 
     /// A little-endian TIFF directory at `at` with its long values after it.
     fn directory(entries: &[(u16, u16, Vec<u8>)], at: usize) -> Vec<u8> {

@@ -3,6 +3,7 @@
 //! sensor data: each container lists its candidates, and the largest is the
 //! one thumbnails use.
 use crate::info::RawInfo;
+use crate::io::Source;
 
 /// An embedded JPEG or JPEG XL: where it is and, when known, its size in
 /// pixels.
@@ -14,10 +15,14 @@ pub(crate) struct Candidate {
 }
 
 /// The candidate thumbnails use: the most pixels, then the most bytes.
-pub(crate) fn largest(candidates: &[Candidate], bytes: &[u8]) -> Option<(u64, u64)> {
+pub(crate) fn largest<'a>(
+    candidates: &[Candidate],
+    bytes: impl Into<Source<'a>>,
+) -> Option<(u64, u64)> {
+    let bytes = bytes.into();
     candidates
         .iter()
-        .filter(|c| c.len > 2 && (is_jpeg(bytes, c.offset) || is_jpeg_xl(bytes, c.offset)))
+        .filter(|c| c.len > 2 && (is_jpeg(bytes, c.offset) || is_jpeg_xl_source(bytes, c.offset)))
         .max_by_key(|c| (c.pixels, c.len))
         .map(|c| (c.offset, c.len))
 }
@@ -27,11 +32,12 @@ pub(crate) fn largest(candidates: &[Candidate], bytes: &[u8]) -> Option<(u64, u6
 /// shape (not a letterboxed or turned one), the one with the fewest pixels;
 /// else the largest. The largest is often the full-size JPEG, many times the
 /// pixels to decode of a mid-sized one beside it.
-pub(crate) fn smallest_reaching(
+pub(crate) fn smallest_reaching<'a>(
     candidates: &[Candidate],
-    bytes: &[u8],
+    bytes: impl Into<Source<'a>>,
     edge: u32,
 ) -> Option<(u64, u64)> {
+    let bytes = bytes.into();
     let largest = largest(candidates, bytes)?;
     let size = |(at, len): (u64, u64)| {
         is_jpeg(bytes, at)
@@ -49,7 +55,7 @@ pub(crate) fn smallest_reaching(
         c.len > 2
             && c.offset
                 .checked_add(c.len)
-                .is_some_and(|end| end <= bytes.len() as u64)
+                .is_some_and(|end| end <= bytes.len())
     };
     candidates
         .iter()
@@ -65,39 +71,54 @@ pub(crate) fn smallest_reaching(
 /// (whose first byte is 0xEE) or Minolta's (whose first byte is another,
 /// before the second marker's 0xFF), the first byte read as 0xFF (our
 /// measurements).
-pub(crate) fn is_jpeg(bytes: &[u8], at: u64) -> bool {
-    usize::try_from(at)
-        .ok()
-        .and_then(|at| bytes.get(at..at.checked_add(3)?))
+pub(crate) fn is_jpeg<'a>(bytes: impl Into<Source<'a>>, at: u64) -> bool {
+    bytes
+        .into()
+        .array::<3>(at)
         .is_some_and(|b| b[..2] == [0xff, 0xd8] || b[..2] == [0xee, 0xd8] || b[1..] == [0xd8, 0xff])
 }
 
 /// Whether a JPEG XL starts at `at`: a bare codestream (ISO/IEC 18181-1) or
 /// its container (18181-2).
 pub fn is_jpeg_xl(bytes: &[u8], at: u64) -> bool {
+    is_jpeg_xl_source(bytes, at)
+}
+
+pub(crate) fn is_jpeg_xl_source<'a>(bytes: impl Into<Source<'a>>, at: u64) -> bool {
     const CONTAINER: [u8; 12] = [0, 0, 0, 12, b'J', b'X', b'L', b' ', 13, 10, 0x87, 10];
-    usize::try_from(at)
-        .ok()
-        .and_then(|at| bytes.get(at..))
-        .is_some_and(|b| b.starts_with(&[0xff, 0x0a]) || b.starts_with(&CONTAINER))
+    let bytes = bytes.into();
+    bytes.starts_with_at(at, &[0xff, 0x0a]) || bytes.starts_with_at(at, &CONTAINER)
 }
 
 /// The width and height of the JPEG `len` bytes at `at`, from its first
 /// start-of-frame segment (ITU T.81 B.2.2); `None` when the markers before
 /// it do not lead there within the JPEG.
-pub(crate) fn jpeg_size(bytes: &[u8], at: u64, len: u64) -> Option<[u32; 2]> {
+pub(crate) fn jpeg_size<'a>(bytes: impl Into<Source<'a>>, at: u64, len: u64) -> Option<[u32; 2]> {
+    let bytes = bytes.into();
+    // The JPEG must fit in memory's address range before it is clamped to
+    // the file, so a 32-bit build rejects the same lengths it always has.
     let start = usize::try_from(at).ok()?;
-    let end = start.checked_add(usize::try_from(len).ok()?)?;
-    let jpeg = bytes.get(start..end.min(bytes.len()))?;
-    let mut i = 2;
-    while let [0xff, marker, ..] = *jpeg.get(i..)? {
+    let end = start.checked_add(usize::try_from(len).ok()?)? as u64;
+    let end = end.min(bytes.len());
+    if end.checked_sub(at)? < 2 {
+        return None;
+    }
+    let mut i = at.checked_add(2)?;
+    while i.checked_add(2)? <= end {
+        let [b0, marker] = bytes.array::<2>(i)?;
+        if b0 != 0xff {
+            break;
+        }
         match marker {
             // Fill bytes before a marker.
             0xff => i += 1,
             // Start of frame, other than DHT, JPG and DAC: precision, then
             // height and width.
             0xc0..=0xcf if !matches!(marker, 0xc4 | 0xc8 | 0xcc) => {
-                let f = jpeg.get(i + 4..i + 9)?;
+                if i.checked_add(9)? > end {
+                    return None;
+                }
+                let f = bytes.array::<5>(i + 4)?;
                 let (h, w) = (
                     u16::from_be_bytes([f[1], f[2]]),
                     u16::from_be_bytes([f[3], f[4]]),
@@ -109,8 +130,11 @@ pub(crate) fn jpeg_size(bytes: &[u8], at: u64, len: u64) -> Option<[u32; 2]> {
             // Markers without a length.
             0x01 | 0xd0..=0xd7 => i += 2,
             _ => {
-                let l = jpeg.get(i + 2..i + 4)?;
-                i += 2 + usize::from(u16::from_be_bytes([l[0], l[1]]));
+                if i.checked_add(4)? > end {
+                    return None;
+                }
+                let l = bytes.array::<2>(i + 2)?;
+                i = i.checked_add(2 + u64::from(u16::from_be_bytes(l)))?;
             }
         }
     }
@@ -139,15 +163,18 @@ impl std::fmt::Display for NoPreview {
 impl std::error::Error for NoPreview {}
 
 /// Where the preview thumbnails use is in the file: offset and length.
-pub(crate) fn find(info: &RawInfo, bytes: &[u8]) -> Result<(u64, u64), NoPreview> {
+pub(crate) fn find<'a>(
+    info: &RawInfo,
+    bytes: impl Into<Source<'a>>,
+) -> Result<(u64, u64), NoPreview> {
     largest(&info.previews, bytes).ok_or(none(info))
 }
 
 /// Where the preview for a thumbnail `edge` pixels on its long side is in
 /// the file (see [`smallest_reaching`]).
-pub(crate) fn find_reaching(
+pub(crate) fn find_reaching<'a>(
     info: &RawInfo,
-    bytes: &[u8],
+    bytes: impl Into<Source<'a>>,
     edge: u32,
 ) -> Result<(u64, u64), NoPreview> {
     smallest_reaching(&info.previews, bytes, edge).ok_or(none(info))
@@ -172,6 +199,24 @@ mod tests {
         assert!(!super::is_jpeg(&bytes, 6));
         assert!(!super::is_jpeg(&bytes, 8));
         assert!(!super::is_jpeg(&bytes, u64::MAX));
+    }
+
+    /// A JPEG's declared length must fit in `usize` from its offset before
+    /// it is clamped to the file, as on 32-bit targets it always had to.
+    #[test]
+    fn a_jpeg_length_past_the_address_range_has_no_size() {
+        let (jpeg, _) = jpegs(&[[640, 480]]);
+        let bytes = [vec![0; 16], jpeg].concat();
+        assert_eq!(super::jpeg_size(&bytes, 16, usize::MAX as u64), None);
+        assert_eq!(
+            super::jpeg_size(&bytes, 16, (usize::MAX - 16) as u64),
+            Some([640, 480])
+        );
+        assert_eq!(
+            super::jpeg_size(&bytes, 16, bytes.len() as u64 - 16),
+            Some([640, 480])
+        );
+        assert_eq!(super::jpeg_size(&bytes, bytes.len() as u64 + 1, 2), None);
     }
 
     /// JPEG headers of these sizes, one after another, as candidates.

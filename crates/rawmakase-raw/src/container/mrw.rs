@@ -14,7 +14,7 @@ use crate::codec::packed::{self, Packing};
 use crate::error::{Error, Result, corrupt};
 use crate::exif_tiffs::ExifTiffs;
 use crate::info::{Cfa, RawInfo};
-use crate::io::{Bytes, Order, Pieces};
+use crate::io::{Order, Pieces};
 use crate::sensor::Sensor;
 use crate::variant::{Plan, Variant};
 use rawmakase_cancel::Cancel;
@@ -32,25 +32,24 @@ pub(crate) struct MrwPlan {
 }
 
 /// Whether `bytes` is an MRW.
-pub(crate) fn is_mrw(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"\0MRM")
+pub(crate) fn is_mrw<'a>(bytes: impl Into<crate::io::Source<'a>>) -> bool {
+    bytes.into().starts_with(b"\0MRM")
 }
 
 /// The blocks read, and where the sensor data starts.
-struct Blocks<'a> {
+struct Blocks {
     data: u64,
-    prd: Option<&'a [u8]>,
-    wbg: Option<&'a [u8]>,
-    rif: Option<&'a [u8]>,
+    prd: Option<[u8; 24]>,
+    wbg: Option<[u8; 12]>,
+    rif: Option<[u8; 16]>,
     /// Where TTW's TIFF starts, and its block's size.
     ttw: Option<(u64, u64)>,
 }
 
-fn blocks(bytes: &[u8]) -> Result<Blocks<'_>> {
-    let b = Bytes::new(bytes, Order::Big);
+fn blocks(bytes: crate::io::Source<'_>) -> Result<Blocks> {
     let mut out = Blocks {
         data: 8u64
-            .checked_add(u64::from(b.u32(4)?))
+            .checked_add(u64::from(bytes.read_u32(Order::Big, 4)?))
             .ok_or_else(|| corrupt("MRW size"))?,
         prd: None,
         wbg: None,
@@ -62,13 +61,13 @@ fn blocks(bytes: &[u8]) -> Result<Blocks<'_>> {
         if at.saturating_add(8) > out.data {
             break;
         }
-        let name = b.slice(at, 4)?;
-        let size = u64::from(b.u32(at + 4)?);
+        let name = bytes.read_array::<4>(at)?;
+        let size = u64::from(bytes.read_u32(Order::Big, at + 4)?);
         let body = at + 8;
-        match name {
-            b"\0PRD" if size >= 24 => out.prd = Some(b.slice(body, 24)?),
-            b"\0WBG" if size >= 12 => out.wbg = Some(b.slice(body, 12)?),
-            b"\0RIF" if size >= 16 => out.rif = Some(b.slice(body, 16)?),
+        match &name {
+            b"\0PRD" if size >= 24 => out.prd = Some(bytes.read_array(body)?),
+            b"\0WBG" if size >= 12 => out.wbg = Some(bytes.read_array(body)?),
+            b"\0RIF" if size >= 16 => out.rif = Some(bytes.read_array(body)?),
             b"\0TTW" => out.ttw = Some((body, size)),
             _ => {}
         }
@@ -84,7 +83,7 @@ pub(crate) fn exif_tiffs(f: &mut Pieces) -> ExifTiffs {
         .read(4, 4)
         .and_then(|size| f.read(0, 8 + u64::from(u32::from_be_bytes(size.try_into().ok()?))));
     let main = head.as_deref().and_then(|head| {
-        let (at, size) = blocks(head).ok()?.ttw?;
+        let (at, size) = blocks(head.into()).ok()?.ttw?;
         let at = usize::try_from(at).ok()?;
         let end = at
             .saturating_add(usize::try_from(size).ok()?)
@@ -98,7 +97,7 @@ pub(crate) fn exif_tiffs(f: &mut Pieces) -> ExifTiffs {
 }
 
 /// Reads the header facts.
-pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
+pub(crate) fn open(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
     let Blocks {
         data,
         prd,

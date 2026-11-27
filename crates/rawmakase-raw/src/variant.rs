@@ -270,6 +270,11 @@ pub(crate) enum Plan {
 
 /// Reads the header facts of the RAW file in `bytes`.
 pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
+    open_source(crate::io::Source::Slice(bytes))
+}
+
+/// As [`open`], the file read through a [`crate::io::Source`].
+pub(crate) fn open_source(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
     let mut info = probe(bytes)?;
     crate::names::apply(&mut info);
     if let Plan::Cr2(plan) = &info.plan {
@@ -296,8 +301,9 @@ const SHORT_VALUE: u64 = 64 << 10;
 /// and a Nikon 1's are megabytes in, after an image), and what a NEF's or an
 /// ORF's reader names besides. `None` when the container can't be read in
 /// pieces.
-pub(crate) fn header_parts(bytes: &[u8]) -> Option<Vec<(u64, u64)>> {
+pub(crate) fn header_parts<'a>(bytes: impl Into<crate::io::Source<'a>>) -> Option<Vec<(u64, u64)>> {
     use crate::container::{cr2, cr3, nef, orf, raf, tiff};
+    let bytes = bytes.into();
     if raf::is_raf(bytes) {
         return Some(raf::header_parts(bytes));
     }
@@ -323,7 +329,7 @@ pub(crate) fn header_parts(bytes: &[u8]) -> Option<Vec<(u64, u64)>> {
 }
 
 /// The container's own reading of the file, names as the file writes them.
-fn probe(bytes: &[u8]) -> Result<RawInfo> {
+fn probe(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
     if crate::container::raf::is_raf(bytes) {
         return crate::container::raf::open(bytes);
     }
@@ -399,7 +405,7 @@ fn probe(bytes: &[u8]) -> Result<RawInfo> {
         return Err(crate::error::corrupt("TIFF directory"));
     }
     // An ISO base media file (an `ftyp` box first) other than a CR3.
-    if bytes.get(4..8) == Some(b"ftyp") {
+    if bytes.starts_with_at(4, b"ftyp") {
         return Err(Error::Unsupported(
             "ISO base media file of no known RAW".into(),
         ));

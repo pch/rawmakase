@@ -174,7 +174,7 @@ pub(crate) fn presets(t: &TiffFile, ifd: &Ifd) -> Presets {
 /// ratio crop and is not used.
 pub(crate) fn focal_35mm(t: &TiffFile, ifd: &Ifd) -> Option<f32> {
     let at = ifd.entries.get(&CAMERA_IFD).and_then(|e| t.offset_of(e))?;
-    let camera = TiffFile::parse(t.bytes.data, at)?;
+    let camera = TiffFile::parse(t.data, at)?;
     camera.int(&camera.ifds[0], 0x1203).map(|v| v as f32)
 }
 

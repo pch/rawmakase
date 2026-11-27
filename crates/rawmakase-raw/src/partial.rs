@@ -96,9 +96,11 @@ fn largest_in_pieces(
 ) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, allow)?;
-    let (at, len) = crate::preview::find(&info, &f.bytes).ok()?;
+    let (at, len) = crate::preview::find(&info, f.source()).ok()?;
     f.fill(at, len)?;
-    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    let preview = crate::embedded_source(f.source(), (at, len))
+        .ok()?
+        .into_owned();
     Some(PartialPreview {
         info,
         preview,
@@ -206,9 +208,11 @@ fn in_pieces(
 ) -> Option<PartialPreview> {
     let mut f = Sparse::new(file)?;
     let info = header_in_pieces(&mut f, allow)?;
-    let (at, len) = crate::preview::find_reaching(&info, &f.bytes, edge).ok()?;
+    let (at, len) = crate::preview::find_reaching(&info, f.source(), edge).ok()?;
     f.fill(at, len)?;
-    let preview = crate::embedded(&f.bytes, (at, len)).ok()?.into_owned();
+    let preview = crate::embedded_source(f.source(), (at, len))
+        .ok()?
+        .into_owned();
     Some(PartialPreview {
         info,
         preview,
@@ -227,7 +231,7 @@ fn header_in_pieces<R: Read + Seek>(
     f.fill(0, HEAD)?;
     f.fill(f.len().saturating_sub(TAIL), TAIL)?;
     f.fill_header_parts()?;
-    let info = crate::variant::open(&f.bytes).ok()?;
+    let info = crate::variant::open_source(f.source()).ok()?;
     if !allow(info.variant) {
         return None;
     }
@@ -242,8 +246,8 @@ fn header_in_pieces<R: Read + Seek>(
         // looked for in the part read alone, so that a frame header cut short
         // isn't completed with zeros.
         let mut read = c.len.min(CANDIDATE_HEAD);
-        while crate::preview::is_jpeg(&f.bytes, c.offset)
-            && crate::preview::jpeg_size(&f.bytes, c.offset, read).is_none()
+        while crate::preview::is_jpeg(f.source(), c.offset)
+            && crate::preview::jpeg_size(f.source(), c.offset, read).is_none()
         {
             if read >= c.len {
                 // Read whole without a frame: the readers see the same
@@ -265,7 +269,7 @@ fn header_in_pieces<R: Read + Seek>(
     // read whole. The candidates themselves come from the directories
     // already read; should they differ, a reader used what wasn't read.
     let first: Vec<_> = info.previews.iter().map(|c| (c.offset, c.len)).collect();
-    let info = crate::variant::open(&f.bytes).ok()?;
+    let info = crate::variant::open_source(f.source()).ok()?;
     if !allow(info.variant) || !info.previews.iter().map(|c| (c.offset, c.len)).eq(first) {
         return None;
     }
@@ -305,6 +309,11 @@ impl<'r, R: Read + Seek> Sparse<'r, R> {
     fn len(&self) -> u64 {
         self.bytes.len() as u64
     }
+    /// The buffer as the readers read it: zeros where the file hasn't been
+    /// read.
+    fn source(&self) -> crate::io::Source<'_> {
+        crate::io::Source::Slice(&self.bytes)
+    }
     /// Reads `len` bytes at `at`, fewer where the file ends sooner, skipping
     /// what has been read already.
     fn fill(&mut self, at: u64, len: u64) -> Option<()> {
@@ -331,7 +340,7 @@ impl<'r, R: Read + Seek> Sparse<'r, R> {
     /// missing after [`MAX_ROUNDS`].
     fn fill_header_parts(&mut self) -> Option<()> {
         for _ in 0..MAX_ROUNDS {
-            let mut parts = crate::variant::header_parts(&self.bytes)?;
+            let mut parts = crate::variant::header_parts(self.source())?;
             parts.retain(|&(at, len)| !self.gaps(at, at.saturating_add(len)).is_empty());
             if parts.is_empty() {
                 return Some(());

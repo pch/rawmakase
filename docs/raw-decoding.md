@@ -112,6 +112,11 @@ The container's parts are asked for until it names nothing new
 - the first bytes of the JPEG some Olympus compacts store after their sensor
   data, listed by no directory (`orf::header_parts`).
 
+The header, container and preview readers take the file as an `io::Source`,
+bounds-checked reads at file offsets that are `None` past the end. Here it
+is a buffer the file's size, filled where the file has been read and zeros
+elsewhere; for a file read whole it is the file's bytes.
+
 A reader can't tell zeros not read from the file's own, so reading in pieces
 is used only for the variants whose previews and header facts read this way
 matched the whole-file ones (`partial::checked`), and a preview smaller than
@@ -137,7 +142,7 @@ Modules, each with a small `pub(crate)` surface:
 
 | Module | Owns |
 | --- | --- |
-| `io` | Bounded byte reads, in memory or in pieces of the file, and the allocation limits |
+| `io` | Bounded byte reads, in memory (`Source`, what the header readers read through) or in pieces of the file, and the allocation limits |
 | `exif_tiffs` | Where a CR3, MRW or X3F keeps its camera's EXIF, read from the file's pieces (`exif_tiffs`) |
 | `captured` | Capture dates read from a file's pieces, by container (`capture_dates`) |
 | `partial` | A thumbnail's embedded preview read in pieces, for the variants checked against whole-file reads (`preview_from_file`) |

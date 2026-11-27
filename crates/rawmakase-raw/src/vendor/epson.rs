@@ -37,11 +37,10 @@ pub(crate) struct Notes {
 pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     let entry = t.exif.as_ref()?.entries.get(&0x927c)?;
     let at = t.offset_of(entry)?;
-    let head = t.bytes.data.get(usize::try_from(at).ok()?..)?;
-    if !head.starts_with(b"EPSON\0") {
+    if !t.data.starts_with_at(at, b"EPSON\0") {
         return None;
     }
-    let ifd = t.ifd_at(at + 8)?;
+    let ifd = t.ifd_at(at.checked_add(8)?)?;
     let size = match IMAGE_SIZE.map(|tag| t.int(&ifd, tag)) {
         [Some(w), Some(h)] => Some([w, h]),
         _ => None,

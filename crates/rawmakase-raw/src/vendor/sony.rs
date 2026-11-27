@@ -89,12 +89,9 @@ impl Sr2 {
         let ifd = t.ifd_at(at)?;
         let start = t.int(&ifd, SR2_OFFSET)?;
         let len = t.int(&ifd, SR2_LENGTH)?.min(SR2_MAX);
-        let key = t.bytes_of(&ifd, SR2_KEY).filter(|k| k.len() == 4)?;
-        let mut plain = t
-            .bytes
-            .slice(u64::from(start), u64::from(len))
-            .ok()?
-            .to_vec();
+        let key = t.bytes_of(&ifd, SR2_KEY);
+        let key = key.as_deref().filter(|k| k.len() == 4)?;
+        let mut plain = t.data.get(u64::from(start), u64::from(len))?.into_owned();
         decrypt(&mut plain, t.u32(key));
         Some(Self {
             start: u64::from(start),
@@ -298,7 +295,7 @@ impl Mrw {
     pub(crate) fn read(t: &TiffFile) -> Option<Self> {
         let private = t.bytes_of(&t.ifds[0], DNG_PRIVATE_DATA)?;
         let at = u64::from(t.u32(private.get(..4)?));
-        let head = t.bytes.slice(at, 8).ok()?;
+        let head = t.data.array::<8>(at)?;
         // "\0MRM" in Motorola's byte order, "\0MRI" in Intel's.
         let little = match &head[..4] {
             b"\0MRI" => true,
@@ -323,14 +320,14 @@ impl Mrw {
             })
         };
         let len = u64::from(u32_at(&head[4..]));
-        let body = t.bytes.slice(at + 8, len.min(4096)).ok()?;
+        let body = t.data.get(at + 8, len.min(4096))?;
         let mut mrw = Self {
             width: 0,
             height: 0,
             cam_mul: [0.; 4],
             presets: Default::default(),
         };
-        let mut rest = body;
+        let mut rest: &[u8] = &body;
         while rest.len() >= 8 {
             let size = usize::try_from(u32_at(&rest[4..])).ok()?;
             let block = rest.get(8..8usize.checked_add(size)?)?;
@@ -391,7 +388,7 @@ fn maker_note(t: &TiffFile) -> Option<Ifd> {
     let exif = t.exif.as_ref()?;
     let e = exif.entries.get(&0x927c)?;
     let at = u64::from(t.u32(&e.value));
-    let head = t.bytes.slice(at, 12).ok()?;
+    let head = t.data.array::<12>(at)?;
     let at = if head.starts_with(b"SONY") {
         at + 12
     } else {

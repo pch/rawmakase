@@ -10,7 +10,7 @@
 //! Sources: ExifTool's PhaseOne tag documentation (tag names and the raw
 //! format values), and our own measurements on the test dataset's files
 //! (the entry layout, which tags are integers and which floats).
-use crate::io::{Bytes, Order};
+use crate::io::{Order, Source};
 
 const ORIENTATION: u32 = 0x0100;
 const WB_LEVELS: u32 = 0x0107;
@@ -65,15 +65,15 @@ pub(crate) struct Notes {
 }
 
 /// The directory of the block at `base` in `file`, when there is one.
-pub(crate) fn read(file: &[u8], base: u64) -> Option<Notes> {
-    let order = match file.get(usize::try_from(base).ok()?..)?.get(..4)? {
+pub(crate) fn read<'a>(file: impl Into<Source<'a>>, base: u64) -> Option<Notes> {
+    let file = file.into();
+    let order = match &file.array::<4>(base)? {
         b"IIII" => Order::Little,
         b"MMMM" => Order::Big,
         _ => return None,
     };
-    let b = Bytes::new(file, order);
-    let at = base.checked_add(u64::from(b.u32(base + 8).ok()?))?;
-    let count = b.u32(at).ok()?;
+    let at = base.checked_add(u64::from(file.u32(order, base + 8)?))?;
+    let count = file.u32(order, at)?;
     if count == 0 || count > MAX_ENTRIES {
         return None;
     }
@@ -81,9 +81,9 @@ pub(crate) fn read(file: &[u8], base: u64) -> Option<Notes> {
     for i in 0..u64::from(count) {
         let e = at + 8 + i * 16;
         entries.push(Entry {
-            tag: b.u32(e).ok()?,
-            size: b.u32(e + 8).ok()?,
-            value: b.u32(e + 12).ok()?,
+            tag: file.u32(order, e)?,
+            size: file.u32(order, e + 8)?,
+            value: file.u32(order, e + 12)?,
         });
     }
     let get = |tag: u32| entries.iter().find(|e| e.tag == tag).copied();
@@ -93,15 +93,15 @@ pub(crate) fn read(file: &[u8], base: u64) -> Option<Notes> {
         let e = get(tag)?;
         let start = base.checked_add(u64::from(e.value))?;
         let end = start.checked_add(u64::from(e.size))?;
-        (end <= file.len() as u64).then_some((start, u64::from(e.size)))
+        (end <= file.len()).then_some((start, u64::from(e.size)))
     };
     let wb = block(WB_LEVELS).and_then(|(at, size)| {
-        let level = |i: u64| b.u32(at + 4 * i).ok().map(f32::from_bits);
+        let level = |i: u64| file.u32(order, at + 4 * i).map(f32::from_bits);
         let levels = [level(0)?, level(1)?, level(2)?];
         (size >= 12 && levels.iter().all(|v| v.is_finite() && *v > 0.)).then_some(levels)
     });
     let lens = block(LENS_MODEL)
-        .and_then(|(at, size)| b.slice(at, size.min(MAX_TEXT)).ok())
+        .and_then(|(at, size)| file.get(at, size.min(MAX_TEXT)))
         .map(|text| {
             let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
             String::from_utf8_lossy(&text[..end]).trim().to_string()

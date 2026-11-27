@@ -4,7 +4,7 @@
 use super::tiff::{NAME_MAX, TEXT_MAX, TiffFile};
 use crate::captured::CaptureDates;
 use crate::info::RawInfo;
-use crate::io::{Bytes, Order};
+use crate::io::{Order, Source};
 
 pub(crate) fn read(t: &TiffFile, info: &mut RawInfo) {
     for ifd in [Some(&t.ifds[0]), t.exif.as_ref()].into_iter().flatten() {
@@ -89,17 +89,21 @@ pub(crate) fn dates(t: &TiffFile, dates: &mut CaptureDates) {
 
 /// Where the TIFF of the JPEG's EXIF (APP1 "Exif") is, from its start to
 /// the segment's end, the JPEG `len` bytes at `jpeg` in `bytes`.
-pub(crate) fn in_jpeg(bytes: &[u8], jpeg: u64, len: u64) -> Option<std::ops::Range<u64>> {
-    let b = Bytes::new(bytes, Order::Big);
+pub(crate) fn in_jpeg<'a>(
+    bytes: impl Into<Source<'a>>,
+    jpeg: u64,
+    len: u64,
+) -> Option<std::ops::Range<u64>> {
+    let b = bytes.into();
     let end = jpeg.checked_add(len)?;
-    if b.u16(jpeg).ok()? != 0xffd8 {
+    if b.u16(Order::Big, jpeg)? != 0xffd8 {
         return None;
     }
     let mut at = jpeg + 2;
     while at + 4 <= end {
-        let marker = b.u16(at).ok()?;
-        let size = u64::from(b.u16(at + 2).ok()?);
-        if marker == 0xffe1 && b.slice(at + 4, 6).ok()? == b"Exif\0\0" {
+        let marker = b.u16(Order::Big, at)?;
+        let size = u64::from(b.u16(Order::Big, at + 2)?);
+        if marker == 0xffe1 && *b.get(at + 4, 6)? == *b"Exif\0\0" {
             return Some(at + 10..(at + 2 + size).max(at + 10));
         }
         if marker & 0xff00 != 0xff00 || marker == 0xffda || size < 2 {

@@ -40,26 +40,24 @@ const MAX_GAP: usize = 16;
 /// Where a JPEG ends: past its end of image marker, found by walking its
 /// segments (a scan's data up to the next marker other than a stuffed byte
 /// or a restart). `None` for a JPEG whose segments do not read.
-pub(crate) fn jpeg_end(bytes: &[u8]) -> Option<usize> {
+pub(crate) fn jpeg_end<'a>(bytes: impl Into<crate::io::Source<'a>>) -> Option<u64> {
+    let bytes = bytes.into();
     if !bytes.starts_with(&[0xff, 0xd8]) {
         return None;
     }
-    let mut at = 2usize;
+    let mut at = 2u64;
     loop {
-        if *bytes.get(at)? != 0xff {
+        if bytes.byte(at)? != 0xff {
             return None;
         }
-        let marker = *bytes.get(at + 1)?;
+        let marker = bytes.byte(at + 1)?;
         match marker {
             // Fill bytes.
             0xff => at += 1,
             0xd9 => return Some(at + 2),
             0x01 | 0xd0..=0xd7 => at += 2,
             _ => {
-                let len = usize::from(u16::from_be_bytes([
-                    *bytes.get(at + 2)?,
-                    *bytes.get(at + 3)?,
-                ]));
+                let len = u64::from(bytes.u16(crate::io::Order::Big, at + 2)?);
                 if len < 2 {
                     return None;
                 }
@@ -68,9 +66,8 @@ pub(crate) fn jpeg_end(bytes: &[u8]) -> Option<usize> {
                     // The scan's data: to the next 0xFF not followed by 0 or
                     // a restart marker.
                     loop {
-                        let next = bytes.get(at..)?.iter().position(|&b| b == 0xff)?;
-                        at += next;
-                        match *bytes.get(at + 1)? {
+                        at = bytes.find_byte(at, bytes.len(), 0xff)?;
+                        match bytes.byte(at + 1)? {
                             0x00 | 0xd0..=0xd7 => at += 2,
                             _ => break,
                         }
@@ -93,26 +90,26 @@ struct Header {
 
 /// The raw block: "BRCM" just after the JPEG's end, its header's sizes
 /// non-zero, a row at least a byte per sample, and its rows in the file.
-fn block(bytes: &[u8]) -> Option<Header> {
+fn block(bytes: crate::io::Source<'_>) -> Option<Header> {
     let end = jpeg_end(bytes)?;
-    let window = bytes.get(end..bytes.len().min(end + MAX_GAP + 4))?;
-    let at = (end + window.windows(4).position(|w| w == b"BRCM")?) as u64;
-    let b = crate::io::Bytes::new(bytes, crate::io::Order::Little);
+    let window = bytes.get(end, (bytes.len() - end).min(MAX_GAP as u64 + 4))?;
+    let at = end + window.windows(4).position(|w| w == b"BRCM")? as u64;
+    let order = crate::io::Order::Little;
     let h = Header {
         at,
-        stride: u32::from(b.u16(at + 0xa0).ok()?),
-        width: u32::from(b.u16(at + 0xd0).ok()?),
-        height: u32::from(b.u16(at + 0xd2).ok()?),
-        bits: *b.slice(at + 0xf6, 1).ok()?.first()?,
+        stride: u32::from(bytes.u16(order, at + 0xa0)?),
+        width: u32::from(bytes.u16(order, at + 0xd0)?),
+        height: u32::from(bytes.u16(order, at + 0xd2)?),
+        bits: bytes.byte(at + 0xf6)?,
     };
     let rows = u64::from(h.stride) * u64::from(h.height);
-    (h.width > 0 && h.height > 0 && h.stride >= h.width && at + HEADER + rows <= bytes.len() as u64)
+    (h.width > 0 && h.height > 0 && h.stride >= h.width && at + HEADER + rows <= bytes.len())
         .then_some(h)
 }
 
 /// Whether `bytes` is a JPEG followed by Broadcom's raw block.
-pub(crate) fn is_brcm(bytes: &[u8]) -> bool {
-    block(bytes).is_some()
+pub(crate) fn is_brcm<'a>(bytes: impl Into<crate::io::Source<'a>>) -> bool {
+    block(bytes.into()).is_some()
 }
 
 /// The `key=` value of the ISP's settings text.
@@ -124,7 +121,7 @@ fn setting(text: &str, key: &str) -> Option<f32> {
 }
 
 /// Reads the header facts.
-pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
+pub(crate) fn open(bytes: crate::io::Source<'_>) -> Result<RawInfo> {
     let Header {
         at,
         stride,
@@ -132,8 +129,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
         height,
         bits,
     } = block(bytes).ok_or(Error::NotRaw)?;
-    let b = crate::io::Bytes::new(bytes, crate::io::Order::Little);
-    let name = b.slice(at + 16, 32)?;
+    let name = bytes.slice(at + 16, 32)?;
     let name = &name[..name.iter().position(|&c| c == 0).unwrap_or(32)];
     let sensor = String::from_utf8_lossy(name)
         .split_whitespace()
@@ -164,8 +160,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
         colors: cfa,
     }));
     // The JPEG's EXIF: an APP1 segment first.
-    if bytes.get(2..4) == Some(&[0xff, 0xe1])
-        && bytes.get(6..12) == Some(b"Exif\0\0")
+    if bytes.starts_with_at(2, &[0xff, 0xe1])
+        && bytes.starts_with_at(6, b"Exif\0\0")
         && let Some(t) = TiffFile::parse(bytes, 12)
     {
         super::tiff_exif::read(&t, &mut info);
@@ -183,7 +179,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<RawInfo> {
     // The JPEG: up to its end of image marker before the raw block.
     info.previews.push(crate::preview::Candidate {
         offset: 0,
-        len: jpeg_end(bytes).map_or(at, |e| e as u64),
+        len: jpeg_end(bytes).unwrap_or(at),
         pixels: 0,
     });
     let black = row.black.unwrap_or(0);

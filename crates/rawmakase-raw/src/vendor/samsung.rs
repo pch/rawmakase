@@ -33,7 +33,7 @@ pub(crate) struct Notes {
 /// The note the EXIF directory's MakerNote holds.
 pub(crate) fn read(t: &TiffFile) -> Option<Notes> {
     let entry = t.exif.as_ref()?.entries.get(&0x927c)?;
-    let view = TiffFile::view(t.bytes.data, t.offset_of(entry)?, t.bytes.order)?;
+    let view = TiffFile::view(t.data, t.offset_of(entry)?, t.order)?;
     let ifd = view.ifd_at(0)?;
     Some(notes(&view, &ifd))
 }
