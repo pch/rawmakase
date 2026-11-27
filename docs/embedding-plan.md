@@ -1191,7 +1191,11 @@ so the design is proved on one path before it is spread.
    either as a texture on the app's own device, to present, or as pixels.
    Measure 5 decides whether pixels need a second path, finished on the
    GPU and read back as 8-bit, in place of today's float readback and CPU
-   finish.
+   finish. The DirectX shader compiler's folder is one of the options:
+   since #1254 the engine loads `dxcompiler.dll` from beside `current_exe`,
+   which in an Electron app is Electron's own binary, not the addon's
+   folder. Main's lookup came with its environment reads, which
+   `scripts/deps-ambient.txt` counts until this step removes them.
 8. `examples/swift`, and CI on the macOS runner: the library checked for
    the device target, `aarch64-apple-ios`, with the features it has then,
    each feature added later joining the check; and built for the
