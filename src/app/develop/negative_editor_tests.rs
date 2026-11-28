@@ -821,3 +821,53 @@ fn shots_of_the_negative_panel() {
         draw_bottom,
     );
 }
+
+#[test]
+fn measure_crop_respects_transform_panel_off_for_constrain_crop() {
+    use crate::app::develop::state::Tool;
+    use crate::model::panels::{Panel, PanelState};
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan(&ctx, false, true);
+    in_edit_frame(&ctx, &mut editor, |e| {
+        let r = e.document.edit.recipe_mut();
+        r.negative = Some(NegativeConversion::new(FilmType::Colour));
+        r.crop = [0.1, 0.1, 0.9, 0.9];
+        r.constrain_crop = true;
+        r.lens_manual_distortion = -0.2;
+    });
+
+    editor.view.set_tool(Tool::Crop);
+    let effective = editor.effective_recipe();
+    assert_eq!(
+        editor.measure_crop(&effective),
+        Some(crate::develop::MeasureCrop {
+            crop: [0.1, 0.1, 0.9, 0.9],
+            constrain_crop: true,
+        })
+    );
+
+    // Switching the Transform panel off bypasses `constrain_crop` in normal renders,
+    // so `measure_crop` must mirror `as_rendered()` and clear `constrain_crop` too.
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document
+            .edit
+            .recipe_mut()
+            .panels
+            .set(Panel::Transform, PanelState::Off);
+    });
+    let effective = editor.effective_recipe();
+    assert_eq!(
+        editor.measure_crop(&effective),
+        Some(crate::develop::MeasureCrop {
+            crop: [0.1, 0.1, 0.9, 0.9],
+            constrain_crop: false,
+        })
+    );
+
+    // Without a crop, Transform off leaves `constrain_crop` false so no override is needed.
+    in_edit_frame(&ctx, &mut editor, |e| {
+        e.document.edit.recipe_mut().crop = [0., 0., 1., 1.];
+    });
+    let effective = editor.effective_recipe();
+    assert_eq!(editor.measure_crop(&effective), None);
+}

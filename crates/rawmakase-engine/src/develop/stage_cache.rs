@@ -494,6 +494,8 @@ pub(crate) struct MaskKey {
     samples: SampleKey,
     masks: Vec<(Vec<crate::model::masks::MaskComponent>, bool)>,
     recipe: Option<Recipe>,
+    /// Range masks read developed colors, which depend on `measure_crop` for negatives.
+    measure_crop: Option<crate::develop::MeasureCrop>,
 }
 impl Keyed for MaskKey {
     fn gone(&self) -> bool {
@@ -521,6 +523,9 @@ impl MaskKey {
                 masks: Vec::new(),
                 ..r.clone()
             }),
+            measure_crop: (ranges && r.negative.is_some())
+                .then_some(toned.measure_crop)
+                .flatten(),
         }
     }
 }
@@ -702,5 +707,60 @@ mod tests {
         );
         assert_eq!(lru.len(), ENTRIES);
         Ok(())
+    }
+    #[test]
+    fn mask_key_tracks_measure_crop_for_negative_range_masks() {
+        let im = Arc::new(CameraImage {
+            width: 32,
+            height: 24,
+            pixels: vec![[0.5; 3]; 32 * 24].into(),
+            metadata: Default::default(),
+            recovered: Default::default(),
+            hdr: Default::default(),
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+        });
+        let toned = |measure_crop| Toned {
+            image: im.clone(),
+            scale: 1.,
+            untextured: None,
+            measured: None,
+            unretouched: None,
+            measures: None,
+            measure_crop,
+        };
+        let mut r = Recipe {
+            negative: Some(crate::model::negative::NegativeConversion::new(
+                crate::model::negative::FilmType::Colour,
+            )),
+            ..Default::default()
+        };
+        let g = Geometry::new(&im, &r, 0);
+        let region = [0, 0, g.width, g.height];
+        let a = Some(crate::develop::MeasureCrop {
+            crop: [0.1, 0.1, 0.9, 0.9],
+            constrain_crop: false,
+        });
+        let b = Some(crate::develop::MeasureCrop {
+            crop: [0.2, 0.2, 0.8, 0.8],
+            constrain_crop: false,
+        });
+        assert!(
+            MaskKey::new(&toned(a), &r, &g, region, 0., true)
+                != MaskKey::new(&toned(b), &r, &g, region, 0., true),
+            "range mask on a negative must invalidate when measure_crop changes"
+        );
+        assert!(
+            MaskKey::new(&toned(a), &r, &g, region, 0., false)
+                == MaskKey::new(&toned(b), &r, &g, region, 0., false),
+            "non-range mask does not depend on measure_crop"
+        );
+        r.negative = None;
+        assert!(
+            MaskKey::new(&toned(a), &r, &g, region, 0., true)
+                == MaskKey::new(&toned(b), &r, &g, region, 0., true),
+            "positive photo range mask does not depend on measure_crop"
+        );
     }
 }

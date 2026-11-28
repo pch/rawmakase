@@ -461,6 +461,7 @@ impl Editor {
         } else {
             self.settings_on_screen().clone()
         };
+        let r = r.as_rendered();
         (r.crop != [0., 0., 1., 1.] || r.constrain_crop).then_some(crate::develop::MeasureCrop {
             crop: r.crop,
             constrain_crop: r.constrain_crop,
