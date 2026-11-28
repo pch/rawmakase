@@ -970,6 +970,160 @@ mod scenarios {
     }
 
     #[test]
+    fn present_photos_are_read_only_for_unknown_files_of_their_size() -> Result<()> {
+        let f = fixture()?;
+        f.cat
+            .db_for_tests()
+            .execute_batch("DELETE FROM photo_checksums")?;
+        // An unknown file no present photo shares a size with reads none.
+        std::fs::write(f.root.join("Lisbon/small.dng"), b"synthetic, small")?;
+        let _ = super::super::scan::take_present_reads();
+        let plan = f.plan(SyncScope::All)?;
+        assert!(super::super::scan::take_present_reads().is_empty());
+        assert_eq!(plan.additions.len(), 1);
+        assert!(plan.additions[0].copy_of.is_empty());
+        // A copy of one, the size of all three, reads each of them once.
+        let copy = f.root.join("Porto/copy.dng");
+        std::fs::copy(f.root.join("Lisbon/IMG_1002.dng"), &copy)?;
+        std::fs::write(f.root.join("Porto/other.dng"), bytes(82))?;
+        let plan = f.plan(SyncScope::All)?;
+        let mut read = super::super::scan::take_present_reads();
+        read.sort();
+        let mut expected = ["IMG_1001.dng", "IMG_1002.dng", "IMG_2001.dng"].map(|n| f.id(n));
+        expected.sort();
+        assert_eq!(read, expected);
+        let copied = plan.additions.iter().find(|a| a.file == copy).unwrap();
+        assert_eq!(copied.copy_of, [f.id("IMG_1002.dng")]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_present_photo_that_cannot_be_read_is_tried_once_per_scan() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt as _;
+        let f = fixture()?;
+        f.cat
+            .db_for_tests()
+            .execute_batch("DELETE FROM photo_checksums")?;
+        let unreadable = f.root.join("Lisbon/IMG_1001.dng");
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000))?;
+        if std::fs::File::open(&unreadable).is_ok() {
+            // Running as root: permissions don't stop the read.
+            std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644))?;
+            return Ok(());
+        }
+        // Three unknown files of the photos' size, none a copy.
+        for seed in [81, 82, 83] {
+            std::fs::write(f.root.join(format!("Porto/new-{seed}.dng")), bytes(seed))?;
+        }
+        let _ = super::super::scan::take_present_reads();
+        let plan = f.plan(SyncScope::All);
+        let read = super::super::scan::take_present_reads();
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644))?;
+        let plan = plan?;
+        let id = f.id("IMG_1001.dng");
+        assert_eq!(read.iter().filter(|r| **r == id).count(), 1, "{read:?}");
+        assert_eq!(read.len(), 3, "{read:?}");
+        assert!(plan.not_checked.is_empty(), "{:?}", plan.not_checked);
+        assert_eq!(plan.additions.len(), 3);
+        assert!(plan.additions.iter().all(|a| a.copy_of.is_empty()));
+        Ok(())
+    }
+
+    #[test]
+    fn a_stale_checksum_does_not_match_copies_of_the_old_bytes() -> Result<()> {
+        let f = fixture()?;
+        // The photo's file is replaced by one of another size; the checksum
+        // on record still describes the old bytes.
+        let replaced = f.root.join("Lisbon/IMG_1001.dng");
+        std::fs::write(&replaced, &bytes(9)[..100_000])?;
+        std::fs::write(f.root.join("Lisbon/old_copy_1.dng"), bytes(1))?;
+        std::fs::write(f.root.join("Lisbon/old_copy_2.dng"), bytes(1))?;
+        let inputs = f.cat.sync_inputs(SyncScope::All)?;
+        // No unknown file has the replacement's size, so it is never read.
+        let _ = super::super::scan::take_present_reads();
+        let plan = scan(&inputs, &|_| true, Cancel::NEVER, &|_| {})?;
+        assert!(super::super::scan::take_present_reads().is_empty());
+        assert!(plan.not_checked.is_empty(), "{:?}", plan.not_checked);
+        assert_eq!(plan.additions.len(), 2);
+        assert!(plan.additions.iter().all(|a| a.copy_of.is_empty()));
+        // Removing the replacement mid-scan doesn't leave either unchecked.
+        let plan = scan(&inputs, &|_| true, Cancel::NEVER, &|n| {
+            if n == 1 {
+                let _ = std::fs::remove_file(&replaced);
+            }
+        })?;
+        assert!(plan.not_checked.is_empty(), "{:?}", plan.not_checked);
+        assert_eq!(plan.additions.len(), 2);
+        assert!(plan.additions.iter().all(|a| a.copy_of.is_empty()));
+        Ok(())
+    }
+
+    #[test]
+    fn a_replaced_photo_matches_copies_of_its_new_bytes_only() -> Result<()> {
+        let f = fixture()?;
+        std::fs::write(f.root.join("Lisbon/IMG_1001.dng"), &bytes(9)[..100_000])?;
+        let new_copy = f.root.join("Lisbon/new_copy.dng");
+        let old_copy = f.root.join("Lisbon/old_copy.dng");
+        std::fs::write(&new_copy, &bytes(9)[..100_000])?;
+        std::fs::write(&old_copy, bytes(1))?;
+        let plan = f.plan(SyncScope::All)?;
+        let id = f.id("IMG_1001.dng");
+        let addition = |file: &Path| plan.additions.iter().find(|a| a.file == file).unwrap();
+        assert_eq!(addition(&new_copy).copy_of, [id]);
+        assert!(addition(&old_copy).copy_of.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_present_photo_with_stale_mtime_leaves_matching_files_unchecked() -> Result<()>
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        /// Makes the file readable again however the test ends, so the
+        /// temporary directory can be removed.
+        struct Readable<'a>(&'a Path);
+        impl Drop for Readable<'_> {
+            fn drop(&mut self) {
+                let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o644));
+            }
+        }
+        let mut f = fixture()?;
+        let present = f.root.join("Lisbon/present.dng");
+        let missing = f.root.join("Lisbon/missing.dng");
+        std::fs::write(&present, bytes(70))?;
+        std::fs::write(&missing, bytes(70))?;
+        f.cat.add_folder(&f.root)?;
+        f.checksum_all()?;
+        std::fs::remove_file(&missing)?;
+        let unknown = f.root.join("Lisbon/unknown.dng");
+        std::fs::copy(&present, &unknown)?;
+        // The same bytes and size, but the checksum on record no longer
+        // describes the file as it is now.
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(30);
+        std::fs::File::options()
+            .write(true)
+            .open(&present)?
+            .set_modified(later)?;
+        let _readable = Readable(&present);
+        std::fs::set_permissions(&present, std::fs::Permissions::from_mode(0o000))?;
+        if std::fs::File::open(&present).is_ok() {
+            // Running as root: permissions don't stop the read.
+            return Ok(());
+        }
+        let inputs = f.cat.sync_inputs(SyncScope::All)?;
+        let plan = scan(&inputs, &|_| true, Cancel::NEVER, &|_| {})?;
+        // The unknown file may be a copy of the unreadable photo, so it is
+        // neither the missing photo moved nor a new photo.
+        assert!(plan.moves.is_empty(), "{:?}", plan.moves);
+        assert!(plan.choices.is_empty(), "{:?}", plan.choices);
+        assert!(plan.additions.is_empty(), "{:?}", plan.additions);
+        assert_eq!(plan.not_checked.len(), 1, "{:?}", plan.not_checked);
+        assert_eq!(plan.not_checked[0].path, unknown);
+        Ok(())
+    }
+
+    #[test]
     fn previous_import_is_the_last_add_or_synchronize() -> Result<()> {
         let mut f = fixture()?;
         assert_eq!(f.cat.previous_import()?.len(), 3);

@@ -445,8 +445,10 @@ fn query<T: FromRow>(
 }
 
 /// `params` as rusqlite binds them.
-fn params_of<'a>(params: &'a [&'a dyn ToValue]) -> rusqlite::ParamsFromIter<Vec<Param<'a>>> {
-    rusqlite::params_from_iter(params.iter().map(|p| Param(*p)).collect::<Vec<_>>())
+fn params_of<'a>(
+    params: &'a [&'a dyn ToValue],
+) -> rusqlite::ParamsFromIter<impl Iterator<Item = Param<'a>> + 'a> {
+    rusqlite::params_from_iter(params.iter().map(|p| Param(*p)))
 }
 
 /// Implements [`Reads`] for a type with a `db: &Connection` field.
@@ -634,6 +636,15 @@ impl Row<'_> {
     }
     /// Column `index`, read as `T`.
     pub(in crate::catalog) fn get<T: FromValue>(&self, index: usize) -> Result<T> {
+        self.visit(index, |value| Ok(T::from_value(value)?))
+    }
+    /// Calls `f` with column `index` as a borrowed [`ValueRef`], so a caller
+    /// that only looks at the bytes need not copy them.
+    pub(in crate::catalog) fn visit<R>(
+        &self,
+        index: usize,
+        f: impl FnOnce(ValueRef<'_>) -> Result<R>,
+    ) -> Result<R> {
         let value = match self.row.get_ref(index)? {
             rusqlite::types::ValueRef::Null => ValueRef::Null,
             rusqlite::types::ValueRef::Integer(i) => ValueRef::Integer(i),
@@ -641,7 +652,7 @@ impl Row<'_> {
             rusqlite::types::ValueRef::Text(bytes) => ValueRef::Text(bytes),
             rusqlite::types::ValueRef::Blob(bytes) => ValueRef::Blob(bytes),
         };
-        T::from_value(value).with_context(|| format!("column {index}"))
+        f(value).with_context(|| format!("column {index}"))
     }
 }
 

@@ -169,6 +169,35 @@ fn a_catalog_missing_newer_tables_gains_them() -> Result<()> {
 }
 
 #[test]
+fn a_catalog_missing_newer_indexes_gains_them() -> Result<()> {
+    const INDEXES: [&str; 3] = [
+        "collection_photos_photo",
+        "photo_imports_batch",
+        "photo_import_facts_exif_read",
+    ];
+    let count = |path: &Path| -> Result<i64> {
+        Ok(Connection::open(path)?.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='index'
+             AND name IN ('collection_photos_photo','photo_imports_batch',
+                          'photo_import_facts_exif_read')",
+            [],
+            |r| r.get(0),
+        )?)
+    };
+    let (_dir, path) = ready()?;
+    assert_eq!(count(&path)?, 3);
+    let db = Connection::open(&path)?;
+    for index in INDEXES {
+        db.execute_batch(&format!("DROP INDEX {index}"))?;
+    }
+    drop(db);
+    assert_eq!(count(&path)?, 0);
+    Catalog::open_as(&path, &computer("mac"))?;
+    assert_eq!(count(&path)?, 3);
+    Ok(())
+}
+
+#[test]
 fn readying_waits_for_another_computers_write() -> Result<()> {
     let (_dir, path) = ready()?;
     let other = writing(&path)?;

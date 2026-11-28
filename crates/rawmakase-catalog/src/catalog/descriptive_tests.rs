@@ -392,3 +392,25 @@ fn a_photo_removed_by_an_older_release_takes_its_rows_and_a_reused_id_has_none()
     assert_eq!(cat.descriptive(copy)?, Descriptive::default());
     Ok(())
 }
+
+#[test]
+fn several_photos_overrides_are_each_photos_own() -> Result<()> {
+    let (_dir, mut cat, ids) = catalog(3)?;
+    assert!(cat.descriptive_of(&[])?.is_empty());
+    cat.set_text(&ids[..1], TextField::Title, "Harbour")?;
+    cat.set_text(&ids[1..2], TextField::Title, "Pier")?;
+    cat.set_creators(&ids[1..], &["Ana".into(), "Rui".into()])?;
+    let missing = PhotoId(9999);
+    let all = cat.descriptive_of(&[ids[0], ids[1], ids[2], ids[0], missing])?;
+    assert_eq!(all.len(), 4);
+    for id in ids.iter().copied().chain([missing]) {
+        assert_eq!(all[&id], cat.descriptive(id)?);
+    }
+    assert_eq!(all[&ids[0]].title, set("Harbour"));
+    assert_eq!(all[&ids[1]].title, set("Pier"));
+    assert_eq!(all[&ids[2]].title, None);
+    assert_eq!(all[&missing], Descriptive::default());
+    // The read ends its snapshot: nothing is left open.
+    assert!(cat.db_for_tests().is_autocommit());
+    Ok(())
+}
