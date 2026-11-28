@@ -306,16 +306,51 @@ pub mod gps_fixture {
     /// A little-endian TIFF whose IFD0 names a camera and points to a GPS
     /// directory holding `gps`.
     pub fn tiff(gps: &[Field]) -> Vec<u8> {
+        tiff_with_xmp(gps, None)
+    }
+    /// [`tiff`], its IFD0 also holding `xmp` as its XMP packet (tag 700),
+    /// byte for byte, as a DNG keeps it.
+    pub fn tiff_with_xmp(gps: &[Field], xmp: Option<&[u8]>) -> Vec<u8> {
         let mut gps = gps.to_vec();
         gps.sort_by_key(|f| f.tag);
+        let entries = if xmp.is_some() { 3u32 } else { 2 };
+        // IFD0, then Make's value, then the GPS directory and its longer
+        // values, then the XMP packet.
+        let make_at = 8 + 2 + 12 * entries + 4;
+        let gps_at = make_at + 6;
+        let values_at = gps_at + 2 + 12 * gps.len() as u32 + 4;
+        let mut directory = Vec::new();
+        let mut values = Vec::new();
+        directory.extend((gps.len() as u16).to_le_bytes());
+        for f in &gps {
+            directory.extend(f.tag.to_le_bytes());
+            directory.extend(f.kind.to_le_bytes());
+            directory.extend(f.count.to_le_bytes());
+            if f.bytes.len() <= 4 {
+                let mut inline = f.bytes.clone();
+                inline.resize(4, 0);
+                directory.extend(inline);
+            } else {
+                directory.extend((values_at + values.len() as u32).to_le_bytes());
+                values.extend(&f.bytes);
+                if values.len() % 2 == 1 {
+                    values.push(0);
+                }
+            }
+        }
+        directory.extend(0u32.to_le_bytes());
+        let xmp_at = values_at + values.len() as u32;
+        let mut ifd0 = vec![
+            (MAKE, ASCII, 5u32, make_at),
+            (GPS_IFD, crate::tiff::kind::LONG, 1, gps_at),
+        ];
+        if let Some(xmp) = xmp {
+            ifd0.insert(1, (XMP, BYTE, xmp.len() as u32, xmp_at));
+        }
         let mut out = b"II*\0".to_vec();
         out.extend(8u32.to_le_bytes());
-        // IFD0: Make (out of line, at 38) and the GPS pointer (to 44).
-        out.extend(2u16.to_le_bytes());
-        for (tag, kind, count, value) in [
-            (MAKE, ASCII, 5u32, 38u32),
-            (GPS_IFD, crate::tiff::kind::LONG, 1, 44),
-        ] {
+        out.extend((ifd0.len() as u16).to_le_bytes());
+        for (tag, kind, count, value) in ifd0 {
             out.extend(tag.to_le_bytes());
             out.extend(kind.to_le_bytes());
             out.extend(count.to_le_bytes());
@@ -323,29 +358,9 @@ pub mod gps_fixture {
         }
         out.extend(0u32.to_le_bytes());
         out.extend(b"Test\0\0");
-        // The GPS directory, its longer values after it.
-        let mut data_at = 44 + 2 + 12 * gps.len() as u32 + 4;
-        let mut data = Vec::new();
-        out.extend((gps.len() as u16).to_le_bytes());
-        for f in &gps {
-            out.extend(f.tag.to_le_bytes());
-            out.extend(f.kind.to_le_bytes());
-            out.extend(f.count.to_le_bytes());
-            if f.bytes.len() <= 4 {
-                let mut inline = f.bytes.clone();
-                inline.resize(4, 0);
-                out.extend(inline);
-            } else {
-                out.extend(data_at.to_le_bytes());
-                data.extend(&f.bytes);
-                if data.len() % 2 == 1 {
-                    data.push(0);
-                }
-                data_at = 44 + 2 + 12 * gps.len() as u32 + 4 + data.len() as u32;
-            }
-        }
-        out.extend(0u32.to_le_bytes());
-        out.extend(data);
+        out.extend(directory);
+        out.extend(values);
+        out.extend(xmp.unwrap_or_default());
         out
     }
 }

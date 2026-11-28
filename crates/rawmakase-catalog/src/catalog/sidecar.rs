@@ -209,7 +209,21 @@ pub type RawXmpReader = fn(&Path) -> Option<Vec<u8>>;
 /// XMP text chunk), WebP ("XMP " chunk), AVIF or HEIF (its XMP item) or JPEG
 /// XL ("xml " box, or "brob" box compressing one); in another file, what
 /// `raw_xmp` finds.
+///
+/// A packet is read without the NULs that end it: TIFF ends its strings
+/// with one, and so do Leica's DNGs and iPhones' in tag 700, which XML can't
+/// read past.
 fn embedded(file: &Path, raw_xmp: RawXmpReader) -> Result<Option<String>> {
+    Ok(
+        embedded_packet(file, raw_xmp)?.map(|text| match text.trim_end_matches('\0') {
+            trimmed if trimmed.len() == text.len() => text,
+            trimmed => trimmed.to_string(),
+        }),
+    )
+}
+
+/// [`embedded`]'s packet as its container holds it.
+fn embedded_packet(file: &Path, raw_xmp: RawXmpReader) -> Result<Option<String>> {
     match RasterFormat::of(file) {
         Some(RasterFormat::Jpeg) => {
             use std::io::Read as _;

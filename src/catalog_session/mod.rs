@@ -801,6 +801,75 @@ mod tests {
         Ok(())
     }
 
+    /// A DNG whose own XMP ends with a NUL (a Leica's, an iPhone's) beside
+    /// a sidecar of exported Lightroom edits, as photos added from such a
+    /// folder are: its camera's GPS is read in the background and by Read
+    /// Metadata from Files.
+    #[test]
+    fn a_dng_with_its_own_xmp_and_an_exported_sidecar_gets_its_cameras_gps() -> Result<()> {
+        use crate::metadata::Location;
+        let directory = tempfile::tempdir()?;
+        let folder = directory.path().join("photos");
+        std::fs::create_dir(&folder)?;
+        let dng = crate::exif::gps_fixture::tiff_with_xmp(
+            &crate::exif::gps_fixture::coordinates(
+                "N",
+                [(40, 1), (42, 1), (873, 100)],
+                "W",
+                [(73, 1), (59, 1), (3525, 100)],
+            ),
+            Some(b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"Leica Camera AG\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"><xmp:Rating>0</xmp:Rating></rdf:Description></rdf:RDF></x:xmpmeta>\0"),
+        );
+        let sidecar = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+            crs:Version="18.5" crs:ProcessVersion="15.4" crs:Exposure2012="+0.35" crs:HasSettings="True"/>
+          <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+            xmlns:digiKam="http://www.digikam.org/ns/1.0/" xmp:Rating="3" digiKam:PickLabel="1"/>
+          </rdf:RDF></x:xmpmeta>"#;
+        for name in ["a", "b"] {
+            std::fs::write(folder.join(format!("{name}.DNG")), &dng)?;
+            std::fs::write(folder.join(format!("{name}.xmp")), sidecar)?;
+        }
+        let path = directory.path().join("library.rawmakase");
+        Catalog::create(&path)?.add_folder(&folder)?;
+        let Opened { mut session, .. } = CatalogSession::open(&CatalogLocation::from(&path))?;
+        let id = |session: &CatalogSession, name: &str| {
+            session
+                .photos
+                .iter()
+                .find(|p| p.filename == name)
+                .unwrap()
+                .id
+        };
+        let (a, b) = (id(&session, "a.DNG"), id(&session, "b.DNG"));
+        // b's file was read before: as photos added by an earlier release.
+        session
+            .catalog
+            .record_capture_reads(&[(b, Some("2026-03-24T04:03:02.000".into()))], &[])?;
+        session.reload()?;
+        session.start_capture_times(|_| true);
+        let started = std::time::Instant::now();
+        while session.reading_capture_times() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+            assert!(session.poll_capture_times().error.is_none());
+            std::thread::yield_now();
+        }
+        let near = |l: Option<Location>| {
+            matches!(l, Some(Location::At { lat, lon, .. })
+                if (lat - 40.702425).abs() < 1e-6 && (lon + 73.993125).abs() < 1e-6)
+        };
+        assert!(near(session.catalog.descriptive(a)?.location));
+        assert_eq!(session.catalog.descriptive(b)?.location, None);
+        // Read Metadata from Files' read of b gives the camera's.
+        let file = folder.canonicalize()?.join("b.DNG");
+        let (xmp, found) = read_file_metadata(&file);
+        assert_eq!(found, Default::default());
+        assert!(near(camera_location(xmp.as_ref(), &found, || {
+            exif_location(&file)
+        })));
+        Ok(())
+    }
+
     #[test]
     fn capture_times_and_photo_info_are_read_saved_and_listed_with_no_window() -> Result<()> {
         let directory = tempfile::tempdir()?;

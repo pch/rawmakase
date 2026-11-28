@@ -196,3 +196,50 @@ fn a_copy_set_as_master_before_the_read_gets_the_cameras_gps() -> Result<()> {
     assert_eq!(cat.descriptive(a)?.location, Some(camera_location()));
     Ok(())
 }
+
+/// A DNG's own XMP packet as Leica's cameras and iPhones write it in tag
+/// 700: terminated by a NUL, as TIFF strings are.
+const DNG_XMP: &[u8] = b"<?xpacket begin='\xef\xbb\xbf' id='W5M0MpCehiHzreSzNTczkc9d'?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"Leica Camera AG\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"><xmp:Rating>0</xmp:Rating></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>\0";
+
+/// A sidecar as an export of Lightroom's edits writes it: Camera Raw's
+/// settings in one description, the rating, pick and keywords in another,
+/// and no GPS.
+const LIGHTROOM_SIDECAR: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    crs:Version="18.5" crs:ProcessVersion="15.4" crs:Exposure2012="+0.35" crs:HasSettings="True">
+   <crs:Look><rdf:Description crs:Name="Adobe Color" crs:Amount="1"/></crs:Look>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:digiKam="http://www.digikam.org/ns/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:lr="http://ns.adobe.com/lightroom/1.0/" xmp:Rating="3" digiKam:PickLabel="1">
+   <dc:subject><rdf:Bag><rdf:li>New York</rdf:li></rdf:Bag></dc:subject>
+   <lr:hierarchicalSubject><rdf:Bag><rdf:li>Places|New York</rdf:li></rdf:Bag></lr:hierarchicalSubject>
+  </rdf:Description>
+ </rdf:RDF></x:xmpmeta>"#;
+
+/// The XMP a DNG keeps in its tag 700 ends with the NUL TIFF strings end
+/// with: it is read, not reported unreadable (which kept the camera's GPS
+/// and the default Creator from every such DNG).
+#[test]
+fn a_dngs_own_xmp_ending_with_a_nul_is_read() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("L1050516.DNG");
+    std::fs::write(
+        &file,
+        gps_fixture::tiff_with_xmp(&gps_fixture::coordinates("N", LAT, "W", LON), Some(DNG_XMP)),
+    )?;
+    let (read, report) = crate::catalog::read_file_metadata(&file, |_| None);
+    assert_eq!(report, Default::default());
+    assert_eq!(read.as_ref().and_then(|r| r.rating), Some(0));
+    // With the export's sidecar beside it: read whole, no location in either.
+    std::fs::write(dir.path().join("L1050516.xmp"), LIGHTROOM_SIDECAR)?;
+    let (read, report) = crate::catalog::read_file_metadata(&file, |_| None);
+    assert_eq!(report, Default::default());
+    let read = read.unwrap();
+    // digiKam's pick label 1 is a reject.
+    assert_eq!(
+        (read.rating, read.flag, read.location),
+        (Some(3), Some(-1), None)
+    );
+    Ok(())
+}
