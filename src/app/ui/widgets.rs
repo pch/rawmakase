@@ -110,12 +110,32 @@ pub(in crate::app) fn adjustment_section(
     title: &str,
     contents: impl FnOnce(&mut egui::Ui, &mut StepName),
 ) -> bool {
-    section_header(ui, title, HeaderButton::Reset, None, step, contents)
+    section_header(ui, title, HeaderButton::Reset, None, true, step, contents)
+}
+/// As [`adjustment_section`], starting collapsed until the user expands it (stored in
+/// [`expanded_sections_id`]).
+pub(in crate::app) fn collapsed_adjustment_section(
+    ui: &mut egui::Ui,
+    step: &mut StepName,
+    title: &str,
+    contents: impl FnOnce(&mut egui::Ui, &mut StepName),
+) -> bool {
+    section_header(ui, title, HeaderButton::Reset, None, false, step, contents)
 }
 /// Where the set of collapsed section titles lives in egui memory; the editor
 /// seeds it from the session and saves it back when it changes.
 pub(in crate::app) fn collapsed_sections_id() -> egui::Id {
     egui::Id::new("rawmakase-collapsed-sections")
+}
+/// Where the set of expanded titles for default-collapsed sections lives in egui
+/// memory; the editor seeds it from the session and saves it back when it changes.
+pub(in crate::app) fn expanded_sections_id() -> egui::Id {
+    egui::Id::new("rawmakase-expanded-sections")
+}
+/// Section keys that start collapsed by default, so Solo Mode closes them by clearing
+/// [`expanded_sections_id`] rather than writing them to [`collapsed_sections_id`].
+fn default_collapsed_sections_id() -> egui::Id {
+    egui::Id::new("rawmakase-default-collapsed-sections")
 }
 /// The panel or sub-panel being drawn ("Detail", then "Sharpening"), so a
 /// slider's step reads "Sharpening Amount" rather than "Amount".
@@ -156,7 +176,9 @@ pub(in crate::app) fn section_with(
     debug_assert!(button != HeaderButton::Reset, "Reset names a step");
     // Without Reset the header names no step.
     let mut unnamed = StepName::default();
-    section_header(ui, title, button, None, &mut unnamed, |ui, _| contents(ui))
+    section_header(ui, title, button, None, true, &mut unnamed, |ui, _| {
+        contents(ui)
+    })
 }
 /// A resettable Develop panel with Lightroom's on/off switch in its header, over
 /// the photo's `Enable*` setting; returns whether reset was clicked.
@@ -167,7 +189,15 @@ pub(in crate::app) fn switched_section(
     switch: &mut PanelState,
     contents: impl FnOnce(&mut egui::Ui, &mut StepName),
 ) -> bool {
-    section_header(ui, title, HeaderButton::Reset, Some(switch), step, contents)
+    section_header(
+        ui,
+        title,
+        HeaderButton::Reset,
+        Some(switch),
+        true,
+        step,
+        contents,
+    )
 }
 /// The side of the window a panel is in. Solo Mode is per side, as in Lightroom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -231,14 +261,41 @@ fn solo(ui: &egui::Ui, group: &str) -> bool {
             .is_some_and(|set| set.contains(group))
     })
 }
+fn is_default_collapsed(ui: &egui::Ui, title: &str) -> bool {
+    ui.ctx().data(|d| {
+        d.get_temp::<std::collections::BTreeSet<String>>(default_collapsed_sections_id())
+            .is_some_and(|set| set.contains(title))
+    })
+}
 fn set_open(ui: &egui::Ui, title: &str, open: bool) {
+    let default_collapsed = is_default_collapsed(ui, title);
     ui.ctx().data_mut(|d| {
-        let set = d
-            .get_temp_mut_or_default::<std::collections::BTreeSet<String>>(collapsed_sections_id());
-        if open {
-            set.remove(title);
+        if default_collapsed {
+            let expanded = d.get_temp_mut_or_default::<std::collections::BTreeSet<String>>(
+                expanded_sections_id(),
+            );
+            if open {
+                expanded.insert(title.to_string());
+            } else {
+                expanded.remove(title);
+            }
+            if d.get_temp::<std::collections::BTreeSet<String>>(collapsed_sections_id())
+                .is_some_and(|set| set.contains(title))
+            {
+                d.get_temp_mut_or_default::<std::collections::BTreeSet<String>>(
+                    collapsed_sections_id(),
+                )
+                .remove(title);
+            }
         } else {
-            set.insert(title.to_string());
+            let set = d.get_temp_mut_or_default::<std::collections::BTreeSet<String>>(
+                collapsed_sections_id(),
+            );
+            if open {
+                set.remove(title);
+            } else {
+                set.insert(title.to_string());
+            }
         }
     });
 }
@@ -287,6 +344,7 @@ fn section_header(
     title: &str,
     button: HeaderButton,
     switch: Option<&mut PanelState>,
+    default_open: bool,
     step: &mut StepName,
     contents: impl FnOnce(&mut egui::Ui, &mut StepName),
 ) -> bool {
@@ -295,6 +353,14 @@ fn section_header(
     let id = ui.make_persistent_id(("adjustment-section-v3", title));
     let key = section_key(title);
     let group = current_group(ui);
+    if !default_open {
+        ui.ctx().data_mut(|d| {
+            d.get_temp_mut_or_default::<std::collections::BTreeSet<String>>(
+                default_collapsed_sections_id(),
+            )
+            .insert(key.to_string());
+        });
+    }
     if let Some(group) = group {
         ui.ctx().data_mut(|d| {
             d.get_temp_mut_or_default::<SectionTitles>(section_titles_id())
@@ -303,10 +369,17 @@ fn section_header(
                 .insert(key.to_string());
         });
     }
-    let mut open = !ui.ctx().data(|d| {
-        d.get_temp::<std::collections::BTreeSet<String>>(collapsed_sections_id())
-            .is_some_and(|set| set.contains(key))
-    });
+    let mut open = if default_open {
+        !ui.ctx().data(|d| {
+            d.get_temp::<std::collections::BTreeSet<String>>(collapsed_sections_id())
+                .is_some_and(|set| set.contains(key))
+        })
+    } else {
+        ui.ctx().data(|d| {
+            d.get_temp::<std::collections::BTreeSet<String>>(expanded_sections_id())
+                .is_some_and(|set| set.contains(key))
+        })
+    };
     let sidebar = group == Some(SectionGroup::LibraryLeft.key());
     // Contents, and the header's title and chevron over them, from the panel's
     // edges.

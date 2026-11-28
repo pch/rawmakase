@@ -165,6 +165,67 @@ fn solo_mode_opens_one_panel_per_side_and_is_set_from_the_header_menu() {
 }
 
 #[test]
+fn default_collapsed_section_works_with_solo_mode_without_polluting_collapsed() {
+    use crate::app::develop::step_name::StepName;
+    use crate::app::ui::widgets::{SectionGroup, SectionSide};
+    let ctx = egui::Context::default();
+    let headers = std::cell::RefCell::new(Vec::new());
+    let draw = |events, time| {
+        widget_frame(&ctx, time, events, |ui| {
+            let _side = SectionSide::enter(ui, SectionGroup::DevelopRight);
+            headers.borrow_mut().clear();
+            headers.borrow_mut().push(ui.cursor().top() + 8. + 14.);
+            let mut step = StepName::default();
+            crate::app::ui::widgets::adjustment_section(ui, &mut step, "Basic", |ui, _| {
+                ui.label("basic-body");
+            });
+            headers.borrow_mut().push(ui.cursor().top() + 8. + 14.);
+            crate::app::ui::widgets::collapsed_adjustment_section(
+                ui,
+                &mut step,
+                "Negative",
+                |ui, _| {
+                    ui.label("negative-body");
+                },
+            );
+        })
+    };
+    let collapsed = || -> std::collections::BTreeSet<String> {
+        ctx.data(|d| d.get_temp(crate::app::ui::widgets::collapsed_sections_id()))
+            .unwrap_or_default()
+    };
+    let expanded = || -> std::collections::BTreeSet<String> {
+        ctx.data(|d| d.get_temp(crate::app::ui::widgets::expanded_sections_id()))
+            .unwrap_or_default()
+    };
+    draw(vec![], 0.);
+    assert!(collapsed().is_empty() && expanded().is_empty());
+    // Enable Solo Mode from Basic's header menu: Negative stays out of `collapsed`.
+    let basic = Pos2::new(60., headers.borrow()[0]);
+    draw(click_at(basic, egui::PointerButton::Secondary), 1.);
+    draw(vec![], 1.1);
+    draw(
+        click_at(
+            Pos2::new(basic.x + 30., basic.y + 14.),
+            egui::PointerButton::Primary,
+        ),
+        2.,
+    );
+    assert!(collapsed().is_empty() && expanded().is_empty());
+    // Clicking Negative opens it and closes Basic.
+    draw(vec![], 3.);
+    let neg = Pos2::new(60., headers.borrow()[1]);
+    draw(click_at(neg, egui::PointerButton::Primary), 4.);
+    assert_eq!(collapsed(), ["Basic".to_string()].into());
+    assert_eq!(expanded(), ["Negative".to_string()].into());
+    // Clicking Basic closes Negative by clearing `expanded`, not adding to `collapsed`.
+    draw(vec![], 5.);
+    let basic = Pos2::new(60., headers.borrow()[0]);
+    draw(click_at(basic, egui::PointerButton::Primary), 6.);
+    assert!(collapsed().is_empty() && expanded().is_empty());
+}
+
+#[test]
 fn the_panel_header_menu_fits_its_item_not_the_header() {
     use crate::app::ui::widgets::{SectionGroup, SectionSide};
     let ctx = egui::Context::default();

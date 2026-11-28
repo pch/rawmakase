@@ -718,15 +718,6 @@ impl Editor {
         let curve_histograms = &mut self.curve_histogram;
         let (r, photo) = self.document.recipe_and_colors();
         let metadata = metadata.as_ref();
-        // The negative conversion renders before everything else, so it comes first.
-        requests.add(panels::negative::show(
-            ui,
-            step,
-            r,
-            view,
-            &negative_view,
-            &palette,
-        ));
         requests.add(panels::basic::show(
             ui,
             step,
@@ -773,6 +764,16 @@ impl Editor {
         ));
         panels::effects::show(ui, step, r, metadata);
         panels::calibration::show(ui, step, r, metadata);
+        // Kept at the bottom (collapsed by default) so Basic stays first for regular photos.
+        requests.add(panels::negative::show(
+            ui,
+            step,
+            r,
+            view,
+            &negative_view,
+            &palette,
+        ));
+        ui.add_space(space::XXL);
         self.carry_out(requests, ui, &adobe, adobe_key);
     }
     /// Carries out what the Develop panels asked for this frame, still during the

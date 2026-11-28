@@ -78,9 +78,17 @@ pub(crate) struct Session {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub maximized: bool,
-    /// Titles of panel sections the user collapsed; all others start open.
+    /// Titles of panel sections the user collapsed; all others start open unless
+    /// marked collapsed by default.
     #[serde(default, deserialize_with = "lenient")]
     pub collapsed: std::collections::BTreeSet<String>,
+    /// Titles of default-collapsed panel sections (such as Negative) the user expanded.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::collections::BTreeSet::is_empty"
+    )]
+    pub expanded: std::collections::BTreeSet<String>,
     /// The sides of the window in Solo Mode, where opening a panel closes the
     /// others: "develop-left", "develop-right", "library-left", "library-right".
     #[serde(default, deserialize_with = "lenient")]
@@ -451,8 +459,10 @@ pub(in crate::app) struct SessionState {
     layout: LibraryLayout,
     /// Whether the window is maximized, as last saved.
     pub(in crate::app) maximized: bool,
-    /// The panel sections folded, and the ones in solo mode.
+    /// The panel sections folded, default-collapsed sections expanded, and the sides in
+    /// solo mode.
     pub(in crate::app) collapsed: std::collections::BTreeSet<String>,
+    pub(in crate::app) expanded: std::collections::BTreeSet<String>,
     pub(in crate::app) solo: std::collections::BTreeSet<String>,
     pub(in crate::app) onboarding_done: bool,
     /// Preferences > Performance's demosaic, for every full-size decode.
@@ -488,6 +498,7 @@ impl SessionState {
             layout: session.library_layout.clone(),
             maximized: session.maximized,
             collapsed: session.collapsed.clone(),
+            expanded: session.expanded.clone(),
             solo: session.solo.clone(),
             onboarding_done,
             demosaic: session.demosaic,
@@ -548,6 +559,7 @@ impl SessionState {
                 last_path: path.or_else(|| self.fallback_path.clone()),
                 maximized: self.maximized,
                 collapsed: self.collapsed.clone(),
+                expanded: self.expanded.clone(),
                 solo: self.solo.clone(),
                 onboarding_done: self.onboarding_done,
                 library_source: self.place.source.clone(),
@@ -1119,6 +1131,9 @@ mod compatibility_tests {
             sync.set(SettingGroup::NegativeConversion, GroupInclusion::Included);
             sync.set(SettingGroup::Exposure, GroupInclusion::Included);
             e.session.sync_groups = Some(sync.clone());
+            if negative == GroupInclusion::Included {
+                e.session.expanded.insert("Negative".into());
+            }
             e.session.maximized = true;
             e.save_session().unwrap();
             let bytes = std::fs::read(&path).unwrap();
@@ -1132,16 +1147,21 @@ mod compatibility_tests {
                 "{json}"
             );
             assert_eq!(json["copy_negative"], negative == GroupInclusion::Included);
+            assert_eq!(
+                json.get("expanded").is_some(),
+                negative == GroupInclusion::Included
+            );
             let old: SessionV0_4_10 = serde_json::from_slice(&bytes).unwrap();
             assert!(old.maximized && old.onboarding_done);
             assert!(
                 old.copy_groups
                     .is_some_and(|g| g.iter().any(|g| matches!(g, GroupV0_4_10::Exposure)))
             );
-            // This release reads it back as it was, Synchronize's groups too.
+            // This release reads it back as it was, Synchronize's groups and expanded too.
             let back: Session = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(back.copy_groups(), Some(e.session.copy_groups.clone()));
             assert_eq!(back.sync_groups, Some(sync));
+            assert_eq!(back.expanded, e.session.expanded);
         }
     }
 

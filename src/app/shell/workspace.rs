@@ -529,6 +529,17 @@ impl Editor {
             self.session.collapsed = collapsed;
             let _ = self.save_session();
         }
+        let expanded = ctx.data(|d| {
+            d.get_temp::<std::collections::BTreeSet<String>>(
+                crate::app::ui::widgets::expanded_sections_id(),
+            )
+        });
+        if let Some(expanded) = expanded
+            && expanded != self.session.expanded
+        {
+            self.session.expanded = expanded;
+            let _ = self.save_session();
+        }
         let solo = ctx.data(|d| {
             d.get_temp::<std::collections::BTreeSet<String>>(
                 crate::app::ui::widgets::solo_sections_id(),

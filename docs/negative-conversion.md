@@ -9,8 +9,9 @@ base picker and Auto are `develop::negative`'s; the panel is
 
 A camera scan of a negative (a RAW of the film on a light source), a film scanner's
 DNG or TIFF, or any other scan RAWmakase develops is a negative: inverted, and for
-colour film behind an orange mask. The Negative panel, first in Develop, turns it
-into a positive at the very start of the per-pixel stage, before white balance.
+colour film behind an orange mask. The Negative panel, at the bottom of Develop below
+Calibration (collapsed by default), turns it into a positive at the very start of the
+per-pixel stage, before white balance.
 Everything after it (white balance, Basic, curves, the color mixer, grading, masks,
 export) works on the positive, as for any photo, and so does everything that
 measures the photo: Auto tone, Auto white balance, the white balance selector, the

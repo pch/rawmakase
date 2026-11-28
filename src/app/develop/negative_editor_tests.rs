@@ -50,11 +50,34 @@ fn negative_scan(flat: bool) -> Arc<CameraImage> {
     })
 }
 
-/// An editor in Develop with [`negative_scan`] decoded, unless `decoded` is false.
+/// An editor in Develop with [`negative_scan`] decoded (unless `decoded` is false)
+/// and the Negative panel expanded so its controls are reachable.
 fn editor_with_scan(ctx: &egui::Context, flat: bool, decoded: bool) -> Editor {
+    let editor = editor_with_scan_collapsed(ctx, flat, decoded);
+    expand_negative(ctx);
+    editor
+}
+
+/// As [`editor_with_scan`], leaving the Negative panel collapsed at its default and
+/// folding the panels above Calibration so the bottom of Develop sits inside
+/// `controls_frame`'s viewport.
+fn editor_with_scan_collapsed(ctx: &egui::Context, flat: bool, decoded: bool) -> Editor {
     ctx.enable_accesskit();
     ctx.all_styles_mut(|s| s.animation_time = 0.);
-    let mut editor = Editor::with_context(ctx, None, Default::default(), None);
+    let mut session = crate::app::preferences::session::Session::default();
+    for title in [
+        "Basic",
+        "Tone Curve",
+        "Color Mixer",
+        "Color Grading",
+        "Detail",
+        "Lens Corrections",
+        "Transform",
+        "Effects",
+    ] {
+        session.collapsed.insert(title.into());
+    }
+    let mut editor = Editor::with_context(ctx, None, session, None);
     editor.module = Module::Develop;
     let image = negative_scan(flat);
     editor.document.metadata = Some(image.metadata.clone());
@@ -64,15 +87,25 @@ fn editor_with_scan(ctx: &egui::Context, flat: bool, decoded: bool) -> Editor {
     editor
 }
 
-/// The topmost node called `label` in `update`: the Negative panel's, which is
-/// drawn first, where another panel has a control of the same name.
+fn expand_negative(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<std::collections::BTreeSet<String>>(
+            crate::app::ui::widgets::expanded_sections_id(),
+        )
+        .insert("Negative".to_string());
+    });
+}
+
+/// The bottommost node called `label` in `update`: the Negative panel's, which sits
+/// last in Develop (below Calibration), where another panel has a control of the same
+/// name.
 fn node(update: &egui::accesskit::TreeUpdate, label: &str) -> egui::accesskit::Node {
     update
         .nodes
         .iter()
         .map(|(_, n)| n)
         .filter(|n| n.label() == Some(label) && n.bounds().is_some())
-        .min_by(|a, b| a.bounds().unwrap().y0.total_cmp(&b.bounds().unwrap().y0))
+        .max_by(|a, b| a.bounds().unwrap().y0.total_cmp(&b.bounds().unwrap().y0))
         .cloned()
         .unwrap_or_else(|| panic!("no {label}"))
 }
@@ -323,9 +356,22 @@ fn the_auto_mix_colors_follow_the_conversion() {
         let converted = editor.document.color_spread().unwrap();
         assert_eq!(
             converted,
-            crate::develop::ColorSpread::measure(&image, Some(&n))
+            crate::develop::ColorSpread::for_recipe(&image, editor.document.edit.recipe())
         );
         assert_ne!(converted, plain);
+        // Changing the crop re-measures the spread for a converted negative.
+        in_edit_frame(&ctx, &mut editor, |e| {
+            e.document.edit.recipe_mut().crop = [0.25, 0.2, 0.9, 0.9];
+        });
+        let cropped = editor.document.color_spread().unwrap();
+        assert_eq!(
+            cropped,
+            crate::develop::ColorSpread::for_recipe(&image, editor.document.edit.recipe())
+        );
+        assert_ne!(cropped, converted);
+        in_edit_frame(&ctx, &mut editor, |e| {
+            e.document.edit.recipe_mut().crop = [0., 0., 1., 1.];
+        });
     }
     in_edit_frame(&ctx, &mut editor, |e| {
         e.document.edit.recipe_mut().negative = None
@@ -517,6 +563,84 @@ fn the_holder_note_goes_with_the_conversion_auto_measured() {
     assert!(!shown(&mut editor));
 }
 
+/// Geometry and lens-distortion edits that change which scan pixels Auto sampled
+/// (Straighten, Rotation, Flip, Transform, manual Distortion) clear the holder note.
+#[test]
+fn geometry_and_lens_edits_clear_the_holder_note() {
+    type Edit = fn(&mut crate::model::recipe::Recipe);
+    let edits: [(&str, Edit); 5] = [
+        ("straighten", |r| r.straighten = 3.),
+        ("rotation", |r| r.rotation = 1),
+        ("flip_x", |r| r.flip_x = true),
+        ("transform", |r| r.transform.vertical = 0.2),
+        ("manual_distortion", |r| r.lens_manual_distortion = -0.2),
+    ];
+    for (name, edit) in edits {
+        let ctx = egui::Context::default();
+        let mut editor = editor_with_scan(&ctx, false, false);
+        let mut image = (*negative_scan(false)).clone();
+        for (i, p) in image.pixels.iter_mut().enumerate() {
+            if i % 64 < 6 {
+                *p = [0.0005; 3];
+            }
+        }
+        editor.document.set_image(Arc::new(image));
+        in_edit_frame(&ctx, &mut editor, |e| {
+            e.document.edit.recipe_mut().negative = Some(NegativeConversion {
+                base: BASE,
+                ..NegativeConversion::new(FilmType::BlackWhite)
+            })
+        });
+        run_negative_auto(&ctx, &mut editor);
+        assert!(
+            says(&controls_frame(&ctx, &mut editor, vec![]), HOLDER_NOTE),
+            "{name}: note shown after Auto"
+        );
+        in_edit_frame(&ctx, &mut editor, |e| edit(e.document.edit.recipe_mut()));
+        assert!(
+            !says(&controls_frame(&ctx, &mut editor, vec![]), HOLDER_NOTE),
+            "{name}: note cleared after geometry/lens edit"
+        );
+    }
+}
+
+/// The Negative panel sits at the bottom of Develop (below Calibration) and starts
+/// collapsed by default so it doesn't clutter Develop for non-film photos.
+#[test]
+fn negative_panel_sits_at_the_bottom_and_starts_collapsed() {
+    let ctx = egui::Context::default();
+    let mut editor = editor_with_scan_collapsed(&ctx, false, true);
+    let collapsed = controls_frame(&ctx, &mut editor, vec![]);
+    // Negative's Reset button sits below Calibration's Reset button.
+    let cal_y = node(&collapsed, "Reset Calibration").bounds().unwrap().y0;
+    let neg_y = node(&collapsed, "Reset Negative").bounds().unwrap().y0;
+    assert!(
+        neg_y > cal_y,
+        "Negative ({neg_y}) should sit below Calibration ({cal_y})"
+    );
+    // Collapsed by default: the Film switch's "Off" option is not shown below Calibration.
+    let off_below_neg = collapsed
+        .nodes
+        .iter()
+        .any(|(_, n)| n.label() == Some("Off") && n.bounds().is_some_and(|b| b.y0 > neg_y));
+    assert!(!off_below_neg, "Negative should start collapsed");
+    // Clicking the Negative header expands it.
+    let neg_reset = node(&collapsed, "Reset Negative").bounds().unwrap();
+    let header_click = egui::pos2(
+        (neg_reset.x0 - 80.) as f32,
+        ((neg_reset.y0 + neg_reset.y1) * 0.5) as f32,
+    );
+    let [down, up] = press_and_release(header_click);
+    controls_frame(&ctx, &mut editor, down);
+    controls_frame(&ctx, &mut editor, up);
+    let expanded = controls_frame(&ctx, &mut editor, vec![]);
+    let off_below_neg = expanded
+        .nodes
+        .iter()
+        .any(|(_, n)| n.label() == Some("Off") && n.bounds().is_some_and(|b| b.y0 > neg_y));
+    assert!(off_below_neg, "Negative should expand when clicked");
+}
+
 /// A screen reader hears the picker and Auto as buttons, which are off while the
 /// photo loads, Auto while it measures, and the picker as pressed while it is out.
 #[test]
@@ -630,11 +754,11 @@ fn shots_of_the_negative_panel() {
             true,
             |e| {
                 let r = e.document.edit.recipe();
-                e.view.negative_holder = Some(crate::app::develop::state::NegativeHolder {
-                    load: e.document.load_id(),
-                    crop: r.crop,
-                    conversion: r.negative.clone().unwrap(),
-                });
+                e.view.negative_holder = Some(crate::app::develop::state::NegativeHolder::new(
+                    e.document.load_id(),
+                    r,
+                    r.negative.clone().unwrap(),
+                ));
             },
         ),
         ("negative-hdr-file", Some(measured), true, |e| {
@@ -649,10 +773,26 @@ fn shots_of_the_negative_panel() {
             e.document.edit.setup_mut().hdr.enabled = true;
         }),
     ];
+    let draw_bottom = |e: &mut Editor, ctx: &egui::Context| {
+        crate::app::ui::shots::panel(ctx, 320., |ui| {
+            let _side = crate::app::ui::widgets::SectionSide::enter(
+                ui,
+                crate::app::ui::widgets::SectionGroup::DevelopRight,
+            );
+            egui::ScrollArea::vertical()
+                .max_height(244.)
+                .show(ui, |ui| {
+                    let frame = e.begin_edit_frame();
+                    e.controls(ui);
+                    e.finish_edit_frame(frame, ctx);
+                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                });
+        });
+    };
     for (name, negative, decoded, setup) in states {
         crate::app::ui::shots::shot(
             name,
-            egui::Vec2::new(340., 230.),
+            egui::Vec2::new(340., 260.),
             move |e, ctx| {
                 e.module = Module::Develop;
                 let image = negative_scan(false);
@@ -662,14 +802,22 @@ fn shots_of_the_negative_panel() {
                 }
                 in_edit_frame(ctx, e, |e| e.document.edit.recipe_mut().negative = negative);
                 setup(e);
+                expand_negative(ctx);
             },
-            |e, ctx| {
-                crate::app::ui::shots::panel(ctx, 320., |ui| {
-                    let frame = e.begin_edit_frame();
-                    e.controls(ui);
-                    e.finish_edit_frame(frame, ctx);
-                });
-            },
+            draw_bottom,
         );
     }
+    // Bottom of Develop with Negative collapsed by default (showing Calibration above it
+    // and the breathing space below it).
+    crate::app::ui::shots::shot(
+        "negative-bottom-collapsed",
+        egui::Vec2::new(340., 260.),
+        move |e, _ctx| {
+            e.module = Module::Develop;
+            let image = negative_scan(false);
+            e.document.metadata = Some(image.metadata.clone());
+            e.document.set_image(image);
+        },
+        draw_bottom,
+    );
 }
