@@ -290,6 +290,7 @@ impl Editor {
                         FolderAction::RelinkRoot(_) | FolderAction::RelinkFolder(..)
                     )
                 );
+                let mut handed_off = false;
                 let result = (|| -> anyhow::Result<Option<CatalogLocation>> {
                     Ok(match kind {
                         CatalogDialog::Create => {
@@ -330,6 +331,21 @@ impl Editor {
                             Some(CatalogLocation::File(
                                 crate::catalog::lightroom::import_lightroom(&source, &destination)?,
                             ))
+                        }
+                        CatalogDialog::ImportCatalog => {
+                            let _ = current
+                                .as_ref()
+                                .ok_or_else(|| anyhow::anyhow!("Open a catalog first"))?;
+                            let Some(source) = catalog_file_dialog()
+                                .set_title("Import from Another Catalog")
+                                .pick_file()
+                            else {
+                                return Ok(None);
+                            };
+                            handed_off = true;
+                            let _ = tx.send(Event::CatalogImportPicked(source));
+                            ctx.request_repaint();
+                            return Ok(None);
                         }
                         CatalogDialog::Folder(action) => {
                             crate::platform::network::prepare_filesystem_bridge();
@@ -407,6 +423,9 @@ impl Editor {
                         }
                     })
                 })();
+                if handed_off {
+                    return;
+                }
                 if let Ok(Some(location)) = &result {
                     let _ = tx.send(Event::CatalogWorking(format!(
                         "Opening {}…",
@@ -419,6 +438,57 @@ impl Editor {
                         let event =
                             reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx);
                         if import { imported(event) } else { event }
+                    }
+                    Ok(None) => Event::DialogClosed,
+                    Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
+                };
+                let _ = tx.send(event);
+            },
+            |tx, error| {
+                let _ = tx.send(Event::CatalogReady(Err(error)));
+            },
+        );
+    }
+    /// Imports another RAWmakase catalog into the open one under the
+    /// folder-change activity, so closing waits for it to finish.
+    pub(in crate::app) fn start_catalog_import(&mut self, source: PathBuf, ctx: &egui::Context) {
+        let Some(current) = self
+            .library
+            .as_ref()
+            .map(|l| l.session.catalog().location().clone())
+        else {
+            self.messages.warn("Open a catalog first");
+            return;
+        };
+        if !self.ready_for_catalog() || !self.activity.begin_folder_change() {
+            return;
+        }
+        let name = source
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        self.catalog_work = Some(format!("Importing {name}…"));
+        let tx = self.tx.clone();
+        let ctx = ctx.clone();
+        crate::app::task::spawn(
+            tx,
+            ctx.clone(),
+            move |tx| {
+                let result = (|| -> anyhow::Result<_> {
+                    crate::platform::network::prepare_filesystem_bridge();
+                    crate::catalog::Catalog::open(&current)?.import_catalog(&source, || true)
+                })();
+                let event = match result {
+                    Ok(Some(added)) => {
+                        let _ = tx.send(Event::CatalogWorking(format!(
+                            "Opening {}…",
+                            current.name()
+                        )));
+                        ctx.request_repaint();
+                        let event =
+                            reopened(&current, false, false, &Default::default(), &[], tx, &ctx);
+                        catalog_imported(event, &name, &added)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -1101,6 +1171,8 @@ pub(in crate::app) mod export_catalog;
 pub(in crate::app) mod export_catalog_tests;
 pub(crate) mod folder_locations;
 pub(in crate::app) mod folder_sync;
+#[cfg(test)]
+mod import_catalog_tests;
 pub(in crate::app) mod onboarding;
 
 /// Opens the catalog the user chose (Open, New, the one opened last), then
@@ -1129,6 +1201,52 @@ pub(in crate::app) fn upgrade_progress<'a>(
     }
 }
 
+/// Says on the Library's status line what Import from Another Catalog added from
+/// catalog `name`, and what it left out and why.
+fn catalog_imported(mut event: Event, name: &str, added: &crate::catalog::CatalogImport) -> Event {
+    let Event::CatalogReady(Ok(library)) = &mut event else {
+        return event;
+    };
+    let photos = |n: usize| {
+        if n == 1 {
+            "1 photo".to_string()
+        } else {
+            format!("{n} photos")
+        }
+    };
+    let mut said = format!("Imported {} from {name}.", photos(added.added));
+    match added.present {
+        0 => {}
+        1 => said.push_str(" 1 photo was in this catalog already."),
+        n => said.push_str(&format!(" {n} photos were in this catalog already.")),
+    }
+    let left: Vec<String> = [
+        (&added.missing, "not found on this computer"),
+        (
+            &added.unplaced,
+            "whose folder could not be placed in this catalog",
+        ),
+    ]
+    .into_iter()
+    .filter(|(files, _)| !files.is_empty())
+    .map(|(files, why)| format!("{} {why}", photos(files.len())))
+    .collect();
+    if left.is_empty() {
+        library.messages.done(said);
+    } else {
+        let detail = added
+            .missing
+            .iter()
+            .chain(&added.unplaced)
+            .map(|f| f.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        library
+            .messages
+            .warn_with_detail(format!("{said} Not imported: {}.", left.join(", ")), detail);
+    }
+    event
+}
 /// A Lightroom catalog just imported and opened: says how many of its smart
 /// collections have rules RAWmakase can't evaluate.
 fn imported(mut event: Event) -> Event {

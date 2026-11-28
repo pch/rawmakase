@@ -40,6 +40,7 @@ pub mod file_ops;
 mod fingerprint;
 pub mod folder_sync;
 mod format_upgrade;
+mod import_catalog;
 mod info;
 mod ingest;
 mod keywords;
@@ -85,6 +86,7 @@ pub use edits::{EditChange, EditToClear, EditToSave};
 pub use export_catalog::{CatalogExport, ExportScope, ExportedFolders};
 pub use fingerprint::Conditional;
 pub use format_upgrade::{OpeningProgress, Upgraded};
+pub use import_catalog::CatalogImport;
 pub use ingest::{
     Ambiguity, Choice, Conflict, FileRefusal, FilesAdded, IMPORT_BURST_SECONDS, PendingBurstStacks,
 };
@@ -371,6 +373,8 @@ mod fingerprint_tests;
 mod format_upgrade_tests;
 #[cfg(test)]
 mod import_bursts_tests;
+#[cfg(test)]
+mod import_catalog_tests;
 #[cfg(test)]
 mod ingest_tests;
 #[cfg(test)]

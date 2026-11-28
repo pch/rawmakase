@@ -273,13 +273,7 @@ impl Catalog {
     /// release added it, and whether its rows are about photos left out, and
     /// must go, can't be told here.
     pub(super) fn ensure_known_tables(&self) -> Result<()> {
-        let known = known_tables();
-        let unknown: Vec<String> = self
-            .db
-            .table_names()?
-            .into_iter()
-            .filter(|t| !known.contains(t.as_str()))
-            .collect();
+        let unknown = self.unknown_tables()?;
         if !unknown.is_empty() {
             bail!(
                 "A later release of RAWmakase added to this catalog ({}); export it with that release",
@@ -287,6 +281,18 @@ impl Catalog {
             );
         }
         Ok(())
+    }
+
+    /// The catalog's tables this release does not know: a later release
+    /// added them.
+    pub(super) fn unknown_tables(&self) -> Result<Vec<String>> {
+        let known = known_tables();
+        Ok(self
+            .db
+            .table_names()?
+            .into_iter()
+            .filter(|t| !known.contains(t.as_str()))
+            .collect())
     }
 
     /// The photos `scope` chose, each one checked to be in the catalog.
@@ -404,7 +410,7 @@ fn known_tables() -> BTreeSet<&'static str> {
 /// batch's bursts still to stack), the Lightroom
 /// catalog it was imported from (every other photo's too), and the journal of
 /// file operations, all finished.
-fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
+pub(super) fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
     for statement in [
         sql!(
             "WITH RECURSIVE used(id) AS (
@@ -474,7 +480,7 @@ fn prune_unreferenced(w: &mut Write<'_>) -> Result<()> {
 /// snapshot left names, by the rule rasters follow ([`super::mask_assets::named`]):
 /// one is kept if its id appears anywhere in them, and every one is kept if a
 /// History can't be read.
-fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
+pub(super) fn prune_recipe_assets(w: &mut Write<'_>) -> Result<()> {
     let ids: Vec<String> = w.read(sql!("SELECT id FROM recipe_assets"), &[])?;
     if ids.is_empty() {
         return Ok(());

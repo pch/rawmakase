@@ -125,6 +125,8 @@ pub(crate) enum Event {
     FolderSyncScanned(Box<crate::app::catalog::folder_sync::Scanned>),
     /// Find on Disk's file picked for a photo.
     FileOnDiskPicked(crate::catalog::PhotoId, PathBuf),
+    /// Import from Another Catalog's catalog file picked by the user.
+    CatalogImportPicked(PathBuf),
     /// Applying a synchronization finished: the catalog opened again.
     FolderSyncApplied(Result<Box<crate::app::catalog::folder_sync::Synced>, String>),
     /// A folder change waiting for the user's answer.
