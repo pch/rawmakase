@@ -42,6 +42,12 @@ pub(crate) const FILM_GAMMA: f32 = 0.6;
 /// The smallest camera value the conversion reads, so the logarithm stays finite: a
 /// scan that recorded no light is the densest film there is.
 const EPS: f32 = 1e-6;
+/// Bounds on the base-2 exponent in [`Inversion::apply`], matching `develop.wgsl`:
+/// keeps the scene-linear output finite (`[2^-30, 2^16]`) even on valid recipes with
+/// a narrow channel density range against an unlit sample, without clipping normal
+/// film densities or HDR highlights.
+const MIN_EXPONENT: f32 = -30.;
+const MAX_EXPONENT: f32 = 16.;
 /// The value the conversion's white (`dmax`) renders at, in every channel, before
 /// white balance: the white point the scene tone stage follows for a converted
 /// negative, in place of the sensor's clip (which is the film base's end).
@@ -97,12 +103,16 @@ impl Inversion {
         }
     }
 
-    /// The positive of camera sample `v`: unclamped scene-linear values, the film's
-    /// `dmax` at [`WHITE`].
+    /// The positive of camera sample `v`: scene-linear values with the film's `dmax`
+    /// at [`WHITE`], bounded to `[2^-30, 2^16]` so valid narrow-range recipes stay finite.
     #[inline]
     pub(crate) fn apply(&self, v: [f32; 3]) -> [f32; 3] {
         let d = self.density_log2(v);
-        std::array::from_fn(|c| ((d[c] - self.dmax[c]) * self.stretch[c]).exp2())
+        std::array::from_fn(|c| {
+            ((d[c] - self.dmax[c]) * self.stretch[c])
+                .clamp(MIN_EXPONENT, MAX_EXPONENT)
+                .exp2()
+        })
     }
 
     /// Density above the film base of camera sample `v`, in the recipe's decimal

@@ -606,3 +606,220 @@ fn the_film_base_picker_reads_a_rendered_files_linear_values() {
     let got = film_base_pick(&im, &Recipe::default(), 6. / 48., 0.5).unwrap();
     assert!(relative_error(got, COLOUR.base) < 2e-3, "{got:?}");
 }
+
+/// Valid narrow-range recipes stay finite on unlit / zero pixels and never produce
+/// `inf` or `NaN` in the per-pixel pipeline.
+#[test]
+fn narrow_range_conversion_stays_finite_on_unlit_samples() {
+    let n = NegativeConversion {
+        film: FilmType::Colour,
+        base: [1.; 3],
+        dmin: [0.; 3],
+        dmax: [0.05, 5., 5.],
+    };
+    n.validate().expect("valid conversion");
+    let inv = Inversion::new(&n, false);
+    for sample in [[0.; 3], [1e-6; 3], [-0.1, 0., 0.5], [f32::NAN; 3]] {
+        let out = inv.apply(sample);
+        assert!(
+            out.iter().all(|v| v.is_finite() && *v > 0.),
+            "non-finite inversion for {sample:?}: {out:?}"
+        );
+    }
+    let im = image(32, 32, |x, _| if x < 8 { [0.; 3] } else { [0.2; 3] });
+    let r = Recipe {
+        negative: Some(n),
+        ..Default::default()
+    };
+    let rendered = crate::develop::render(&im, &r.checked().unwrap(), 32, Cancel::NEVER).unwrap();
+    let bright = rendered.pixels.iter().filter(|p| p[0] > 0.5).count();
+    assert!(
+        bright > 0,
+        "unlit samples should render bright, not NaN-black"
+    );
+    assert!(
+        rendered
+            .pixels
+            .iter()
+            .all(|p| p.iter().all(|v| v.is_finite())),
+        "non-finite rendered pixel"
+    );
+}
+
+/// For a rendered negative scan, `ColorSpread::measure` checks clipping in the scan's
+/// linear values (`negative::clipped`), not on Camera Raw's pseudo-scene values: bright
+/// unclipped scan pixels (`0.95`) stay included, while clipped light-table pixels
+/// (`0.985`, whose pseudo-scene falls below `0.94` so the raw `peak > 0.94` check kept
+/// them) are excluded.
+#[test]
+fn color_spread_checks_rendered_negative_clip_in_linear_scan_space() {
+    let n = COLOUR.conversion(FilmType::Colour);
+    // Clean unclipped scan pixels (linear r = 0.95 < 0.98) vs. same scan with a clipped
+    // light-table border (linear 0.985 >= 0.98, pseudo-scene < 0.94).
+    let clean_raw = image(32, 32, |x, y| {
+        if x < 16 {
+            [0.95, 0.70, 0.45]
+        } else {
+            let t = (x - 16) as f32 / 15.;
+            let s = (y as f32) / 31.;
+            COLOUR.scan([0.05 + 0.8 * t, 0.05 + 0.8 * s, 0.05 + 0.8 * (1. - t)])
+        }
+    });
+    let with_clipped_raw = image(32, 32, |x, y| {
+        if x < 8 {
+            [0.985; 3]
+        } else {
+            clean_raw.pixels[(y * 32 + x) as usize]
+        }
+    });
+    let to_rendered = |mut im: CameraImage| {
+        im.metadata.source = crate::camera_data::Source::Rendered;
+        crate::develop::rendered::to_scene(im)
+    };
+    let clean_rendered = to_rendered(clean_raw.clone());
+    let with_clipped_rendered = to_rendered(with_clipped_raw.clone());
+    // Sanity check: the clipped light-table pixel (linear 0.985) really has pseudo-scene
+    // < 0.94 (where the old raw-value check failed to exclude it), while `clipped` catches it.
+    let clipped_px = with_clipped_rendered.pixels[0];
+    assert!(
+        clipped_px[0] < 0.94 && clipped(clipped_px, &with_clipped_rendered.metadata),
+        "expected pseudo-scene < 0.94 and clipped=true, got {clipped_px:?}"
+    );
+    // Rendered matches RAW on the clean bright scan.
+    let raw_spread = crate::develop::ColorSpread::measure(&clean_raw, Some(&n));
+    let rendered_spread = crate::develop::ColorSpread::measure(&clean_rendered, Some(&n));
+    for c in 0..3 {
+        assert!(
+            rendered_spread.mean[c] > 0.
+                && (rendered_spread.mean[c] / raw_spread.mean[c] - 1.).abs() < 0.02,
+            "channel {c}: rendered={:?} raw={:?}",
+            rendered_spread.mean,
+            raw_spread.mean
+        );
+    }
+    // And clipped light-table pixels in the rendered scan are excluded just as in the RAW scan.
+    let raw_with_clip = crate::develop::ColorSpread::measure(&with_clipped_raw, Some(&n));
+    let rendered_with_clip = crate::develop::ColorSpread::measure(&with_clipped_rendered, Some(&n));
+    for c in 0..3 {
+        assert!(
+            (rendered_with_clip.mean[c] / raw_with_clip.mean[c] - 1.).abs() < 0.02,
+            "clipped exclusion mismatch c={c}: rendered={:?} raw={:?}",
+            rendered_with_clip.mean,
+            raw_with_clip.mean
+        );
+    }
+}
+
+/// A black film holder cropped out of a negative scan must not distort Shadows,
+/// Highlights, Dehaze, Contrast, Clarity, or `ColorSpread::for_recipe`.
+#[test]
+fn cropped_out_film_holder_does_not_corrupt_tone_haze_or_color_spread() {
+    let (w, h) = (160u32, 120u32);
+    let scene_at = |x: u32, y: u32| -> [f32; 3] {
+        let u = (x as f32 / (w - 1) as f32).clamp(0., 1.);
+        let v = (y as f32 / (h - 1) as f32).clamp(0., 1.);
+        // Rich tonal gradient with midtones, shadows and a highlight band.
+        let l = 10f32.powf(-1.8 + 1.75 * (0.75 * u + 0.25 * v));
+        [l, l * (0.85 + 0.15 * v), l * (0.75 + 0.25 * (1. - u))]
+    };
+    let clean = image(w, h, |x, y| COLOUR.scan(scene_at(x, y)));
+    let with_holder = image(w, h, |x, y| {
+        if x < 16 || x >= w - 16 || y < 12 || y >= h - 12 {
+            [0.0005; 3]
+        } else {
+            COLOUR.scan(scene_at(x, y))
+        }
+    });
+    let n = COLOUR.conversion(FilmType::Colour);
+    let base = Recipe {
+        negative: Some(n),
+        crop: [0.1, 0.1, 0.9, 0.9],
+        ..Default::default()
+    };
+
+    // ColorSpread::for_recipe matches the clean crop.
+    let spread_clean = crate::develop::ColorSpread::for_recipe(&clean, &base);
+    let spread_holder = crate::develop::ColorSpread::for_recipe(&with_holder, &base);
+    for c in 0..3 {
+        assert!(
+            (spread_holder.mean[c] - spread_clean.mean[c]).abs() < 1e-4,
+            "ColorSpread mean mismatch c={c}: holder={:?} clean={:?}",
+            spread_holder.mean,
+            spread_clean.mean
+        );
+    }
+
+    // Tone, local tone, Dehaze, Contrast and Clarity must agree closely between
+    // clean and holder-framed scans once cropped.
+    type Edit = fn(&mut Recipe);
+    let cases: [(&str, Edit); 5] = [
+        ("Shadows +50", |r| r.shadows = 0.5),
+        ("Highlights -50", |r| r.highlights = -0.5),
+        ("Dehaze -50", |r| r.effects.dehaze = -0.5),
+        ("Dehaze +50", |r| r.effects.dehaze = 0.5),
+        ("Contrast +50 & Clarity +50", |r| {
+            r.contrast = 0.5;
+            r.effects.clarity = 0.5;
+        }),
+    ];
+    for (name, edit) in cases {
+        let mut r = base.clone();
+        edit(&mut r);
+        let valid = r.checked().unwrap();
+        let a = crate::develop::render(&clean, &valid, 256, Cancel::NEVER).unwrap();
+        let b = crate::develop::render(&with_holder, &valid, 256, Cancel::NEVER).unwrap();
+        assert_eq!(a.pixels.len(), b.pixels.len());
+        let mean_diff: f32 = a
+            .pixels
+            .iter()
+            .zip(&b.pixels)
+            .map(|(p, q)| {
+                (p[0] - q[0])
+                    .abs()
+                    .max((p[1] - q[1]).abs())
+                    .max((p[2] - q[2]).abs())
+            })
+            .sum::<f32>()
+            / a.pixels.len() as f32;
+        assert!(
+            mean_diff < 0.02,
+            "{name}: cropped-out film holder shifted render (mean diff {mean_diff:.4})"
+        );
+    }
+    // Rendering through a shared PreviewRenderer (StageCache) before and after cropping
+    // must invalidate the cached measures rather than reusing the uncropped holder's.
+    let mut renderer = crate::develop::PreviewRenderer::default();
+    let uncropped = Recipe {
+        shadows: 0.5,
+        crop: [0., 0., 1., 1.],
+        ..base.clone()
+    };
+    let cropped = Recipe {
+        shadows: 0.5,
+        ..base
+    };
+    let _ = renderer
+        .render(&with_holder, &uncropped, 256, None, Cancel::NEVER)
+        .unwrap();
+    let cached_cropped = renderer
+        .render(&with_holder, &cropped, 256, None, Cancel::NEVER)
+        .unwrap();
+    let fresh_clean =
+        crate::develop::render(&clean, &cropped.checked().unwrap(), 256, Cancel::NEVER).unwrap();
+    let diff: f32 = cached_cropped
+        .pixels
+        .iter()
+        .zip(&fresh_clean.pixels)
+        .map(|(p, q)| {
+            (p[0] - q[0])
+                .abs()
+                .max((p[1] - q[1]).abs())
+                .max((p[2] - q[2]).abs())
+        })
+        .sum::<f32>()
+        / fresh_clean.pixels.len() as f32;
+    assert!(
+        diff < 0.02,
+        "cached measures stayed stale after cropping out holder (mean diff {diff:.4})"
+    );
+}

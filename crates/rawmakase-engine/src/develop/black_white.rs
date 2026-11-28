@@ -24,7 +24,7 @@ impl ColorSpread {
         im: &CameraImage,
         negative: Option<&crate::model::negative::NegativeConversion>,
     ) -> Self {
-        let negative =
+        let inversion =
             negative.map(|n| super::negative::Inversion::new(n, im.metadata.is_rendered()));
         let step = (im.width.max(im.height) / 1024).max(1) as usize;
         let (mut n, mut sum, mut products) = (0f64, [0f64; 3], [[0f64; 3]; 3]);
@@ -34,13 +34,23 @@ impl ColorSpread {
             // never copied out whole.
             let row = im.pixels.range(y * width..(y + 1) * width);
             for p in row.iter().step_by(step) {
-                let peak = (0..3)
-                    .map(|c| p[c] / im.metadata.wb[c].max(0.001))
-                    .fold(0f32, f32::max);
-                if peak > CLIPPED || !p.iter().all(|v| v.is_finite()) {
+                let clipped = if inversion.is_some() {
+                    // For a rendered scan, `im.pixels` holds Camera Raw's pseudo-scene
+                    // whose unclipped values exceed 1.0, so check clip in scan linear space.
+                    super::negative::clipped(*p, &im.metadata)
+                } else {
+                    let peak = (0..3)
+                        .map(|c| p[c] / im.metadata.wb[c].max(0.001))
+                        .fold(0f32, f32::max);
+                    peak > CLIPPED
+                };
+                if clipped || !p.iter().all(|v| v.is_finite()) {
                     continue;
                 }
-                let p = negative.as_ref().map_or(*p, |n| n.apply(*p)).map(f64::from);
+                let p = inversion
+                    .as_ref()
+                    .map_or(*p, |n| n.apply(*p))
+                    .map(f64::from);
                 n += 1.;
                 for i in 0..3 {
                     sum[i] += p[i];
@@ -50,6 +60,36 @@ impl ColorSpread {
                 }
             }
         }
+        Self::finish(n, sum, products)
+    }
+
+    /// As [`Self::measure`], for `r`: a regular photo measures the full frame unchanged;
+    /// a converted negative samples inside `r`'s crop so a cropped-out black film holder
+    /// cannot dominate the mean and covariance.
+    pub fn for_recipe(im: &CameraImage, r: &Recipe) -> Self {
+        let Some(negative) = r.negative.as_ref() else {
+            return Self::measure(im, None);
+        };
+        let inversion = super::negative::Inversion::new(negative, im.metadata.is_rendered());
+        let grid = super::auto::crop_grid_at(im, r, 1024, 0.);
+        let (mut n, mut sum, mut products) = (0f64, [0f64; 3], [[0f64; 3]; 3]);
+        for (_, p) in grid.samples {
+            if super::negative::clipped(p, &im.metadata) || !p.iter().all(|v| v.is_finite()) {
+                continue;
+            }
+            let p = inversion.apply(p).map(f64::from);
+            n += 1.;
+            for i in 0..3 {
+                sum[i] += p[i];
+                for j in 0..3 {
+                    products[i][j] += p[i] * p[j];
+                }
+            }
+        }
+        Self::finish(n, sum, products)
+    }
+
+    fn finish(n: f64, sum: [f64; 3], products: [[f64; 3]; 3]) -> Self {
         let n = n.max(1.);
         let mean = sum.map(|s| s / n);
         let covariance = std::array::from_fn(|i| {

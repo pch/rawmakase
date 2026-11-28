@@ -938,6 +938,16 @@ fn gpu_develop_matches_cpu_pixel_stage() -> Result<()> {
             negative: Some(colour.with_film(FilmType::BlackWhite)),
             ..base(&plain)
         });
+        // Valid extreme channel range whose dark pixels hit the exponent clamp.
+        recipes.push(Recipe {
+            negative: Some(NegativeConversion {
+                film: FilmType::Colour,
+                base: [1.; 3],
+                dmin: [0.; 3],
+                dmax: [0.05, 5., 5.],
+            }),
+            ..base(&plain)
+        });
     }
     let mut gpu = Processor::new()?;
     let cancel = AtomicBool::new(false);

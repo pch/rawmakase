@@ -188,16 +188,17 @@ impl Keyed for MeasuredKey {
     }
 }
 
-/// The recipe as the cached stages read it: the samples, and the photo's measures.
+/// The recipe as the cached stages read it: the samples, camera color, and the photo's
+/// measures.
 struct StageRecipes {
     samples: Recipe,
+    color: Recipe,
     measures: Recipe,
 }
 /// The recipe as the camera color (S1: a negative's conversion, white balance, the
-/// profile's matrix and HueSatMap, Camera Calibration) reads it: the measures' fields,
-/// which hold them.
+/// profile's matrix and HueSatMap, Camera Calibration) reads it.
 pub(crate) fn color_recipe(r: &Recipe) -> Recipe {
-    stage_recipes(r).measures
+    stage_recipes(r).color
 }
 /// Splits `r` into what each cached stage reads. `Recipe` and `Effects` are taken
 /// apart without `..`, so adding a field to either is a compile error here until it is
@@ -320,6 +321,44 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         defringe: _,
         defringe_ranges: _,
     } = effects;
+    let color = Recipe {
+        negative: negative.clone(),
+        wb: *wb,
+        temperature: *temperature,
+        tint: *tint,
+        incremental_temperature: *incremental_temperature,
+        incremental_tint: *incremental_tint,
+        auto_white_balance: *auto_white_balance,
+        profile: profile.clone(),
+        profile_amount: *profile_amount,
+        camera_exposure: *camera_exposure,
+        effects: Effects {
+            calibration: *calibration,
+            shadow_tint: *shadow_tint,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // For a converted negative, measurements exclude pixels outside the crop so a
+    // cropped-out film holder does not bias tone, haze or contrast statistics.
+    let mut measures = color.clone();
+    if negative.is_some() {
+        measures.crop = *crop;
+        measures.rotation = *rotation;
+        measures.straighten = *straighten;
+        measures.constrain_crop = *constrain_crop;
+        measures.flip_x = *flip_x;
+        measures.flip_y = *flip_y;
+        measures.transform = *transform;
+        measures.upright = upright.clone();
+        measures.lens_builtin = *lens_builtin;
+        measures.lens_file_correction = *lens_file_correction;
+        measures.lens_profile = *lens_profile;
+        measures.lens_profile_choice = lens_profile_choice.clone();
+        measures.lens_distortion = *lens_distortion;
+        measures.lens_manual_distortion = *lens_manual_distortion;
+        measures.lens_ca = *lens_ca;
+    }
     StageRecipes {
         // Geometry, lens correction and noise reduction.
         samples: Recipe {
@@ -355,24 +394,8 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         },
         // The negative conversion, white balance, the profile's color and calibration,
         // at the camera's exposure.
-        measures: Recipe {
-            negative: negative.clone(),
-            wb: *wb,
-            temperature: *temperature,
-            tint: *tint,
-            incremental_temperature: *incremental_temperature,
-            incremental_tint: *incremental_tint,
-            auto_white_balance: *auto_white_balance,
-            profile: profile.clone(),
-            profile_amount: *profile_amount,
-            camera_exposure: *camera_exposure,
-            effects: Effects {
-                calibration: *calibration,
-                shadow_tint: *shadow_tint,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
+        color,
+        measures,
     }
 }
 
@@ -609,6 +632,44 @@ mod tests {
         ];
         for (name, r, changed) in cases {
             assert_eq!(measures(&r), changed, "{name}");
+        }
+        // With a negative conversion active, crop and geometry changes invalidate the
+        // photo's measures (so cropped-out film holders are excluded) without changing
+        // the per-pixel camera color recipe.
+        let mut neg_base = base.clone();
+        neg_base.negative = negative;
+        let neg_edit = |f: &dyn Fn(&mut Recipe)| {
+            let mut r = neg_base.clone();
+            f(&mut r);
+            r
+        };
+        for (name, r) in [
+            (
+                "negative crop",
+                neg_edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]),
+            ),
+            ("negative straighten", neg_edit(&|r| r.straighten = 2.)),
+            ("negative rotation", neg_edit(&|r| r.rotation = 1)),
+            ("negative flip", neg_edit(&|r| r.flip_x = true)),
+            (
+                "negative transform",
+                neg_edit(&|r| r.transform.vertical = 0.2),
+            ),
+            (
+                "negative lens distortion",
+                neg_edit(&|r| r.lens_manual_distortion = -0.2),
+            ),
+        ] {
+            assert_ne!(
+                stage_recipes(&neg_base).measures,
+                stage_recipes(&r).measures,
+                "{name} changes measures"
+            );
+            assert_eq!(
+                color_recipe(&neg_base),
+                color_recipe(&r),
+                "{name} keeps camera color"
+            );
         }
     }
     #[test]

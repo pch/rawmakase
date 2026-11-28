@@ -177,10 +177,8 @@ impl Editor {
                 self.view.negative_holder = holder_in_crop
                     .then(|| applied.negative.clone())
                     .flatten()
-                    .map(|conversion| NegativeHolder {
-                        load: self.document.load_id(),
-                        crop: applied.crop,
-                        conversion,
+                    .map(|conversion| {
+                        NegativeHolder::new(self.document.load_id(), &applied, conversion)
                     });
             }
         }

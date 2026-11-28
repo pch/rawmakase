@@ -215,7 +215,12 @@ pub(super) struct CropGrid {
 /// [`crop_samples`] leaving out `inset` of the crop's width and height at each side,
 /// each with its cell in the grid over that inset crop.
 pub(super) fn crop_grid(im: &CameraImage, r: &Recipe, inset: f32) -> CropGrid {
-    let g = super::Geometry::new(im, r, WHITE_BALANCE_EDGE);
+    crop_grid_at(im, r, WHITE_BALANCE_EDGE, inset)
+}
+
+/// As [`crop_grid`], sizing the grid to `max_edge` on its long edge.
+pub(super) fn crop_grid_at(im: &CameraImage, r: &Recipe, max_edge: u32, inset: f32) -> CropGrid {
+    let g = super::Geometry::new(im, r, max_edge);
     let lens = super::image_space::LensMap::new(im, r);
     let (columns, rows) = (g.width.max(1), g.height.max(1));
     let mut samples = Vec::with_capacity((columns * rows) as usize);
@@ -403,7 +408,7 @@ impl crate::model::measures::PhotoMeasures for Measures<'_> {
         auto_white_balance(self.0, base, Cancel::NEVER)
     }
     fn auto_gray_mix(&self, r: &Recipe, m: &Metadata) -> [f32; 8] {
-        let spread = super::ColorSpread::measure(self.0, r.negative.as_ref());
+        let spread = super::ColorSpread::for_recipe(self.0, r);
         super::AutoMix {
             spread: &spread,
             metadata: m,

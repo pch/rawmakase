@@ -1390,8 +1390,9 @@ fn dehaze_positive(pro: vec3<f32>, s: f32, pos: vec2<f32>, tone_gain: f32) -> ve
     let pixel_dc = max(min(min(pro.x / air.x, pro.y / air.y), pro.z / air.z), 0.0);
     let d = min(density, pixel_dc) * haze_dark_weight(y);
     let omega = select(haze_omega(s), haze_omega_rendered(s), p(P_HAZE_RENDERED) != 0.0);
-    let t = max(1.0 - omega * d, 0.28);
-    let j = (pro - air) / t + air;
+    let drop = min(omega * d, 1.0 - 0.28);
+    let t = 1.0 - drop;
+    let j = (pro - drop * air) / t;
     // haze.rs: no channel below half the color scaled by the luminance's change.
     let ratio = max(dot(j, lw), 0.0) / max(y, 1e-9);
     return max(j, 0.5 * pro * ratio);
@@ -1940,7 +1941,7 @@ fn negative(sample: vec3<f32>) -> vec3<f32> {
     if p(P_NEGATIVE + 1u) != 0.0 {
         d = vec3((d.x + d.y + d.z) / 3.0);
     }
-    return exp2((d - dmax) * stretch);
+    return exp2(clamp((d - dmax) * stretch, vec3(-30.0), vec3(16.0)));
 }
 // S1: scene_color.
 fn scene_color(sample_in: vec3<f32>, apply_local: bool) -> vec3<f32> {
