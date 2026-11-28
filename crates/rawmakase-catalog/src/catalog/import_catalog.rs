@@ -3,23 +3,28 @@
 //! Import from Another Catalog adds them ([`Catalog::import_catalog`]).
 //!
 //! The other catalog is never changed. A private copy of it is made
-//! (SQLite's own, as Export as Catalog makes one), upgraded to this
+//! (SQLite's own, as Export as Catalog makes one, staged in a hidden
+//! temporary folder beside this catalog; a crash or force-quit mid-import
+//! leaves at most that folder with the unfinished copy), upgraded to this
 //! release's format when older, and reduced to the photos to add: those
 //! this catalog has already, by UUID or by file, those whose file isn't
-//! there on this computer and those whose folder can't be placed are taken
-//! out of the copy, as Export as Catalog takes out the photos it leaves.
+//! there on this computer and those whose folder can't be placed are
+//! taken out of the copy, as Export as Catalog takes out the photos it leaves.
 //! What is left is copied row by row, one statement per table, with the
-//! copy attached; each row keeps its bytes, so an edit, History or
-//! metadata a later release extends arrives as it was. Ids are shifted
-//! above every id this catalog has given. Folders are placed as Add Folder
-//! places them, by this computer's folder locations; keywords and
-//! collections are found by their path and made where this catalog has
-//! none.
+//! copy attached in an immediate transaction; each row keeps its bytes, so an
+//! edit, History or metadata a later release extends arrives as it was. Ids are
+//! shifted above every id this catalog has given. Folders are placed as Add
+//! Folder places them, by this computer's folder locations; when an anchor
+//! would enclose a folder this catalog already has, the shallowest folder
+//! below it that does not enclose one becomes the new root instead (and a
+//! photo whose own folder still encloses one is left out). Keywords and
+//! collections are found by their path and made where this catalog has none.
+//! Smart collections stay with the other catalog.
 //!
 //! The tests list what happens to each table of the schema, and fail when
 //! it gains one they don't list.
 use super::db::{LightroomWrite, Reads, sql, sqlite_sql};
-use super::ingest::{ImportKind, Place, folder_id, known, new_batch};
+use super::ingest::{ImportKind, Matched, Matcher, Place, folder_id, known, new_batch};
 use super::value::row;
 use super::{Catalog, CollectionId, FolderId, PhotoId, RootId};
 use crate::metadata::keyword_key;
@@ -39,8 +44,10 @@ pub struct CatalogImport {
     /// Masters whose file isn't where the other catalog has it on this
     /// computer, left out with their virtual copies.
     pub missing: Vec<PathBuf>,
-    /// Masters whose folder this catalog has elsewhere on this computer, or
-    /// can't tell apart from another, left out with their virtual copies.
+    /// Masters whose folder could not be placed in this catalog (located
+    /// elsewhere here, matching more than one location, enclosing an existing
+    /// catalog folder, or split across paths), left out with their virtual
+    /// copies.
     pub unplaced: Vec<PathBuf>,
 }
 
@@ -49,9 +56,119 @@ struct Target {
     place: Place,
     /// The folder the root it makes is, for [`Place::New`].
     root: PathBuf,
+    /// The canonical folder on disk.
+    directory_path: PathBuf,
     /// The folder on disk, ending in a separator: the start of its photos'
     /// paths.
     directory: String,
+}
+
+/// Cached filenames per `(RootId, logical)` folder in this catalog, indexed
+/// case-insensitively so checking whether a file is already present stays
+/// linear while still catching case-differing aliases on case-insensitive
+/// filesystems.
+#[derive(Default)]
+struct FolderNames {
+    by_folder: HashMap<(RootId, String), HashMap<String, Vec<String>>>,
+}
+
+impl FolderNames {
+    fn has_file(
+        &mut self,
+        r: &impl Reads,
+        root: RootId,
+        logical: &str,
+        directory: &Path,
+        filename: &str,
+    ) -> Result<bool> {
+        let file = directory.join(filename);
+        if known(r, root, logical, &file)? {
+            return Ok(true);
+        }
+        let key = (root, logical.to_string());
+        let names = match self.by_folder.entry(key) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let stored: Vec<String> = r.read(
+                    sql!(
+                        "SELECT DISTINCT filename FROM photos WHERE folder IN
+                         (SELECT f.id FROM folders f JOIN folder_paths p ON p.folder=f.id
+                          WHERE f.root=? AND p.path=?)"
+                    ),
+                    &[&root, &logical],
+                )?;
+                let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
+                for name in stored {
+                    let folded = super::sidecar::caseless(std::ffi::OsStr::new(&name));
+                    grouped.entry(folded).or_default().push(name);
+                }
+                entry.insert(grouped)
+            }
+        };
+        let want = super::sidecar::caseless(std::ffi::OsStr::new(filename));
+        let Some(candidates) = names.get(&want) else {
+            return Ok(false);
+        };
+        let real = file.canonicalize().ok();
+        for existing in candidates {
+            if existing == filename {
+                return Ok(true);
+            }
+            if real.is_some() && directory.join(existing).canonicalize().ok() == real {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+/// `directory` ending in a path separator without doubling a drive root's.
+fn dir_prefix(directory: &Path) -> String {
+    let mut text = directory.to_string_lossy().into_owned();
+    if !text.ends_with(std::path::MAIN_SEPARATOR) && !(cfg!(windows) && text.ends_with('/')) {
+        text.push(std::path::MAIN_SEPARATOR);
+    }
+    text
+}
+
+/// The shallowest ancestor of `directory` strictly below `anchor` that does
+/// not hold any existing catalog location below it, paired with `directory`'s
+/// logical path inside that root. Returns `None` when `directory` itself holds
+/// an existing catalog location.
+fn shallowest_free_root(
+    matcher: &Matcher,
+    directory: &Path,
+    anchor: &Path,
+) -> Option<(PathBuf, String)> {
+    if matcher.holds_below(directory) {
+        return None;
+    }
+    let mut best = directory;
+    for ancestor in directory.ancestors().skip(1) {
+        if ancestor == anchor || !ancestor.starts_with(anchor) || matcher.holds_below(ancestor) {
+            break;
+        }
+        best = ancestor;
+    }
+    let rest = directory.strip_prefix(best).unwrap_or(Path::new(""));
+    Some((best.to_path_buf(), super::locations::logical_from_os(rest)))
+}
+
+/// A deduplication key for `filename` in canonical `directory`: uses the
+/// disk's canonical filename when the file is not a symlink to another
+/// directory, so case-differing spellings on a case-insensitive filesystem
+/// collapse to one key while symlinks keep their link name in `directory`.
+fn file_dedup_key(directory: &Path, filename: &str) -> (PathBuf, String) {
+    let file = directory.join(filename);
+    let canonical_in_dir = file
+        .canonicalize()
+        .ok()
+        .filter(|real| real.parent() == Some(directory))
+        .and_then(|real| real.file_name().map(|n| n.to_string_lossy().into_owned()));
+    (
+        directory.to_path_buf(),
+        canonical_in_dir.unwrap_or_else(|| filename.to_string()),
+    )
 }
 
 impl Catalog {
@@ -66,10 +183,14 @@ impl Catalog {
     ) -> Result<Option<CatalogImport>> {
         let super::CatalogLocation::File(own) = &self.location;
         ensure!(
-            source.canonicalize().ok() != own.canonicalize().ok(),
+            !matches!(
+                (source.canonicalize(), own.canonicalize()),
+                (Ok(s), Ok(o)) if s == o
+            ),
             "That is the catalog open now; choose another"
         );
-        let staging = tempfile::tempdir()?;
+        let parent = crate::storage::parent_dir(own);
+        let staging = tempfile::tempdir_in(parent)?;
         let working = staging.path().join("import.rawmakase");
         super::db::Db::copy_file(source, &working).context("Could not read the catalog")?;
         let mut copy = Catalog::open_as(working.as_path(), &self.computer)?;
@@ -114,12 +235,26 @@ impl Catalog {
             .into_iter()
             .map(|u| (u.photo, u.uuid))
             .collect();
+        let masters: HashSet<PhotoId> = photos
+            .iter()
+            .filter(|p| p.master.is_none())
+            .map(|p| p.id)
+            .collect();
         let mut families: BTreeMap<PhotoId, Vec<PhotoId>> = BTreeMap::new();
+        let mut leave: BTreeSet<PhotoId> = BTreeSet::new();
         for p in &photos {
-            families
-                .entry(p.master.unwrap_or(p.id))
-                .or_default()
-                .push(p.id);
+            match p.master {
+                Some(master) if !masters.contains(&master) => {
+                    // An orphaned virtual copy whose master is missing stays behind.
+                    leave.insert(p.id);
+                }
+                _ => {
+                    families
+                        .entry(p.master.unwrap_or(p.id))
+                        .or_default()
+                        .push(p.id);
+                }
+            }
         }
         let folder_of: HashMap<PhotoId, FolderId> =
             photos.iter().map(|p| (p.id, p.folder)).collect();
@@ -139,11 +274,10 @@ impl Catalog {
             .collect();
         anchors.sort();
         anchors.dedup();
-        let mut leave: BTreeSet<PhotoId> = BTreeSet::new();
-        // Each master's file as it is on disk, by the folder chosen for it
-        // as Add Folder is given one: the most specific of those that holds
-        // it, else its own.
-        let mut by_root: BTreeMap<PathBuf, Vec<(PhotoId, PathBuf)>> = BTreeMap::new();
+        // Each master's canonical folder and stored filename, grouped by the
+        // anchor chosen for it as Add Folder is given one: the most specific of
+        // those that holds it, else its own folder.
+        let mut by_root: BTreeMap<PathBuf, Vec<(PhotoId, PathBuf, String)>> = BTreeMap::new();
         for p in photos.iter().filter(|p| p.master.is_none()) {
             let family = &families[&p.id];
             let present = self.db.snapshot(|s| {
@@ -166,57 +300,102 @@ impl Catalog {
                 leave.extend(family);
                 continue;
             }
-            let found = p.path.canonicalize().ok().filter(|f| f.is_file());
-            match found {
-                Some(file) => {
-                    let directory = file.parent().expect("a file is in a folder");
+            // Canonicalize only the parent directory, not the file itself, so
+            // stored filenames keep their spelling and file symlinks keep their
+            // link directory and name instead of pointing to a non-existent path.
+            let directory = p
+                .path
+                .is_file()
+                .then(|| p.path.parent().and_then(|d| d.canonicalize().ok()))
+                .flatten();
+            match directory {
+                Some(directory) => {
                     let chosen = anchors
                         .iter()
                         .filter(|a| directory.starts_with(a))
                         .max_by_key(|a| a.components().count())
                         .cloned()
-                        .unwrap_or_else(|| directory.to_path_buf());
-                    by_root.entry(chosen).or_default().push((p.id, file));
+                        .unwrap_or_else(|| directory.clone());
+                    by_root
+                        .entry(chosen)
+                        .or_default()
+                        .push((p.id, directory, p.filename.clone()));
                 }
                 None => {
-                    report.missing.push(p.path.clone());
+                    let missing = if p.path.as_os_str().is_empty() {
+                        PathBuf::from(&p.filename)
+                    } else {
+                        p.path.clone()
+                    };
+                    report.missing.push(missing);
                     leave.extend(family);
                 }
             }
         }
-        // Placed as Add Folder places the folder each root is.
+        // Placed as Add Folder places the folder each root is, refusing any new
+        // root that would enclose a root or location this catalog already has.
+        let matcher = Matcher::new(self)?;
+        let mut existing_names = FolderNames::default();
+        let mut seen_files: HashSet<(PathBuf, String)> = HashSet::new();
         let mut targets: HashMap<FolderId, Target> = HashMap::new();
         for (root, files) in by_root {
-            let paths: Vec<PathBuf> = files.iter().map(|(_, f)| f.clone()).collect();
-            let placed = self.place(&paths, &root, &[])?;
-            for (id, file) in files {
+            for (id, directory, filename) in files {
                 let family = &families[&id];
-                let directory = file.parent().expect("a file is in a folder");
-                let place = placed.places.get(directory);
-                let Some(place) = place else {
-                    report.unplaced.push(file);
-                    leave.extend(family);
-                    continue;
+                let file = directory.join(&filename);
+                let (place, target_root) = match matcher.place(&directory, &root, &[]) {
+                    Matched::Place(Place::Folder(root_id, logical)) => {
+                        (Place::Folder(root_id, logical), root.clone())
+                    }
+                    Matched::Place(Place::New(logical)) if !matcher.holds_below(&root) => {
+                        (Place::New(logical), root.clone())
+                    }
+                    Matched::Place(Place::New(_)) => {
+                        // The chosen anchor holds an existing catalog folder,
+                        // so use the shallowest ancestor below it that does not
+                        // enclose one, keeping siblings and subfolders together
+                        // under one root.
+                        match shallowest_free_root(&matcher, &directory, &root) {
+                            Some((free_root, logical)) => (Place::New(logical), free_root),
+                            None => {
+                                report.unplaced.push(file);
+                                leave.extend(family);
+                                continue;
+                            }
+                        }
+                    }
+                    Matched::Conflict(_) | Matched::Ambiguous(_) => {
+                        report.unplaced.push(file);
+                        leave.extend(family);
+                        continue;
+                    }
                 };
-                if let Place::Folder(root_id, logical) = place
-                    && self.db.snapshot(|s| known(s, *root_id, logical, &file))?
+                if let Place::Folder(root_id, logical) = &place
+                    && self.db.snapshot(|s| {
+                        existing_names.has_file(s, *root_id, logical, &directory, &filename)
+                    })?
                 {
                     report.present += family.len();
                     leave.extend(family);
                     continue;
                 }
+                // Two source folders resolving to the same directory with the
+                // same file on disk must not insert duplicate master rows.
+                if !seen_files.insert(file_dedup_key(&directory, &filename)) {
+                    report.present += family.len();
+                    leave.extend(family);
+                    continue;
+                }
                 let folder = folder_of[&id];
-                let mut directory = directory.to_string_lossy().into_owned();
-                directory.push(std::path::MAIN_SEPARATOR);
+                let prefix = dir_prefix(&directory);
                 // Photos are copied folder by folder, so a folder's photos
-                // all go to the first one's place; one found elsewhere (by
-                // a link) is left out.
+                // all go to the first one's place; one found elsewhere is left out.
                 let target = targets.entry(folder).or_insert(Target {
-                    place: place.clone(),
-                    root: root.clone(),
-                    directory: directory.clone(),
+                    place,
+                    root: target_root,
+                    directory_path: directory,
+                    directory: prefix.clone(),
                 });
-                if target.directory != directory {
+                if target.directory != prefix {
                     report.unplaced.push(file);
                     leave.extend(family);
                 }
@@ -226,7 +405,41 @@ impl Catalog {
             for id in &leave {
                 super::copies::delete_photo(w, *id)?;
             }
+            // Drop any rows left behind by photos removed in earlier releases
+            // and degenerate single-photo stacks before pruning references.
+            for statement in [
+                sql!("DELETE FROM photo_keywords WHERE photo NOT IN (SELECT id FROM photos)"),
+                sql!("DELETE FROM collection_photos WHERE photo NOT IN (SELECT id FROM photos)"),
+                sql!("DELETE FROM stack_photos WHERE photo NOT IN (SELECT id FROM photos)"),
+                sql!(
+                    "DELETE FROM stack_photos WHERE stack IN
+                     (SELECT stack FROM stack_photos GROUP BY stack HAVING count(*) < 2)"
+                ),
+            ] {
+                w.execute(statement, &[])?;
+            }
             super::export_catalog::prune_unreferenced(w)?;
+            // Smart collections belong to the other catalog, not to its photos:
+            // leaving them behind avoids re-adding deleted defaults on import.
+            for statement in [
+                sql!("DELETE FROM smart_collection_rules"),
+                sql!(
+                    "WITH RECURSIVE used(id) AS (
+                         SELECT collection FROM collection_photos
+                         UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
+                         WHERE c.parent IS NOT NULL)
+                     DELETE FROM collection_options WHERE collection NOT IN (SELECT id FROM used)"
+                ),
+                sql!(
+                    "WITH RECURSIVE used(id) AS (
+                         SELECT collection FROM collection_photos
+                         UNION SELECT c.parent FROM collections c JOIN used u ON c.id=u.id
+                         WHERE c.parent IS NOT NULL)
+                     DELETE FROM collections WHERE id NOT IN (SELECT id FROM used)"
+                ),
+            ] {
+                w.execute(statement, &[])?;
+            }
             if let Some(unnamed) = super::mask_assets::unnamed(w)? {
                 super::mask_assets::delete(w, &unnamed)?;
             }
@@ -250,10 +463,42 @@ fn copy_rows(
     targets: &HashMap<FolderId, Target>,
     computer: &str,
 ) -> Result<usize> {
+    let count: i64 = w.read_sqlite::<i64>(sqlite_sql!("SELECT count(*) FROM src.photos"), &[])?[0];
+    if count == 0 {
+        return Ok(0);
+    }
+    // Check if any photo was added here by UUID since the other catalog was read.
+    let uuid_conflict: Vec<i64> = w.read_sqlite(
+        sqlite_sql!(
+            "SELECT 1 FROM src.photo_uuids s
+             JOIN photo_uuids m ON m.uuid = s.uuid
+             WHERE s.photo IN (SELECT id FROM src.photos)
+             LIMIT 1"
+        ),
+        &[],
+    )?;
+    ensure!(
+        uuid_conflict.is_empty(),
+        "Some of these photos were added to this catalog meanwhile; import the catalog again"
+    );
     // A file an unfinished Import Photos of this computer is copying is
     // that import's to add, as Add Folder leaves it.
     let reserved = super::file_ops::reserved_for_import(w.write(), computer)?;
+    let live_matcher = Matcher::read(w.write(), computer)?;
+    let mut existing_names = FolderNames::default();
     for (from, target) in targets {
+        // Re-check placement for new roots so a folder added concurrently
+        // cannot produce a duplicate root or duplicate master rows.
+        if let Place::New(_) = &target.place {
+            ensure!(
+                matches!(
+                    live_matcher.place(&target.directory_path, &target.root, &[]),
+                    Matched::Place(Place::New(_))
+                ) && !live_matcher.holds_below(&target.root),
+                "{} was added to this catalog meanwhile; import the catalog again",
+                target.root.display()
+            );
+        }
         let names: Vec<String> = w.read_sqlite(
             sqlite_sql!("SELECT filename FROM src.photos WHERE folder=? AND master_id IS NULL"),
             &[from],
@@ -267,15 +512,17 @@ fn copy_rows(
             // Added here since the other catalog was read.
             if let Place::Folder(root, logical) = &target.place {
                 ensure!(
-                    !known(w.write(), *root, logical, Path::new(&file))?,
+                    !existing_names.has_file(
+                        w.write(),
+                        *root,
+                        logical,
+                        &target.directory_path,
+                        &name
+                    )?,
                     "{file} was added to this catalog meanwhile; import the catalog again"
                 );
             }
         }
-    }
-    let count: i64 = w.read_sqlite::<i64>(sqlite_sql!("SELECT count(*) FROM src.photos"), &[])?[0];
-    if count == 0 {
-        return Ok(0);
     }
     let highest: i64 = w.read_sqlite::<i64>(sqlite_sql!("SELECT max(id) FROM src.photos"), &[])?[0];
     let photo = super::photo_ids::reserve_block(w.write(), highest)?;
@@ -408,7 +655,10 @@ fn copy_rows(
         &[&photo, &snapshot],
     )?;
     w.execute_sqlite(
-        sqlite_sql!("INSERT INTO stacks(id, collapsed) SELECT id+?1, collapsed FROM src.stacks"),
+        sqlite_sql!(
+            "INSERT INTO stacks(id, collapsed) SELECT id+?1, collapsed FROM src.stacks
+             WHERE id IN (SELECT stack FROM src.stack_photos WHERE photo IN (SELECT id FROM src.photos))"
+        ),
         &[&stack],
     )?;
     w.execute_sqlite(
@@ -546,7 +796,8 @@ fn copy_keywords(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
         w.execute_sqlite(
             sqlite_sql!(
                 "INSERT INTO photo_keywords(photo, keyword)
-                 SELECT photo+?1, ?2 FROM src.photo_keywords WHERE keyword=?3
+                 SELECT photo+?1, ?2 FROM src.photo_keywords
+                 WHERE keyword=?3 AND photo IN (SELECT id FROM src.photos)
                  ON CONFLICT DO NOTHING"
             ),
             &[&photo, &id, &row.id],
@@ -556,7 +807,7 @@ fn copy_keywords(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
 }
 
 /// Adds the photos added to the attached catalog's collections, each found
-/// by its path and kind, else made with its sort and rules. In a collection
+/// by its path and kind, else made with its sort. In a collection
 /// this catalog had, they go after its photos, in no order of their own.
 fn copy_collections(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
     row! {
@@ -606,20 +857,14 @@ fn copy_collections(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
                 continue;
             }
             let id = super::collections::insert(w.write(), &name, parent, &row.kind)?;
-            for statement in [
+            w.execute_sqlite(
                 sqlite_sql!(
                     "INSERT INTO collection_options(collection, sort, direction)
                      SELECT ?1, sort, direction FROM src.collection_options
                      WHERE collection=?2"
                 ),
-                sqlite_sql!(
-                    "INSERT INTO smart_collection_rules(collection, rules, format, lightroom)
-                     SELECT ?1, rules, format, lightroom FROM src.smart_collection_rules
-                     WHERE collection=?2"
-                ),
-            ] {
-                w.execute_sqlite(statement, &[&id, &row.id])?;
-            }
+                &[&id, &row.id],
+            )?;
             made_here.push(Row {
                 id: id.0,
                 name,
@@ -633,7 +878,8 @@ fn copy_collections(w: &mut LightroomWrite<'_>, photo: i64) -> Result<()> {
             sqlite_sql!(
                 "INSERT INTO collection_photos(collection, photo, position)
                  SELECT ?1, photo+?2, CASE WHEN ?3 THEN position END
-                 FROM src.collection_photos WHERE collection=?4
+                 FROM src.collection_photos
+                 WHERE collection=?4 AND photo IN (SELECT id FROM src.photos)
                  ON CONFLICT DO NOTHING"
             ),
             &[&id, &photo, &made, &row.id],

@@ -58,12 +58,52 @@ fn the_status_line_names_the_photos_left_out_and_why() -> anyhow::Result<()> {
     assert_eq!(
         line,
         "Imported 1 photo from Trip. Not imported: 1 photo not found on this computer, \
-         2 photos in a folder this catalog has elsewhere."
+         2 photos whose folder could not be placed in this catalog."
     );
     assert_eq!(
         detail.as_deref(),
         Some("/Volumes/Card/a.ARW\n/elsewhere/b.ARW\n/elsewhere/c.ARW")
     );
+    Ok(())
+}
+
+#[test]
+fn importing_a_catalog_holds_the_close_guard_until_done() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path().canonicalize()?;
+    let trip_photos = root.join("trip");
+    std::fs::create_dir_all(&trip_photos)?;
+    std::fs::write(trip_photos.join("t1.ARW"), b"trip fixture")?;
+    let trip = root.join("Trip.rawmakase");
+    Catalog::create(&trip)?.add_folder(&trip_photos)?;
+
+    let ctx = egui::Context::default();
+    let mut editor = crate::app::Editor::with_context(
+        &ctx,
+        None,
+        crate::app::preferences::session::Session::default(),
+        None,
+    );
+    editor.library = Some(library(&root)?);
+
+    editor.start_catalog_import(trip, &ctx);
+
+    assert!(editor.activity.is_changing_folder());
+    assert!(editor.closing_waits_for().is_some());
+    assert!(
+        editor
+            .catalog_work
+            .as_deref()
+            .is_some_and(|w| w.contains("Trip"))
+    );
+
+    crate::app::testing::settle_catalog(&mut editor, &ctx);
+
+    assert!(!editor.activity.is_busy());
+    assert_eq!(editor.closing_waits_for(), None);
+    assert_eq!(editor.catalog_work, None);
+    assert_eq!(editor.library.as_ref().unwrap().session.photos().len(), 2);
+    assert_eq!(editor.messages.line(), "Imported 1 photo from Trip.");
     Ok(())
 }
 

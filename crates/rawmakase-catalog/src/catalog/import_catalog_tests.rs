@@ -30,7 +30,7 @@ const TABLES: &[(&str, Carried)] = &[
     ("collections", Carried::Matched),
     ("collection_photos", Carried::Copied),
     ("collection_options", Carried::Copied),
-    ("smart_collection_rules", Carried::Copied),
+    ("smart_collection_rules", Carried::Left),
     ("keywords", Carried::Matched),
     ("keyword_synonyms", Carried::Copied),
     ("photo_keywords", Carried::Copied),
@@ -588,5 +588,337 @@ fn a_photo_added_here_meanwhile_stops_the_import() -> Result<()> {
         )?,
         1
     );
+    Ok(())
+}
+
+#[test]
+fn a_new_root_added_here_meanwhile_stops_the_import() -> Result<()> {
+    let mut s = setup()?;
+    let main = s.dir.join("Main.rawmakase");
+    let trip = s.dir.join("trip");
+
+    // `trip` is a new root when `reduce()` runs; another window adds it before
+    // the transaction writes.
+    let error = s
+        .main
+        .import_catalog(&s.trip, || {
+            Catalog::open(main.as_path())
+                .and_then(|mut c| c.add_folder(&trip))
+                .is_ok()
+        })
+        .unwrap_err();
+
+    assert!(error.to_string().contains("meanwhile"), "{error}");
+    assert_eq!(s.main.roots()?.len(), 2, "home and the one trip root");
+    assert_eq!(count(&s.main, "SELECT count(*) FROM photos")?, 3);
+    Ok(())
+}
+
+#[test]
+fn a_photo_added_by_uuid_meanwhile_stops_the_import() -> Result<()> {
+    let mut s = setup()?;
+    let main = s.dir.join("Main.rawmakase");
+    let trip_uuid = {
+        let trip = Catalog::open(s.trip.as_path())?;
+        let t1 = id_of(&trip, "t1.ARW")?;
+        trip.photo_uuid(t1)?.context("uuid")?
+    };
+
+    // Between `reduce()` and `copy_rows()`, another window assigns t1's UUID
+    // to a photo in main.
+    let error = s
+        .main
+        .import_catalog(&s.trip, || {
+            let Ok(other) = Catalog::open(main.as_path()) else {
+                return false;
+            };
+            let Ok(h1) = id_of(&other, "h1.ARW") else {
+                return false;
+            };
+            other
+                .db_for_tests()
+                .execute(
+                    "UPDATE photo_uuids SET uuid=?1 WHERE photo=?2",
+                    rusqlite::params![trip_uuid.as_str(), h1.0],
+                )
+                .is_ok()
+        })
+        .unwrap_err();
+
+    assert!(error.to_string().contains("meanwhile"), "{error}");
+    assert_eq!(count(&s.main, "SELECT count(*) FROM photos")?, 1);
+    Ok(())
+}
+
+#[test]
+fn duplicate_source_folders_for_one_directory_do_not_duplicate_masters() -> Result<()> {
+    let mut s = setup()?;
+    {
+        let trip = Catalog::open(s.trip.as_path())?;
+        let root = trip.roots()?[0].0;
+        let db = trip.db_for_tests();
+        // A second folder row in the source catalog resolving to the same
+        // directory with another master row for t1.ARW (different UUID).
+        db.execute(
+            "INSERT INTO folders(root, relative_path) VALUES (?, '')",
+            [root.0],
+        )?;
+        let dup_folder: i64 = db.query_row("SELECT max(id) FROM folders", [], |r| r.get(0))?;
+        db.execute(
+            "INSERT INTO folder_paths(folder, path) VALUES (?, '')",
+            [dup_folder],
+        )?;
+        db.execute(
+            "INSERT INTO photos(folder, filename, original_path) VALUES (?1, 't1.ARW', ?2)",
+            rusqlite::params![dup_folder, s.dir.join("trip/t1.ARW").to_string_lossy()],
+        )?;
+    }
+
+    let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
+
+    assert_eq!(report.added, 2, "t1 once and t2");
+    assert_eq!(report.present, 1, "the duplicate t1 is left out");
+    assert_eq!(
+        count(
+            &s.main,
+            "SELECT count(*) FROM photos WHERE filename='t1.ARW'"
+        )?,
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn orphaned_keywords_collections_stacks_and_virtual_copies_stay_behind() -> Result<()> {
+    let mut s = setup()?;
+    // Put t1 in main already so a stack [t1, t1b] in trip loses t1 and becomes
+    // a single-photo stack during reduce().
+    std::fs::write(s.dir.join("trip/t1b.ARW"), b"t1b.ARW")?;
+    let ghost_dir = s.dir.join("trip/ghost");
+    std::fs::create_dir_all(&ghost_dir)?;
+    {
+        let mut trip = Catalog::open(s.trip.as_path())?;
+        trip.add_folder(&s.dir.join("trip"))?;
+        let t1 = id_of(&trip, "t1.ARW")?;
+        let t1b = id_of(&trip, "t1b.ARW")?;
+        trip.change_stacks(&StackChange::Group(vec![t1, t1b]))?;
+        let root = trip.roots()?[0].0;
+        let db = trip.db_for_tests();
+        db.execute_batch("PRAGMA foreign_keys=OFF;")?;
+        // Orphaned keyword, collection, and stack rows for removed photo 999.
+        db.execute(
+            "INSERT INTO keywords(id, name, parent) VALUES (900, 'GhostKw', NULL)",
+            [],
+        )?;
+        db.execute(
+            "INSERT INTO photo_keywords(photo, keyword) VALUES (999, 900)",
+            [],
+        )?;
+        db.execute(
+            "INSERT INTO collections(id, name, parent, kind)
+             VALUES (900, 'GhostCol', NULL, 'com.adobe.ag.library.collection')",
+            [],
+        )?;
+        db.execute(
+            "INSERT INTO collection_photos(collection, photo) VALUES (900, 999)",
+            [],
+        )?;
+        db.execute("INSERT INTO stacks(id, collapsed) VALUES (900, 1)", [])?;
+        db.execute(
+            "INSERT INTO stack_photos(photo, stack, position) VALUES (999, 900, 0)",
+            [],
+        )?;
+        // Orphaned virtual copy in its own folder whose master 999 is gone.
+        db.execute(
+            "INSERT INTO folders(root, relative_path) VALUES (?, 'ghost')",
+            [root.0],
+        )?;
+        let ghost_folder: i64 = db.query_row("SELECT max(id) FROM folders", [], |r| r.get(0))?;
+        db.execute(
+            "INSERT INTO folder_paths(folder, path) VALUES (?, 'ghost')",
+            [ghost_folder],
+        )?;
+        db.execute(
+            "INSERT INTO photos(folder, filename, original_path, copy_name, master_id)
+             VALUES (?1, 'gone.ARW', ?2, 'Copy 1', 999)",
+            rusqlite::params![ghost_folder, ghost_dir.join("gone.ARW").to_string_lossy()],
+        )?;
+        db.execute_batch("PRAGMA foreign_keys=ON;")?;
+    }
+    // Import once with t1 already in main by UUID.
+    let t1_uuid = {
+        let trip = Catalog::open(s.trip.as_path())?;
+        let t1 = id_of(&trip, "t1.ARW")?;
+        trip.photo_uuid(t1)?.context("uuid")?
+    };
+    let h1 = id_of(&s.main, "h1.ARW")?;
+    s.main.db_mut_for_tests().execute(
+        "UPDATE photo_uuids SET uuid=?1 WHERE photo=?2",
+        rusqlite::params![t1_uuid.as_str(), h1.0],
+    )?;
+
+    let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
+
+    assert_eq!(report.added, 2, "t1b and t2 only; orphan copy left behind");
+    assert_eq!(
+        count(
+            &s.main,
+            "SELECT count(*) FROM keywords WHERE name='GhostKw'"
+        )?,
+        0
+    );
+    assert_eq!(
+        count(
+            &s.main,
+            "SELECT count(*) FROM collections WHERE name='GhostCol'"
+        )?,
+        0
+    );
+    assert_eq!(
+        count(&s.main, "SELECT count(*) FROM stacks")?,
+        0,
+        "orphan and single-photo stacks are not copied"
+    );
+    assert_eq!(count(&s.main, "SELECT count(*) FROM stack_photos")?, 0);
+    Ok(())
+}
+
+#[test]
+fn a_new_root_does_not_enclose_an_existing_root() -> Result<()> {
+    let mut s = setup()?;
+    // Main already has `trip/day 2` as its own root.
+    s.main.add_folder(&s.dir.join("trip/day 2"))?;
+    // Trip also has a sibling subfolder `trip/day 3` with a nested `sub` folder
+    // alongside `trip/t1.ARW`.
+    std::fs::create_dir_all(s.dir.join("trip/day 3/sub"))?;
+    std::fs::write(s.dir.join("trip/day 3/t3.ARW"), b"t3.ARW")?;
+    std::fs::write(s.dir.join("trip/day 3/sub/t4.ARW"), b"t4.ARW")?;
+    Catalog::open(s.trip.as_path())?.add_folder(&s.dir.join("trip"))?;
+
+    let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
+
+    assert_eq!(report.added, 2, "t3 in trip/day 3 and t4 in trip/day 3/sub");
+    assert_eq!(report.present, 1, "t2 in trip/day 2 is already in main");
+    assert_eq!(
+        report.unplaced,
+        vec![s.dir.join("trip/t1.ARW")],
+        "trip/ itself holds existing root trip/day 2, so it cannot become a root"
+    );
+    let roots: Vec<PathBuf> = s
+        .main
+        .roots()?
+        .into_iter()
+        .map(|r| PathBuf::from(r.1))
+        .collect();
+    assert!(
+        !roots.contains(&s.dir.join("trip")),
+        "enclosing root was not created: {roots:?}"
+    );
+    assert!(
+        roots.contains(&s.dir.join("trip/day 3")),
+        "shallowest non-enclosing folder became one root: {roots:?}"
+    );
+    assert!(
+        !roots.contains(&s.dir.join("trip/day 3/sub")),
+        "subfolder stays under trip/day 3 instead of creating a nested root: {roots:?}"
+    );
+    let t4 = id_of(&s.main, "t4.ARW")?;
+    let t4_photo = s
+        .main
+        .photos()?
+        .into_iter()
+        .find(|p| p.id == t4)
+        .context("t4")?;
+    assert_eq!(t4_photo.path, s.dir.join("trip/day 3/sub/t4.ARW"));
+    Ok(())
+}
+
+#[test]
+fn smart_collections_of_the_other_catalog_stay_behind() -> Result<()> {
+    let mut s = setup()?;
+    s.main.add_default_smart_collections()?;
+    let video = s
+        .main
+        .collections()?
+        .into_iter()
+        .find(|c| c.name == "Video Files")
+        .context("Video Files")?
+        .id;
+    s.main.remove_collections(&[video])?;
+    Catalog::open(s.trip.as_path())?.add_default_smart_collections()?;
+
+    s.main.import_catalog(&s.trip, || true)?;
+
+    assert!(
+        !s.main
+            .collections()?
+            .iter()
+            .any(|c| c.name == "Video Files"),
+        "deleted default smart collection is not recreated by importing another catalog"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_symlink_keeps_its_link_directory_and_name() -> Result<()> {
+    let mut s = setup()?;
+    let archive = s.dir.join("archive");
+    std::fs::create_dir_all(&archive)?;
+    let real = archive.join("real.ARW");
+    std::fs::write(&real, b"real.ARW")?;
+    let link = s.dir.join("trip/link.ARW");
+    std::os::unix::fs::symlink(&real, &link)?;
+    {
+        let trip = Catalog::open(s.trip.as_path())?;
+        let folder = trip.folders()?[0].id;
+        trip.db_for_tests().execute(
+            "INSERT INTO photos(folder, filename, original_path) VALUES (?1, 'link.ARW', ?2)",
+            rusqlite::params![folder.0, link.to_string_lossy()],
+        )?;
+    }
+
+    let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
+
+    assert_eq!(report.added, 3);
+    assert!(report.unplaced.is_empty(), "{:?}", report.unplaced);
+    let imported = s
+        .main
+        .photos()?
+        .into_iter()
+        .find(|p| p.filename == "link.ARW")
+        .context("link.ARW")?;
+    assert_eq!(imported.path, link);
+    assert!(imported.path.is_file());
+    Ok(())
+}
+
+#[test]
+fn a_case_differing_filename_already_present_is_skipped() -> Result<()> {
+    let mut s = setup()?;
+    // Only applies on case-insensitive filesystems where `t1.arw` aliases `t1.ARW`.
+    if !s.dir.join("trip/t1.arw").is_file() {
+        return Ok(());
+    }
+    s.main.add_folder(&s.dir.join("trip"))?;
+    // Main stores `t1.ARW` (disk case) and `t2.arw` (differing case), while trip
+    // stores the opposite casing for each so both directions exercise the
+    // case-folded lookup rather than the exact-name fast path.
+    s.main.db_mut_for_tests().execute(
+        "UPDATE photos SET filename='t2.arw' WHERE filename='t2.ARW'",
+        [],
+    )?;
+    {
+        let trip = Catalog::open(s.trip.as_path())?;
+        trip.db_for_tests().execute(
+            "UPDATE photos SET filename='t1.arw' WHERE filename='t1.ARW'",
+            [],
+        )?;
+    }
+
+    let report = s.main.import_catalog(&s.trip, || true)?.context("began")?;
+
+    assert_eq!((report.added, report.present), (0, 2));
+    assert_eq!(count(&s.main, "SELECT count(*) FROM photos")?, 3);
     Ok(())
 }

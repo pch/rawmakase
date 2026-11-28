@@ -39,6 +39,10 @@ impl Editor {
                     self.activity.finish_dialog();
                     self.start_find_on_disk(photo, file);
                 }
+                Event::CatalogImportPicked(source) => {
+                    self.activity.finish_dialog();
+                    self.start_catalog_import(source, ctx);
+                }
                 Event::FolderSyncApplied(result) => {
                     self.catalog_work = None;
                     self.folder_synced(result);
@@ -489,6 +493,7 @@ impl Editor {
                     drop(retired);
                 }
                 Event::DialogClosed => {
+                    self.catalog_work = None;
                     self.activity.finish_dialog();
                 }
                 Event::Extensions(done) => self.extension_done(*done),

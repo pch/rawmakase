@@ -259,15 +259,9 @@ impl Editor {
                 // folders it skipped.
                 let mut report = crate::catalog::SidecarReport::default();
                 let mut conflicts = Vec::new();
-                // What Import from Another Catalog added and left out.
-                let mut catalog_import = None;
                 // Create, Open and Import Lightroom open the catalog the user
-                // chose; a folder change or Import from Another Catalog reads the
-                // open one again.
-                let chosen = !matches!(
-                    kind,
-                    CatalogDialog::Folder(_) | CatalogDialog::ImportCatalog
-                );
+                // chose; a folder change reads the open one again.
+                let chosen = !matches!(kind, CatalogDialog::Folder(_));
                 let import = matches!(kind, CatalogDialog::ImportLightroom);
                 let relinks = matches!(
                     kind,
@@ -275,6 +269,7 @@ impl Editor {
                         FolderAction::RelinkRoot(_) | FolderAction::RelinkFolder(..)
                     )
                 );
+                let mut handed_off = false;
                 let result = (|| -> anyhow::Result<Option<CatalogLocation>> {
                     Ok(match kind {
                         CatalogDialog::Create => {
@@ -317,22 +312,19 @@ impl Editor {
                             ))
                         }
                         CatalogDialog::ImportCatalog => {
-                            crate::platform::network::prepare_filesystem_bridge();
-                            let current =
-                                current.ok_or_else(|| anyhow::anyhow!("Open a catalog first"))?;
+                            let _ = current
+                                .as_ref()
+                                .ok_or_else(|| anyhow::anyhow!("Open a catalog first"))?;
                             let Some(source) = catalog_file_dialog()
                                 .set_title("Import from Another Catalog")
                                 .pick_file()
                             else {
                                 return Ok(None);
                             };
-                            let name = source.file_stem().unwrap_or_default().to_string_lossy();
-                            let _ = tx.send(Event::CatalogWorking(format!("Importing {name}…")));
+                            handed_off = true;
+                            let _ = tx.send(Event::CatalogImportPicked(source));
                             ctx.request_repaint();
-                            let added = crate::catalog::Catalog::open(&current)?
-                                .import_catalog(&source, || true)?;
-                            catalog_import = added.map(|added| (name.into_owned(), added));
-                            Some(current)
+                            return Ok(None);
                         }
                         CatalogDialog::Folder(action) => {
                             crate::platform::network::prepare_filesystem_bridge();
@@ -410,6 +402,9 @@ impl Editor {
                         }
                     })
                 })();
+                if handed_off {
+                    return;
+                }
                 if let Ok(Some(location)) = &result {
                     let _ = tx.send(Event::CatalogWorking(format!(
                         "Opening {}…",
@@ -421,11 +416,58 @@ impl Editor {
                     Ok(Some(location)) => {
                         let event =
                             reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx);
-                        let event = if import { imported(event) } else { event };
-                        match &catalog_import {
-                            Some((name, added)) => catalog_imported(event, name, added),
-                            None => event,
-                        }
+                        if import { imported(event) } else { event }
+                    }
+                    Ok(None) => Event::DialogClosed,
+                    Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
+                };
+                let _ = tx.send(event);
+            },
+            |tx, error| {
+                let _ = tx.send(Event::CatalogReady(Err(error)));
+            },
+        );
+    }
+    /// Imports another RAWmakase catalog into the open one under the
+    /// folder-change activity, so closing waits for it to finish.
+    pub(in crate::app) fn start_catalog_import(&mut self, source: PathBuf, ctx: &egui::Context) {
+        let Some(current) = self
+            .library
+            .as_ref()
+            .map(|l| l.session.catalog().location().clone())
+        else {
+            self.messages.warn("Open a catalog first");
+            return;
+        };
+        if !self.ready_for_catalog() || !self.activity.begin_folder_change() {
+            return;
+        }
+        let name = source
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        self.catalog_work = Some(format!("Importing {name}…"));
+        let tx = self.tx.clone();
+        let ctx = ctx.clone();
+        crate::app::task::spawn(
+            tx,
+            ctx.clone(),
+            move |tx| {
+                let result = (|| -> anyhow::Result<_> {
+                    crate::platform::network::prepare_filesystem_bridge();
+                    crate::catalog::Catalog::open(&current)?.import_catalog(&source, || true)
+                })();
+                let event = match result {
+                    Ok(Some(added)) => {
+                        let _ = tx.send(Event::CatalogWorking(format!(
+                            "Opening {}…",
+                            current.name()
+                        )));
+                        ctx.request_repaint();
+                        let event =
+                            reopened(&current, false, false, &Default::default(), &[], tx, &ctx);
+                        catalog_imported(event, &name, &added)
                     }
                     Ok(None) => Event::DialogClosed,
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
@@ -1152,7 +1194,10 @@ fn catalog_imported(mut event: Event, name: &str, added: &crate::catalog::Catalo
     }
     let left: Vec<String> = [
         (&added.missing, "not found on this computer"),
-        (&added.unplaced, "in a folder this catalog has elsewhere"),
+        (
+            &added.unplaced,
+            "whose folder could not be placed in this catalog",
+        ),
     ]
     .into_iter()
     .filter(|(files, _)| !files.is_empty())

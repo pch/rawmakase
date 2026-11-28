@@ -320,24 +320,27 @@ impl Db {
         lightroom: &Path,
         f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
     ) -> Result<R> {
-        self.with_attached(lightroom, "lr", f)
+        self.with_attached(lightroom, "lr", TransactionBehavior::Deferred, f)
     }
 
-    /// Runs `f` in one write with another RAWmakase catalog at `catalog`
-    /// attached as `src`, for Import from Another Catalog. It is detached again when
-    /// `f` returns, fails or panics.
+    /// Runs `f` in one immediate write with another RAWmakase catalog at
+    /// `catalog` attached as `src`, for Import from Another Catalog. Taking
+    /// the write lock from the start avoids deferred read-to-write lock
+    /// upgrades that fail without waiting on `busy_timeout`. It is detached
+    /// again when `f` returns, fails or panics.
     pub(in crate::catalog) fn with_catalog<R>(
         &mut self,
         catalog: &Path,
         f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
     ) -> Result<R> {
-        self.with_attached(catalog, "src", f)
+        self.with_attached(catalog, "src", TransactionBehavior::Immediate, f)
     }
 
     fn with_attached<R>(
         &mut self,
         path: &Path,
         alias: &'static str,
+        behavior: TransactionBehavior,
         f: impl FnOnce(&mut LightroomWrite<'_>) -> Result<R>,
     ) -> Result<R> {
         match &mut self.backend {
@@ -348,9 +351,10 @@ impl Db {
                     [path.to_string_lossy()],
                 )?;
                 let attached = Attached { db, alias };
-                let tx = attached.db.transaction()?;
+                let tx = attached.db.transaction_with_behavior(behavior)?;
                 let result = f(&mut LightroomWrite {
                     write: Write { db: &tx },
+                    alias,
                 })?;
                 tx.commit()?;
                 drop(attached);
@@ -367,6 +371,7 @@ impl Db {
     pub(in crate::catalog) fn copy_file(source: &Path, path: &Path) -> Result<()> {
         ensure!(!path.exists(), "A file already exists: {}", path.display());
         let db = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        db.busy_timeout(Duration::from_secs(5))?;
         ensure!(
             db.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? == APPLICATION_ID,
             "Not a RAWmakase catalog"
@@ -378,7 +383,6 @@ impl Db {
             ),
             "Unsupported RAWmakase catalog version"
         );
-        db.busy_timeout(Duration::from_secs(5))?;
         copy_into(&db, path)
     }
 }
@@ -621,6 +625,7 @@ impl Write<'_> {
 /// [`Db::with_catalog`]): the only place [`SqliteSql`] runs.
 pub(in crate::catalog) struct LightroomWrite<'db> {
     write: Write<'db>,
+    alias: &'static str,
 }
 
 impl<'db> LightroomWrite<'db> {
@@ -651,24 +656,22 @@ impl<'db> LightroomWrite<'db> {
         query(self.write.db, sql.text(), params, None)
     }
 
-    /// Whether table `table` of the attached Lightroom catalog has column
-    /// `column`.
+    /// Whether table `table` of the attached catalog has column `column`.
     pub(in crate::catalog) fn has_column(&self, table: &str, column: &str) -> Result<bool> {
         Ok(!self
             .read_sqlite::<i64>(
-                sqlite_sql!("SELECT 1 FROM pragma_table_info(?, 'lr') WHERE name=?"),
-                &[&table, &column],
+                sqlite_sql!("SELECT 1 FROM pragma_table_info(?, ?) WHERE name=?"),
+                &[&table, &self.alias, &column],
             )?
             .is_empty())
     }
-    /// Whether the attached Lightroom catalog has table `name`.
+    /// Whether the attached catalog has table `name`.
     pub(in crate::catalog) fn has_table(&self, name: &str) -> Result<bool> {
-        Ok(!self
-            .read_sqlite::<i64>(
-                sqlite_sql!("SELECT 1 FROM lr.sqlite_master WHERE type='table' AND name=?"),
-                &[&name],
-            )?
-            .is_empty())
+        let query = match self.alias {
+            "lr" => sqlite_sql!("SELECT 1 FROM lr.sqlite_master WHERE type='table' AND name=?"),
+            _ => sqlite_sql!("SELECT 1 FROM src.sqlite_master WHERE type='table' AND name=?"),
+        };
+        Ok(!self.read_sqlite::<i64>(query, &[&name])?.is_empty())
     }
 }
 
