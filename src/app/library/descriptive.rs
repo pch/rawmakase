@@ -177,10 +177,12 @@ impl Library {
     }
     /// Puts photos' descriptive metadata back, with their rating, flag and
     /// label where the command set them, for undo and redo, without
-    /// recording a change of its own.
+    /// recording a change of its own; `other` is the command's other side
+    /// ([`crate::catalog::Catalog::restore_metadata`]).
     pub(in crate::app) fn restore_descriptive(
         &mut self,
         values: &[MetadataSnapshot],
+        other: &[MetadataSnapshot],
         ratings: &[super::Metadata],
     ) -> Result<()> {
         // A photo removed since (a virtual copy) is left out.
@@ -195,7 +197,7 @@ impl Library {
             .filter(|(id, ..)| self.photo(*id).is_some())
             .cloned()
             .collect();
-        self.session.restore_descriptive(&values, &ratings)?;
+        self.session.restore_descriptive(&values, other, &ratings)?;
         self.resort_by_capture_time();
         self.filter();
         self.fields.reload();

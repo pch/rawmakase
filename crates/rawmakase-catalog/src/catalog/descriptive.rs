@@ -138,14 +138,30 @@ impl Catalog {
             .collect()
     }
     /// Puts photos' descriptive metadata and keywords back as snapshotted,
-    /// rows that were absent included, in one transaction.
-    pub fn restore_metadata(&mut self, snapshots: &[MetadataSnapshot]) -> Result<()> {
+    /// rows that were absent included, in one transaction: Undo and Redo of
+    /// a change, `other` being the change's other side (none: everything goes
+    /// back). A location the change left alone stays as it is now, so one the
+    /// camera's EXIF gave in the background since isn't taken away.
+    pub fn restore_metadata(
+        &mut self,
+        snapshots: &[MetadataSnapshot],
+        other: &[MetadataSnapshot],
+    ) -> Result<()> {
         self.db.write(|w| {
             for s in snapshots {
+                let now = read(w, s.photo)?;
                 // The time it sorts by goes back only with its capture override:
                 // one filled in from the file since stays.
-                let capture_changed = read(w, s.photo)?.capture != s.descriptive.capture;
-                write(w, s.photo, &s.descriptive)?;
+                let capture_changed = now.capture != s.descriptive.capture;
+                let mut restored = s.descriptive.clone();
+                let location_kept = other
+                    .iter()
+                    .find(|o| o.photo == s.photo)
+                    .is_some_and(|o| o.descriptive.location == s.descriptive.location);
+                if location_kept {
+                    restored.location = now.location;
+                }
+                write(w, s.photo, &restored)?;
                 if capture_changed {
                     w.execute(
                         sql!("UPDATE photos SET captured=? WHERE id=?"),

@@ -121,3 +121,63 @@ fn read_metadata_from_files_fills_the_cameras_gps_with_the_rest() -> Result<()> 
     assert_eq!(cat.descriptive(c)?.location, Some(from_xmp));
     Ok(())
 }
+
+/// Undo and Redo of a change that left the location alone leave a location
+/// the background read gave since; one that changed it puts it back.
+#[test]
+fn undoing_another_change_keeps_a_location_read_since() -> Result<()> {
+    use crate::metadata::TextField;
+    let (_dir, mut cat, ids) = photos(&["a.DNG", "b.DNG"])?;
+    let (a, b) = (ids[0], ids[1]);
+    // A title given before the photo's file was read in the background.
+    let before = cat.metadata_snapshot(&[a])?;
+    cat.set_text(&[a], TextField::Title, "Typed")?;
+    let after = cat.metadata_snapshot(&[a])?;
+    cat.record_capture_reads(&[(a, None)], &[(a, camera_location())])?;
+    cat.restore_metadata(&before, &after)?;
+    assert_eq!(cat.descriptive(a)?.title, None);
+    assert_eq!(cat.descriptive(a)?.location, Some(camera_location()));
+    cat.restore_metadata(&after, &before)?;
+    assert!(cat.descriptive(a)?.title.is_some());
+    assert_eq!(cat.descriptive(a)?.location, Some(camera_location()));
+    // Removing the location is a change of it: Undo gives back none, the
+    // background read may then fill the camera's, and Redo removes it again.
+    let before = cat.metadata_snapshot(&[b])?;
+    cat.clear_location(&[b])?;
+    let after = cat.metadata_snapshot(&[b])?;
+    cat.restore_metadata(&before, &after)?;
+    assert_eq!(cat.descriptive(b)?.location, None);
+    cat.record_capture_reads(&[(b, None)], &[(b, camera_location())])?;
+    assert_eq!(cat.descriptive(b)?.location, Some(camera_location()));
+    cat.restore_metadata(&after, &before)?;
+    assert_eq!(cat.descriptive(b)?.location, Some(Location::Cleared));
+    Ok(())
+}
+
+/// A photo imported from a Lightroom catalog has the location Lightroom
+/// keeps, which Lightroom read from its file when it imported it: none
+/// means none, the camera's included (removed in Lightroom, say).
+#[test]
+fn a_photo_from_a_lightroom_catalog_gets_no_camera_gps_in_the_background() -> Result<()> {
+    let d = tempfile::tempdir()?;
+    let source = d.path().join("lr.lrcat");
+    crate::catalog::tests::fixture(&source)?;
+    rusqlite::Connection::open(&source)?.execute_batch(
+        "ALTER TABLE AgLibraryFile ADD COLUMN originalFilename TEXT;
+         UPDATE AgLibraryFile SET originalFilename='image.ARW' WHERE id_local=30;",
+    )?;
+    let destination = d.path().join("lr.rawmakase");
+    crate::catalog::lightroom::import_lightroom(&source, &destination)?;
+    let mut cat = Catalog::open(&destination)?;
+    let photo = PhotoId(40);
+    // Its file is still to be read for its capture time.
+    assert_eq!(cat.photos_to_read_exif_capture()?, [photo]);
+    let located = cat.record_capture_reads(&[(photo, None)], &[(photo, camera_location())])?;
+    assert!(located.is_empty());
+    assert_eq!(cat.descriptive(photo)?.location, None);
+    assert!(cat.photos_to_read_exif_capture()?.is_empty());
+    // Read Metadata from Files, asked for, reads it from the file.
+    cat.apply_file_metadata(&[], &[(photo, camera_location())], Merge::Overwrite)?;
+    assert_eq!(cat.descriptive(photo)?.location, Some(camera_location()));
+    Ok(())
+}

@@ -4033,7 +4033,7 @@ fn a_descriptive_edit_is_one_command_that_restores_each_photo() -> Result<()> {
             .all(|p| p.keywords == ["City < Places"])
     );
     for command in done.iter().rev() {
-        library.restore_descriptive(&command.before, &command.ratings_before)?;
+        library.restore_descriptive(&command.before, &command.after, &command.ratings_before)?;
     }
     assert_eq!(
         library.session.catalog().descriptive(ids[0])?,
@@ -4135,7 +4135,7 @@ fn read_metadata_from_files_is_one_command_that_undo_reverses() -> Result<()> {
     );
     let done = library.take_descriptive_done();
     assert_eq!(done.len(), 1);
-    library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;
+    library.restore_descriptive(&done[0].before, &done[0].after, &done[0].ratings_before)?;
     assert_eq!(
         library.session.catalog().descriptive(id)?.title,
         Some(Value::Set(LangAlt::new("My edit")))
@@ -4226,7 +4226,7 @@ fn a_saved_draft_is_not_saved_again_after_undo() -> Result<()> {
     let done = library.take_descriptive_done();
     assert_eq!(done.len(), 1);
     // Undone with the panel hidden: the old draft isn't saved again.
-    library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;
+    library.restore_descriptive(&done[0].before, &done[0].after, &done[0].ratings_before)?;
     library.commit_fields()?;
     assert!(library.take_descriptive_done().is_empty());
     assert_eq!(library.session.catalog().descriptive(id)?.title, None);
@@ -6292,7 +6292,7 @@ fn read_metadata_from_files_fills_the_cameras_gps() -> Result<()> {
     assert_eq!(location(&library, c), None);
     let done = library.take_descriptive_done();
     assert_eq!(done.len(), 1);
-    library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;
+    library.restore_descriptive(&done[0].before, &done[0].after, &done[0].ratings_before)?;
     assert_eq!(location(&library, a), None);
     Ok(())
 }

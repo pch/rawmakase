@@ -86,15 +86,18 @@ impl CatalogSession {
     }
     /// Puts photos' descriptive metadata back as `values` has it, with the
     /// rating, flag and label in `ratings` (none for a change that left them),
-    /// then lists them again. Both are written before anything is read back,
-    /// so a failed read never leaves an undo half done.
+    /// then lists them again; `other` is the change's other side
+    /// ([`crate::catalog::Catalog::restore_metadata`]). Both are written
+    /// before anything is read back, so a failed read never leaves an undo
+    /// half done.
     pub(crate) fn restore_descriptive(
         &mut self,
         values: &[MetadataSnapshot],
+        other: &[MetadataSnapshot],
         ratings: &[(PhotoId, i32, i32, String)],
     ) -> Result<()> {
         self.changed();
-        self.catalog.restore_metadata(values)?;
+        self.catalog.restore_metadata(values, other)?;
         if !ratings.is_empty() {
             self.set_ratings(ratings)?;
         }

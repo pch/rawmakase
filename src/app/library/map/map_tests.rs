@@ -77,7 +77,7 @@ fn locate(library: &mut Library, id: crate::catalog::PhotoId, lat: f64, lon: f64
         }),
         ..catalog.descriptive(id).unwrap()
     };
-    catalog.restore_metadata(&[snapshot]).unwrap();
+    catalog.restore_metadata(&[snapshot], &[]).unwrap();
     library.fields.reload();
 }
 fn frame(library: &mut Library, ctx: &egui::Context) {

@@ -721,8 +721,11 @@ impl Catalog {
     /// has no date) completes import facts not read yet. Only the facts
     /// row's EXIF capture time is written for a photo that has a date. The
     /// same read's `locations`, from the cameras' EXIF GPS, go to the photos
-    /// (and their virtual copies) the catalog has no location for, never
-    /// over one given or removed. Returns the photos given a location.
+    /// added from files (Add Photo Folder, Synchronize, Import Photos) and
+    /// their virtual copies that the catalog has no location for, never over
+    /// one given or removed. A photo imported from a Lightroom catalog has
+    /// the location Lightroom kept, which it read from the file itself: it
+    /// gets none. Returns the photos given a location.
     pub fn record_capture_reads(
         &mut self,
         reads: &[(PhotoId, Option<String>)],
@@ -745,6 +748,13 @@ impl Catalog {
             }
             let mut located = Vec::new();
             for (id, location) in locations {
+                let from_files: bool = w.read_one(
+                    sql!("SELECT EXISTS(SELECT 1 FROM photo_imports WHERE photo=?)"),
+                    &[id],
+                )?;
+                if !from_files {
+                    continue;
+                }
                 let copies: Vec<PhotoId> =
                     w.read(sql!("SELECT id FROM photos WHERE master_id=?"), &[id])?;
                 for photo in std::iter::once(*id).chain(copies) {

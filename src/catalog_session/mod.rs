@@ -1356,7 +1356,7 @@ mod tests {
         assert_ne!(change.before, change.after);
         assert_eq!(session.photos[0].keywords, ["Kraków < Places"]);
         // Undone: the lists follow the catalog back.
-        session.restore_descriptive(&change.before, &[(a, 3, -1, "Blue".into())])?;
+        session.restore_descriptive(&change.before, &change.after, &[(a, 3, -1, "Blue".into())])?;
         assert!(session.photos[0].keywords.is_empty());
         assert_eq!(session.photos[0].rating, 3);
         assert_eq!(session.catalog.photos()?[0].label, "Blue");
