@@ -922,3 +922,40 @@ fn a_case_differing_filename_already_present_is_skipped() -> Result<()> {
     assert_eq!(count(&s.main, "SELECT count(*) FROM photos")?, 3);
     Ok(())
 }
+
+/// A photo that came from Lightroom into the other catalog (no import
+/// batch there) and whose file it hadn't read yet gets no camera GPS once
+/// imported here, as it wouldn't there: it is the Previous Import, not a
+/// photo added from files.
+#[test]
+fn a_photo_imported_from_another_catalog_gets_no_camera_gps_in_the_background() -> Result<()> {
+    let mut s = setup()?;
+    {
+        let trip = Catalog::open(s.trip.as_path())?;
+        let t1 = id_of(&trip, "t1.ARW")?;
+        // As a Lightroom import leaves it: no batch, its file not read.
+        trip.db_for_tests()
+            .execute("DELETE FROM photo_imports WHERE photo=?", [t1.0])?;
+        trip.db_for_tests()
+            .execute("UPDATE photo_import_facts SET exif_read=0", [])?;
+    }
+    s.main.import_catalog(&s.trip, || true)?.context("began")?;
+    let t1 = id_of(&s.main, "t1.ARW")?;
+    let previous = s.main.previous_import()?;
+    assert!(previous.contains(&t1), "{previous:?}");
+    assert!(s.main.photos_to_read_exif_capture()?.contains(&t1));
+    let location = crate::metadata::Location::At {
+        lat: 40.7,
+        lon: -74.,
+        alt: None,
+    };
+    let located = s
+        .main
+        .record_capture_reads(&[(t1, None)], &[(t1, location)])?;
+    assert!(located.is_empty(), "{located:?}");
+    assert_eq!(s.main.descriptive(t1)?.location, None);
+    // Its import facts came as they were, still to read, and that read
+    // completes them.
+    assert!(!s.main.photos_to_read_exif_capture()?.contains(&t1));
+    Ok(())
+}

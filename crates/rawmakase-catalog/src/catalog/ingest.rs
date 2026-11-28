@@ -110,6 +110,9 @@ pub(in crate::catalog) enum ImportKind {
     Sync,
     /// Import Photos' copies.
     Copy,
+    /// Import from Another Catalog's photos: added from that catalog, not
+    /// from their files.
+    Catalog,
 }
 impl ImportKind {
     fn as_str(self) -> &'static str {
@@ -117,6 +120,7 @@ impl ImportKind {
             Self::Add => "add",
             Self::Sync => "sync",
             Self::Copy => "copy",
+            Self::Catalog => "catalog",
         }
     }
 }
@@ -721,7 +725,9 @@ impl Catalog {
     /// has no date) completes import facts not read yet. Only the facts
     /// row's EXIF capture time is written for a photo that has a date. The
     /// same read's `locations`, from the cameras' EXIF GPS, go to the photos
-    /// added from files (Add Photo Folder, Synchronize, Import Photos) and
+    /// added from files (Add Photo Folder, Synchronize, Import Photos, not
+    /// Import from Another Catalog, whose photos may have come from Lightroom
+    /// into that catalog and keep its location) and
     /// their virtual copies that the catalog has no location for, never over
     /// one given or removed. A photo imported from a Lightroom catalog has
     /// the location Lightroom kept, which it read from the file itself: it
@@ -749,11 +755,13 @@ impl Catalog {
             let mut located = Vec::new();
             for (id, location) in locations {
                 // Of the family: Set Copy as Master leaves the photo's
-                // import row on the master it was.
+                // import row on the master it was. Photos Import from Another
+                // Catalog brought may have come from Lightroom there.
                 let from_files: bool = w.read_one(
                     sql!(
                         "SELECT EXISTS(SELECT 1 FROM photo_imports i JOIN photos p ON p.id=i.photo
-                         WHERE p.id=?1 OR p.master_id=?1)"
+                         JOIN import_batches b ON b.id=i.batch
+                         WHERE (p.id=?1 OR p.master_id=?1) AND b.kind <> 'catalog')"
                     ),
                     &[id],
                 )?;
