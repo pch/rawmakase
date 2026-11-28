@@ -719,8 +719,18 @@ impl Catalog {
     /// one transaction: each date fills the photo's empty date as
     /// [`Self::fill_capture_times`] does, and every read (`None`: the file
     /// has no date) completes import facts not read yet. Only the facts
-    /// row's EXIF capture time is written for a photo that has a date.
-    pub fn record_capture_reads(&mut self, reads: &[(PhotoId, Option<String>)]) -> Result<()> {
+    /// row's EXIF capture time is written for a photo that has a date. The
+    /// same read's `locations`, from the cameras' EXIF GPS, go to the photos
+    /// added from files (Add Photo Folder, Synchronize, Import Photos) and
+    /// their virtual copies that the catalog has no location for, never over
+    /// one given or removed. A photo imported from a Lightroom catalog has
+    /// the location Lightroom kept, which it read from the file itself: it
+    /// gets none. Returns the photos given a location.
+    pub fn record_capture_reads(
+        &mut self,
+        reads: &[(PhotoId, Option<String>)],
+        locations: &[(PhotoId, crate::metadata::Location)],
+    ) -> Result<Vec<PhotoId>> {
         let dated: Vec<(PhotoId, String)> = reads
             .iter()
             .filter_map(|(id, time)| Some((*id, time.clone()?)))
@@ -736,7 +746,29 @@ impl Catalog {
                     &[time, id],
                 )?;
             }
-            Ok(())
+            let mut located = Vec::new();
+            for (id, location) in locations {
+                // Of the family: Set Copy as Master leaves the photo's
+                // import row on the master it was.
+                let from_files: bool = w.read_one(
+                    sql!(
+                        "SELECT EXISTS(SELECT 1 FROM photo_imports i JOIN photos p ON p.id=i.photo
+                         WHERE p.id=?1 OR p.master_id=?1)"
+                    ),
+                    &[id],
+                )?;
+                if !from_files {
+                    continue;
+                }
+                let copies: Vec<PhotoId> =
+                    w.read(sql!("SELECT id FROM photos WHERE master_id=?"), &[id])?;
+                for photo in std::iter::once(*id).chain(copies) {
+                    if super::descriptive::fill_location(w, photo, location)? {
+                        located.push(photo);
+                    }
+                }
+            }
+            Ok(located)
         })
     }
     /// What a new photo brings, its legacy edit checked for the catalog.

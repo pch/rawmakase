@@ -187,6 +187,7 @@ fn a_photo_whose_values_cant_be_written_is_reported_and_the_rest_imported() -> R
             (a, folder.join("A.NEF.xmp"), bad),
             (b, folder.join("B.NEF.xmp"), good),
         ],
+        &[],
         crate::catalog::Merge::FillEmpty,
     )?;
     assert_eq!(report.unreadable.len(), 1);

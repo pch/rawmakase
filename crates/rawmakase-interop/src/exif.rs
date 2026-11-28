@@ -144,6 +144,23 @@ impl Field {
             _ => None,
         }
     }
+    /// Every value of a RATIONAL field; `None` when one has no denominator.
+    fn rationals(&self) -> Option<Vec<f64>> {
+        if self.kind != RATIONAL {
+            return None;
+        }
+        self.bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .take(self.count as usize)
+            .map(|w| {
+                let n = u32::from_le_bytes(w[..4].try_into().ok()?);
+                let d = u32::from_le_bytes(w[4..].try_into().ok()?);
+                (d != 0).then(|| f64::from(n) / f64::from(d))
+            })
+            .collect()
+    }
     /// Text of an ASCII field, without the terminator.
     pub fn text(&self) -> Option<String> {
         (self.kind == ASCII).then(|| {
@@ -196,6 +213,140 @@ impl CameraExif {
             exif,
             gps: Vec::new(),
         }
+    }
+}
+
+impl CameraExif {
+    /// Where the photo was taken, from its GPS directory: latitude and
+    /// longitude by their references (N or S, E or W), each degrees,
+    /// minutes and seconds as three rationals, and the altitude in metres,
+    /// below sea level when GPSAltitudeRef says 1 (left out for any other
+    /// reference). `None` without a usable position: a coordinate missing
+    /// or out of range, a reference missing or unknown, a value a camera
+    /// writes as unknown (0/0), or both coordinates 0, which cameras write
+    /// before they have a fix.
+    pub fn location(&self) -> Option<crate::metadata::Location> {
+        let get = |tag| self.gps.iter().find(|f| f.tag == tag);
+        let coordinate = |tag, reference, positive: &str, negative: &str, limit: f64| {
+            let sign = match get(reference)?.text()?.to_ascii_uppercase() {
+                r if r == positive => 1.,
+                r if r == negative => -1.,
+                _ => return None,
+            };
+            let [d, m, s] = get(tag)?.rationals()?[..] else {
+                return None;
+            };
+            let part =
+                |v: f64, below: f64| (v.is_finite() && (0. ..below).contains(&v)).then_some(v);
+            let value = part(d, limit + 1.)? + part(m, 60.)? / 60. + part(s, 60.)? / 3600.;
+            (value <= limit).then_some(sign * value)
+        };
+        let lat = coordinate(GPS_LATITUDE, GPS_LATITUDE_REF, "N", "S", 90.)?;
+        let lon = coordinate(GPS_LONGITUDE, GPS_LONGITUDE_REF, "E", "W", 180.)?;
+        if lat == 0. && lon == 0. {
+            return None;
+        }
+        let alt = get(GPS_ALTITUDE)
+            .and_then(Field::number)
+            .filter(|a| a.is_finite() && *a >= 0.)
+            .and_then(
+                |a| match get(GPS_ALTITUDE_REF).map(|r| r.bytes.first().copied()) {
+                    None | Some(Some(0)) => Some(a),
+                    Some(Some(1)) => Some(-a),
+                    _ => None,
+                },
+            );
+        Some(crate::metadata::Location::At { lat, lon, alt })
+    }
+}
+
+/// GPS directories for tests: coordinates and altitudes as cameras write
+/// them, and a TIFF holding them.
+#[cfg(any(test, feature = "test-support"))]
+pub mod gps_fixture {
+    use super::*;
+    use crate::tiff::kind::BYTE;
+
+    /// `lat` and `lon`, each degrees, minutes and seconds as rationals,
+    /// with their references (`N`, `W`…).
+    pub fn coordinates(
+        lat_ref: &str,
+        lat: [(u32, u32); 3],
+        lon_ref: &str,
+        lon: [(u32, u32); 3],
+    ) -> Vec<Field> {
+        let dms = |tag, parts: [(u32, u32); 3]| Field {
+            tag,
+            kind: RATIONAL,
+            count: 3,
+            bytes: parts
+                .iter()
+                .flat_map(|(n, d)| n.to_le_bytes().into_iter().chain(d.to_le_bytes()))
+                .collect(),
+        };
+        vec![
+            Field::ascii(GPS_LATITUDE_REF, lat_ref),
+            dms(GPS_LATITUDE, lat),
+            Field::ascii(GPS_LONGITUDE_REF, lon_ref),
+            dms(GPS_LONGITUDE, lon),
+        ]
+    }
+    /// An altitude of `reference` (0 above sea level, 1 below).
+    pub fn altitude(reference: u8, (n, d): (u32, u32)) -> Vec<Field> {
+        vec![
+            Field {
+                tag: GPS_ALTITUDE_REF,
+                kind: BYTE,
+                count: 1,
+                bytes: vec![reference],
+            },
+            Field::rational(GPS_ALTITUDE, n, d),
+        ]
+    }
+    /// A little-endian TIFF whose IFD0 names a camera and points to a GPS
+    /// directory holding `gps`.
+    pub fn tiff(gps: &[Field]) -> Vec<u8> {
+        let mut gps = gps.to_vec();
+        gps.sort_by_key(|f| f.tag);
+        let mut out = b"II*\0".to_vec();
+        out.extend(8u32.to_le_bytes());
+        // IFD0: Make (out of line, at 38) and the GPS pointer (to 44).
+        out.extend(2u16.to_le_bytes());
+        for (tag, kind, count, value) in [
+            (MAKE, ASCII, 5u32, 38u32),
+            (GPS_IFD, crate::tiff::kind::LONG, 1, 44),
+        ] {
+            out.extend(tag.to_le_bytes());
+            out.extend(kind.to_le_bytes());
+            out.extend(count.to_le_bytes());
+            out.extend(value.to_le_bytes());
+        }
+        out.extend(0u32.to_le_bytes());
+        out.extend(b"Test\0\0");
+        // The GPS directory, its longer values after it.
+        let mut data_at = 44 + 2 + 12 * gps.len() as u32 + 4;
+        let mut data = Vec::new();
+        out.extend((gps.len() as u16).to_le_bytes());
+        for f in &gps {
+            out.extend(f.tag.to_le_bytes());
+            out.extend(f.kind.to_le_bytes());
+            out.extend(f.count.to_le_bytes());
+            if f.bytes.len() <= 4 {
+                let mut inline = f.bytes.clone();
+                inline.resize(4, 0);
+                out.extend(inline);
+            } else {
+                out.extend(data_at.to_le_bytes());
+                data.extend(&f.bytes);
+                if data.len() % 2 == 1 {
+                    data.push(0);
+                }
+                data_at = 44 + 2 + 12 * gps.len() as u32 + 4 + data.len() as u32;
+            }
+        }
+        out.extend(0u32.to_le_bytes());
+        out.extend(data);
+        out
     }
 }
 
@@ -332,13 +483,22 @@ pub fn read_tiffs(
 /// "2018-08-26T10:39:33.120". Falls back from DateTimeOriginal to
 /// DateTimeDigitized, then DateTime, each with its own subseconds.
 pub fn capture_time(path: &Path) -> Option<String> {
+    capture_time_and_location(path)?.0
+}
+
+/// [`capture_time`] and [`CameraExif::location`] from one read of the file's
+/// EXIF; `None` when it has none that can be read.
+pub fn capture_time_and_location(
+    path: &Path,
+) -> Option<(Option<String>, Option<crate::metadata::Location>)> {
     let exif = directories(path, |tag| tag == DATE_TIME)?;
     let text = |tag| exif.get(tag).and_then(Field::text);
-    capture_time_of([
+    let time = capture_time_of([
         (text(DATE_TIME_ORIGINAL), text(SUBSEC_TIME_ORIGINAL)),
         (text(DATE_TIME_DIGITIZED), text(SUBSEC_TIME_DIGITIZED)),
         (text(DATE_TIME), text(SUBSEC_TIME)),
-    ])
+    ]);
+    Some((time, exif.location()))
 }
 
 /// [`capture_time`] of dates read elsewhere (a RAW container's own
@@ -1278,5 +1438,111 @@ mod tiffs_tests {
         for end in 0..exif.len() {
             let _ = read_tiffs(Some(&main[..end.min(main.len())]), Some(&exif[..end]), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod location_tests {
+    use super::*;
+    use crate::metadata::Location;
+
+    /// A camera's GPS directory: `lat` and `lon` in degrees, minutes and
+    /// seconds, each a rational, with their references.
+    fn gps(lat_ref: &str, lat: [(u32, u32); 3], lon_ref: &str, lon: [(u32, u32); 3]) -> CameraExif {
+        let mut fields = gps_fixture::coordinates(lat_ref, lat, lon_ref, lon);
+        fields.sort_by_key(|f| f.tag);
+        CameraExif {
+            gps: fields,
+            ..Default::default()
+        }
+    }
+    const LEICA_LAT: [(u32, u32); 3] = [(40, 1), (42, 1), (5363, 100)];
+    const LEICA_LON: [(u32, u32); 3] = [(73, 1), (59, 1), (5480, 100)];
+    fn near(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    #[test]
+    fn a_cameras_gps_is_where_the_photo_was_taken() {
+        let Some(Location::At { lat, lon, alt }) = gps("N", LEICA_LAT, "W", LEICA_LON).location()
+        else {
+            panic!("a location");
+        };
+        assert!(
+            near(lat, 40.7148972) && near(lon, -73.9985556),
+            "{lat} {lon}"
+        );
+        assert_eq!(alt, None);
+        let Some(Location::At { lat, lon, .. }) = gps("S", LEICA_LAT, "E", LEICA_LON).location()
+        else {
+            panic!("a location");
+        };
+        assert!(lat < 0. && lon > 0.);
+        // The altitude, above or below sea level.
+        let mut exif = gps("N", LEICA_LAT, "W", LEICA_LON);
+        exif.gps.extend(gps_fixture::altitude(1, (125, 10)));
+        assert!(
+            matches!(exif.location(), Some(Location::At { alt: Some(a), .. }) if near(a, -12.5))
+        );
+        let mut exif = gps("N", LEICA_LAT, "W", LEICA_LON);
+        exif.gps.extend(gps_fixture::altitude(0, (30, 1)));
+        assert!(matches!(exif.location(), Some(Location::At { alt: Some(a), .. }) if near(a, 30.)));
+        // An altitude of another reference is left out, the position kept.
+        let mut exif = gps("N", LEICA_LAT, "W", LEICA_LON);
+        exif.gps.extend(gps_fixture::altitude(7, (30, 1)));
+        assert!(matches!(
+            exif.location(),
+            Some(Location::At { alt: None, .. })
+        ));
+    }
+
+    #[test]
+    fn a_gps_directory_without_a_position_gives_none() {
+        // References a camera writes before it has a fix, and no coordinates.
+        let refs_only = CameraExif {
+            gps: vec![
+                Field::ascii(GPS_LATITUDE_REF, "N"),
+                Field::ascii(GPS_LONGITUDE_REF, "E"),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(refs_only.location(), None);
+        assert_eq!(CameraExif::default().location(), None);
+        // A position of zeros is a placeholder, not the Gulf of Guinea.
+        let zero = [(0, 1), (0, 1), (0, 1)];
+        assert_eq!(gps("N", zero, "E", zero).location(), None);
+        // Unknown values (0/0), out of range, or without a reference.
+        assert_eq!(
+            gps("N", [(0, 0), (0, 0), (0, 0)], "E", LEICA_LON).location(),
+            None
+        );
+        assert_eq!(
+            gps("N", [(91, 1), (0, 1), (0, 1)], "E", LEICA_LON).location(),
+            None
+        );
+        assert_eq!(
+            gps("N", LEICA_LAT, "E", [(181, 1), (0, 1), (0, 1)]).location(),
+            None
+        );
+        assert_eq!(
+            gps("N", [(40, 1), (61, 1), (0, 1)], "E", LEICA_LON).location(),
+            None
+        );
+        assert_eq!(gps("X", LEICA_LAT, "E", LEICA_LON).location(), None);
+        assert_eq!(gps("", LEICA_LAT, "E", LEICA_LON).location(), None);
+    }
+
+    #[test]
+    fn a_files_gps_directory_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.tif");
+        let mut fields = gps_fixture::coordinates("N", LEICA_LAT, "W", LEICA_LON);
+        fields.extend(gps_fixture::altitude(0, (8, 1)));
+        std::fs::write(&file, gps_fixture::tiff(&fields)).unwrap();
+        let exif = read(&file).expect("its EXIF");
+        assert!(matches!(
+            exif.location(),
+            Some(Location::At { lat, alt: Some(8.), .. }) if near(lat, 40.7148972)
+        ));
     }
 }

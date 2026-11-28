@@ -4033,7 +4033,7 @@ fn a_descriptive_edit_is_one_command_that_restores_each_photo() -> Result<()> {
             .all(|p| p.keywords == ["City < Places"])
     );
     for command in done.iter().rev() {
-        library.restore_descriptive(&command.before, &command.ratings_before)?;
+        library.restore_descriptive(&command.before, &command.after, &command.ratings_before)?;
     }
     assert_eq!(
         library.session.catalog().descriptive(ids[0])?,
@@ -4135,7 +4135,7 @@ fn read_metadata_from_files_is_one_command_that_undo_reverses() -> Result<()> {
     );
     let done = library.take_descriptive_done();
     assert_eq!(done.len(), 1);
-    library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;
+    library.restore_descriptive(&done[0].before, &done[0].after, &done[0].ratings_before)?;
     assert_eq!(
         library.session.catalog().descriptive(id)?.title,
         Some(Value::Set(LangAlt::new("My edit")))
@@ -4226,7 +4226,7 @@ fn a_saved_draft_is_not_saved_again_after_undo() -> Result<()> {
     let done = library.take_descriptive_done();
     assert_eq!(done.len(), 1);
     // Undone with the panel hidden: the old draft isn't saved again.
-    library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;
+    library.restore_descriptive(&done[0].before, &done[0].after, &done[0].ratings_before)?;
     library.commit_fields()?;
     assert!(library.take_descriptive_done().is_empty());
     assert_eq!(library.session.catalog().descriptive(id)?.title, None);
@@ -6239,5 +6239,60 @@ fn a_neighbour_prepared_before_a_save_is_not_shown() -> Result<()> {
     frame(&mut library);
     let [w, h] = library.loupe.texture_size().expect("shown");
     assert!(h > w, "the version saved, upright: {w} × {h}");
+    Ok(())
+}
+/// Read Metadata from Files gives a photo without a location the one its
+/// camera's EXIF has, keeps a location the user removed, and Undo takes it
+/// back with the rest.
+#[test]
+fn read_metadata_from_files_fills_the_cameras_gps() -> Result<()> {
+    use crate::metadata::Location;
+    let (dir, mut library) = library_of(&["a.tif", "b.tif", "c.tif"])?;
+    let tiff = crate::exif::gps_fixture::tiff(&crate::exif::gps_fixture::coordinates(
+        "N",
+        [(40, 1), (42, 1), (5363, 100)],
+        "W",
+        [(73, 1), (59, 1), (5480, 100)],
+    ));
+    for name in ["a.tif", "b.tif", "c.tif"] {
+        std::fs::write(dir.path().join("photos").join(name), &tiff)?;
+    }
+    // A sidecar that can't be read may hold a location: none is guessed.
+    std::fs::write(dir.path().join("photos/c.tif.xmp"), b"<x:xmpmeta><rdf:RDF>")?;
+    let id = |library: &Library, name: &str| {
+        library
+            .session
+            .photos()
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let (a, b, c) = (
+        id(&library, "a.tif"),
+        id(&library, "b.tif"),
+        id(&library, "c.tif"),
+    );
+    library
+        .session
+        .catalog_mut_for_tests()
+        .clear_location(&[b])?;
+    library.read_metadata_from_files(&[a, b, c])?;
+    while library.reread.is_some() {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        library.poll_reread();
+    }
+    let location =
+        |library: &Library, id| library.session.catalog().descriptive(id).unwrap().location;
+    assert!(
+        matches!(location(&library, a), Some(Location::At { lat, lon, .. })
+            if (lat - 40.7148972).abs() < 1e-6 && (lon + 73.9985556).abs() < 1e-6)
+    );
+    assert_eq!(location(&library, b), Some(Location::Cleared));
+    assert_eq!(location(&library, c), None);
+    let done = library.take_descriptive_done();
+    assert_eq!(done.len(), 1);
+    library.restore_descriptive(&done[0].before, &done[0].after, &done[0].ratings_before)?;
+    assert_eq!(location(&library, a), None);
     Ok(())
 }

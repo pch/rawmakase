@@ -47,6 +47,28 @@ pub(crate) fn read_file_metadata(
 ) {
     crate::catalog::read_file_metadata(path, crate::photo::raw_xmp)
 }
+/// Where the camera's EXIF of the photo at `path` says it was taken
+/// ([`crate::exif::CameraExif::location`]), a CR3's, MRW's or X3F's found by
+/// the RAW decoders.
+pub(crate) fn exif_location(path: &Path) -> Option<crate::metadata::Location> {
+    crate::photo::camera_exif(path)?.location()
+}
+/// The location `camera` reads from a photo's EXIF, for a photo whose XMP,
+/// as [`read_file_metadata`] read it (`xmp`, with what reading it
+/// `found`), gives none: not when its sidecar or own XMP couldn't be read,
+/// as it may hold one. The one rule of
+/// when a camera's GPS counts, for the background read after adding and for
+/// Read Metadata from Files; the catalog then gives it only to a photo it
+/// has no location for.
+pub(crate) fn camera_location(
+    xmp: Option<&crate::catalog::FileMetadata>,
+    found: &crate::catalog::SidecarReport,
+    camera: impl FnOnce() -> Option<crate::metadata::Location>,
+) -> Option<crate::metadata::Location> {
+    (found.unreadable.is_empty() && xmp.is_none_or(|r| r.location.is_none()))
+        .then(camera)
+        .flatten()
+}
 pub(crate) use background::Wake;
 pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit, KeywordListEdit};
 pub(crate) use entries::entry;
@@ -702,6 +724,83 @@ mod tests {
         Ok(())
     }
 
+    /// A photo added from a folder gets the location its camera's EXIF GPS
+    /// gives once its file is read in the background with its capture time,
+    /// not while it is added; its XMP's location, one removed meanwhile, or
+    /// an unreadable sidecar (which may hold one) keep it from it.
+    #[test]
+    fn the_cameras_gps_is_read_in_the_background_with_the_capture_time() -> Result<()> {
+        use crate::metadata::Location;
+        let directory = tempfile::tempdir()?;
+        let folder = directory.path().join("photos");
+        std::fs::create_dir(&folder)?;
+        let tiff = crate::exif::gps_fixture::tiff(&crate::exif::gps_fixture::coordinates(
+            "N",
+            [(40, 1), (42, 1), (5363, 100)],
+            "W",
+            [(73, 1), (59, 1), (5480, 100)],
+        ));
+        for name in ["a.tif", "xmp.tif", "removed.tif", "unread.tif"] {
+            std::fs::write(folder.join(name), &tiff)?;
+        }
+        std::fs::write(
+            folder.join("xmp.tif.xmp"),
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/"
+              exif:GPSLatitude="50,3.7302N" exif:GPSLongitude="19,56.2140E"/></rdf:RDF></x:xmpmeta>"#,
+        )?;
+        std::fs::write(folder.join("unread.tif.xmp"), b"<x:xmpmeta><rdf:RDF>")?;
+        let path = directory.path().join("library.rawmakase");
+        let defaults = crate::catalog::NewPhotoDefaults::new(
+            Default::default(),
+            crate::photo::camera_exif,
+            crate::photo::raw_xmp,
+        );
+        Catalog::create(&path)?.add_folder_with(&folder, &defaults)?;
+        let Opened { mut session, .. } = CatalogSession::open(&CatalogLocation::from(&path))?;
+        let id = |session: &CatalogSession, name: &str| {
+            session
+                .photos
+                .iter()
+                .find(|p| p.filename == name)
+                .unwrap()
+                .id
+        };
+        let location = |session: &CatalogSession, name: &str| {
+            session
+                .catalog
+                .descriptive(id(session, name))
+                .unwrap()
+                .location
+        };
+        // Adding read no camera's GPS.
+        assert_eq!(location(&session, "a.tif"), None);
+        let removed = id(&session, "removed.tif");
+        session.catalog.clear_location(&[removed])?;
+        session.start_capture_times(|_| true);
+        let mut located = Vec::new();
+        let started = std::time::Instant::now();
+        while session.reading_capture_times() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+            let capture = session.poll_capture_times();
+            assert!(capture.error.is_none());
+            located.extend(capture.saved.located);
+            std::thread::yield_now();
+        }
+        located.extend(session.poll_capture_times().saved.located);
+        assert!(
+            matches!(location(&session, "a.tif"), Some(Location::At { lat, lon, .. })
+                if (lat - 40.7148972).abs() < 1e-6 && (lon + 73.9985556).abs() < 1e-6)
+        );
+        assert_eq!(located, [id(&session, "a.tif")]);
+        assert!(
+            matches!(location(&session, "xmp.tif"), Some(Location::At { lat, .. }) if lat > 50.)
+        );
+        assert_eq!(location(&session, "removed.tif"), Some(Location::Cleared));
+        assert_eq!(location(&session, "unread.tif"), None);
+        Ok(())
+    }
+
     #[test]
     fn capture_times_and_photo_info_are_read_saved_and_listed_with_no_window() -> Result<()> {
         let directory = tempfile::tempdir()?;
@@ -741,7 +840,7 @@ mod tests {
             assert!(started.elapsed() < std::time::Duration::from_secs(10));
             let capture = session.poll_capture_times();
             assert!(capture.error.is_none());
-            dated.extend(capture.saved);
+            dated.extend(capture.saved.times);
             let info = session.poll_photo_info();
             assert!(info.error.is_none());
             infos += info.saved;
@@ -818,7 +917,7 @@ mod tests {
             assert!(started.elapsed() < std::time::Duration::from_secs(10));
             let capture = session.poll_capture_times();
             assert!(capture.error.is_none());
-            saved.extend(capture.saved);
+            saved.extend(capture.saved.times);
             std::thread::yield_now();
         }
         assert!(saved.is_empty(), "{saved:?}");
@@ -865,7 +964,7 @@ mod tests {
         let started = std::time::Instant::now();
         while session.reading_capture_times() {
             assert!(started.elapsed() < std::time::Duration::from_secs(10));
-            saved.extend(session.poll_capture_times().saved);
+            saved.extend(session.poll_capture_times().saved.times);
             std::thread::yield_now();
         }
         let captured = |session: &CatalogSession, id| {
@@ -1257,7 +1356,7 @@ mod tests {
         assert_ne!(change.before, change.after);
         assert_eq!(session.photos[0].keywords, ["Kraków < Places"]);
         // Undone: the lists follow the catalog back.
-        session.restore_descriptive(&change.before, &[(a, 3, -1, "Blue".into())])?;
+        session.restore_descriptive(&change.before, &change.after, &[(a, 3, -1, "Blue".into())])?;
         assert!(session.photos[0].keywords.is_empty());
         assert_eq!(session.photos[0].rating, 3);
         assert_eq!(session.catalog.photos()?[0].label, "Blue");

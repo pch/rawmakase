@@ -26,7 +26,7 @@ fn catalog(n: usize) -> Result<(tempfile::TempDir, Catalog, Vec<PhotoId>)> {
 fn put(cat: &mut Catalog, id: PhotoId, descriptive: Descriptive) -> Result<()> {
     let mut snapshot = cat.metadata_snapshot(&[id])?.remove(0);
     snapshot.descriptive = descriptive;
-    cat.restore_metadata(&[snapshot])
+    cat.restore_metadata(&[snapshot], &[])
 }
 
 fn set(text: &str) -> Option<Value<LangAlt>> {
@@ -108,7 +108,7 @@ fn undoing_a_capture_override_restores_the_sort_key() -> Result<()> {
             offset: None,
         },
     )?;
-    cat.restore_metadata(&before)?;
+    cat.restore_metadata(&before, &[])?;
     assert_eq!(cat.photos()?[0].captured, "2020-01-01T00:00:00.000");
     assert_eq!(cat.descriptive(ids[0])?.capture, None);
     Ok(())
@@ -121,7 +121,7 @@ fn undoing_another_field_keeps_a_time_filled_in_since() -> Result<()> {
     cat.set_text(&ids, TextField::Title, "Title")?;
     // Read from the file in the background meanwhile.
     cat.fill_capture_times(&[(ids[0], "2020-01-01T00:00:00.000".into())])?;
-    cat.restore_metadata(&before)?;
+    cat.restore_metadata(&before, &[])?;
     assert_eq!(cat.photos()?[0].captured, "2020-01-01T00:00:00.000");
     Ok(())
 }
@@ -198,7 +198,7 @@ fn batch_edit_then_undo_restores_each_photos_prior_state() -> Result<()> {
             }))
         );
     }
-    cat.restore_metadata(&before)?;
+    cat.restore_metadata(&before, &[])?;
     assert_eq!(cat.metadata_snapshot(&ids)?, before);
     assert_eq!(cat.descriptive(ids[0])?, Descriptive::default());
     assert_eq!(cat.descriptive(ids[2])?.caption, Some(Value::Cleared));

@@ -350,3 +350,31 @@ fn text_too_long_for_exif_goes_in_the_xmp_only() {
     assert_eq!(text(&a, CAPTION), None);
     assert_eq!(a.xmp.unwrap().caption, LangAlt::new(&long).0);
 }
+
+/// A catalog location read from the file's own EXIF exports as the file's
+/// GPS directory whole, its time, direction and other tags kept; one
+/// changed since writes the location alone.
+#[test]
+fn a_location_read_from_the_files_gps_keeps_its_other_tags() {
+    let mut file = camera();
+    file.gps = crate::exif::gps_fixture::coordinates(
+        "N",
+        [(40, 1), (42, 1), (5363, 100)],
+        "W",
+        [(73, 1), (59, 1), (5480, 100)],
+    );
+    // GPSImgDirection.
+    file.gps
+        .push(crate::exif::Field::rational(0x0011, 2705, 10));
+    let mut v = values(0, &[]);
+    v.descriptive.location = file.location();
+    let a = assemble(Policy::of(&settings(Include::All)), Some(&file), None, &v);
+    assert_eq!(a.exif.gps, file.gps);
+    v.descriptive.location = Some(Location::At {
+        lat: 40.7,
+        lon: -74.,
+        alt: None,
+    });
+    let a = assemble(Policy::of(&settings(Include::All)), Some(&file), None, &v);
+    assert!(!a.exif.gps.iter().any(|f| f.tag == 0x0011));
+}

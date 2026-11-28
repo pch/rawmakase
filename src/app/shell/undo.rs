@@ -464,14 +464,22 @@ impl Editor {
                 })
             }
             Command::Descriptive(change) => {
-                let (values, ratings, place) = match direction {
-                    Direction::Undo => {
-                        (&change.before, &change.ratings_before, &change.place_before)
-                    }
-                    Direction::Redo => (&change.after, &change.ratings_after, &change.place_after),
+                let (values, other, ratings, place) = match direction {
+                    Direction::Undo => (
+                        &change.before,
+                        &change.after,
+                        &change.ratings_before,
+                        &change.place_before,
+                    ),
+                    Direction::Redo => (
+                        &change.after,
+                        &change.before,
+                        &change.ratings_after,
+                        &change.place_after,
+                    ),
                 };
                 self.apply_library(verb, &change.summary, place, None, |library| {
-                    library.restore_descriptive(values, ratings)
+                    library.restore_descriptive(values, other, ratings)
                 })
             }
             Command::Keywords(change) => {

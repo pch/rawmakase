@@ -53,7 +53,9 @@ impl Library {
         self.session
             .start_capture_times(|path| availability.is_available(path));
     }
-    /// Saves the capture times read so far and sorts the photos again.
+    /// Saves the capture times read so far and sorts the photos again; the
+    /// locations the same reads found show in the Metadata panel and on the
+    /// map.
     pub(super) fn poll_capture_times(&mut self) {
         let polled = self.session.poll_capture_times();
         if let Some(e) = polled.error {
@@ -62,8 +64,11 @@ impl Library {
             self.messages
                 .fail(format!("Capture times could not be saved: {e}"));
         }
-        if !polled.saved.is_empty() {
+        if !polled.saved.times.is_empty() {
             self.resort_by_capture_time();
+        }
+        if !polled.saved.located.is_empty() {
+            self.fields.reload();
         }
         if polled.start_again {
             // Photos added while it ran.
