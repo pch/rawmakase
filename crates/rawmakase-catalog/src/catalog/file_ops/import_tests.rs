@@ -402,7 +402,7 @@ fn a_photo_added_from_a_folder_is_a_duplicate_by_its_facts() -> Result<()> {
     // Read, it is matched by its date too.
     let id = fx.photo("DSCF0001.RAF");
     let mut cat = Catalog::open(&fx.catalog)?;
-    cat.record_capture_reads(&[(id, Some("2024-05-01T10:00:00.000".into()))])?;
+    cat.record_capture_reads(&[(id, Some("2024-05-01T10:00:00.000".into()))], &[])?;
     assert_eq!(
         suspected_duplicates(
             &cat,

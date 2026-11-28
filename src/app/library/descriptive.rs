@@ -231,14 +231,11 @@ impl Library {
                 self.wake(),
                 |path| {
                     let read = crate::catalog_session::read_file_metadata(path);
-                    // The camera's only where the XMP has none: the file is
-                    // opened again only then.
-                    let location = read
-                        .0
-                        .as_ref()
-                        .is_none_or(|m| m.location.is_none())
-                        .then(|| crate::catalog_session::exif_location(path))
-                        .flatten();
+                    // The file is opened again only when the camera's counts.
+                    let location =
+                        crate::catalog_session::camera_location(read.0.as_ref(), &read.1, || {
+                            crate::catalog_session::exif_location(path)
+                        });
                     (read, location)
                 },
             ),
@@ -320,10 +317,8 @@ impl Library {
             .into_iter()
             .filter(|(id, _)| self.photo(*id).is_some_and(|p| p.master.is_none()))
             .collect();
-        self.session.fill_file_locations(&locations)?;
-
         let mut report = reread.report;
-        let written = self.session.apply_file_metadata(&ids, &read)?;
+        let written = self.session.apply_file_metadata(&ids, &read, &locations)?;
         report.unreadable.extend(written.unreadable);
         self.resort_by_capture_time();
         self.filter();

@@ -483,13 +483,22 @@ pub fn read_tiffs(
 /// "2018-08-26T10:39:33.120". Falls back from DateTimeOriginal to
 /// DateTimeDigitized, then DateTime, each with its own subseconds.
 pub fn capture_time(path: &Path) -> Option<String> {
+    capture_time_and_location(path)?.0
+}
+
+/// [`capture_time`] and [`CameraExif::location`] from one read of the file's
+/// EXIF; `None` when it has none that can be read.
+pub fn capture_time_and_location(
+    path: &Path,
+) -> Option<(Option<String>, Option<crate::metadata::Location>)> {
     let exif = directories(path, |tag| tag == DATE_TIME)?;
     let text = |tag| exif.get(tag).and_then(Field::text);
-    capture_time_of([
+    let time = capture_time_of([
         (text(DATE_TIME_ORIGINAL), text(SUBSEC_TIME_ORIGINAL)),
         (text(DATE_TIME_DIGITIZED), text(SUBSEC_TIME_DIGITIZED)),
         (text(DATE_TIME), text(SUBSEC_TIME)),
-    ])
+    ]);
+    Some((time, exif.location()))
 }
 
 /// [`capture_time`] of dates read elsewhere (a RAW container's own

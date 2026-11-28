@@ -6247,16 +6247,18 @@ fn a_neighbour_prepared_before_a_save_is_not_shown() -> Result<()> {
 #[test]
 fn read_metadata_from_files_fills_the_cameras_gps() -> Result<()> {
     use crate::metadata::Location;
-    let (dir, mut library) = library_of(&["a.tif", "b.tif"])?;
+    let (dir, mut library) = library_of(&["a.tif", "b.tif", "c.tif"])?;
     let tiff = crate::exif::gps_fixture::tiff(&crate::exif::gps_fixture::coordinates(
         "N",
         [(40, 1), (42, 1), (5363, 100)],
         "W",
         [(73, 1), (59, 1), (5480, 100)],
     ));
-    for name in ["a.tif", "b.tif"] {
+    for name in ["a.tif", "b.tif", "c.tif"] {
         std::fs::write(dir.path().join("photos").join(name), &tiff)?;
     }
+    // A sidecar that can't be read may hold a location: none is guessed.
+    std::fs::write(dir.path().join("photos/c.tif.xmp"), b"<x:xmpmeta><rdf:RDF>")?;
     let id = |library: &Library, name: &str| {
         library
             .session
@@ -6266,12 +6268,16 @@ fn read_metadata_from_files_fills_the_cameras_gps() -> Result<()> {
             .unwrap()
             .id
     };
-    let (a, b) = (id(&library, "a.tif"), id(&library, "b.tif"));
+    let (a, b, c) = (
+        id(&library, "a.tif"),
+        id(&library, "b.tif"),
+        id(&library, "c.tif"),
+    );
     library
         .session
         .catalog_mut_for_tests()
         .clear_location(&[b])?;
-    library.read_metadata_from_files(&[a, b])?;
+    library.read_metadata_from_files(&[a, b, c])?;
     while library.reread.is_some() {
         std::thread::sleep(std::time::Duration::from_millis(5));
         library.poll_reread();
@@ -6283,6 +6289,7 @@ fn read_metadata_from_files_fills_the_cameras_gps() -> Result<()> {
             if (lat - 40.7148972).abs() < 1e-6 && (lon + 73.9985556).abs() < 1e-6)
     );
     assert_eq!(location(&library, b), Some(Location::Cleared));
+    assert_eq!(location(&library, c), None);
     let done = library.take_descriptive_done();
     assert_eq!(done.len(), 1);
     library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;

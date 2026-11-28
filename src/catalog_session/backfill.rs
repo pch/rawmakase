@@ -17,7 +17,7 @@ use std::path::Path;
 /// The readers under way, and what they have tried.
 #[derive(Default)]
 pub(super) struct Backfill {
-    capture: Option<Reader<CaptureRead>>,
+    capture: Option<Reader<FileDates>>,
     /// Photos the capture-time backfill tried since the last online check.
     capture_tried: HashSet<PhotoId>,
     info: Option<Reader<Option<InfoRead>>>,
@@ -28,6 +28,15 @@ pub(super) struct Backfill {
     pub(super) bursts: Option<super::import_stacks::Reading>,
     /// Asked to read them while reading: once done, read again.
     pub(super) bursts_again: bool,
+}
+
+/// What one poll of the capture-time backfill saved.
+#[derive(Debug, Default)]
+pub(crate) struct CaptureSaved {
+    /// The capture times photos took, in their order.
+    pub times: Vec<(PhotoId, String)>,
+    /// The photos given the location their camera's EXIF GPS gives.
+    pub located: Vec<PhotoId>,
 }
 
 /// What one poll of a backfill saved.
@@ -75,7 +84,7 @@ impl CatalogSession {
             self.backfill
                 .capture_tried
                 .extend(todo.iter().map(|(id, _)| *id));
-            self.backfill.capture = Some(Reader::start(todo, self.wake.clone(), read_capture));
+            self.backfill.capture = Some(Reader::start(todo, self.wake.clone(), read_dates));
         }
     }
     /// Stops the background reads before a change that may give removed
@@ -104,9 +113,11 @@ impl CatalogSession {
         self.backfill.capture.is_some()
     }
     /// Saves the capture times read so far, a virtual copy taking its
-    /// master's, with what each read found for the photo's import facts.
-    /// Returns the times saved; the photos keep their order.
-    pub(crate) fn poll_capture_times(&mut self) -> Saved<Vec<(PhotoId, String)>> {
+    /// master's, with what each read found for the photo's import facts, and
+    /// the locations the same reads found in the cameras' EXIF GPS, for the
+    /// photos the catalog has none for. Returns the times saved (the photos
+    /// keep their order) and the photos located.
+    pub(crate) fn poll_capture_times(&mut self) -> Saved<CaptureSaved> {
         let Some(reader) = &self.backfill.capture else {
             return Saved::default();
         };
@@ -114,9 +125,13 @@ impl CatalogSession {
         if done {
             self.backfill.capture = None;
         }
+        let locations: Vec<(PhotoId, crate::metadata::Location)> = read
+            .iter()
+            .filter_map(|(id, read)| Some((*id, read.location.clone()?)))
+            .collect();
         let reads: Vec<(PhotoId, Option<String>)> = read
             .into_iter()
-            .filter_map(|(id, read)| match read {
+            .filter_map(|(id, read)| match read.capture {
                 CaptureRead::Dated(time) => Some((id, Some(time))),
                 CaptureRead::Undated => Some((id, None)),
                 CaptureRead::Unreadable => None,
@@ -130,12 +145,17 @@ impl CatalogSession {
             start_again: done,
             ..Default::default()
         };
-        if !reads.is_empty() {
+        if !reads.is_empty() || !locations.is_empty() {
             self.changed();
-            match self.catalog.record_capture_reads(&reads) {
+            match self.catalog.record_capture_reads(&reads, &locations) {
                 // Only the photos given a date: one read only for its import
                 // facts keeps its own, as the catalog does.
-                Ok(()) => out.saved = self.apply_capture_times(&dated),
+                Ok(located) => {
+                    out.saved = CaptureSaved {
+                        times: self.apply_capture_times(&dated),
+                        located,
+                    }
+                }
                 Err(e) => out.error = Some(e),
             }
         }
@@ -263,11 +283,46 @@ fn has_capture_time(path: &Path) -> bool {
     }
 }
 
-fn read_capture(path: &Path) -> CaptureRead {
-    read_capture_with(path, capture_time)
+/// What the capture-time backfill reads of a file: its date, and where its
+/// camera's EXIF GPS says it was taken, when that counts
+/// ([`super::camera_location`]).
+struct FileDates {
+    capture: CaptureRead,
+    location: Option<crate::metadata::Location>,
 }
 
-/// [`read_capture`], reading the date with `read`, which can't tell a file
+/// The file's date and location, from one read of its EXIF. Only a file
+/// whose EXIF has a location has its XMP read again, to tell whether that
+/// gives one of its own (or can't be read); the catalog then gives the
+/// camera's only to a photo with no location.
+fn read_dates(path: &Path) -> FileDates {
+    let location = std::cell::Cell::new(None);
+    let capture = read_capture_with(path, |path| {
+        let (time, found) = capture_time_and_location(path);
+        location.set(found);
+        time
+    });
+    let location = location.take().and_then(|camera| {
+        let (xmp, found) = super::read_file_metadata(path);
+        super::camera_location(xmp.as_ref(), &found, || Some(camera))
+    });
+    FileDates { capture, location }
+}
+
+/// When the photo in the file at `path` was taken ([`capture_time`]), and
+/// where its camera's EXIF GPS says, from one read of its EXIF; a CR3's,
+/// MRW's or X3F's GPS from the RAW decoders' read of its EXIF.
+fn capture_time_and_location(path: &Path) -> (Option<String>, Option<crate::metadata::Location>) {
+    match crate::exif::capture_time_and_location(path) {
+        Some((time, location)) => (time.or_else(|| crate::raw::capture_time(path)), location),
+        None => (
+            crate::raw::capture_time(path),
+            crate::photo::camera_exif(path).and_then(|e| e.location()),
+        ),
+    }
+}
+
+/// The date [`read_dates`] reads, read with `read`, which can't tell a file
 /// without a date from a read that failed. So a file is taken for one with
 /// no date only once all of it was read without an error and a second
 /// `read`, of the bytes just read, still finds none, the file the same

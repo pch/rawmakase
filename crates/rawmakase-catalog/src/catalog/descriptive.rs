@@ -79,21 +79,6 @@ impl Catalog {
             });
         })
     }
-    /// Gives each photo of `locations` that location where the catalog has
-    /// none for it (neither one given nor one removed): Read Metadata from
-    /// Files' location from a camera's EXIF. One transaction.
-    pub fn fill_locations(&mut self, locations: &[(PhotoId, Location)]) -> Result<()> {
-        self.db.write(|w| {
-            for (id, location) in locations {
-                let mut d = read(w, *id)?;
-                if d.location.is_none() {
-                    d.location = Some(location.clone());
-                    write(w, *id, &d)?;
-                }
-            }
-            Ok(())
-        })
-    }
     /// Leaves the location of every photo given out, its file's included.
     pub fn clear_location(&mut self, ids: &[PhotoId]) -> Result<()> {
         self.update_descriptive(ids, |d| d.location = Some(Location::Cleared))
@@ -613,3 +598,20 @@ pub(super) const TABLES: [&str; 5] = [
     "photo_capture",
     "photo_location",
 ];
+
+/// Gives photo `id` `location`, a camera's EXIF GPS, where the catalog has
+/// none for it: neither one given (by XMP, Lightroom or the user) nor one
+/// removed. In `w`'s transaction; whether it was given.
+pub(super) fn fill_location(w: &mut Write<'_>, id: PhotoId, location: &Location) -> Result<bool> {
+    let mut d = read(w, id)?;
+    if d.location.is_some() {
+        return Ok(false);
+    }
+    d.location = Some(location.clone());
+    write(w, id, &d)?;
+    Ok(true)
+}
+
+#[cfg(test)]
+#[path = "exif_location_tests.rs"]
+mod exif_location_tests;

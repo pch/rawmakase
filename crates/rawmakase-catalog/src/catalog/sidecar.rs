@@ -493,15 +493,18 @@ impl Catalog {
                 read.map(|r| (p.id, p.path, r))
             })
             .collect();
-        report.add(self.apply_file_metadata(&reads, Merge::Overwrite)?);
+        report.add(self.apply_file_metadata(&reads, &[], Merge::Overwrite)?);
         Ok(report)
     }
     /// Writes what was read from files, in one transaction, as `merge`
     /// says. A photo whose values can't be written (an impossible date) is
-    /// left as it was and reported with its file.
+    /// left as it was and reported with its file. `locations`, from the
+    /// cameras' EXIF GPS, go only to photos the catalog then has no location
+    /// for, never over one given or removed.
     pub fn apply_file_metadata(
         &mut self,
         reads: &[(PhotoId, PathBuf, Read)],
+        locations: &[(PhotoId, crate::metadata::Location)],
         merge: Merge,
     ) -> Result<SidecarReport> {
         self.db.write(|w| {
@@ -511,6 +514,9 @@ impl Catalog {
                 if let Err(e) = w.savepoint(|w| apply(w, *id, read, merge)) {
                     report.unreadable.push((path.clone(), format!("{e:#}")));
                 }
+            }
+            for (id, location) in locations {
+                super::descriptive::fill_location(w, *id, location)?;
             }
             Ok(report)
         })

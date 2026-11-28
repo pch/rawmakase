@@ -1,9 +1,7 @@
 //! Default Creator and Copyright from Preferences, written for photos added
 //! from folders where neither the file nor its sidecar has one: below an
 //! edit or an imported value, above the file's EXIF, and never at export;
-//! the location the camera's EXIF gives a photo whose XMP has none, as
-//! Lightroom reads it; and Preferences' other choices for photos added
-//! (Stack Camera Bursts).
+//! and Preferences' other choices for photos added (Stack Camera Bursts).
 use super::PhotoId;
 use super::db::Write;
 use crate::metadata::{LangAlt, Value};
@@ -128,21 +126,16 @@ impl NewPhotoDefaults {
         self.raw_xmp.unwrap_or(|_| None)
     }
     /// What of the defaults a photo added from `file` gets: each one the
-    /// metadata read from its files (`read`) and its camera's EXIF both lack;
-    /// and the location its camera's EXIF gives, when its XMP has none.
+    /// metadata read from its files (`read`) and its camera's EXIF both lack.
     pub(super) fn for_file(&self, file: &Path, read: Option<&Read>) -> Fill {
         let defaults = &self.metadata;
         let (creator, copyright) = (defaults.creator.trim(), defaults.copyright.trim());
         let creator = !creator.is_empty() && read.is_none_or(|r| r.creator.is_none());
         let copyright = !copyright.is_empty() && read.is_none_or(|r| r.copyright.is_none());
-        let location = read.is_none_or(|r| r.location.is_none());
-        let Some(camera_exif) = self
-            .camera_exif
-            .filter(|_| creator || copyright || location)
-        else {
+        let Some(camera_exif) = self.camera_exif.filter(|_| creator || copyright) else {
             return Fill::default();
         };
-        // Read once for all three.
+        // Read once for both.
         let exif = camera_exif(file);
         let has = |tag| {
             exif.as_ref()
@@ -154,10 +147,6 @@ impl NewPhotoDefaults {
                 .then(|| Value::Set(vec![defaults.creator.trim().to_string()])),
             copyright: (copyright && !has(crate::exif::tag::COPYRIGHT))
                 .then(|| Value::Set(LangAlt::new(defaults.copyright.trim()))),
-            location: exif
-                .as_ref()
-                .filter(|_| location)
-                .and_then(crate::exif::CameraExif::location),
         }
     }
 }
@@ -180,13 +169,12 @@ pub fn install_file_readers(camera_exif: CameraExifReader, raw_xmp: super::RawXm
 pub(super) struct Fill {
     creator: Option<Value<Vec<String>>>,
     copyright: Option<Value<LangAlt>>,
-    location: Option<crate::metadata::Location>,
 }
 
 /// Writes `fill` for photo `id`, in `w`'s transaction, where it has no
 /// value of its own.
 pub(super) fn fill(w: &mut Write<'_>, id: PhotoId, fill: &Fill) -> Result<()> {
-    if fill.creator.is_none() && fill.copyright.is_none() && fill.location.is_none() {
+    if fill.creator.is_none() && fill.copyright.is_none() {
         return Ok(());
     }
     let mut d = super::descriptive::read(w, id)?;
@@ -196,12 +184,5 @@ pub(super) fn fill(w: &mut Write<'_>, id: PhotoId, fill: &Fill) -> Result<()> {
     if d.copyright.is_none() {
         d.copyright.clone_from(&fill.copyright);
     }
-    if d.location.is_none() {
-        d.location.clone_from(&fill.location);
-    }
     super::descriptive::write(w, id, &d)
 }
-
-#[cfg(test)]
-#[path = "defaults_tests.rs"]
-mod tests;

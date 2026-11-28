@@ -145,25 +145,21 @@ impl CatalogSession {
         self.refresh_keywords(&ids)
     }
     /// Writes what was read from the files of `ids` (Read Metadata from
-    /// Files), replacing the catalog's values, and lists them again.
+    /// Files), replacing the catalog's values, and the `locations` their
+    /// cameras' EXIF gives where the catalog has none, in one transaction,
+    /// and lists them again.
     pub(crate) fn apply_file_metadata(
         &mut self,
         ids: &[PhotoId],
         read: &[(PhotoId, PathBuf, FileMetadata)],
+        locations: &[(PhotoId, crate::metadata::Location)],
     ) -> Result<SidecarReport> {
         self.changed();
-        let written = self.catalog.apply_file_metadata(read, Merge::Overwrite)?;
+        let written = self
+            .catalog
+            .apply_file_metadata(read, locations, Merge::Overwrite)?;
         self.refresh_photos(ids)?;
         Ok(written)
-    }
-    /// Gives each photo of `locations` the location its camera's EXIF gives,
-    /// where the catalog has none for it (Read Metadata from Files).
-    pub(crate) fn fill_file_locations(
-        &mut self,
-        locations: &[(PhotoId, crate::metadata::Location)],
-    ) -> Result<()> {
-        self.changed();
-        self.catalog.fill_locations(locations)
     }
     /// Names virtual copy `id` `name`, trimmed, in the catalog and the lists.
     pub(crate) fn rename_copy(&mut self, id: PhotoId, name: &str) -> Result<()> {
