@@ -209,7 +209,21 @@ pub type RawXmpReader = fn(&Path) -> Option<Vec<u8>>;
 /// XMP text chunk), WebP ("XMP " chunk), AVIF or HEIF (its XMP item) or JPEG
 /// XL ("xml " box, or "brob" box compressing one); in another file, what
 /// `raw_xmp` finds.
+///
+/// A packet is read without the NULs that end it: TIFF ends its strings
+/// with one, and so do Leica's DNGs and iPhones' in tag 700, which XML can't
+/// read past.
 fn embedded(file: &Path, raw_xmp: RawXmpReader) -> Result<Option<String>> {
+    Ok(
+        embedded_packet(file, raw_xmp)?.map(|text| match text.trim_end_matches('\0') {
+            trimmed if trimmed.len() == text.len() => text,
+            trimmed => trimmed.to_string(),
+        }),
+    )
+}
+
+/// [`embedded`]'s packet as its container holds it.
+fn embedded_packet(file: &Path, raw_xmp: RawXmpReader) -> Result<Option<String>> {
     match RasterFormat::of(file) {
         Some(RasterFormat::Jpeg) => {
             use std::io::Read as _;
@@ -498,7 +512,8 @@ impl Catalog {
     }
     /// Writes what was read from files, in one transaction, as `merge`
     /// says. A photo whose values can't be written (an impossible date) is
-    /// left as it was and reported with its file. `locations`, from the
+    /// left as it was, the camera's location included, and reported with
+    /// its file. `locations`, from the
     /// cameras' EXIF GPS, go only to photos the catalog then has no location
     /// for, never over one given or removed.
     pub fn apply_file_metadata(
@@ -509,13 +524,16 @@ impl Catalog {
     ) -> Result<SidecarReport> {
         self.db.write(|w| {
             let mut report = SidecarReport::default();
+            let mut left = std::collections::HashSet::new();
             for (id, path, read) in reads {
                 // One photo that can't be written leaves the others saved.
                 if let Err(e) = w.savepoint(|w| apply(w, *id, read, merge)) {
                     report.unreadable.push((path.clone(), format!("{e:#}")));
+                    left.insert(*id);
                 }
             }
-            for (id, location) in locations {
+            // A photo left as it was gets no location either.
+            for (id, location) in locations.iter().filter(|(id, _)| !left.contains(id)) {
                 super::descriptive::fill_location(w, *id, location)?;
             }
             Ok(report)

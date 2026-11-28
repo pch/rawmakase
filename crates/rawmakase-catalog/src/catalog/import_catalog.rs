@@ -526,7 +526,7 @@ fn copy_rows(
     }
     let highest: i64 = w.read_sqlite::<i64>(sqlite_sql!("SELECT max(id) FROM src.photos"), &[])?[0];
     let photo = super::photo_ids::reserve_block(w.write(), highest)?;
-    let batch = new_batch(w.write(), ImportKind::Add)?;
+    let batch = new_batch(w.write(), ImportKind::Catalog)?;
     let mut roots: HashMap<PathBuf, RootId> = HashMap::new();
     let mut folders: BTreeMap<FolderId, FolderId> = BTreeMap::new();
     for (from, target) in targets {
