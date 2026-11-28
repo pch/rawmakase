@@ -211,14 +211,23 @@ pub fn export_pixels(
     }
 }
 
-fn check_destination(path: &Path, source: &Path, replace: Replace) -> Result<()> {
-    ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
-    if path.exists() {
-        ensure!(
-            fs::canonicalize(path)? != fs::canonicalize(source)?,
-            "Cannot overwrite source"
+/// Refuses what an export of `source` may not write at `path`: a RAW file, and
+/// `source` itself, as invalid, and a file that is there unless `replace` is
+/// [`Replace::Overwrite`] (`Exists`). Checked as the file is written, and by
+/// a caller that wants it refused before anything is decoded.
+pub fn check_destination(path: &Path, source: &Path, replace: Replace) -> Result<()> {
+    if is_raw(path) {
+        return Err(
+            rawmakase_model::error::Invalid::new("An export cannot overwrite a RAW file").into(),
         );
-        ensure!(replace == Replace::Overwrite, "Destination already exists");
+    }
+    if path.exists() {
+        if fs::canonicalize(path)? == fs::canonicalize(source)? {
+            return Err(rawmakase_model::error::Invalid::new("Cannot overwrite source").into());
+        }
+        if replace != Replace::Overwrite {
+            return Err(rawmakase_model::error::Exists::new("Destination already exists").into());
+        }
     }
     Ok(())
 }
@@ -333,7 +342,9 @@ pub fn stage_gain_map(
     let format = Format::from_path(path)
         .filter(|f| matches!(f, Format::Jpeg | Format::Jxl))
         .ok_or_else(|| {
-            anyhow::anyhow!("A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl")
+            rawmakase_model::error::Invalid::new(
+                "A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl",
+            )
         })?;
     let parent = crate::storage::parent_dir(path);
     let mut temp = crate::storage::staging_file(parent)?;
@@ -400,7 +411,9 @@ pub fn stage_hdr(
     let format = Format::from_path(path)
         .filter(|f| matches!(f, Format::Tiff | Format::Jxl))
         .ok_or_else(|| {
-            anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
+            rawmakase_model::error::Invalid::new(
+                "An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl",
+            )
         })?;
     ensure!(
         image.pixels.len() == image.width as usize * image.height as usize,
@@ -438,7 +451,10 @@ pub fn stage_image(
     ensure!(!is_raw(path), "An export cannot overwrite a RAW file");
     options.validate()?;
     let format = Format::from_path(path).ok_or_else(|| {
-        anyhow::anyhow!("Export extension must be {}", Format::extensions_listed())
+        rawmakase_model::error::Invalid::new(format!(
+            "Export extension must be {}",
+            Format::extensions_listed()
+        ))
     })?;
     format.supports(space)?;
     let parent = crate::storage::parent_dir(path);

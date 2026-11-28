@@ -93,11 +93,11 @@ jobs:
       # again (clippy --all-targets checks them); the doctests run after them.
       - name: Check the model, file formats, catalog, renderer, control protocol, remote worker, client and extension crates
         run: |
-          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
+          cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
           cargo test --locked --lib --bins --tests -p rawmakase-model --all-features
           cargo test --locked --doc -p rawmakase-model --all-features
-          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
           cargo test --locked --lib --bins --tests -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
           cargo test --locked --doc -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -341,6 +341,7 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
       - run: python3 scripts/deps.py check
+      - run: python3 scripts/test_ambient.py
       - name: Camera calibration and comparison checks
         run: |
           python3 -m venv /tmp/rawmakase-parity-tests
@@ -383,11 +384,86 @@ jobs:
           cargo test --locked --lib --bins --tests -p rawmakase-model --all-features
           cargo test --locked --doc -p rawmakase-model --all-features
       - run: |
-          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
-          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
+          cargo test --locked --lib --bins --tests -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
+          cargo test --locked --doc -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol
       - run: |
           cargo test --locked --lib --bins --tests -p rawmakase-decode
           cargo test --locked --doc -p rawmakase-decode
+
+  library-surface:
+    name: Library surface
+    # crates/rawmakase-core/public-api.txt lists the library's public items, the
+    # re-exported ones among them; a change to them that the listing doesn't
+    # record fails this job (docs/embedding-plan.md). The listing is read from
+    # rustdoc's JSON, which only a nightly toolchain writes: the one
+    # scripts/public-api.py names, so the format doesn't move under it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+      # The default toolchain is the one the cache is keyed by.
+      - name: Rust
+        run: |
+          toolchain=$(sed -n 's/^TOOLCHAIN = "\(.*\)"$/\1/p' scripts/public-api.py)
+          test -n "$toolchain" || { echo "scripts/public-api.py names no TOOLCHAIN"; exit 1; }
+          rustup toolchain install "$toolchain" --profile minimal
+          rustup default "$toolchain"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: ". -> target/public-api"
+          save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
+      - run: python3 scripts/public-api.py check
+      # The script's own test, on the fixture crates beside it.
+      - run: python3 scripts/test_public_api.py
+
+  examples:
+    name: Reference apps
+    # The apps built on the library (examples/*/), each a workspace of its own
+    # with its own lock file, as a stranger's app would be
+    # (docs/embedding-plan.md, "Reference apps"): formatted, linted and tested
+    # apart from the app's. examples/embed's export is compared with the
+    # desktop's `rawmakase render`, which is built first. examples/electron's
+    # Rust side is linted with and without its Node addon and tested without
+    # it, its export compared with the desktop's too; Node and Electron are
+    # not built here.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libvulkan1 libxkbcommon-dev libwayland-dev
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            .
+            examples/embed
+            examples/electron
+          save-if: ${{ github.ref == 'refs/heads/main' && !inputs.source-ref }}
+      - name: The desktop's binary, which an export is compared with
+        run: cargo build --locked --bin rawmakase
+      - name: examples/embed
+        working-directory: examples/embed
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked -- --include-ignored
+      - name: examples/electron
+        working-directory: examples/electron
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features addon -- -D warnings
+          cargo test --locked -- --include-ignored
 
   postgres:
     name: Portable catalog SQL

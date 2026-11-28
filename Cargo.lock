@@ -3947,6 +3947,7 @@ dependencies = [
  "block2 0.6.2",
  "bzip2-rs",
  "clap",
+ "directories",
  "dispatch2",
  "eframe",
  "egui_extras",
@@ -3972,6 +3973,7 @@ dependencies = [
  "rawmakase-ai-masks",
  "rawmakase-cancel",
  "rawmakase-catalog",
+ "rawmakase-core",
  "rawmakase-ctl",
  "rawmakase-decode",
  "rawmakase-denoise",
@@ -4052,6 +4054,22 @@ dependencies = [
  "sha2",
  "tempfile",
  "unicode-normalization",
+]
+
+[[package]]
+name = "rawmakase-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "rawmakase-cancel",
+ "rawmakase-decode",
+ "rawmakase-engine",
+ "rawmakase-export",
+ "rawmakase-interop",
+ "rawmakase-model",
+ "rayon",
+ "tempfile",
 ]
 
 [[package]]
@@ -4142,7 +4160,6 @@ name = "rawmakase-export"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "directories",
  "image",
  "jixel",
  "jxl-oxide",
@@ -4259,7 +4276,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "brotli-decompressor 6.3.2",
- "directories",
  "rawmakase-model",
  "roxmltree 0.21.2",
  "serde",

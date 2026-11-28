@@ -34,7 +34,13 @@ const THREADS: usize = 2;
 /// the edit's stamp, so an edit saved anywhere renders it again.
 type Key = (PhotoId, PathBuf, u32, u64);
 /// Renders a preview, giving up once the flag is set.
-type Render = fn(&Path, u32, Option<&EditSource>, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
+type Render = fn(
+    &Path,
+    &crate::environment::Libraries,
+    u32,
+    Option<&EditSource>,
+    Cancel<'_>,
+) -> anyhow::Result<image::RgbImage>;
 
 struct Job {
     key: Key,
@@ -69,6 +75,9 @@ struct Shared {
     cancel: AtomicBool,
     /// Where AI Denoise's finished results are; none until the app sets it.
     ai: Mutex<Option<AiCache>>,
+    /// The imported lens profiles photos are opened with: the app's context's,
+    /// set before anything is shown; none until then.
+    libraries: Mutex<crate::environment::Libraries>,
 }
 
 /// What a view can draw for a photo.
@@ -105,6 +114,10 @@ impl ScreenPreviews {
     /// Previews of edits with AI Denoise render from the finished results in `cache`.
     pub(super) fn set_ai_cache(&self, cache: &AiCache) {
         *self.shared.ai.lock().unwrap() = Some(cache.clone());
+    }
+    /// Photos are opened with `libraries` from now on.
+    pub(super) fn set_libraries(&self, libraries: &crate::environment::Libraries) {
+        *self.shared.libraries.lock().unwrap() = libraries.clone();
     }
     fn with(ctx: &egui::Context, render: Render) -> Self {
         let shared: Arc<Shared> = Default::default();
@@ -321,12 +334,14 @@ fn work(
             Outcome::Skipped
         } else {
             let ai = shared.ai.lock().unwrap().clone();
+            let libraries = shared.libraries.lock().unwrap().clone();
             let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 match (&edit, &ai) {
                     // As the Library's edited previews: from a finished result, else plain.
                     (Some(source), Some(_)) if source.renders_ai() => {
                         super::previews::develop_for_preview(
                             &key.1,
+                            &libraries,
                             source,
                             key.2,
                             ai.as_ref(),
@@ -334,7 +349,13 @@ fn work(
                         )
                         .map(|(image, _)| image)
                     }
-                    _ => render(&key.1, key.2, edit.as_ref(), Cancel::new(&shared.cancel)),
+                    _ => render(
+                        &key.1,
+                        &libraries,
+                        key.2,
+                        edit.as_ref(),
+                        Cancel::new(&shared.cancel),
+                    ),
                 }
             }));
             match rendered {
@@ -364,6 +385,7 @@ fn work(
 /// AI Denoise renders from a finished result instead (see `work`).
 fn render(
     path: &Path,
+    libraries: &crate::environment::Libraries,
     edge: u32,
     edit: Option<&EditSource>,
     cancel: Cancel<'_>,
@@ -375,7 +397,7 @@ fn render(
     if !edited && !crate::storage::is_raw(path) {
         return Ok(thumbnails::downscale(&crate::raster::decode(path)?, edge));
     }
-    super::previews::develop_quickly(path, edit, edge, cancel)
+    super::previews::develop_quickly(path, libraries, edit, edge, cancel)
 }
 
 #[cfg(test)]
@@ -388,13 +410,25 @@ mod tests {
         let path = directory.path().join("photo.jpg");
         let edit = super::super::previews::tests::edited_jpeg(&path)?;
         let cancel = AtomicBool::new(false);
-        let edited = render(&path, 64, Some(&edit), Cancel::new(&cancel))?;
+        let edited = render(
+            &path,
+            &crate::environment::Libraries::default(),
+            64,
+            Some(&edit),
+            Cancel::new(&cancel),
+        )?;
         assert!(
             edited.pixels().all(|p| p.0[1] > 75),
             "{:?}",
             edited.get_pixel(0, 0)
         );
-        let unedited = render(&path, 64, None, Cancel::new(&cancel))?;
+        let unedited = render(
+            &path,
+            &crate::environment::Libraries::default(),
+            64,
+            None,
+            Cancel::new(&cancel),
+        )?;
         assert!(unedited.pixels().all(|p| p.0[1].abs_diff(60) <= 2));
         Ok(())
     }
@@ -432,6 +466,7 @@ mod tests {
     fn a_failed_or_panicking_render_is_reported_and_the_rest_go_on() {
         fn render(
             path: &Path,
+            _: &crate::environment::Libraries,
             _: u32,
             _: Option<&EditSource>,
             _: Cancel<'_>,
@@ -477,7 +512,7 @@ mod tests {
     #[test]
     fn a_preview_no_longer_shown_is_skipped_and_asked_for_again() {
         let ctx = egui::Context::default();
-        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| Ok(image::RgbImage::new(4, 4)));
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _, _| Ok(image::RgbImage::new(4, 4)));
         let a = photo(PhotoId(1), Path::new("a"));
         // Queued, then not shown for a frame before a worker takes it.
         let key = (PhotoId(1), PathBuf::from("a"), EDGE_STEP, 0);
@@ -499,7 +534,7 @@ mod tests {
     #[test]
     fn a_render_asked_for_before_an_edit_changed_is_dropped() {
         let ctx = egui::Context::default();
-        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| Ok(image::RgbImage::new(4, 4)));
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _, _| Ok(image::RgbImage::new(4, 4)));
         let key = (PhotoId(1), PathBuf::from("a"), EDGE_STEP, 0);
         // The photo was asked for again (ticket 2) after the edit changed,
         // and the render asked for before it (ticket 1) comes in first.
@@ -524,7 +559,7 @@ mod tests {
     #[test]
     fn a_failed_preview_is_asked_for_again_once_retried() {
         let ctx = egui::Context::default();
-        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| anyhow::bail!("offline"));
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _, _| anyhow::bail!("offline"));
         let a = photo(PhotoId(1), Path::new("a"));
         let _ = screen.get(&a, 100, 0, || None);
         screen.wait(&ctx);
@@ -543,7 +578,7 @@ mod tests {
     #[test]
     fn a_preview_failing_out_of_view_is_said_only_when_shown() {
         let ctx = egui::Context::default();
-        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| anyhow::bail!("offline"));
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _, _| anyhow::bail!("offline"));
         let a = photo(PhotoId(1), Path::new("a"));
         let _ = screen.get(&a, 100, 0, || None);
         screen.wait(&ctx);
@@ -555,7 +590,7 @@ mod tests {
     #[test]
     fn previews_shown_together_are_all_kept() {
         let ctx = egui::Context::default();
-        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| Ok(image::RgbImage::new(4, 4)));
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _, _| Ok(image::RgbImage::new(4, 4)));
         let photos: Vec<Photo> = (1..=KEPT as i64 + 3)
             .map(|id| photo(PhotoId(id), Path::new("a")))
             .collect();
@@ -576,6 +611,7 @@ mod tests {
         static STARTED: AtomicBool = AtomicBool::new(false);
         fn render(
             _: &Path,
+            _: &crate::environment::Libraries,
             _: u32,
             _: Option<&EditSource>,
             cancel: Cancel<'_>,
@@ -607,7 +643,7 @@ mod tests {
     fn screen_previews_are_converted_and_follow_a_profile_switch() {
         const RED: [u8; 3] = [200, 40, 30];
         let ctx = egui::Context::default();
-        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _| {
+        let mut screen = ScreenPreviews::with(&ctx, |_, _, _, _, _| {
             Ok(image::RgbImage::from_pixel(8, 8, image::Rgb(RED)))
         });
         let p3 = DisplayProfile::new(Some(

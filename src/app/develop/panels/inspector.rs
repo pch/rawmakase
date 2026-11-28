@@ -634,6 +634,7 @@ impl Editor {
                 .then_some(crate::app::develop::ai_denoise::CONNECT_FOR_AI_DENOISE),
         };
         // Cached per camera: this scans Adobe's profile folders.
+        let profiles = self.camera_profiles().clone();
         let adobe_key = self
             .document
             .metadata
@@ -642,7 +643,7 @@ impl Editor {
         let adobe: Vec<std::path::PathBuf> = match (adobe_key, &self.document.metadata) {
             // A JPEG, TIFF or PNG has its Embedded profile only.
             (Some(key), Some(m)) if !m.is_rendered() => ui.ctx().data_mut(|d| {
-                d.get_temp_mut_or_insert_with(key, || crate::camera_profiles::adobe_installed(m))
+                d.get_temp_mut_or_insert_with(key, || profiles.adobe_installed(m))
                     .clone()
             }),
             _ => Vec::new(),
@@ -916,12 +917,12 @@ impl Editor {
     /// edit; the Library's previews follow them then, once it is known whether
     /// the open photo's recipe changed.
     pub(in crate::app) fn list_imported_profiles(&mut self, m: &crate::camera_data::Metadata) {
-        self.profile_library = crate::camera_profiles::library_fingerprint();
+        self.profile_library = self.camera_profiles().fingerprint();
         let crate::camera_profiles::Listed {
             profiles,
             errors,
             groups,
-        } = crate::camera_profiles::listed(m);
+        } = self.camera_profiles().listed(m);
         let profiles = crate::app::develop::camera_look::keep_fitted_default(
             &self.document.profiles,
             m,

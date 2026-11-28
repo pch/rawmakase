@@ -304,7 +304,7 @@ impl PreviewRenderer {
         let shown = recipe.as_rendered();
         let recipe = shown.as_ref();
         self.backend.used_gpu = false;
-        anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let recipe = &recipe.checked()?;
         self.hdr_files.keep_only(image);
         if let Some(headroom) = hdr

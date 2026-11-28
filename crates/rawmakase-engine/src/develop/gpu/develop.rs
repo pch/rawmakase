@@ -539,7 +539,7 @@ impl Processor {
         params: &PixelParams,
         cancel: Cancel<'_>,
     ) -> Result<()> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let (w, h) = input.size();
         ensure!(w as u64 * h as u64 > 0, "Empty develop region");
         ensure!(
@@ -616,7 +616,7 @@ impl Processor {
     ) -> Result<Rendered> {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         self.record_develop(Input::Cpu(samples), params, &mut encoder);
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let device = &self.device;
         let n = samples.pixels.len() as u64;
         let uploaded = &self.developer.as_ref().unwrap().samples[0];
@@ -639,7 +639,7 @@ impl Processor {
             .context("GPU readback timed out")??;
         if cancel.is_cancelled() {
             uploaded.staging.unmap();
-            anyhow::bail!("Render superseded");
+            return Err(rawmakase_cancel::Cancelled::new("Render superseded").into());
         }
         let mapped = uploaded.staging.slice(..).get_mapped_range()?;
         let pixels = bytemuck::cast_slice::<u8, [f32; 3]>(&mapped).to_vec();

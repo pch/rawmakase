@@ -32,7 +32,7 @@ fn supplied_catalog_is_preserved_and_all_images_import() -> Result<()> {
             model: model.into(),
             ..Default::default()
         };
-        let (profiles, _) = crate::camera_profiles::installed(&m);
+        let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
         let text = c
             .lightroom_develop(id)?
             .context("Missing representative settings")?;

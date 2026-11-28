@@ -10,7 +10,7 @@ repository = "https://github.com/pch/rawmakase"
 # The control protocol and its command-line client build on their own, without
 # the app's GUI, GPU or native libraries.
 [workspace]
-members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-decode", "crates/rawmakase-denoise", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-hdr-merge", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/ai-masks", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
+members = ["crates/rawmakase-cancel", "crates/rawmakase-catalog", "crates/rawmakase-core", "crates/rawmakase-decode", "crates/rawmakase-denoise", "crates/rawmakase-engine", "crates/rawmakase-export", "crates/rawmakase-extension", "crates/rawmakase-extension-protocol", "crates/rawmakase-extensions", "crates/rawmakase-fs", "crates/rawmakase-hdr-merge", "crates/rawmakase-inference", "crates/rawmakase-interop", "crates/rawmakase-model", "crates/rawmakase-model-install", "crates/rawmakase-protocol", "crates/rawmakase-raw", "crates/rawmakase-remote", "crates/rawmakase-selection", "crates/rawmakase-tiff", "extensions/ai-masks", "extensions/example", "extensions/mcp", "extensions/midi", "tools/cargo-rawmakase", "tools/rawmakase-ctl"]
 
 # What every crate of the workspace shares. CI and `make check` read the minimum
 # Rust version from the `rust-version` line here.
@@ -61,6 +61,8 @@ wgpu = { version = "30", default-features = false, features = ["wgsl"] }
 
 [dependencies]
 rawmakase-cancel = { path = "crates/rawmakase-cancel", version = "0.1.0" }
+# The library; the app also takes the crates' handles on what its context holds.
+rawmakase-core = { path = "crates/rawmakase-core", version = "0.1.0", features = ["workspace"] }
 rawmakase-catalog = { path = "crates/rawmakase-catalog", version = "0.1.0" }
 rawmakase-decode = { path = "crates/rawmakase-decode", version = "0.1.0" }
 # AI Denoise's service and model pack, shared by the app and the command line.
@@ -92,6 +94,11 @@ wgpu.workspace = true
 image.workspace = true
 tempfile.workspace = true
 clap.workspace = true
+# The user's Desktop and Pictures folders, which exports go to, and Lightroom's
+# keyword sets folder (environment::user_folders and libraries): user-dirs.dirs on Linux,
+# the shell's known folders on Windows. Already in the build through
+# fastframe.
+directories = "6"
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 # eframe's windowing, to run its event loop (see app::run). Where a Wayland
 # compositor leaves decorations to the app (GNOME), winit draws an

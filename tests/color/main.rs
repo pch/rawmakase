@@ -215,7 +215,7 @@ pub fn cases() -> Cases {
 
 pub fn develop(path: &Path) -> CameraImage {
     charts_ready();
-    rawmakase::photo::open(path)
+    rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())
         .and_then(|r| {
             r.develop(
                 rawmakase::camera_data::Decode::full(Default::default()),
@@ -240,6 +240,7 @@ pub fn render(
         &im.metadata,
         profiles,
         Some(&rawmakase::develop::Measures(im)),
+        &rawmakase::lens::lensfun::installed::Handle::none(),
     )?;
     rawmakase::develop::render(im, &recipe.checked()?, max_edge, Cancel::NEVER)
 }

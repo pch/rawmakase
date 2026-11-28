@@ -15,6 +15,7 @@
 //! follows docs/shutdown.md: [`Service::stop`] raises the stop flag and the running
 //! run's cancel flag (ONNX Runtime terminates the run within one poll), and hands back
 //! the thread for the caller's deadline; the thread owns its ONNX session.
+#![forbid(unsafe_code)]
 // The paths the service was written with when it was a module of the app, which
 // re-exports these crates' modules at its root.
 use rawmakase_decode::ai::cache as ai_cache;
@@ -96,11 +97,16 @@ pub struct Request {
 /// The cache key of `path` with the model run on `provider`: everything the result
 /// depends on, captured once.
 #[cfg(any(test, feature = "test-support"))]
-pub fn key(path: &Path, provider: Provider) -> Result<String> {
-    Ok(key_of(&crate::storage::Identity::read(path)?, provider))
+pub fn key(cache: &AiCache, path: &Path, provider: Provider) -> Result<String> {
+    Ok(key_of(
+        cache,
+        &crate::storage::Identity::read(path)?,
+        provider,
+    ))
 }
-/// The key of a file whose identity is `id`, run on `provider`.
-fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
+/// The key of a file whose identity is `id`, run on `provider`, in `cache`,
+/// whose build it names.
+fn key_of(cache: &AiCache, id: &crate::storage::Identity, provider: Provider) -> String {
     // The Neural Engine runs a model of its own, converted from RAWNIND: its results are
     // named for it too.
     let converted = match provider {
@@ -116,6 +122,7 @@ fn key_of(id: &crate::storage::Identity, provider: Provider) -> String {
             RAWNIND.version,
             provider.name()
         ),
+        cache.build(),
     )
 }
 
@@ -142,7 +149,7 @@ pub fn finished(cache: &AiCache, file: &crate::storage::Identity) -> Option<Stri
     };
     providers
         .iter()
-        .map(|provider| key_of(file, *provider))
+        .map(|provider| key_of(cache, file, *provider))
         .find(|key| cache.contains(key))
 }
 
@@ -320,7 +327,9 @@ fn open_mosaic(path: &Path, cancel: Cancel<'_>) -> Result<PackedBayer> {
             "AI Denoise works on RAW files only.",
         )));
     }
-    crate::photo::open(path)?.packed_bayer(cancel)
+    // The mosaic is the sensor's alone: which imported lens profile fits the
+    // photo changes nothing in it, so none are read.
+    crate::photo::open(path, &crate::photo::LensProfiles::none())?.packed_bayer(cancel)
 }
 
 /// ONNX Runtime threads: fewer than rendering's, so a running job leaves the UI and
@@ -459,7 +468,7 @@ impl Service {
         let queue = self.queue();
         ensure_running(&queue)?;
         let provider = self.provider(&queue);
-        let key = key_of(&identity, provider);
+        let key = key_of(self.cache(), &identity, provider);
         Ok((
             Keyed {
                 key,
@@ -910,7 +919,7 @@ impl Service {
                 let joined = std::mem::take(&mut queue.joined);
                 queue.running = None;
                 let next = self.usable(&queue, job.provider);
-                let moved = key_of(&job.identity, next);
+                let moved = key_of(self.cache(), &job.identity, next);
                 queue
                     .outcomes
                     .insert(job.key.clone(), Outcome::Moved(moved.clone(), next));
@@ -928,7 +937,7 @@ impl Service {
                 for mut job in pending {
                     let next = self.usable(&queue, job.provider);
                     if next != job.provider {
-                        let moved = key_of(&job.identity, next);
+                        let moved = key_of(self.cache(), &job.identity, next);
                         queue
                             .outcomes
                             .insert(job.key.clone(), Outcome::Moved(moved.clone(), next));
@@ -1092,7 +1101,7 @@ impl Service {
             keyed
         } else {
             Keyed {
-                key: key_of(&keyed.identity, provider),
+                key: key_of(self.cache(), &keyed.identity, provider),
                 provider,
                 identity: keyed.identity,
             }
@@ -1127,7 +1136,7 @@ impl Service {
         loop {
             ensure_running(&queue)?;
             if cancel.is_cancelled() {
-                bail!("Export cancelled");
+                return Err(rawmakase_cancel::Cancelled::new("Export cancelled").into());
             }
             match queue.outcomes.get(&key).cloned() {
                 Some(Outcome::Done(entry)) => {

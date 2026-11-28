@@ -383,7 +383,11 @@ fn an_edit_follows_its_file_rewritten_by_another_program() -> Result<()> {
             HistoryUpdate::Keep,
         )
     };
-    assert!(save(&mut cat).is_err());
+    let refused = save(&mut cat).unwrap_err();
+    assert!(
+        refused.is::<rawmakase_model::error::Changed>(),
+        "{refused:#}"
+    );
     // Another version than the one the edit was saved for leaves it bound.
     assert!(!cat.follow_rewritten_file(id, &now, &now)?);
     assert!(cat.follow_rewritten_file(id, &was, &now)?);

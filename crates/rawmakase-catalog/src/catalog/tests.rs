@@ -350,7 +350,9 @@ fn lightroom_jpeg_edits_import_with_embedded_and_relative_white_balance() -> Res
         source: crate::camera_data::Source::Rendered,
         ..Default::default()
     };
-    let profiles = crate::camera_profiles::installed(&m).0;
+    let profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+        .installed(&m)
+        .0;
     // A synthetic record, shaped as Lightroom stores a JPEG's Develop settings.
     let text = r#"s = { CameraProfile = "Embedded", Exposure2012 = 0.5, IncrementalTemperature = 25, IncrementalTint = -10, ProcessVersion = "15.4", WhiteBalance = "Custom" }"#;
     let (r, w) = convert_develop(text, &m, &profiles, None)?;

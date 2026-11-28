@@ -84,10 +84,16 @@ fn main() -> Result<()> {
         None => SIDE,
     };
     let t = Instant::now();
-    let image = Arc::new(rawmakase::photo::open(std::path::Path::new(path))?.develop(
-        rawmakase::camera_data::Decode::full(Default::default()),
-        Cancel::NEVER,
-    )?);
+    let image = Arc::new(
+        rawmakase::photo::open(
+            std::path::Path::new(path),
+            &rawmakase::photo::LensProfiles::none(),
+        )?
+        .develop(
+            rawmakase::camera_data::Decode::full(Default::default()),
+            Cancel::NEVER,
+        )?,
+    );
     println!(
         "Decode {}x{} {} {}: {:.0} ms",
         image.width,
@@ -96,10 +102,11 @@ fn main() -> Result<()> {
         image.metadata.model,
         ms(t)
     );
-    let (profiles, _) = rawmakase::camera_profiles::installed(&image.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&image.metadata);
     let base = Recipe::with_profiles(&image.metadata, &profiles);
     let library = if installed {
-        rawmakase::presets::load_library()
+        rawmakase::presets::PresetLibrary::in_data_dirs(&rawmakase::storage::asset_dirs()).load()
     } else {
         let (presets, errors) = rawmakase::presets::builtin::presets();
         rawmakase::presets::Library { presets, errors }
@@ -138,6 +145,7 @@ fn main() -> Result<()> {
             &image.metadata,
             &profiles,
             Some(&measures),
+            &rawmakase::lens::lensfun::installed::Handle::none(),
         ) else {
             failed += 1;
             continue;

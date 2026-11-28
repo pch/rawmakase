@@ -62,7 +62,7 @@ use crate::{
         valid::ValidRecipe,
     },
 };
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Result, ensure};
 use rawmakase_cancel::Cancel;
 use std::{
     sync::{
@@ -74,7 +74,9 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
-/// Environment variable overriding GPU export (`0` disables GPU, `1` enables GPU).
+/// The desktop's environment variable overriding GPU export (`0` disables
+/// GPU, `1` enables it), which the app reads and passes in
+/// ([`ExportBackend::with_switch`]); the engine reads no environment.
 pub const EXPORT_GPU_ENV: &str = "RAWMAKASE_EXPORT_GPU";
 
 /// Target compute pixels per horizontal band (~6 MP keeps working VRAM around ~240–290 MB
@@ -409,20 +411,15 @@ impl ExportBackend {
     /// Creates an export backend with `policy`.
     ///
     /// - [`ExportBackendPolicy::Auto`] probes a hardware compute adapter lazily on first
-    ///   eligible render unless `RAWMAKASE_EXPORT_GPU=0` is set.
+    ///   eligible render.
     /// - [`ExportBackendPolicy::CpuOnly`] always runs on the CPU reference without
-    ///   probing a GPU or consulting the environment.
+    ///   probing a GPU.
     pub fn new(policy: ExportBackendPolicy) -> Self {
-        let env_val = if policy == ExportBackendPolicy::Auto {
-            std::env::var(EXPORT_GPU_ENV).ok()
-        } else {
-            None
-        };
-        let (effective, fallback) = resolve_policy(policy, env_val.as_deref(), false);
+        let (effective, fallback) = resolve_policy(policy, None, false);
         Self::build(effective, fallback)
     }
 
-    /// Creates an [`ExportBackendPolicy::Auto`] backend (respecting `RAWMAKASE_EXPORT_GPU=0`).
+    /// Creates an [`ExportBackendPolicy::Auto`] backend.
     pub fn auto() -> Self {
         Self::new(ExportBackendPolicy::Auto)
     }
@@ -432,11 +429,17 @@ impl ExportBackend {
         Self::new(ExportBackendPolicy::CpuOnly)
     }
 
-    /// Creates a backend honoring `RAWMAKASE_EXPORT_GPU=0|1`, falling back to `default`
-    /// when the environment variable is unset or unrecognized.
-    pub fn from_env(default: ExportBackendPolicy) -> Self {
-        let env_val = std::env::var(EXPORT_GPU_ENV).ok();
-        let (effective, fallback) = resolve_policy(default, env_val.as_deref(), true);
+    /// Creates a backend with `default`, overridden by `switch`, the value the
+    /// caller read of [`EXPORT_GPU_ENV`]: `0` disables GPU, `1` enables it, and
+    /// anything else, or none, leaves `default`. Only an
+    /// [`ExportBackendPolicy::Auto`] default may be switched off; `1` turns a
+    /// CPU-only default on only when `can_enable`.
+    pub fn with_switch(
+        default: ExportBackendPolicy,
+        switch: Option<&str>,
+        can_enable: bool,
+    ) -> Self {
+        let (effective, fallback) = resolve_policy(default, switch, can_enable);
         Self::build(effective, fallback)
     }
 
@@ -492,7 +495,7 @@ impl ExportBackend {
         format: ExportFormat,
         cancel: Cancel<'_>,
     ) -> Result<ExportImage> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
 
         // Strip Point Color's Visualize Range before both GPU and CPU paths.
         let (stripped, checked);
@@ -568,14 +571,14 @@ impl ExportBackend {
         // `image`). Color NR, Luminance NR, measurement box-reduction and Texture run on
         // the GPU inside `execute_on_gpu` so fallback never duplicates pyramid work.
         let recovered = quality::recovered(image, cancel)?;
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
 
         let denoise = r.denoise_with(ai.filter(|a| a.fits(image)));
         let ai_base = match denoise.as_ref().and_then(|d| d.ai.as_ref()) {
             Some(ai_blend) => ai_blend.apply(&recovered),
             None => recovered,
         };
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
 
         let job = PreparedExport {
             ai_base: &ai_base,
@@ -615,7 +618,9 @@ impl ExportBackend {
                 self.lock_meta().gpu_renders += 1;
                 Ok(exported)
             }
-            Err(GpuFailure::Cancelled) => Err(anyhow!("Render superseded")),
+            Err(GpuFailure::Cancelled) => {
+                Err(rawmakase_cancel::Cancelled::new("Render superseded").into())
+            }
             Err(GpuFailure::Hard(err)) => Err(err),
             Err(GpuFailure::PerPhoto(kind, _reason)) => {
                 let out =
@@ -663,7 +668,7 @@ impl ExportBackend {
         max_edge: u32,
         cancel: Cancel<'_>,
     ) -> Result<crate::rendered::HdrImage> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         ensure!(recipe.hdr.is_active(), "This edit has HDR off");
         crate::model::hdr::check_for(recipe, &image.metadata)?;
 
@@ -724,14 +729,14 @@ impl ExportBackend {
         base.validate()?;
 
         let recovered = quality::recovered(scene_img, cancel)?;
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
 
         let denoise = r.denoise_with(effective_ai.filter(|a| a.fits(scene_img)));
         let ai_base = match denoise.as_ref().and_then(|d| d.ai.as_ref()) {
             Some(ai_blend) => ai_blend.apply(&recovered),
             None => recovered,
         };
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
 
         let job = PreparedHdrExport {
             ai_base: &ai_base,
@@ -769,7 +774,9 @@ impl ExportBackend {
                 self.lock_meta().gpu_renders += 1;
                 Ok(master)
             }
-            Err(GpuFailure::Cancelled) => Err(anyhow!("Render superseded")),
+            Err(GpuFailure::Cancelled) => {
+                Err(rawmakase_cancel::Cancelled::new("Render superseded").into())
+            }
             Err(GpuFailure::Hard(err)) => Err(err),
             Err(GpuFailure::PerPhoto(kind, _reason)) => {
                 let out = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;
@@ -811,7 +818,7 @@ impl ExportBackend {
         max_edge: u32,
         cancel: Cancel<'_>,
     ) -> Result<(crate::rendered::HdrImage, ExportImage)> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         ensure!(recipe.hdr.is_active(), "This edit has HDR off");
         crate::model::hdr::check_for(recipe, &image.metadata)?;
 
@@ -913,12 +920,12 @@ impl ExportBackend {
         base_sdr.validate()?;
 
         let recovered = quality::recovered(image, cancel)?;
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let ai_base = match hdr_denoise.as_ref().and_then(|d| d.ai.as_ref()) {
             Some(ai_blend) => ai_blend.apply(&recovered),
             None => recovered,
         };
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
 
         let hdr_job = PreparedHdrExport {
             ai_base: &ai_base,
@@ -968,7 +975,9 @@ impl ExportBackend {
                 self.lock_meta().gpu_renders += 1;
                 Ok((master, base))
             }
-            Err(GpuFailure::Cancelled) => Err(anyhow!("Render superseded")),
+            Err(GpuFailure::Cancelled) => {
+                Err(rawmakase_cancel::Cancelled::new("Render superseded").into())
+            }
             Err(GpuFailure::Hard(err)) => Err(err),
             Err(GpuFailure::PerPhoto(kind, _)) | Err(GpuFailure::Session(kind, _)) => {
                 let master = crate::develop::render_hdr(image, recipe, ai, max_edge, cancel)?;

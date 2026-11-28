@@ -248,6 +248,10 @@ fn a_cancel_seen_after_the_render_still_stores_nothing() {
         path: path.clone(),
         record: EditRecord::default(),
         defaults: Default::default(),
+        libraries: crate::environment::Libraries {
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            ..Default::default()
+        },
         demosaic: Demosaic::default(),
         decode_cache: Default::default(),
         identity: "a".into(),
@@ -874,6 +878,10 @@ fn a_photo_too_large_for_a_jpeg_fails_with_why() {
         path,
         record: EditRecord::default(),
         defaults: Default::default(),
+        libraries: crate::environment::Libraries {
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            ..Default::default()
+        },
         demosaic: Demosaic::default(),
         decode_cache: Default::default(),
         identity: "a".into(),
@@ -1109,6 +1117,10 @@ fn a_jpeg_preview_renders_from_the_file() -> anyhow::Result<()> {
         path,
         record: EditRecord::default(),
         defaults: Default::default(),
+        libraries: crate::environment::Libraries {
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            ..Default::default()
+        },
         demosaic: Demosaic::default(),
         decode_cache: Default::default(),
         identity: "a".into(),

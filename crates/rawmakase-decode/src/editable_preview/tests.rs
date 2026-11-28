@@ -64,7 +64,12 @@ fn a_value_or_version_this_release_doesnt_know_is_refused() {
 fn a_file_that_isnt_a_copy_is_refused() {
     let chart =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/charts/synthetic-d65.dng");
-    let error = format!("{:#}", open(&chart, Cancel::NEVER).err().unwrap());
+    let error = format!(
+        "{:#}",
+        open(&chart, &crate::photo::LensProfiles::none(), Cancel::NEVER)
+            .err()
+            .unwrap()
+    );
     assert!(error.contains("no RAWmakase record"), "{error}");
     let dir = tempfile::tempdir().unwrap();
     let file = |name: &str, bytes: &[u8]| -> PathBuf {
@@ -72,7 +77,28 @@ fn a_file_that_isnt_a_copy_is_refused() {
         std::fs::write(&path, bytes).unwrap();
         path
     };
-    assert!(open(&file("text.dng", b"not a DNG"), Cancel::NEVER).is_err());
-    assert!(open(&file("empty.dng", b""), Cancel::NEVER).is_err());
-    assert!(open(&dir.path().join("missing.dng"), Cancel::NEVER).is_err());
+    assert!(
+        open(
+            &file("text.dng", b"not a DNG"),
+            &crate::photo::LensProfiles::none(),
+            Cancel::NEVER
+        )
+        .is_err()
+    );
+    assert!(
+        open(
+            &file("empty.dng", b""),
+            &crate::photo::LensProfiles::none(),
+            Cancel::NEVER
+        )
+        .is_err()
+    );
+    assert!(
+        open(
+            &dir.path().join("missing.dng"),
+            &crate::photo::LensProfiles::none(),
+            Cancel::NEVER
+        )
+        .is_err()
+    );
 }

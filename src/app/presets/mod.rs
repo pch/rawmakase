@@ -17,11 +17,12 @@ impl Editor {
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         let scan = self.presets.next_scan();
+        let presets = self.preset_library().clone();
         crate::app::task::spawn(
             tx,
             ctx,
             move |tx| {
-                let library = Arc::new(crate::presets::load_library());
+                let library = Arc::new(presets.load());
                 let _ = tx.send(Event::XmpLibrary { scan, library });
             },
             move |tx, error| {
@@ -73,7 +74,7 @@ impl Editor {
             .presets
             .iter()
             .map(|p| {
-                p.apply(&base, m, &self.document.profiles, None)
+                p.apply(&base, m, &self.document.profiles, None, self.lensfun_db())
                     .err()
                     .map(|e| format!("{e:#}"))
             })
@@ -271,6 +272,7 @@ impl Editor {
                                     thumbnail_inputs(
                                         &self.document,
                                         &self.presets.library,
+                                        crate::environment::lensfun(&self.core),
                                         self.view.display_profile(),
                                     )
                                 })
@@ -503,6 +505,7 @@ impl Editor {
                         .measures()
                         .as_ref()
                         .map(|m| m as &dyn crate::xmp::PhotoMeasures),
+                    self.lensfun_db(),
                 )
             {
                 self.presets.preview = Some(applied.recipe);
@@ -624,6 +627,7 @@ impl Editor {
                 .measures()
                 .as_ref()
                 .map(|m| m as &dyn crate::xmp::PhotoMeasures),
+            self.lensfun_db(),
         )?;
         let before = self.document.edit.replace(recipe);
         self.ensure_analysis();
@@ -895,6 +899,7 @@ impl TileLayout {
 pub(in crate::app) fn thumbnail_inputs<'a>(
     document: &'a crate::app::develop::state::Document,
     library: &'a Arc<crate::presets::Library>,
+    lensfun: &'a crate::lens::lensfun::installed::Handle,
     monitor: Option<std::path::PathBuf>,
 ) -> Option<thumbnails::Inputs<'a>> {
     Some(thumbnails::Inputs {
@@ -902,6 +907,7 @@ pub(in crate::app) fn thumbnail_inputs<'a>(
         recipe: document.edit.recipe(),
         metadata: document.metadata.as_ref()?,
         profiles: &document.profiles,
+        lensfun,
         monitor,
         library,
         photo: (document.path.clone(), document.catalog_photo),

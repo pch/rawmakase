@@ -60,8 +60,10 @@ pub fn cache_dir() -> PathBuf {
         .unwrap_or_else(|| home.join(".cache/rawmakase"))
 }
 
-/// The running executable's size and modification time: what a cache entry made
-/// by this build is keyed by, so another build never reads it.
+/// The running executable's size and modification time: what the desktop app
+/// and the command line key their cache entries by, so another build never
+/// reads them. A cache is given the build it keys by ([`DecodeCache::new`]);
+/// this is the app's choice of one, not the caches'.
 pub fn build_identity() -> String {
     std::env::current_exe()
         .and_then(fs::metadata)
@@ -76,20 +78,31 @@ pub fn build_identity() -> String {
         .unwrap_or_default()
 }
 
-/// The key of a result this build made from file version `id`: the file's identity
-/// ([`Identity::key`](crate::storage::Identity::key)), then `own`, what the cache's
-/// result depends on beyond the file (a decode's demosaic, AI Denoise's model,
-/// assembly and provider, a Camera Look fit's version), then [`build_identity`].
-/// Each cache keeps its own part and reads the file's identity once, when its job
-/// is captured; Library previews keep their cheap stamps instead.
-pub fn source_key(id: &crate::storage::Identity, own: impl std::fmt::Display) -> String {
-    format!("{}-{own}-{}", id.key(), build_identity())
+/// The key of a result build `build` made from file version `id`: the file's
+/// identity ([`Identity::key`](crate::storage::Identity::key)), then `own`, what
+/// the cache's result depends on beyond the file (a decode's demosaic, AI
+/// Denoise's model, assembly and provider, a Camera Look fit's version), then
+/// the build. Each cache keeps its own part and reads the file's identity once,
+/// when its job is captured; Library previews keep their cheap stamps instead.
+pub fn source_key(
+    id: &crate::storage::Identity,
+    own: impl std::fmt::Display,
+    build: &str,
+) -> String {
+    format!("{}-{own}-{build}", id.key())
 }
 
 #[derive(Clone, Debug)]
-pub struct DecodeCache {
-    dir: Arc<RwLock<Dir>>,
-    limit: Arc<AtomicU64>,
+pub struct DecodeCache(Arc<Shared>);
+/// What a cache and its clones share.
+#[derive(Debug)]
+struct Shared {
+    dir: RwLock<Dir>,
+    /// The folder the entries are kept in when no folder was chosen.
+    default: PathBuf,
+    /// The build whose entries the cache reads and writes.
+    build: String,
+    limit: AtomicU64,
 }
 /// Where one kind of cache entry lives: its subfolder of the default directory and of a
 /// chosen folder, and its file extension. Decoded images and AI Denoise results each
@@ -115,13 +128,12 @@ pub(crate) struct Dir {
     pub chosen: Option<PathBuf>,
 }
 impl Dir {
-    fn of(folder: Option<&Path>) -> Self {
-        Self::of_in(DECODED, folder)
-    }
-    pub(crate) fn of_in(namespace: Namespace, folder: Option<&Path>) -> Self {
+    /// Entries kept in `namespace`'s subfolder of `folder`, or in `default`
+    /// for `None`.
+    pub(crate) fn of_in(namespace: Namespace, folder: Option<&Path>, default: &Path) -> Self {
         match folder {
             None => Self {
-                path: cache_dir().join(namespace.default),
+                path: default.to_path_buf(),
                 chosen: None,
             },
             Some(folder) => Self {
@@ -152,22 +164,37 @@ struct Header {
     recovered: u64,
 }
 impl Default for DecodeCache {
+    /// The desktop's: the platform's cache folder, keyed by this executable.
     fn default() -> Self {
-        Self::new(cache_dir().join("decoded"), DEFAULT_LIMIT)
+        Self::under(&cache_dir(), DEFAULT_LIMIT, &build_identity())
     }
 }
 impl DecodeCache {
-    pub fn new(dir: PathBuf, limit: u64) -> Self {
-        Self {
-            dir: Arc::new(RwLock::new(Dir {
+    /// Decoded images in their subfolder of the cache folder `cache`, up to
+    /// `limit` bytes, made by `build`.
+    pub fn under(cache: &Path, limit: u64, build: &str) -> Self {
+        Self::new(cache.join(DECODED.default), limit, build)
+    }
+    /// Entries in `dir`, up to `limit` bytes, keyed by `build`: entries another
+    /// build made are never read. `dir` is also where they go back to when a
+    /// chosen folder is given up ([`Self::set_folder`] with `None`).
+    pub fn new(dir: PathBuf, limit: u64, build: &str) -> Self {
+        Self(Arc::new(Shared {
+            default: dir.clone(),
+            dir: RwLock::new(Dir {
                 path: dir,
                 chosen: None,
-            })),
-            limit: Arc::new(AtomicU64::new(limit)),
-        }
+            }),
+            build: build.into(),
+            limit: AtomicU64::new(limit),
+        }))
+    }
+    /// The build whose entries this cache reads and writes.
+    pub fn build(&self) -> &str {
+        &self.0.build
     }
     fn location(&self) -> Dir {
-        self.dir.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.0.dir.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
     /// The directory holding the entries, shared with clones.
     pub fn dir(&self) -> PathBuf {
@@ -182,18 +209,19 @@ impl DecodeCache {
     /// directory for `None`, for this cache and its clones. Entries already in
     /// the previous directory stay there.
     pub fn set_folder(&self, folder: Option<&Path>) {
-        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = Dir::of(folder);
+        *self.0.dir.write().unwrap_or_else(|e| e.into_inner()) =
+            Dir::of_in(DECODED, folder, &self.0.default);
     }
     /// [`set_folder`](Self::set_folder), then removes the previous directory's
     /// entries, which nothing reads any more. Returns how many were removed.
     /// The new directory is created and written to first: if either fails,
     /// the cache and its entries stay where they are.
     pub fn relocate(&self, folder: Option<&Path>) -> std::io::Result<usize> {
-        let next = Dir::of(folder);
+        let next = Dir::of_in(DECODED, folder, &self.0.default);
         next.create()?;
         tempfile::tempfile_in(&next.path)?;
         let previous = self.dir();
-        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = next;
+        *self.0.dir.write().unwrap_or_else(|e| e.into_inner()) = next;
         if previous == self.dir() {
             return Ok(0);
         }
@@ -206,23 +234,21 @@ impl DecodeCache {
     }
     /// The size cap in bytes, shared with clones used by existing workers.
     pub fn limit(&self) -> u64 {
-        self.limit.load(Ordering::Relaxed)
+        self.0.limit.load(Ordering::Relaxed)
     }
     /// Changes the cap for this cache and its clones. The next store trims to
     /// the new cap; changing it performs no disk I/O on the caller's thread.
     pub fn set_limit(&self, limit: u64) {
-        self.limit.store(limit, Ordering::Relaxed);
+        self.0.limit.store(limit, Ordering::Relaxed);
     }
-    /// The key of `path` as the current build develops it at full size with `demosaic`.
-    pub fn key(path: &Path, demosaic: Demosaic) -> Result<String> {
-        Ok(Self::key_of(
-            &crate::storage::Identity::read(path)?,
-            demosaic,
-        ))
+    /// The key of `path` as this cache's build develops it at full size with
+    /// `demosaic`.
+    pub fn key(&self, path: &Path, demosaic: Demosaic) -> Result<String> {
+        Ok(self.key_of(&crate::storage::Identity::read(path)?, demosaic))
     }
     /// The key of the file version `id`, as [`key`](Self::key) names it.
-    pub fn key_of(id: &crate::storage::Identity, demosaic: Demosaic) -> String {
-        source_key(id, format_args!("{demosaic:?}"))
+    pub fn key_of(&self, id: &crate::storage::Identity, demosaic: Demosaic) -> String {
+        source_key(id, format_args!("{demosaic:?}"), &self.0.build)
     }
     fn file(&self, key: &str) -> PathBuf {
         file_in(&self.dir(), key)
@@ -533,10 +559,35 @@ mod tests {
             modified_ns: 34,
             prefix_hash: "ab".into(),
         };
+        let cache = DecodeCache::new("/cache".into(), 1, "1234-5678");
         assert_eq!(
-            DecodeCache::key_of(&id, Demosaic::Rawmakase),
-            format!("ab-12-34-Rawmakase-{}", build_identity())
+            cache.key_of(&id, Demosaic::Rawmakase),
+            "ab-12-34-Rawmakase-1234-5678"
         );
+    }
+    /// Two caches in one folder with two builds don't read each other's
+    /// entries, and a cache given up for a chosen folder goes back to the one
+    /// it was made with, not to the platform's.
+    #[test]
+    fn a_cache_reads_only_its_builds_entries_and_returns_to_its_own_folder() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let chart = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/corpus/charts/synthetic-d65.dng");
+        let one = DecodeCache::new(dir.path().join("decoded"), u64::MAX, "build-1");
+        let two = DecodeCache::new(dir.path().join("decoded"), u64::MAX, "build-2");
+        let (a, b) = (
+            one.key(&chart, Demosaic::Rawmakase)?,
+            two.key(&chart, Demosaic::Rawmakase)?,
+        );
+        assert_ne!(a, b);
+        one.store(&a, &image(4, 3, 0.2))?;
+        assert!(one.contains(&a) && !two.contains(&b));
+        let chosen = tempfile::tempdir()?;
+        one.set_folder(Some(chosen.path()));
+        assert_eq!(one.dir(), chosen.path().join(CHOSEN_SUBFOLDER));
+        one.set_folder(None);
+        assert_eq!(one.dir(), dir.path().join("decoded"));
+        Ok(())
     }
     #[test]
     fn changed_limit_reaches_existing_workers_and_controls_eviction() -> Result<()> {
@@ -544,12 +595,12 @@ mod tests {
         let mut rendered = image(4, 3, 0.2);
         rendered.metadata.source = rawmakase_model::camera_data::Source::Rendered;
         assert!(
-            DecodeCache::new(dir.path().join("rendered"), u64::MAX)
+            DecodeCache::new(dir.path().join("rendered"), u64::MAX, "test")
                 .store("r", &rendered)
                 .is_err(),
             "the decode cache keeps RAWs only"
         );
-        let cache = DecodeCache::new(dir.path().to_path_buf(), 1);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), 1, "test");
         let worker = cache.clone();
         cache.set_limit(1 << 20);
         worker.store("a", &image(40, 30, 0.2))?;
@@ -564,7 +615,7 @@ mod tests {
     #[test]
     fn a_chosen_folder_reaches_existing_workers_and_relocating_removes_old_entries() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().join("default"), u64::MAX);
+        let cache = DecodeCache::new(dir.path().join("default"), u64::MAX, "test");
         let worker = cache.clone();
         cache.store("a", &image(40, 30, 0.2))?;
         fs::write(dir.path().join("default/notes.txt"), "kept")?;
@@ -589,7 +640,7 @@ mod tests {
     #[test]
     fn relocating_to_an_unusable_folder_changes_nothing() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().join("default"), u64::MAX);
+        let cache = DecodeCache::new(dir.path().join("default"), u64::MAX, "test");
         cache.store("a", &image(40, 30, 0.2))?;
         let blocked = dir.path().join("blocked");
         fs::create_dir(&blocked)?;
@@ -607,7 +658,7 @@ mod tests {
     #[test]
     fn a_missing_chosen_folder_is_not_created() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().join("default"), u64::MAX);
+        let cache = DecodeCache::new(dir.path().join("default"), u64::MAX, "test");
         let unplugged = dir.path().join("Volumes/Photos SSD");
         cache.set_folder(Some(&unplugged));
         assert!(cache.store("a", &image(40, 30, 0.2)).is_err());
@@ -641,8 +692,8 @@ mod tests {
     #[test]
     fn a_loaded_entry_is_one_buffer_and_stores_the_same_entry() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let first = DecodeCache::new(dir.path().join("first"), u64::MAX);
-        let second = DecodeCache::new(dir.path().join("second"), u64::MAX);
+        let first = DecodeCache::new(dir.path().join("first"), u64::MAX, "test");
+        let second = DecodeCache::new(dir.path().join("second"), u64::MAX, "test");
         let metadata = Metadata::default();
         // Pixels recovery changed at both ends, next to each other and apart.
         let mut a = image(70, 30, 0.2);
@@ -670,7 +721,7 @@ mod tests {
         // again: it still stores the same entry.
         assert_eq!(loaded.pixels[..].len(), 2100);
         assert!(!loaded.pixels.shares_buffer(&one.pixels));
-        let third = DecodeCache::new(dir.path().join("third"), u64::MAX);
+        let third = DecodeCache::new(dir.path().join("third"), u64::MAX, "test");
         third.store("a", &loaded)?;
         assert_eq!(fs::read(first.file("a"))?, fs::read(third.file("a"))?);
         // An image recovery changed nowhere: no changes stored, one buffer loaded.
@@ -693,7 +744,7 @@ mod tests {
     #[test]
     fn changes_are_of_bits() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let mut apart = image(40, 30, 0.2);
         apart.pixels[5] = [-0., 0.5, 0.25];
         apart.pixels[6] = [f32::NAN, 0.5, 0.25];
@@ -725,7 +776,7 @@ mod tests {
     #[test]
     fn many_changes_load_as_they_were_stored() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let dense = |i: usize, n: usize| !i.is_multiple_of(3) || i == 3 || i == n - 1;
         let sparse = |i: usize, _: usize| {
             i >= 200
@@ -774,7 +825,7 @@ mod tests {
     #[test]
     fn an_entry_with_changes_out_of_order_is_a_miss() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let mut a = image(40, 30, 0.2);
         let mut recovered = (**a.recovered.get().unwrap()).clone();
         recovered.pixels[700] = [7.; 3];
@@ -803,7 +854,7 @@ mod tests {
     fn entries_round_trip_and_stay_within_the_cap() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let bytes = 40 * 30 * 12 + 200;
-        let cache = DecodeCache::new(dir.path().join("decoded"), 2 * bytes);
+        let cache = DecodeCache::new(dir.path().join("decoded"), 2 * bytes, "test");
         let metadata = Metadata {
             make: "Test".into(),
             ..Default::default()

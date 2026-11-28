@@ -281,7 +281,8 @@ fn merged(paths: &[PathBuf]) -> Merged {
 /// The merged DNG read back as the app develops it, not white balanced: the
 /// light per pixel in the darkest frame's units.
 fn developed(path: &Path) -> (Vec<[f64; 3]>, f64) {
-    let raw = rawmakase_decode::photo::open(path).unwrap();
+    let raw = rawmakase_decode::photo::open(path, &rawmakase_decode::photo::LensProfiles::none())
+        .unwrap();
     let wb = raw.metadata.wb;
     let baseline = f64::from(raw.metadata.baseline_exposure.unwrap());
     let image = raw
@@ -416,7 +417,8 @@ fn a_handheld_bracket_is_aligned() {
     let wrong = wrong_blocks(&pixels, &scene);
     assert!(wrong.is_empty(), "blocks {wrong:?}");
     // The mask: the frames' moved edges are uncovered, the middle covered.
-    let raw = rawmakase_decode::photo::open(&path).unwrap();
+    let raw = rawmakase_decode::photo::open(&path, &rawmakase_decode::photo::LensProfiles::none())
+        .unwrap();
     let coverage = raw.metadata.coverage.as_ref().expect("a transparency mask");
     let at = |x: u32, y: u32| coverage.values[(y * coverage.width + x) as usize];
     assert_eq!((at(0, 0), at(W - 1, H - 1)), (0, 0));
@@ -597,7 +599,8 @@ fn a_tripod_bracket_stays_in_place() {
             assert!((u - x).hypot(v - y) < 0.5, "{a:?}");
         }
     }
-    let raw = rawmakase_decode::photo::open(path).unwrap();
+    let raw = rawmakase_decode::photo::open(path, &rawmakase_decode::photo::LensProfiles::none())
+        .unwrap();
     if let Some(coverage) = &raw.metadata.coverage {
         let (w, h) = (coverage.width, coverage.height);
         for y in 1..h - 1 {
@@ -635,7 +638,8 @@ fn the_dng_renders_at_the_reference_frames_brightness() {
     assert!(!merged.reference_moved);
     assert!((merged.baseline_exposure - 2.).abs() < 0.01);
     assert_eq!(path.file_name().unwrap(), "IMG_2-HDR.dng");
-    let raw = rawmakase_decode::photo::open(path).unwrap();
+    let raw = rawmakase_decode::photo::open(path, &rawmakase_decode::photo::LensProfiles::none())
+        .unwrap();
     let m = &raw.metadata;
     assert!((f64::from(m.baseline_exposure.unwrap()) - merged.baseline_exposure).abs() < 1e-4);
     assert_eq!((m.width, m.height), (W, H));
@@ -697,10 +701,13 @@ fn the_merge_follows_the_scene_without_seams() {
 fn shadow_noise_is_the_brightest_frames() {
     let (dir, _, path) = written();
     let (merged, _) = developed(path);
-    let brightest = rawmakase_decode::photo::open(&dir.path().join("IMG_3.dng"))
-        .unwrap()
-        .develop_frame(Demosaic::Rawmakase, Cancel::NEVER)
-        .unwrap();
+    let brightest = rawmakase_decode::photo::open(
+        &dir.path().join("IMG_3.dng"),
+        &rawmakase_decode::photo::LensProfiles::none(),
+    )
+    .unwrap()
+    .develop_frame(Demosaic::Rawmakase, Cancel::NEVER)
+    .unwrap();
     // Block 8: about 2^-11.4 of the darkest frame's white.
     let (bx, by) = (8 * 32, 0);
     let spread = |values: &[f64]| {

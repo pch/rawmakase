@@ -1,0 +1,36 @@
+[package]
+name = "rawmakase-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "RAWmakase as a library: open, decode, edit, render and export photos as RAWmakase does, without the desktop app, configured by values"
+license.workspace = true
+publish = false
+
+[dependencies]
+rawmakase-cancel = { path = "../rawmakase-cancel", version = "0.1.0" }
+rawmakase-decode = { path = "../rawmakase-decode", version = "0.1.0" }
+rawmakase-engine = { path = "../rawmakase-engine", version = "0.1.0" }
+# Writing files (`export`, on by default).
+rawmakase-export = { path = "../rawmakase-export", version = "0.1.0", optional = true }
+rawmakase-interop = { path = "../rawmakase-interop", version = "0.1.0" }
+rawmakase-model = { path = "../rawmakase-model", version = "0.1.0" }
+anyhow.workspace = true
+# A frame's RGBA is converted across cores.
+rayon.workspace = true
+
+[dev-dependencies]
+# Reads exported files back.
+image.workspace = true
+tempfile.workspace = true
+
+[features]
+default = ["export"]
+# Writing files: JPEG, TIFF, PNG, JPEG XL, HDR masters and gain maps.
+export = ["dep:rawmakase-export"]
+# The crates' handles on what a context holds, for RAWmakase's own app
+# (`workspace`, no part of the library's surface).
+workspace = []
+
+[lints]
+workspace = true

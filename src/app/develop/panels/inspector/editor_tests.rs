@@ -117,7 +117,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
         height: 48,
         ..Default::default()
     };
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     editor.document.reset(None);
     let (generation, _) = editor.document.start_load();
     for event in [

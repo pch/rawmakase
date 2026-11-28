@@ -528,23 +528,8 @@ fn display_axes(r: &Recipe, m: &Metadata) -> [[f32; 2]; 2] {
 
 /// The source's settings in `selection` applied over `to`, with everything that depends
 /// on the photo worked out again for `target`. A Lensfun lens takes the target's camera
-/// as the database installed now knows it.
+/// as `lensfun`, the database installed now, knows it.
 pub fn transfer(
-    source: Source<'_>,
-    to: &Recipe,
-    selection: &GroupSelection,
-    target: Target<'_>,
-) -> Transferred {
-    transfer_with_lensfun(
-        source,
-        to,
-        selection,
-        target,
-        &crate::lens::lensfun::installed::Handle::Installed,
-    )
-}
-/// [`transfer`], with a Lensfun lens taken to the target's camera against `lensfun`.
-pub(crate) fn transfer_with_lensfun(
     source: Source<'_>,
     to: &Recipe,
     selection: &GroupSelection,

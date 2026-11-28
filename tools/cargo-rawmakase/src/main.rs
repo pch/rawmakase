@@ -10,6 +10,7 @@
 //!
 //! Every command but `new` runs in the extension's folder, the one holding
 //! `rawmakase-extension.toml` and `Cargo.toml`.
+#![forbid(unsafe_code)]
 mod templates;
 
 use clap::{Parser, Subcommand, ValueEnum};

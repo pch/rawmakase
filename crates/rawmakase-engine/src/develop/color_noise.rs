@@ -21,7 +21,7 @@
 //! filtered with the thresholds of the photo's scales its levels show, so it keeps the
 //! share of each scale's noise the photo keeps.
 use crate::camera_data::CameraImage;
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 
@@ -187,7 +187,7 @@ impl ChromaDenoise {
         if share <= 0. || plane.w < 4 || plane.h < 4 {
             return Ok(plane);
         }
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let coarse = plane.down();
         {
             // From here on `plane` is the level's detail: what it has beyond its blur.
@@ -216,7 +216,7 @@ impl ChromaDenoise {
             offset,
             cancel,
         )?;
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let coarse_up = coarse.up(plane.w, plane.h);
         drop(coarse);
         let threshold = self.threshold_at(photo_level, noise, finest_noise);

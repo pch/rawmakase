@@ -5,6 +5,7 @@
 //! src/app/shell/automation/socket.rs for the app's side). Each command here is one
 //! request; the app answers once a frame has handled it. The app's own
 //! `rawmakase control` and MCP server use this crate too.
+#![forbid(unsafe_code)]
 // Every public item says what it is for: this crate is a contract other crates
 // and clients build on.
 #![warn(missing_docs)]

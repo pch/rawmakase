@@ -15,6 +15,7 @@ point only down:
 ```mermaid
 flowchart TD
     app["rawmakase (app, CLI)"]
+    core["rawmakase-core (the library)"]
     export[rawmakase-export]
     decode[rawmakase-decode]
     catalog[rawmakase-catalog]
@@ -42,7 +43,10 @@ flowchart TD
     hdrmerge[rawmakase-hdr-merge]
 
     app --> export & decode & catalog & engine & interop & model
-    app --> ctl & denoise & fs & exthost & hdrmerge
+    app --> ctl & denoise & fs & exthost & hdrmerge & core
+    core --> export
+    core --> engine
+    core --> decode
     denoise --> decode & inference & modelinstall
     export --> decode & engine & interop
     hdrmerge --> decode & interop & model & cancel
@@ -81,7 +85,8 @@ the app, runs them, and `scripts/deps-crates.txt` keeps them out.)
 | `rawmakase-raw` | RAWmakase's own RAW decoders ([RAW decoding](raw-decoding.md)) | Everything but `rawmakase-tiff` and `rawmakase-cancel` |
 | `rawmakase-tiff` | The bounded TIFF reader DNGs and RAW containers use; no RAW knowledge | Everything |
 | `rawmakase-fs` | What moving a user's file needs of the file system, policy-free: exclusive renames, file ids, exact listings, name comparison, containment, volume facts and a copy's steps, one file per system, with the unsafe system calls the model used to hold. The catalog's file operations and the app's Trash use it | Every other workspace crate; the value, file-format, rendering, decoding and export crates never reach it |
-| `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags | Everything |
+| `rawmakase-core` | The library other apps link ([guide](embedding.md), [plan](embedding-plan.md)): a `Context` built from values, which makes the libraries and caches, the operations on a photo (open, decode, edit, render, and export with the `export` feature), and one `Error` whose `ErrorKind` comes from the crates' typed causes. Its public items are listed in `public-api.txt`, compared in CI | Every crate under it (none depends on it), the app crate, the GUI, the extension host, the selection models |
+| `rawmakase-cancel` | `Cancel`, the borrowed request to stop long-running work, which its owner's flag sets: every crate that does such work takes one, and owners keep their flags. Work that stops returns its `Cancelled`, so a caller tells a cancelled job from a failed one by type | Everything |
 | `rawmakase-decode` | Opening and decoding photos: the only crate that reaches `rawmakase-raw`; color management, demosaicing, rendered files (JPEG … HEIF), the full-size decode and its cache, opening editable previews and their record's format, AI Denoise's packing and assembly, Camera Look fitting | C imaging libraries, image encoders, the catalog, export, the GUI |
 | `rawmakase-hdr-merge` | Merge to HDR ([Merge to HDR](hdr-merge.md)): checking a bracket, decoding its frames through `rawmakase-decode` (`Raw::develop_frame`), aligning them to the reference frame (Auto Align), deghosting, measuring their exposure ratios and noise, the noise-weighted merge, and the DNG writer, a linear raw image of half-precision samples with the camera's color, levels, EXIF, maker note, XMP and preview, in a TIFF writer of its own (`rawmakase-tiff` stays the bounded reader); `write_dng` publishes it beside the sources without replacing a file | The catalog, export, the app, the GUI, inference and the extension crates |
 | `rawmakase-export` | Developing and writing exports (through `rawmakase-engine`'s opaque `ExportBackend`), with their watermarks (system default and installed fonts loaded without egui), and writing editable previews | The app, the GUI, a window, or direct `wgpu` types |
@@ -503,6 +508,11 @@ of what it shows, edits the recipe during the edit frame and returns the actions
 it can't carry out itself (Auto, imports, dialogs), which `Editor::controls`
 carries out after every panel is drawn. The [code map](code-map.md#desktop-application) lists them.
 
+The `Editor` builds the library's `rawmakase_core::Context` at startup from
+`environment`, the one window-free module that reads the environment's
+configuration, which the command line shares. Its workers take the caches
+they are given from that context, not from a folder looked up for them.
+
 `Editor` deliberately remains the coordinator for state shared across panels.
 A panel should call the domain API responsible for an operation, rather than
 implementing file formats, SQL or pixel processing itself. Thumbnail decoding
@@ -564,6 +574,24 @@ Some features span several owners; each module's docs describe its part:
   only C compiled comes with Rust crates' own sources (the catalog's bundled
   SQLite, ring, Wayland's backend on Linux); HEIC pixels come from the operating
   system's decoders, opened at run time ([dependencies](dependencies.md)).
+- **The app crate holds what needs a window; the library's crates take their
+  configuration as values.** The crates the library is made of
+  ([library plan](embedding-plan.md)) read no environment variable and start
+  no program: a folder, a font, the ONNX Runtime's path and the GPU's options
+  are given by their caller. `scripts/ambient.py check` (run by
+  `scripts/deps.py check`) searches their production code for `std::env`, the
+  `directories` crate, wgpu's `from_env` and `with_env`, `Command::new`, the
+  ambient data and cache folders (`data_dir()` and the like, and
+  `rawmakase_protocol::paths`) and temporary files made with no folder, and
+  compares the sites with `scripts/deps-ambient.txt`. The list only shrinks: a
+  new site fails, and so does a count the code has dropped below until the
+  list is lowered. What remains is listed until the plan moves it to the app's
+  startup.
+- Every workspace crate that has no unsafe code says so with
+  `#![forbid(unsafe_code)]`, binaries too. Unsafe code is where the operating
+  system or a decoder needs it (decoding, `rawmakase-fs`, inference, export's
+  memory-mapped font, the extension SDK and host, the app), each block with its
+  `SAFETY` note.
 - Keep `eframe`, `egui` and native chooser code in `app`. The CLI must be able to
   use domain operations without creating an editor or UI context. `render` and
   `render-batch` are `render_command`, and `merge-hdr` is `merge_command` (and

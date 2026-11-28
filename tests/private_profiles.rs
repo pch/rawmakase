@@ -70,10 +70,11 @@ fn imported_profiles_render_and_roundtrip() -> anyhow::Result<()> {
 #[test]
 #[ignore = "Explicitly imported private DCP/XMP profiles; no Adobe directory discovery"]
 fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<()> {
-    let raw = rawmakase::photo::open(&std::path::PathBuf::from(std::env::var(
-        "RAWMAKASE_PROFILE_RAW",
-    )?))?;
-    let (profiles, errors) = camera_profiles::installed(&raw.metadata);
+    let raw = rawmakase::photo::open(
+        &std::path::PathBuf::from(std::env::var("RAWMAKASE_PROFILE_RAW")?),
+        &rawmakase::photo::LensProfiles::none(),
+    )?;
+    let (profiles, errors) = camera_profiles::ProfileLibrary::for_tests().installed(&raw.metadata);
     assert!(errors.is_empty(), "{errors:?}");
     for name in [
         "Adobe Color",
@@ -92,7 +93,13 @@ fn imported_enhanced_profiles_match_camera_and_resolve_xmp() -> anyhow::Result<(
             look.uuid
         );
         let preset = rawmakase::xmp::parse(std::path::Path::new("reference.xmp"), &xml)?;
-        let recipe = preset.apply(&Recipe::default(), &raw.metadata, &profiles, None)?;
+        let recipe = preset.apply(
+            &Recipe::default(),
+            &raw.metadata,
+            &profiles,
+            None,
+            &rawmakase::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(recipe.profile.as_ref().unwrap().name, name);
         let saved = serde_json::to_vec(&recipe)?;
         let loaded: Recipe = serde_json::from_slice(&saved)?;

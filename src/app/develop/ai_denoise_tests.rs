@@ -352,7 +352,10 @@ fn the_loupe_loads_a_finished_result_of_any_provider_without_running_the_model()
     };
     f.service
         .cache()
-        .store(&key(&path, Provider::Cpu).unwrap(), &entry)
+        .store(
+            &key(f.service.cache(), &path, Provider::Cpu).unwrap(),
+            &entry,
+        )
         .unwrap();
     editor.ai_result_stored(&path);
     let deadline = std::time::Instant::now() + Duration::from_secs(20);

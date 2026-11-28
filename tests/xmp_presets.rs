@@ -2,7 +2,7 @@ use rawmakase::{camera_data::Metadata, camera_profiles, model::recipe::Recipe, p
 #[test]
 #[ignore = "Private XMP library installed in user data directory"]
 fn supplied_library_audit() -> anyhow::Result<()> {
-    let library = presets::load_library();
+    let library = presets::PresetLibrary::in_data_dirs(&rawmakase::storage::asset_dirs()).load();
     println!(
         "{} presets; {} parse failures",
         library.presets.len(),
@@ -19,12 +19,18 @@ fn supplied_library_audit() -> anyhow::Result<()> {
             model: model.into(),
             ..Default::default()
         };
-        let (profiles, _) = camera_profiles::installed(&m);
+        let (profiles, _) = camera_profiles::ProfileLibrary::for_tests().installed(&m);
         let base = Recipe::for_metadata(&m);
         let mut okay = 0;
         let mut errors = std::collections::BTreeMap::<String, usize>::new();
         for p in &library.presets {
-            match p.apply(&base, &m, &profiles, None) {
+            match p.apply(
+                &base,
+                &m,
+                &profiles,
+                None,
+                &rawmakase::lens::lensfun::installed::Handle::none(),
+            ) {
                 Ok(r) => {
                     r.validate()?;
                     okay += 1;

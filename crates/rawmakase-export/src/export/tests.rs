@@ -113,7 +113,13 @@ fn develop_settings_round_trip_through_the_exported_xmp() -> Result<()> {
     assert!(packet.contains("xmp:CreateDate=\"2018-08-26T10:39:33\""));
     assert!(packet.contains("coffee &amp; books"));
     let preset = crate::xmp::parse(Path::new("export.xmp"), &packet)?;
-    let back = preset.apply(&Recipe::default(), &m, &[], None)?;
+    let back = preset.apply(
+        &Recipe::default(),
+        &m,
+        &[],
+        None,
+        &rawmakase_model::lens::lensfun::installed::Handle::none(),
+    )?;
     for (a, b) in [
         (back.exposure, r.exposure),
         (back.contrast, r.contrast),
@@ -155,6 +161,7 @@ fn develop_settings_round_trip_through_the_exported_xmp() -> Result<()> {
         &m,
         &[],
         None,
+        &rawmakase_model::lens::lensfun::installed::Handle::none(),
     )?;
     assert_eq!(back.panels, r.panels);
     Ok(())
@@ -192,6 +199,7 @@ fn a_turned_and_mirrored_crop_round_trips_through_xmp() -> Result<()> {
         &m,
         &[],
         None,
+        &rawmakase_model::lens::lensfun::installed::Handle::none(),
     )?;
     // Lightroom's corners of the turned crop, written to six decimals, give it back
     // to within their rounding.
@@ -206,7 +214,13 @@ fn a_turned_and_mirrored_crop_round_trips_through_xmp() -> Result<()> {
     assert_eq!(back.straighten, r.straighten);
     // A lens preset applied on top keeps the crop and angle.
     let lens = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:LensManualDistortionAmount="20" crs:LensProfileEnable="1"/></rdf:RDF></x:xmpmeta>"#;
-    let lensed = crate::xmp::parse(Path::new("lens.xmp"), lens)?.apply(&back, &m, &[], None)?;
+    let lensed = crate::xmp::parse(Path::new("lens.xmp"), lens)?.apply(
+        &back,
+        &m,
+        &[],
+        None,
+        &rawmakase_model::lens::lensfun::installed::Handle::none(),
+    )?;
     assert_ne!(lensed.lens_manual_distortion, back.lens_manual_distortion);
     assert_eq!(lensed.crop, back.crop);
     assert_eq!(lensed.straighten, back.straighten);
@@ -248,6 +262,7 @@ fn constrain_crop_writes_the_crop_as_rendered() -> Result<()> {
         &m,
         &[],
         None,
+        &rawmakase_model::lens::lensfun::installed::Handle::none(),
     )?;
     assert!(back.constrain_crop);
     for (a, b) in back.crop.iter().zip(rendered) {
@@ -762,6 +777,11 @@ fn export_refuses_to_destroy_a_raw_the_source_or_an_existing_file() -> Result<()
         )),
         "Destination already exists"
     );
+    assert!(
+        export(&target, &source, &image, &m, &options, Replace::NoClobber)
+            .unwrap_err()
+            .is::<rawmakase_model::error::Exists>()
+    );
     assert_eq!(fs::read(&target)?, b"previous");
 
     // With it, the file is replaced and no temporary is left behind.
@@ -944,6 +964,7 @@ fn a_fitted_look_travels_in_extended_xmp() -> Result<()> {
         &m,
         &[],
         None,
+        &rawmakase_model::lens::lensfun::installed::Handle::none(),
     )?;
     assert_eq!(back.profile.as_deref(), Some(&profile));
     Ok(())

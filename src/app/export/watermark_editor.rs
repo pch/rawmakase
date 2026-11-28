@@ -31,6 +31,8 @@ pub(super) struct WatermarkEditor {
     /// settings change, and what it was loaded for.
     loaded: Option<(String, watermark::Ready)>,
     notice: Notice,
+    /// The saved watermarks: where a kept image is read from.
+    marks: watermark::Watermarks,
 }
 /// What the editor says beside the name field.
 #[derive(Default)]
@@ -51,12 +53,17 @@ impl Notice {
     }
 }
 impl WatermarkEditor {
-    pub(super) fn new(watermark: Watermark, ctx: &egui::Context) -> Self {
+    pub(super) fn new(
+        watermark: Watermark,
+        marks: watermark::Watermarks,
+        ctx: &egui::Context,
+    ) -> Self {
         // Installed fonts are listed off the interface thread, which is woken to
         // draw them once they are.
         let ctx = ctx.clone();
+        let fonts = marks.fonts().clone();
         std::thread::spawn(move || {
-            let _ = watermark::fonts::families();
+            let _ = fonts.families();
             ctx.request_repaint();
         });
         let original = (!watermark.name.is_empty()).then(|| watermark.name.clone());
@@ -68,6 +75,7 @@ impl WatermarkEditor {
             preview: None,
             loaded: None,
             notice: Notice::None,
+            marks,
         }
     }
 }
@@ -180,7 +188,7 @@ impl Editor {
                     self.exports.watermark_editor = Some(state);
                     return;
                 }
-                let saved = watermark::save(
+                let saved = self.watermarks().save(
                     &state.watermark,
                     state.original.as_deref(),
                     source.as_deref(),
@@ -197,7 +205,7 @@ impl Editor {
                         }
                         self.exports.draft.watermark = true;
                         self.exports.draft.watermark_name = saved.name;
-                        self.exports.watermarks = watermark::presets();
+                        self.exports.watermarks = self.watermarks().presets();
                     }
                     Err(e) => {
                         state.notice = Notice::Error(format!("{e:#}"));
@@ -214,7 +222,7 @@ impl Editor {
                     .find(|w| w.name == original)
                     .cloned();
                 if let Some(w) = saved
-                    && let Err(e) = watermark::delete(&w)
+                    && let Err(e) = self.watermarks().delete(&w)
                 {
                     // Nothing else changes; the editor stays open to say so.
                     state.notice = Notice::Error(format!("Not deleted: {e:#}"));
@@ -231,7 +239,7 @@ impl Editor {
                     previous.watermark = false;
                     previous.watermark_name = watermark::SIMPLE_COPYRIGHT.into();
                 });
-                self.exports.watermarks = watermark::presets();
+                self.exports.watermarks = self.watermarks().presets();
             }
             Some(false) => {}
             None => self.exports.watermark_editor = Some(state),
@@ -325,7 +333,7 @@ fn mark_texture(
         Some((key, ready)) if *key == assets => ready.with(&w),
         // An installed font is found once the fonts are listed, off this
         // thread; drawn after that.
-        _ if w.style == Style::Text && watermark::fonts::families_if_listed().is_none() => {
+        _ if w.style == Style::Text && state.marks.fonts().families_if_listed().is_none() => {
             state.notice = Notice::LoadingFonts;
             return None;
         }
@@ -335,9 +343,9 @@ fn mark_texture(
                 (Some(source), Style::Graphic) => {
                     let dir = source.parent()?.to_path_buf();
                     w.image = source.file_name().map(|n| n.to_string_lossy().into_owned());
-                    w.ready_in(&dir)
+                    w.ready_in(&dir, state.marks.fonts())
                 }
-                _ => w.ready(),
+                _ => w.ready(&state.marks),
             };
             match loaded {
                 Ok(r) => {
@@ -540,7 +548,7 @@ fn controls(ui: &mut egui::Ui, state: &mut WatermarkEditor, ctx: &egui::Context)
                 );
             });
             // Installed fonts are still being listed at first: the system default until then.
-            let listed = watermark::fonts::families_if_listed();
+            let listed = state.marks.fonts().families_if_listed();
             let system = [watermark::fonts::system()];
             let families: &[watermark::fonts::Family] = listed.unwrap_or(&system);
             row(ui, "Font", |ui| {

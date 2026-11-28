@@ -30,8 +30,8 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
     c.add_folder(&photos)?;
     let mut ids: Vec<(PhotoId, std::path::PathBuf)> =
         c.photos()?.into_iter().map(|p| (p.id, p.path)).collect();
-    let metadata = crate::photo::open(&ids[0].1)?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&metadata);
+    let metadata = crate::photo::open(&ids[0].1, &crate::photo::LensProfiles::none())?.metadata;
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&metadata);
     let base = Recipe::with_profiles(&metadata, &profiles);
     let save = |c: &mut crate::catalog::Catalog,
                 (id, path): &(PhotoId, std::path::PathBuf),
@@ -176,13 +176,17 @@ fn a_batch_export_matches_develops_export_pixel_for_pixel() -> anyhow::Result<()
         let photos = vec![photo];
         let outcomes = batch::run(
             &batch::Batch {
-                plan: batch::plan(&photos, &settings, None).unwrap(),
+                plan: batch::plan(&photos, &settings, &Default::default(), None).unwrap(),
                 photos,
                 settings,
                 defaults: defaults.clone(),
+                lenses: crate::photo::LensProfiles::none(),
+                profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+                fits: Default::default(),
                 watermark: None,
+                watermarks: Default::default(),
                 demosaic: Default::default(),
-                cache: editor.decode_cache.clone(),
+                cache: editor.decode_cache().clone(),
                 ai: rawmakase_decode::ai::denoise::AiService::refusing("no AI Denoise in tests"),
             },
             batch::Lanes::for_machine(2, None),

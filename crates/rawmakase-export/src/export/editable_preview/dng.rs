@@ -227,7 +227,7 @@ pub(super) fn file(
         .par_iter()
         .map(|b| {
             // Checked before each tile, so a cancelled build stops within one.
-            ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
+            cancel.check("Editable preview cancelled")?;
             Ok(tile(&codes, w, *b))
         })
         .collect::<Result<_>>()?;
@@ -456,7 +456,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("copy.dng");
         std::fs::write(&path, bytes).unwrap();
-        let read = rawmakase_decode::photo::open(&path)
+        let read = rawmakase_decode::photo::open(&path, &crate::photo::LensProfiles::none())
             .and_then(|raw| {
                 raw.develop(
                     rawmakase_model::camera_data::Decode::Full(Default::default()),

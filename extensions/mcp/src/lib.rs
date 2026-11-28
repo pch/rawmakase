@@ -1,4 +1,5 @@
 //! MCP is a protocol adapter: all editing stays in the running Editor.
+#![forbid(unsafe_code)]
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rawmakase_ctl::{Connection, default_data_dir};
 use rawmakase_protocol::{

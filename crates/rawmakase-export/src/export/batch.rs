@@ -14,7 +14,7 @@ use crate::{
     photo::Opened,
     raw_defaults::DevelopDefaults,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, bail};
 use rawmakase_cancel::Cancel;
 use std::{
     collections::{HashMap, HashSet},
@@ -257,6 +257,7 @@ impl Reservations {
 pub fn plan(
     photos: &[BatchPhoto],
     settings: &ExportSettings,
+    places: &crate::export_settings::UserFolders,
     answer: Option<Existing>,
 ) -> Result<Plan, Unplanned> {
     // Nothing is planned, asked or rendered for settings no photo could export with.
@@ -278,6 +279,7 @@ pub fn plan(
                     total,
                     fields: &p.naming,
                 },
+                places,
             )
         })
         .collect::<Option<Vec<_>>>()
@@ -387,10 +389,19 @@ pub struct Batch {
     pub defaults: Arc<DevelopDefaults>,
     /// The watermark chosen in the Export dialog.
     pub watermark: Option<crate::watermark::Watermark>,
+    /// The saved watermarks a graphic one's image is read from.
+    pub watermarks: crate::watermark::Watermarks,
     /// The demosaic each photo is decoded with.
     pub demosaic: crate::camera_data::Demosaic,
     /// Where each full-size decode is looked up first.
     pub cache: crate::decode_cache::DecodeCache,
+    /// The imported lens profiles each photo is opened with.
+    pub lenses: crate::photo::LensProfiles,
+    /// The camera profiles a photo's stored edit resolves among.
+    pub profiles: crate::camera_profiles::ProfileLibrary,
+    /// Camera Look's fit cache, which a photo without color data is fitted
+    /// through.
+    pub fits: rawmakase_decode::camera_look::cache::FitCache,
     /// Where AI Denoise sources come from.
     pub ai: crate::ai_denoise::AiService,
 }
@@ -472,7 +483,7 @@ pub fn run_each_with_backend(
     // photo's own copyright, so it is made photo by photo.
     let preset = match &batch.watermark {
         Some(w) if w.name != crate::watermark::SIMPLE_COPYRIGHT => {
-            Some(w.ready().map_err(|e| format!("{e:#}")))
+            Some(w.ready(&batch.watermarks).map_err(|e| format!("{e:#}")))
         }
         _ => None,
     };
@@ -555,7 +566,7 @@ struct Shared<'a> {
 }
 
 /// Every [`crate::camera_data::Metadata`] field inspected by
-/// `camera_profiles::installed` for a RAW without an embedded DCP.
+/// `ProfileLibrary::installed` for a RAW without an embedded DCP.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ProfileCacheKey {
     make: String,
@@ -605,9 +616,14 @@ struct ProfileCache {
 }
 
 impl ProfileCache {
-    fn installed(&self, m: &crate::camera_data::Metadata) -> ProfileList {
+    /// The profiles of `library` installed for the camera of `m`.
+    fn installed(
+        &self,
+        library: &crate::camera_profiles::ProfileLibrary,
+        m: &crate::camera_data::Metadata,
+    ) -> ProfileList {
         let Some(key) = ProfileCacheKey::of(m) else {
-            return crate::camera_profiles::installed(m).0;
+            return library.installed(m).0;
         };
         let slot = {
             let mut map = self
@@ -618,8 +634,7 @@ impl ProfileCache {
                 .or_insert_with(|| Arc::new(OnceLock::new()))
                 .clone()
         };
-        slot.get_or_init(|| crate::camera_profiles::installed(m).0)
-            .clone()
+        slot.get_or_init(|| library.installed(m).0).clone()
     }
 }
 
@@ -768,13 +783,17 @@ fn render<'a>(
     let (batch, cancel) = (shared.batch, shared.cancel);
     // The file as it is before it is decoded: AI Denoise's result must be of the same.
     let file = crate::storage::Identity::read(&photo.source).ok();
-    let opened = crate::photo::open_source(&photo.source, cancel)
+    let opened = crate::photo::open_source(&photo.source, &batch.lenses, cancel)
         .with_context(|| format!("{} can't be read", photo.source.display()))?;
     let (mut recipe, mut notes) = match &photo.edit {
         Edit::Catalog(record) => {
-            let profiles = shared.profiles.installed(opened.metadata());
+            let profiles = shared
+                .profiles
+                .installed(&batch.profiles, opened.metadata());
             let profiles = rawmakase_decode::camera_look::with_default(
                 &photo.source,
+                &batch.lenses,
+                &batch.fits,
                 opened.metadata(),
                 profiles,
                 cancel,
@@ -801,11 +820,13 @@ fn render<'a>(
             unsaved,
             file,
         } => {
-            if let Some(file) = file {
-                ensure!(
-                    crate::storage::Identity::read(&photo.source)?.same_photo(file),
-                    "the photo's file changed since it was shown; open it again to export it"
-                );
+            if let Some(file) = file
+                && !crate::storage::Identity::read(&photo.source)?.same_photo(file)
+            {
+                return Err(rawmakase_model::error::Changed::new(
+                    "the photo's file changed since it was shown; open it again to export it",
+                )
+                .into());
             }
             (
                 (**recipe).clone(),
@@ -816,9 +837,9 @@ fn render<'a>(
             )
         }
     };
-    ensure!(!cancel.is_cancelled(), "Cancelled");
+    cancel.check("Cancelled")?;
     let Some(admitted) = shared.gate.admit(memory(&opened), cancel) else {
-        bail!("Cancelled");
+        return Err(rawmakase_cancel::Cancelled::new("Cancelled").into());
     };
     let image = Arc::new(match opened {
         Opened::Raw(raw) => {
@@ -840,8 +861,10 @@ fn render<'a>(
             recipe,
             values: photo.values.clone(),
             watermark: batch.watermark.clone().filter(|_| preset.is_none()),
+            watermarks: batch.watermarks.clone(),
             demosaic: batch.demosaic,
-            cache: batch.cache.clone(),
+            cache: Some(batch.cache.clone()),
+            lenses: batch.lenses.clone(),
             ai: batch.ai.clone(),
             file,
         },

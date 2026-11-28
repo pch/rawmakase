@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use skrifa::{FontRef, MetadataProvider, string::StringId};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// The family name of the default watermark font, resolved from the fonts
 /// installed on this computer.
@@ -57,30 +57,78 @@ pub fn system() -> Family {
     }
 }
 
-static FAMILIES: OnceLock<Vec<Family>> = OnceLock::new();
-
-/// The families once listed, for an interface that must not wait for the
-/// listing; `None` until then.
-pub fn families_if_listed() -> Option<&'static [Family]> {
-    FAMILIES.get().map(Vec::as_slice)
+/// Where the System family's faces come from.
+#[derive(Clone, Debug, Default)]
+pub enum SystemFont {
+    /// None: a watermark in the System font is refused.
+    #[default]
+    None,
+    /// One file for every weight: a variable font is drawn at each, a static
+    /// one at its own.
+    File { path: PathBuf, index: u32 },
+    /// The file and collection index of the face of a weight, looked up when
+    /// that face is first drawn, as the desktop asks the platform.
+    Lookup(fn(f32) -> Result<(PathBuf, u32)>),
 }
 
-/// Every family: System first, then the installed ones by name. Installed
-/// fonts are listed once, on first use; reading their names only touches
-/// each file's header and name table.
-pub fn families() -> &'static [Family] {
-    FAMILIES.get_or_init(|| {
-        // Warm system faces on the font-listing worker before the editor uses them.
-        for (style, _) in SYSTEM_FACES {
-            let _ = load(SYSTEM, style);
-        }
-        let mut families = vec![system()];
-        families.extend(installed());
-        families
-    })
+/// The fonts text watermarks draw with: the system font and the folders the
+/// installed families are listed from, both as given. The families are
+/// listed once, on first use, and each system face read once; a clone
+/// shares both.
+#[derive(Clone, Default)]
+pub struct Fonts(Arc<Shared>);
+
+#[derive(Default)]
+struct Shared {
+    system: SystemFont,
+    dirs: Vec<PathBuf>,
+    families: OnceLock<Vec<Family>>,
+    faces: [Mutex<Option<Font>>; 4],
 }
 
-fn installed() -> Vec<Family> {
+impl std::fmt::Debug for Fonts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fonts")
+            .field("system", &self.0.system)
+            .field("dirs", &self.0.dirs)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Fonts {
+    /// The System family from `system`, the installed ones from the font
+    /// files in `dirs` (and their folders, four deep), in that order.
+    pub fn new(system: SystemFont, dirs: Vec<PathBuf>) -> Self {
+        Self(Arc::new(Shared {
+            system,
+            dirs,
+            ..Default::default()
+        }))
+    }
+
+    /// The families once listed, for an interface that must not wait for the
+    /// listing; `None` until then.
+    pub fn families_if_listed(&self) -> Option<&[Family]> {
+        self.0.families.get().map(Vec::as_slice)
+    }
+
+    /// Every family: System first, then the installed ones by name. Reading
+    /// their names only touches each file's header and name table.
+    pub fn families(&self) -> &[Family] {
+        self.0.families.get_or_init(|| {
+            // Warm system faces on the font-listing worker before the editor
+            // uses them.
+            for (style, _) in SYSTEM_FACES {
+                let _ = self.load(SYSTEM, style);
+            }
+            let mut families = vec![system()];
+            families.extend(installed(&self.0.dirs));
+            families
+        })
+    }
+}
+
+fn installed(dirs: &[PathBuf]) -> Vec<Family> {
     let mut files = Vec::new();
     fn walk(dir: &std::path::Path, depth: usize, files: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -104,8 +152,8 @@ fn installed() -> Vec<Family> {
             }
         }
     }
-    for dir in super::font_dirs::font_directories() {
-        walk(&dir, 0, &mut files);
+    for dir in dirs {
+        walk(dir, 0, &mut files);
     }
     // Directories in their probing order, files by name within each: the
     // same face wins on every run when two files claim it.
@@ -179,123 +227,71 @@ fn face_count(data: &[u8]) -> u32 {
     }
 }
 
-/// Loads an installed face or the platform's default watermark font.
-pub fn load(family: &str, face: &str) -> Result<Font> {
-    #[cfg(test)]
-    if family == "Test fixture" {
-        let weight = SYSTEM_FACES
-            .iter()
-            .find(|(name, _)| *name == face)
-            .map(|(_, weight)| *weight)
-            .context("Unknown fixture font style")?;
-        return Ok(Font {
-            data: Arc::new(include_bytes!("../../tests/fonts/InterVariable.ttf").to_vec()),
-            index: 0,
-            weight: Some(weight),
-        });
-    }
-    if family == SYSTEM {
-        let slot = SYSTEM_FACES
-            .iter()
-            .position(|(name, _)| *name == face)
-            .context("Unknown system font style")?;
-        static FONTS: [std::sync::Mutex<Option<Font>>; 4] =
-            [const { std::sync::Mutex::new(None) }; 4];
-        let mut cached = FONTS[slot]
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if let Some(font) = cached.as_ref() {
-            return Ok(font.clone());
+impl Fonts {
+    /// Loads an installed face or a face of the system font.
+    pub fn load(&self, family: &str, face: &str) -> Result<Font> {
+        #[cfg(test)]
+        if family == "Test fixture" {
+            let weight = SYSTEM_FACES
+                .iter()
+                .find(|(name, _)| *name == face)
+                .map(|(_, weight)| *weight)
+                .context("Unknown fixture font style")?;
+            return Ok(Font {
+                data: Arc::new(include_bytes!("../../tests/fonts/InterVariable.ttf").to_vec()),
+                index: 0,
+                weight: Some(weight),
+            });
         }
-        let weight = SYSTEM_FACES[slot].1;
-        let (path, index) = system_face(weight)?;
-        let font = Font {
-            data: Arc::new(std::fs::read(path).context("System watermark font not readable")?),
-            index,
-            weight: Some(weight),
+        if family == SYSTEM {
+            let slot = SYSTEM_FACES
+                .iter()
+                .position(|(name, _)| *name == face)
+                .context("Unknown system font style")?;
+            let mut cached = self.0.faces[slot]
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if let Some(font) = cached.as_ref() {
+                return Ok(font.clone());
+            }
+            let weight = SYSTEM_FACES[slot].1;
+            let (path, index) = match &self.0.system {
+                SystemFont::None => bail!("There is no system font for watermarks"),
+                SystemFont::File { path, index } => (path.clone(), *index),
+                SystemFont::Lookup(lookup) => lookup(weight)?,
+            };
+            let font = Font {
+                data: Arc::new(std::fs::read(path).context("System watermark font not readable")?),
+                index,
+                weight: Some(weight),
+            };
+            let face = font.face()?;
+            let glyph = face
+                .charmap()
+                .map('A')
+                .context("System font has no Latin text")?;
+            anyhow::ensure!(
+                face.outline_glyphs().get(glyph).is_some(),
+                "System font has no outlines"
+            );
+            *cached = Some(font.clone());
+            return Ok(font);
+        }
+        let Some(found) = self
+            .families()
+            .iter()
+            .find(|f| f.name == family)
+            .and_then(|f| f.faces.iter().find(|x| x.name == face))
+        else {
+            bail!("Watermark font not found: {family} {face}");
         };
-        let face = font.face()?;
-        let glyph = face
-            .charmap()
-            .map('A')
-            .context("System font has no Latin text")?;
-        anyhow::ensure!(
-            face.outline_glyphs().get(glyph).is_some(),
-            "System font has no outlines"
-        );
-        *cached = Some(font.clone());
-        return Ok(font);
-    }
-    let Some(found) = families()
-        .iter()
-        .find(|f| f.name == family)
-        .and_then(|f| f.faces.iter().find(|x| x.name == face))
-    else {
-        bail!("Watermark font not found: {family} {face}");
-    };
-    let data = std::fs::read(&found.path)
-        .with_context(|| format!("Watermark font not readable: {family} {face}"))?;
-    Ok(Font {
-        data: Arc::new(data),
-        index: found.index,
-        weight: None,
-    })
-}
-
-fn system_face(weight: f32) -> Result<(PathBuf, u32)> {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = weight;
-        Ok((PathBuf::from("/System/Library/Fonts/SFNS.ttf"), 0))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let root = std::env::var_os("SystemRoot").context("SystemRoot unavailable")?;
-        let fonts = PathBuf::from(root).join("Fonts");
-        Ok((
-            if fonts.join("SegUIVar.ttf").is_file() {
-                fonts.join("SegUIVar.ttf")
-            } else {
-                fonts.join(if weight >= 650. {
-                    "segoeuib.ttf"
-                } else if weight >= 500. {
-                    "seguisb.ttf"
-                } else {
-                    "segoeui.ttf"
-                })
-            },
-            0,
-        ))
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        use std::process::{Command, Stdio};
-        let output = tempfile::tempfile()?;
-        let mut child = Command::new("fc-match")
-            .args(["-f", "%{file}\n%{index}", &fontconfig_pattern(weight)])
-            .stdout(output.try_clone()?)
-            .stderr(Stdio::null())
-            .spawn()
-            .context("Cannot resolve system watermark font")?;
-        let start = std::time::Instant::now();
-        loop {
-            if let Some(status) = child.try_wait()? {
-                anyhow::ensure!(status.success(), "System font lookup failed");
-                break;
-            }
-            if start.elapsed() > std::time::Duration::from_secs(1) {
-                let _ = child.kill();
-                let _ = child.wait();
-                bail!("System font lookup timed out");
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        use std::io::{Read, Seek};
-        let mut output = output;
-        output.rewind()?;
-        let mut text = String::new();
-        output.read_to_string(&mut text)?;
-        parse_fontconfig(&text)
+        let data = std::fs::read(&found.path)
+            .with_context(|| format!("Watermark font not readable: {family} {face}"))?;
+        Ok(Font {
+            data: Arc::new(data),
+            index: found.index,
+            weight: None,
+        })
     }
 }
 
@@ -308,67 +304,51 @@ pub(crate) fn test_watermark() -> super::Watermark {
     }
 }
 
-#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
-fn fontconfig_pattern(weight: f32) -> String {
-    format!(
-        r"system\-ui:weight={}:slant=0",
-        if weight >= 650. {
-            200
-        } else if weight >= 550. {
-            180
-        } else if weight >= 450. {
-            100
-        } else {
-            80
-        }
-    )
-}
-
-#[cfg(any(test, not(any(target_os = "macos", target_os = "windows"))))]
-fn parse_fontconfig(text: &str) -> Result<(PathBuf, u32)> {
-    let mut lines = text.lines();
-    let path = lines
-        .next()
-        .filter(|s| !s.is_empty())
-        .context("No system font available")?;
-    // Fontconfig stores a variable font's named instance in the upper bits.
-    Ok((
-        PathBuf::from(path),
-        lines.next().unwrap_or("0").parse::<u32>()? & 0xFFFF,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn fontconfig_system_family_is_escaped() {
-        assert_eq!(fontconfig_pattern(400.), r"system\-ui:weight=80:slant=0");
-        assert_eq!(fontconfig_pattern(500.), r"system\-ui:weight=100:slant=0");
-        assert_eq!(fontconfig_pattern(600.), r"system\-ui:weight=180:slant=0");
-        assert_eq!(fontconfig_pattern(700.), r"system\-ui:weight=200:slant=0");
-    }
-
-    #[test]
-    fn fontconfig_variable_instances_keep_the_collection_index() {
-        assert_eq!(
-            parse_fontconfig("/fonts/variable.ttf\n589824").unwrap(),
-            (PathBuf::from("/fonts/variable.ttf"), 0)
+    fn the_system_font_given_is_drawn_at_every_weight() {
+        let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/InterVariable.ttf");
+        let fonts = Fonts::new(
+            SystemFont::File {
+                path: fixture.into(),
+                index: 0,
+            },
+            Vec::new(),
         );
-        assert_eq!(
-            parse_fontconfig("/fonts/collection.ttc\n720899").unwrap().1,
-            3
-        );
-        assert!(parse_fontconfig("").is_err());
-    }
-
-    #[test]
-    #[ignore = "requires installed system fonts"]
-    fn system_fonts_render_at_every_weight() {
-        for (style, _) in SYSTEM_FACES {
-            let font = load(SYSTEM, style).unwrap();
+        for (style, weight) in SYSTEM_FACES {
+            let font = fonts.load(SYSTEM, style).unwrap();
+            assert_eq!(font.weight, Some(weight));
             assert!(super::super::raster::measure(&font, "Ag 0123456789", 32.).is_some());
         }
+        assert_eq!(fonts.families(), [system()]);
+    }
+
+    #[test]
+    fn without_a_system_font_a_system_watermark_is_refused() {
+        let error = Fonts::default().load(SYSTEM, "Regular").err().unwrap();
+        assert_eq!(error.to_string(), "There is no system font for watermarks");
+    }
+
+    #[test]
+    fn installed_families_are_listed_from_the_folders_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("a/b");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::copy(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/InterVariable.ttf"),
+            nested.join("Inter.ttf"),
+        )
+        .unwrap();
+        let fonts = Fonts::new(SystemFont::None, vec![dir.path().into()]);
+        assert!(fonts.families_if_listed().is_none());
+        let names: Vec<_> = fonts.families().iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, [SYSTEM, "Inter Variable"]);
+        assert!(fonts.families_if_listed().is_some());
+        let face = &fonts.families()[1].faces[0].name;
+        assert!(fonts.load("Inter Variable", face).is_ok());
+        assert!(Fonts::default().families_if_listed().is_none());
     }
 }

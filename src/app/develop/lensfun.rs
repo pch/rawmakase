@@ -49,8 +49,11 @@ pub(crate) struct Lensfun {
     /// What the folder held when last looked at: the files decide, not this
     /// process's own jobs (another window, or the CLI, may install or remove).
     seen: std::cell::Cell<Option<(Instant, Option<Manifest>)>>,
-    /// The folder, `installed::dir()` unless a test sets another, and where
-    /// installs come from (Lensfun's channel, or a test's archive).
+    /// The database installed in the context's data folder, which the folder
+    /// installs go to follows; none until the app gives it.
+    installed: Option<installed::Handle>,
+    /// A folder a test sets in place of the context's, and where installs come
+    /// from (Lensfun's channel, or a test's archive).
     dir: Option<std::path::PathBuf>,
     source: Option<Source>,
     /// Lens Corrections suggests Lensfun profiles (a preference, on by default).
@@ -69,14 +72,21 @@ impl Job {
 }
 
 impl Lensfun {
-    pub(crate) fn suggesting(suggest: bool) -> Self {
+    /// Lensfun in the folder `installed` follows, suggesting its profiles when
+    /// `suggest` is on.
+    pub(crate) fn suggesting(suggest: bool, installed: installed::Handle) -> Self {
         Self {
             suggest,
+            installed: Some(installed),
             ..Default::default()
         }
     }
-    pub(crate) fn dir(&self) -> std::path::PathBuf {
-        self.dir.clone().unwrap_or_else(installed::dir)
+    /// The folder Lensfun is installed in: a test's, else the context's; none
+    /// without a data folder.
+    pub(crate) fn dir(&self) -> Option<std::path::PathBuf> {
+        self.dir
+            .clone()
+            .or_else(|| self.installed.as_ref()?.dir().map(Into::into))
     }
     #[cfg(test)]
     pub(crate) fn in_folder(dir: std::path::PathBuf, archive: std::path::PathBuf) -> Self {
@@ -95,14 +105,14 @@ impl Lensfun {
             self.seen.set(Some((at, m.clone())));
             return m;
         }
-        let m = install::current(&self.dir());
+        let m = self.dir().and_then(|dir| install::current(&dir));
         self.seen.set(Some((Instant::now(), m.clone())));
         m
     }
     /// The installed database, read, for matching and choosing lenses.
     pub(crate) fn database(&self) -> Option<Arc<installed::Installed>> {
         match &self.dir {
-            None => installed::current(),
+            None => self.installed.as_ref()?.get(),
             Some(dir) => installed::load(dir).ok().map(Arc::new),
         }
     }
@@ -142,10 +152,16 @@ impl Lensfun {
         if self.running.is_some() {
             return;
         }
+        let Some(dir) = self.dir() else {
+            self.failed = Some((
+                job,
+                "there is no data folder to install Lensfun's profiles in".into(),
+            ));
+            return;
+        };
         self.generation += 1;
         let generation = self.generation;
         let progress = Arc::new(Progress::default());
-        let dir = self.dir();
         let source = self.source.clone().unwrap_or(Source::Lensfun);
         self.failed = None;
         let worker = Arc::clone(&progress);

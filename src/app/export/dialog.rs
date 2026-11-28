@@ -184,7 +184,11 @@ impl Editor {
                 {
                     confirmed = Some(false);
                 }
-                if let Some((target, _)) = self.exports.draft.target_for(&source, &at) {
+                if let Some((target, _)) =
+                    self.exports
+                        .draft
+                        .target_for(&source, &at, &self.user_folders)
+                {
                     bar.add_space(space::L);
                     bar.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.add(
@@ -208,7 +212,13 @@ impl Editor {
         match confirmed.or(close.then_some(false)) {
             // Return too waits for the names' files.
             Some(true) if reading => {}
-            Some(true) if self.exports.draft.target(&source).is_none() => {
+            Some(true)
+                if self
+                    .exports
+                    .draft
+                    .target(&source, &self.user_folders)
+                    .is_none() =>
+            {
                 self.messages.warn("Choose a folder to export to");
             }
             Some(true) if let Err(e) = self.exports.draft.check_output() => {
@@ -260,7 +270,7 @@ impl Editor {
                 "Export To",
             );
         });
-        let folder = s.base_folder(source);
+        let folder = s.base_folder(source, &self.user_folders);
         form_row(ui, "Folder", |ui| {
             choose = ui
                 .add_enabled(!picking, egui::Button::new("Choose…"))
@@ -534,6 +544,7 @@ impl Editor {
 
         section(ui, "Watermarking");
         let presets = self.exports.watermarks.clone();
+        let marks = self.watermarks.clone();
         let simple = crate::watermark::SIMPLE_COPYRIGHT;
         let mut edit = None;
         form_row(ui, "", |ui| {
@@ -577,7 +588,7 @@ impl Editor {
                 && presets
                     .iter()
                     .find(|w| w.name == s.watermark_name)
-                    .is_some_and(crate::watermark::Watermark::image_missing);
+                    .is_some_and(|w| w.image_missing(&marks));
             if missing {
                 ui.label(
                     egui::RichText::new("Watermark image not found")
@@ -587,8 +598,11 @@ impl Editor {
             }
         });
         if let Some(w) = edit {
-            self.exports.watermark_editor =
-                Some(super::watermark_editor::WatermarkEditor::new(w, ui.ctx()));
+            self.exports.watermark_editor = Some(super::watermark_editor::WatermarkEditor::new(
+                w,
+                self.watermarks(),
+                ui.ctx(),
+            ));
             return;
         }
         let s = &mut self.exports.draft;

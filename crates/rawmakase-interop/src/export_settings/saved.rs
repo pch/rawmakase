@@ -9,7 +9,7 @@
 //! written over: the templates then can't be changed until it is mended. A
 //! template or field a later release adds is kept as it was read.
 use super::{BUILTIN, Naming};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, bail};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -160,7 +160,12 @@ impl SavedTemplates {
         self.change(|entries| {
             let before = entries.len();
             entries.retain(|e| template(e).is_none_or(|t| t.name != name));
-            ensure!(entries.len() < before, "No preset is called “{name}”");
+            if entries.len() == before {
+                return Err(rawmakase_model::error::Missing::new(format!(
+                    "No preset is called “{name}”"
+                ))
+                .into());
+            }
             Ok(())
         })
     }
@@ -204,7 +209,9 @@ fn find<'a>(entries: &'a mut [Value], name: &str) -> Result<&'a mut Map<String, 
         .iter_mut()
         .filter(|e| template(e).is_some_and(|t| t.name == name))
         .find_map(Value::as_object_mut)
-        .ok_or_else(|| anyhow::anyhow!("No preset is called “{name}”"))
+        .ok_or_else(|| {
+            rawmakase_model::error::Missing::new(format!("No preset is called “{name}”")).into()
+        })
 }
 
 /// A name as names are compared and sorted.
@@ -244,7 +251,11 @@ mod tests {
         assert!(saved.rename("Zoo", "apple").is_err());
         saved.delete("Apple")?;
         assert_eq!(names(&SavedTemplates::load_from(&file).unwrap()), ["Zoo"]);
-        assert!(saved.delete("Apple").is_err());
+        let missing = saved.delete("Apple").unwrap_err();
+        assert!(missing.is::<rawmakase_model::error::Missing>());
+        assert_eq!(missing.to_string(), "No preset is called “Apple”");
+        let missing = saved.update("Apple", "x").unwrap_err();
+        assert!(missing.is::<rawmakase_model::error::Missing>());
         Ok(())
     }
 

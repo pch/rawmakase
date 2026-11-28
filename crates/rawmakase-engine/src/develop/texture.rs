@@ -15,7 +15,7 @@
 //! halos within 2.4% of the edge's step.
 use super::laplacian::Plane;
 use crate::camera_data::CameraImage;
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 
@@ -146,12 +146,12 @@ fn detail(plane: &Plane, level: usize, cancel: Cancel<'_>) -> Result<Plane> {
             data: vec![0.; plane.w * plane.h],
         });
     }
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     let coarse = plane.down(Cancel::NEVER);
     let mut out = detail(&coarse, level + 1, cancel)?.up(plane.w, plane.h, Cancel::NEVER);
     let blurred = coarse.up(plane.w, plane.h, Cancel::NEVER);
     drop(coarse);
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     let (w, t) = (WEIGHTS[level], THRESHOLDS[level]);
     out.data
         .par_iter_mut()

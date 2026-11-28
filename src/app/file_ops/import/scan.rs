@@ -29,9 +29,9 @@ use std::sync::{Arc, mpsc::Sender};
 /// time included; why not when it can't be read.
 pub(in crate::app) type FileReader = Arc<dyn Fn(&Path) -> Result<NameFields, String> + Send + Sync>;
 
-/// The real reader (`naming::read`'s).
-pub(super) fn file_reader() -> FileReader {
-    Arc::new(crate::app::export::naming::read::read_new_photo)
+/// The real reader (`naming::read`'s), reading a photo's info with `lenses`.
+pub(super) fn file_reader(lenses: crate::photo::LensProfiles) -> FileReader {
+    Arc::new(move |path| crate::app::export::naming::read::read_new_photo(path, &lenses))
 }
 
 /// What the scan found at one path.

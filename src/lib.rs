@@ -56,6 +56,7 @@ pub(crate) mod catalog_session;
 pub mod comparison;
 pub mod diagnostics;
 pub(crate) mod edit_session;
+pub mod environment;
 pub mod lensfun_install;
 pub mod merge_command;
 pub mod merge_hdr;
@@ -77,15 +78,6 @@ pub mod updates;
 
 #[cfg(test)]
 mod tests {
-    /// Export finds the same installed-font folders as the interface without egui.
-    #[test]
-    fn watermarks_read_the_fonts_the_interface_does() {
-        assert_eq!(
-            rawmakase_export::watermark::font_dirs::font_directories(),
-            fastframe_fonts::system::font_directories()
-        );
-    }
-
     /// Exports name the app's release, though the export crate has its own version.
     #[test]
     fn exports_name_this_release() {

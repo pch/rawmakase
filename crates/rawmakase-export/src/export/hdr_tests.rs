@@ -462,8 +462,11 @@ fn a_lossless_hdr_jpeg_xl_declares_level_10() -> Result<()> {
             assert_eq!(at(b"jxll"), Some(2), "{name}: right after ftyp: {kinds:?}");
             assert!(at(b"jxll") < at(b"jxlc"), "{name}: {kinds:?}");
             // RAWmakase's own reader still opens it as an HDR file.
-            let crate::photo::Opened::Rendered(reopened) =
-                crate::photo::open_source(&target, Cancel::NEVER)?
+            let crate::photo::Opened::Rendered(reopened) = crate::photo::open_source(
+                &target,
+                &crate::photo::LensProfiles::none(),
+                Cancel::NEVER,
+            )?
             else {
                 anyhow::bail!("{name}: a JPEG XL opens as rendered");
             };

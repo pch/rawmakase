@@ -270,7 +270,7 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
     let mut rich = read(
         r#"c:ConvertToGrayscale="True" c:GrainAmount="25" c:GrainSize="30" c:PostCropVignetteAmount="-20" c:SplitToningShadowHue="200" c:SplitToningShadowSaturation="20" c:SplitToningHighlightHue="50" c:SplitToningHighlightSaturation="30" c:SplitToningBalance="+15" c:ColorGradeMidtoneHue="40" c:ColorGradeMidtoneSat="15" c:VignetteAmount="10" c:DefringePurpleAmount="5""#,
     )?
-    .apply(&plain, &m, &[], None)?;
+    .apply(&plain, &m, &[], None, &crate::lens::lensfun::installed::Handle::none())?;
     let mut chosen = Vec::new();
     let candidates = ["7", "-7", "3", "13", "0.3", "45", "1.5", "5300", "70"];
     for key in keys(&[("plain", plain.clone()), ("on", rich.clone())], &m) {
@@ -293,8 +293,13 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
             let Ok(preset) = read(&attribute(&key, value)) else {
                 continue;
             };
-            if let Ok(next) = preset.apply(&rich, &m, &[], None)
-                && fields(&next) != fields(&rich)
+            if let Ok(next) = preset.apply(
+                &rich,
+                &m,
+                &[],
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            ) && fields(&next) != fields(&rich)
             {
                 rich = next;
                 chosen.push(format!("{key}={value}"));
@@ -310,7 +315,13 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
         if key == "CropAngle" {
             continue;
         }
-        let again = read(&attribute(key, value))?.apply(&rich, &m, &[], None)?;
+        let again = read(&attribute(key, value))?.apply(
+            &rich,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         let kept = |r: &Recipe| {
             fields(r)
                 .into_iter()
@@ -322,12 +333,14 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
     let off = read(
         r#"c:EnableDetail="False" c:EnableToneCurve="False" c:EnableColorAdjustments="False" c:EnableGrayscaleMix="False" c:EnableSplitToning="False" c:EnableLensCorrections="False" c:EnableTransform="False" c:EnableEffects="False" c:EnableCalibration="False" c:EnableRetouch="False""#,
     )?
-    .apply(&rich, &m, &[], None)?;
+    .apply(&rich, &m, &[], None, &crate::lens::lensfun::installed::Handle::none())?;
     let rendered = Metadata {
         source: crate::camera_data::Source::Rendered,
         ..Default::default()
     };
-    let rendered_profiles = crate::camera_profiles::installed(&rendered).0;
+    let rendered_profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+        .installed(&rendered)
+        .0;
     let jpeg =
         read(r#"c:IncrementalTemperature="+25" c:IncrementalTint="-10" c:WhiteBalance="Custom""#)?
             .apply(
@@ -335,6 +348,7 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
                 &rendered,
                 &rendered_profiles,
                 None,
+                &crate::lens::lensfun::installed::Handle::none(),
             )?;
     let bases = [
         Base {
@@ -399,9 +413,20 @@ fn every_camera_raw_key_reads_writes_and_groups_as_before() -> Result<()> {
                         continue;
                     }
                 };
-                let strict = preset.apply(&base.recipe, &base.metadata, &base.profiles, None);
-                let lenient =
-                    preset.apply_lenient(&base.recipe, &base.metadata, &base.profiles, None);
+                let strict = preset.apply(
+                    &base.recipe,
+                    &base.metadata,
+                    &base.profiles,
+                    None,
+                    &crate::lens::lensfun::installed::Handle::none(),
+                );
+                let lenient = preset.apply_lenient(
+                    &base.recipe,
+                    &base.metadata,
+                    &base.profiles,
+                    None,
+                    &crate::lens::lensfun::installed::Handle::none(),
+                );
                 // A lenient read that agrees with the strict one, with no warning, is
                 // written as such.
                 let same = matches!((&strict, &lenient), (Ok(a), Ok((b, w))) if w.is_empty() && fields(a) == fields(b));

@@ -42,6 +42,8 @@ Start with the [code map](code-map.md) to find where a change belongs, the
 | [Automation](automation.md) | Current | The local control protocol, `rawmakase control` and scripts |
 | [Headless rendering](headless.md) | Current | `render` on a server or in a container: folders, profiles, AI Denoise, S3 via other tools, limits |
 | [Headless plan](headless-plan.md) | Plan (2026-11-16), deferred | A headless binary, server mode and S3 output, and what each must handle |
+| [RAWmakase as a library](embedding.md) | Current, being built | `rawmakase-core` for other apps: depending on it, the context, errors, threads, changes to its surface |
+| [Library plan](embedding-plan.md) | Plan (2026-11-26), being built | One library other apps link, with parts chosen by feature and configuration given as values: its design, what moves out of the app crate, and the order of work |
 | [MCP](mcp.md) | Current | `rawmakase mcp`, the local MCP adapter |
 | [MIDI](midi.md) | Current | MIDI controllers |
 | [Remote inference](remote-inference.md) | Current | Running the selection models on another computer |

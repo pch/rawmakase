@@ -65,7 +65,7 @@ impl Raw {
             .own
             .cfa(cancel)?
             .ok_or_else(|| anyhow::anyhow!("Not a mosaic RAW"))?;
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         let reach = if self.metadata.xtrans {
             XTRANS_REACH
         } else {
@@ -78,7 +78,7 @@ impl Raw {
             cfa.height as usize,
             reach,
         );
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         let wb = self.metadata.wb;
         ensure!(
             wb.iter().all(|w| w.is_finite() && *w > 0.),
@@ -94,7 +94,7 @@ impl Raw {
                 p[c] *= unbalance[c];
             }
         });
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(Frame {
             width: image.width,
             height: image.height,

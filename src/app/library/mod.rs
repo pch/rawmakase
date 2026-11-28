@@ -1769,10 +1769,22 @@ impl Library {
             self.screen.forget(id);
         }
     }
+    /// Keeps the map's tiles in the cache folder `cache` (the context's).
+    pub(in crate::app) fn set_cache_dir(&mut self, cache: Option<&std::path::Path>) {
+        self.map.keep_tiles_in(cache);
+    }
     /// Edited previews with AI Denoise render from the finished results in `cache`.
     pub(in crate::app) fn set_ai_cache(&mut self, cache: &rawmakase_decode::ai::cache::AiCache) {
         self.cache.edit_tx.set_ai_cache(cache.clone());
         self.screen.set_ai_cache(cache);
+    }
+    /// The libraries the Library's previews open and resolve photos with, and
+    /// its photo info is read with (the context's), set before it is shown.
+    pub(in crate::app) fn set_libraries(&mut self, libraries: &crate::environment::Libraries) {
+        self.cache.edit_tx.set_libraries(libraries.clone());
+        self.screen.set_libraries(libraries);
+        self.session.set_lens_profiles(libraries.lenses.clone());
+        self.keyword_sets.set_store(libraries.keyword_sets.clone());
     }
     /// The selected photo, or else the first one shown in the current
     /// folder or filter (which then becomes selected), as Lightroom does

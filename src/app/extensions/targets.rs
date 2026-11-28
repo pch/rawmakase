@@ -133,6 +133,8 @@ pub(super) struct Reading {
     key: (String, u64),
     photos: Vec<Entry>,
     defaults: Arc<crate::raw_defaults::DevelopDefaults>,
+    /// What a photo not open is read with and its edit resolved among.
+    libraries: crate::environment::Libraries,
 }
 
 enum Entry {
@@ -196,6 +198,7 @@ impl Reading {
                         catalog,
                         &target,
                         &self.defaults,
+                        &self.libraries,
                         rawmakase_cancel::Cancel::new(cancel),
                     );
                     if cancel.load(Ordering::Relaxed) {
@@ -380,6 +383,7 @@ impl Editor {
             key: (catalog, generation),
             photos,
             defaults: self.raw_defaults.clone(),
+            libraries: crate::environment::libraries(&self.core),
         })
     }
 
@@ -717,7 +721,8 @@ impl Editor {
         let defaults = self.raw_defaults.clone();
         let decoding = Decoding {
             demosaic: self.session.demosaic,
-            cache: Some(self.decode_cache.clone()),
+            cache: Some(self.decode_cache().clone()),
+            libraries: crate::environment::libraries(&self.core),
         };
         let finished = |outcome| Finished {
             ticket,

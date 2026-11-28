@@ -18,6 +18,7 @@
 //!
 //! Requests run one at a time, so the generators share their state behind a
 //! lock no two hold at once.
+#![forbid(unsafe_code)]
 pub mod engine;
 pub mod fake;
 mod inference;

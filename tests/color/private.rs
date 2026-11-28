@@ -31,7 +31,8 @@ fn imported_profiles(im: &CameraImage) -> Vec<Arc<CameraProfile>> {
     files.sort_by_key(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("xmp")));
     let mut profiles = embedded_profiles(im);
     for f in files {
-        if let Ok(p) = rawmakase::camera_profiles::load(&f, &im.metadata)
+        if let Ok(p) =
+            rawmakase::camera_profiles::ProfileLibrary::for_tests().load(&f, &im.metadata)
             && p.ensure_camera(&im.metadata).is_ok()
         {
             profiles.push(p);
@@ -251,12 +252,13 @@ fn photos_match_accepted_renders() {
             outcome(raw, "kept", None, BTreeMap::new());
             return;
         }
-        let im = match rawmakase::photo::open(raw).and_then(|r| {
-            r.develop(
-                rawmakase::camera_data::Decode::full(Default::default()),
-                Cancel::NEVER,
-            )
-        }) {
+        let im = match rawmakase::photo::open(raw, &rawmakase::photo::LensProfiles::none())
+            .and_then(|r| {
+                r.develop(
+                    rawmakase::camera_data::Decode::full(Default::default()),
+                    Cancel::NEVER,
+                )
+            }) {
             Ok(im) => im,
             Err(e) if accepted.is_none() => {
                 skipped
@@ -445,7 +447,11 @@ fn photos_camera_raw_parity_does_not_regress() {
     let results: Vec<(String, Result<Comparison, String>, String)> = by_raw
         .iter()
         .flat_map(|(raw, references)| {
-            let im = match rawmakase::photo::open(&corpus.join("raws").join(raw)).and_then(|r| {
+            let im = match rawmakase::photo::open(
+                &corpus.join("raws").join(raw),
+                &rawmakase::photo::LensProfiles::none(),
+            )
+            .and_then(|r| {
                 r.develop(
                     rawmakase::camera_data::Decode::full(Default::default()),
                     Cancel::NEVER,

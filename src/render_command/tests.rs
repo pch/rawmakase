@@ -42,7 +42,7 @@ fn no_denoise(dir: &Path) -> impl Fn() -> CommandLine {
     let dir = dir.to_path_buf();
     move || {
         CommandLine::new(
-            crate::ai_cache::AiCache::new(dir.join("ai"), 1 << 30),
+            crate::ai_cache::AiCache::new(dir.join("ai"), 1 << 30, "test"),
             dir.join("model"),
             dir.join("runtime"),
         )
@@ -92,6 +92,7 @@ fn exposure_rendered(
     let run = run(|console| {
         render(
             &options,
+            &crate::environment::Libraries::default(),
             &|| raw_defaults.clone(),
             &ai,
             Cancel::NEVER,
@@ -126,7 +127,9 @@ fn render_layers_its_edit_sources_in_order() {
     drop(c);
 
     // A legacy sidecar comes before them.
-    let metadata = crate::photo::open(&photo).unwrap().metadata;
+    let metadata = crate::photo::open(&photo, &crate::photo::LensProfiles::none())
+        .unwrap()
+        .metadata;
     let sidecar = Recipe {
         exposure: 0.3,
         ..Recipe::for_metadata(&metadata)
@@ -201,6 +204,7 @@ fn render_refuses_an_existing_output_without_overwrite() {
     let refused = run(|console| {
         render(
             &options,
+            &crate::environment::Libraries::default(),
             &|| raw_defaults.clone(),
             &ai,
             Cancel::NEVER,
@@ -216,6 +220,7 @@ fn render_refuses_an_existing_output_without_overwrite() {
                 overwrite: true,
                 ..options.clone()
             },
+            &crate::environment::Libraries::default(),
             &|| raw_defaults.clone(),
             &ai,
             Cancel::NEVER,
@@ -256,6 +261,7 @@ fn render_asks_for_what_the_desktop_keeps_only_when_it_needs_it() {
         let run = run(|console| {
             render(
                 &options,
+                &crate::environment::Libraries::default(),
                 &read_defaults,
                 &make_denoise,
                 Cancel::NEVER,
@@ -280,7 +286,9 @@ fn render_asks_for_what_the_desktop_keeps_only_when_it_needs_it() {
     );
     // An explicit recipe needs no raw defaults.
     let explicit = dir.path().join("explicit.json");
-    let metadata = crate::photo::open(&photo).unwrap().metadata;
+    let metadata = crate::photo::open(&photo, &crate::photo::LensProfiles::none())
+        .unwrap()
+        .metadata;
     crate::presets::save_preset(&explicit, &Recipe::default(), &metadata).unwrap();
     assert_eq!(
         render_to("recipe.tif", &|o| o.recipe = Some(explicit.clone())),
@@ -315,6 +323,7 @@ fn render_writes_a_jpeg_at_the_quality_asked_for() {
         let run = run(|console| {
             render(
                 &options,
+                &crate::environment::Libraries::default(),
                 &|| raw_defaults.clone(),
                 &ai,
                 Cancel::NEVER,
@@ -361,7 +370,15 @@ fn render_batch_writes_its_jpegs_at_the_quality_asked_for() {
             quality,
             gpu: false,
         };
-        let run = run(|console| render_batch(&options, &ai, Cancel::NEVER, console));
+        let run = run(|console| {
+            render_batch(
+                &options,
+                &crate::environment::Libraries::default(),
+                &ai,
+                Cancel::NEVER,
+                console,
+            )
+        });
         assert!(run.result.is_ok() && run.err.is_empty(), "{}", run.err);
         let read = |name: &str| std::fs::read(folder.join(name)).unwrap();
         (read("a.jpg"), read("a.png"))
@@ -401,6 +418,7 @@ fn render_batch_skips_existing_outputs_and_reports_failed_jobs() {
                 quality: None,
                 gpu: false,
             },
+            &crate::environment::Libraries::default(),
             &ai,
             Cancel::NEVER,
             console,
@@ -501,6 +519,7 @@ fn render_and_render_batch_with_gpu_flag_match_cpu_output() {
             let res = run(|console| {
                 render(
                     &options,
+                    &crate::environment::Libraries::default(),
                     &DevelopDefaults::default,
                     &ai,
                     Cancel::NEVER,
@@ -558,7 +577,15 @@ fn render_and_render_batch_with_gpu_flag_match_cpu_output() {
             quality: None,
             gpu,
         };
-        let res = run(|console| render_batch(&options, &ai, Cancel::NEVER, console));
+        let res = run(|console| {
+            render_batch(
+                &options,
+                &crate::environment::Libraries::default(),
+                &ai,
+                Cancel::NEVER,
+                console,
+            )
+        });
         assert!(
             res.result.is_ok() && res.err.is_empty(),
             "gpu={gpu}: {}",

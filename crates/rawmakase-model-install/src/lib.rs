@@ -8,6 +8,7 @@
 //! Which packs exist, and which folder each has, is the caller's:
 //! `rawmakase_denoise::model_install` for AI Denoise's model, and an extension
 //! for its own.
+#![forbid(unsafe_code)]
 use rawmakase_inference::ModelFile;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};

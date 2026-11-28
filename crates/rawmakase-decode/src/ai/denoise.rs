@@ -249,7 +249,7 @@ pub fn assemble(
             }
         }
     });
-    ensure!(!cancel.is_cancelled(), "Development cancelled");
+    cancel.check("Development cancelled")?;
     Ok(CameraImage {
         recovered: Default::default(),
         width: plain.width,

@@ -32,7 +32,10 @@ fn white_mark() -> Watermark {
 
 /// The mark's alpha at each of the photo's pixels, as the export places it.
 fn coverage() -> Result<Vec<f32>> {
-    let mark = white_mark().ready()?.place(W, H).expect("a mark");
+    let mark = white_mark()
+        .ready(&crate::watermark::Watermarks::none())?
+        .place(W, H)
+        .expect("a mark");
     let mut alpha = vec![0.; (W * H) as usize];
     for my in 0..mark.height {
         for mx in 0..mark.width {

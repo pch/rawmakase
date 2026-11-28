@@ -74,27 +74,52 @@ impl std::fmt::Display for BeyondHalfPrecision {
 impl std::error::Error for BeyondHalfPrecision {}
 
 #[derive(Clone, Debug)]
-pub struct AiCache {
-    dir: Arc<RwLock<Dir>>,
-    limit: Arc<AtomicU64>,
+pub struct AiCache(Arc<Shared>);
+/// What a cache and its clones share.
+#[derive(Debug)]
+struct Shared {
+    dir: RwLock<Dir>,
+    /// The folder the entries are kept in when no folder was chosen.
+    default: PathBuf,
+    /// The build whose entries the cache reads and writes.
+    build: String,
+    limit: AtomicU64,
 }
 impl Default for AiCache {
+    /// The desktop's: the platform's cache folder, keyed by this executable.
     fn default() -> Self {
-        Self::new(cache_dir().join(AI.default), DEFAULT_LIMIT)
+        Self::under(
+            &cache_dir(),
+            DEFAULT_LIMIT,
+            &crate::decode_cache::build_identity(),
+        )
     }
 }
 impl AiCache {
-    pub fn new(dir: PathBuf, limit: u64) -> Self {
-        Self {
-            dir: Arc::new(RwLock::new(Dir {
+    /// AI Denoise's results in their subfolder of the cache folder `cache`, up
+    /// to `limit` bytes, made by `build`.
+    pub fn under(cache: &Path, limit: u64, build: &str) -> Self {
+        Self::new(cache.join(AI.default), limit, build)
+    }
+    /// Results in `dir`, up to `limit` bytes, keyed by `build`, as
+    /// [`crate::decode_cache::DecodeCache::new`].
+    pub fn new(dir: PathBuf, limit: u64, build: &str) -> Self {
+        Self(Arc::new(Shared {
+            default: dir.clone(),
+            dir: RwLock::new(Dir {
                 path: dir,
                 chosen: None,
-            })),
-            limit: Arc::new(AtomicU64::new(limit)),
-        }
+            }),
+            build: build.into(),
+            limit: AtomicU64::new(limit),
+        }))
+    }
+    /// The build whose results this cache reads and writes.
+    pub fn build(&self) -> &str {
+        &self.0.build
     }
     fn location(&self) -> Dir {
-        self.dir.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.0.dir.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
     /// The directory holding the entries, shared with clones.
     pub fn dir(&self) -> PathBuf {
@@ -103,16 +128,17 @@ impl AiCache {
     /// Keeps entries in this cache's subfolder of `folder` (the decode cache's chosen
     /// folder), or in the default directory for `None`.
     pub fn set_folder(&self, folder: Option<&Path>) {
-        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = Dir::of_in(AI, folder);
+        *self.0.dir.write().unwrap_or_else(|e| e.into_inner()) =
+            Dir::of_in(AI, folder, &self.0.default);
     }
     /// [`set_folder`](Self::set_folder), then removes the previous directory's entries,
     /// as [`crate::decode_cache::DecodeCache::relocate`] does.
     pub fn relocate(&self, folder: Option<&Path>) -> std::io::Result<usize> {
-        let next = Dir::of_in(AI, folder);
+        let next = Dir::of_in(AI, folder, &self.0.default);
         next.create()?;
         tempfile::tempfile_in(&next.path)?;
         let previous = self.dir();
-        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = next;
+        *self.0.dir.write().unwrap_or_else(|e| e.into_inner()) = next;
         if previous == self.dir() {
             return Ok(0);
         }
@@ -123,10 +149,10 @@ impl AiCache {
         purge(&self.dir(), AI.extension)
     }
     pub fn limit(&self) -> u64 {
-        self.limit.load(Ordering::Relaxed)
+        self.0.limit.load(Ordering::Relaxed)
     }
     pub fn set_limit(&self, limit: u64) {
-        self.limit.store(limit, Ordering::Relaxed);
+        self.0.limit.store(limit, Ordering::Relaxed);
     }
     fn file(&self, key: &str) -> PathBuf {
         entry_in(&self.dir(), key, AI.extension)
@@ -281,7 +307,7 @@ mod tests {
     #[test]
     fn entries_round_trip_within_half_precision() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = AiCache::new(dir.path().join("ai"), DEFAULT_LIMIT);
+        let cache = AiCache::new(dir.path().join("ai"), DEFAULT_LIMIT, "test");
         let stored = entry(33, 21, [1, 0], 1.);
         cache.store("k", &stored)?;
         let loaded = cache.load("k").expect("entry");
@@ -299,7 +325,7 @@ mod tests {
     #[test]
     fn values_beyond_half_precision_fail_the_store_and_damaged_entries_are_misses() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = AiCache::new(dir.path().join("ai"), DEFAULT_LIMIT);
+        let cache = AiCache::new(dir.path().join("ai"), DEFAULT_LIMIT, "test");
         // The model's raw scale (medians of 10⁵) cannot be stored: the gain goes first.
         let raw = entry(8, 8, [0, 0], 1.3e5);
         let error = cache.store("raw", &raw).unwrap_err();
@@ -334,8 +360,8 @@ mod tests {
         let root = tempfile::tempdir()?;
         let chosen = root.path().join("drive");
         fs::create_dir(&chosen)?;
-        let decoded = DecodeCache::new(root.path().join("decoded"), 1);
-        let ai = AiCache::new(root.path().join("ai"), DEFAULT_LIMIT);
+        let decoded = DecodeCache::new(root.path().join("decoded"), 1, "test");
+        let ai = AiCache::new(root.path().join("ai"), DEFAULT_LIMIT, "test");
         decoded.relocate(Some(&chosen))?;
         ai.relocate(Some(&chosen))?;
         assert_ne!(decoded.dir(), ai.dir());
@@ -371,11 +397,11 @@ mod tests {
     fn results_are_trimmed_to_their_own_cap() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let one = {
-            let probe = AiCache::new(dir.path().join("probe"), DEFAULT_LIMIT);
+            let probe = AiCache::new(dir.path().join("probe"), DEFAULT_LIMIT, "test");
             probe.store("p", &entry(8, 8, [0, 0], 1.))?;
             fs::metadata(probe.file("p"))?.len()
         };
-        let cache = AiCache::new(dir.path().join("ai"), 2 * one);
+        let cache = AiCache::new(dir.path().join("ai"), 2 * one, "test");
         for key in ["a", "b", "c"] {
             cache.store(key, &entry(8, 8, [0, 0], 1.))?;
             std::thread::sleep(std::time::Duration::from_millis(20));

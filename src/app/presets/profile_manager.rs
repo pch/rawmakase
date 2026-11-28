@@ -185,7 +185,7 @@ impl Editor {
     /// Opens Manage Profiles on the user's library.
     pub(in crate::app) fn open_profile_manager(&mut self, ctx: &egui::Context) {
         self.open_profile_manager_on(
-            Library::user(),
+            crate::environment::profile_manager(&self.core),
             Arc::new(crate::platform::trash::SystemTrash),
             ctx,
         );

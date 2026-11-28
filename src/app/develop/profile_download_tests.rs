@@ -284,7 +284,11 @@ fn a_profile_file_replaced_after_installation_is_not_applied() {
     let job = ask(&mut e, reviewed);
     let recipe = e.document.edit.recipe().clone();
     let swapped = write(dir.path(), "installed.dcp", &dcp(&reviewed.profile.name, 2));
-    assert!(crate::camera_profiles::load(&swapped, &x_t20()).is_ok());
+    assert!(
+        crate::camera_profiles::ProfileLibrary::for_tests()
+            .load(&swapped, &x_t20())
+            .is_ok()
+    );
     e.profile_downloaded(job, Ok(swapped));
     assert!(!e.profile_download.task.is_running());
     assert_eq!(*e.document.edit.recipe(), recipe);

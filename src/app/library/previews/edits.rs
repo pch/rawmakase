@@ -94,19 +94,25 @@ pub(in crate::app) enum Pace {
     Full,
 }
 /// Renders a 640 px edited preview, giving up once the flag is set.
-type RenderEdited = fn(&Path, &EditSource, Cancel<'_>) -> anyhow::Result<image::RgbImage>;
+type RenderEdited = fn(
+    &Path,
+    &crate::environment::Libraries,
+    &EditSource,
+    Cancel<'_>,
+) -> anyhow::Result<image::RgbImage>;
 /// Renders a preview of an edit with AI Denoise from a finished result: the file's
 /// version the result was made for, and the result.
 type RenderWithAi = fn(
     &Path,
+    &crate::environment::Libraries,
     &crate::storage::Identity,
     &EditSource,
     &rawmakase_decode::ai::cache::AiEntry,
     Cancel<'_>,
 ) -> anyhow::Result<image::RgbImage>;
-/// Reads the profile library's fingerprint as it is now
-/// (`camera_profiles::library_fingerprint`).
-type ProfileLibrary = fn() -> String;
+/// Reads a profile library's fingerprint as it is now
+/// ([`ProfileLibrary::fingerprint`](crate::camera_profiles::ProfileLibrary::fingerprint)).
+type Fingerprint = fn(&crate::camera_profiles::ProfileLibrary) -> String;
 /// Where edited preview jobs go, and how fast they are rendered. Dropping it
 /// closes the worker, as [`EditQueue::close`] does.
 pub(in crate::app::library) struct EditQueue(Arc<Shared>);
@@ -128,6 +134,9 @@ struct State {
     /// Where AI Denoise's results are, which an edit with it renders from once
     /// finished; none until the app sets it.
     ai: Option<AiCache>,
+    /// The imported lens profiles photos are opened with: the app's context's,
+    /// set before anything is asked for; none until then.
+    libraries: crate::environment::Libraries,
 }
 struct Queued {
     job: EditJob,
@@ -201,6 +210,10 @@ impl EditQueue {
     /// Finished AI Denoise results come from `cache` from now on.
     pub(in crate::app::library) fn set_ai_cache(&self, cache: AiCache) {
         self.0.lock().ai = Some(cache);
+    }
+    /// Photos are opened with `libraries` from now on.
+    pub(in crate::app::library) fn set_libraries(&self, libraries: crate::environment::Libraries) {
+        self.0.lock().libraries = libraries;
     }
     /// Drops the photos asked ahead and not started, for a list shown no
     /// longer: each is answered `Skipped` unless it is shown by then. Renders
@@ -349,7 +362,7 @@ pub(super) fn spawn_edited_with_ai(
         ctx,
         render,
         render_ai,
-        crate::camera_profiles::library_fingerprint,
+        crate::camera_profiles::ProfileLibrary::fingerprint,
     )
 }
 pub(super) fn spawn_edited_with_profiles(
@@ -358,7 +371,7 @@ pub(super) fn spawn_edited_with_profiles(
     ctx: egui::Context,
     render: RenderEdited,
     render_ai: RenderWithAi,
-    profiles: ProfileLibrary,
+    profiles: Fingerprint,
 ) -> Worker<EditQueue, EditResult> {
     let shared = Arc::<Shared>::default();
     let (tx, result_rx) = mpsc::channel();
@@ -425,7 +438,7 @@ struct Renders {
     results: Results,
     render: RenderEdited,
     render_ai: RenderWithAi,
-    profiles: ProfileLibrary,
+    profiles: Fingerprint,
 }
 /// The preview cache, held while it is read or written.
 fn cache(cache: &Mutex<Option<PreviewCache>>) -> std::sync::MutexGuard<'_, Option<PreviewCache>> {
@@ -559,6 +572,7 @@ impl Renders {
         }
         let full = state.pace == Pace::Full;
         let ai = state.ai.clone();
+        let libraries = state.libraries.clone();
         let slot = state.next_slot;
         state.next_slot += 1;
         let cancel = Arc::<AtomicBool>::default();
@@ -595,16 +609,24 @@ impl Renders {
                 let as_named = || {
                     source
                         .profile_library()
-                        .is_none_or(|named| profiles() == named)
+                        .is_none_or(|named| profiles(&libraries.profiles) == named)
                 };
                 let named_before = as_named();
                 let (image, shows) = match finished_entry(&path, &source, ai.as_ref()) {
                     Some((file, entry)) => (
-                        render_ai(&path, &file, &source, &entry, Cancel::new(&cancel)).ok()?,
+                        render_ai(
+                            &path,
+                            &libraries,
+                            &file,
+                            &source,
+                            &entry,
+                            Cancel::new(&cancel),
+                        )
+                        .ok()?,
                         PreviewAi::Finished,
                     ),
                     None => (
-                        render(&path, &source, Cancel::new(&cancel)).ok()?,
+                        render(&path, &libraries, &source, Cancel::new(&cancel)).ok()?,
                         plain_of(&source),
                     ),
                 };

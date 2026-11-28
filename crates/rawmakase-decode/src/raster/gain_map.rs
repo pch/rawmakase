@@ -948,14 +948,14 @@ pub(super) fn reconstruct(
         .zip(base.par_chunks(width as usize))
         .enumerate()
         .try_for_each(|(y, (to, from))| {
-            anyhow::ensure!(!cancel.is_cancelled(), "Opening cancelled");
+            cancel.check("Opening cancelled")?;
             for (x, (to, from)) in to.iter_mut().zip(from).enumerate() {
                 for c in 0..3 {
                     let sample = map.at(x as u32, y as u32, width, height, c);
                     to[c] = formula.apply(c, from[c], sample);
                 }
             }
-            Ok(())
+            anyhow::Ok(())
         })?;
     Ok(out)
 }

@@ -177,6 +177,7 @@ impl Editor {
         let place = self.default_catalog();
         let tx = self.tx.clone();
         let ctx = ctx.clone();
+        let libraries = crate::environment::libraries(&self.core);
         crate::app::task::spawn(
             tx,
             ctx.clone(),
@@ -210,10 +211,9 @@ impl Editor {
                 let event = match result {
                     Ok(Some(location)) => imported(reopened(
                         &location,
+                        &libraries,
                         true,
-                        false,
-                        &Default::default(),
-                        &[],
+                        Default::default(),
                         tx,
                         &ctx,
                     )),
@@ -272,6 +272,7 @@ impl Editor {
             .library
             .as_ref()
             .map(|l| l.session.catalog().location().clone());
+        let libraries = crate::environment::libraries(&self.core);
         crate::app::task::spawn(
             tx,
             ctx.clone(),
@@ -416,8 +417,12 @@ impl Editor {
                 }
                 let event = match result {
                     Ok(Some(location)) => {
-                        let event =
-                            reopened(&location, chosen, relinks, &report, &conflicts, tx, &ctx);
+                        let change = folder_locations::FolderChange {
+                            relinked: relinks,
+                            report,
+                            conflicts,
+                        };
+                        let event = reopened(&location, &libraries, chosen, change, tx, &ctx);
                         if import { imported(event) } else { event }
                     }
                     Ok(None) => Event::DialogClosed,

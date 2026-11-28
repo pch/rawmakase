@@ -62,7 +62,7 @@ fn export(photo: &job::Photo, format: Format, gain_map: bool, dir: &Path) -> Res
 
 /// The file at `path` as Develop opens it.
 fn opened(path: &Path) -> Result<CameraImage> {
-    match crate::photo::open_source(path, Cancel::NEVER)? {
+    match crate::photo::open_source(path, &crate::photo::LensProfiles::none(), Cancel::NEVER)? {
         crate::photo::Opened::Rendered(image) => Ok(image),
         crate::photo::Opened::Raw(_) => anyhow::bail!("a gain-map file opens as rendered"),
     }

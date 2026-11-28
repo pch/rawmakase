@@ -18,11 +18,13 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FitKey(String);
 impl FitKey {
-    pub fn of(path: &Path) -> anyhow::Result<Self> {
+    /// The key of the file at `path` as the build `build` fits it.
+    fn of(path: &Path, build: &str) -> anyhow::Result<Self> {
         let id = crate::storage::Identity::read(path)?;
         Ok(Self(crate::decode_cache::source_key(
             &id,
             format_args!("v{FIT_VERSION}"),
+            build,
         )))
     }
     fn file(&self, dir: &Path) -> PathBuf {
@@ -44,9 +46,43 @@ struct Entry {
     refusal: Option<String>,
 }
 
-/// The cache's folder.
-pub fn dir() -> PathBuf {
-    crate::decode_cache::cache_dir().join("camera-look")
+/// Where fits are kept, and the build they are filed under: `camera-look` in
+/// the cache folder the context gives, keyed by its build id. Without a folder
+/// nothing is kept, and each photo is fitted each time it is opened.
+#[derive(Clone, Debug)]
+pub struct FitCache {
+    dir: Option<PathBuf>,
+    build: String,
+}
+impl FitCache {
+    /// Fits in `camera-look` of the cache folder `cache`, made by `build`.
+    pub fn under(cache: &Path, build: &str) -> Self {
+        Self {
+            dir: Some(cache.join("camera-look")),
+            build: build.into(),
+        }
+    }
+    /// No cache: nothing is kept.
+    pub fn none() -> Self {
+        Self {
+            dir: None,
+            build: String::new(),
+        }
+    }
+    /// The folder fits are kept in, if any.
+    pub fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
+    }
+    /// The key of the file at `path` as this cache files its fit.
+    pub fn key(&self, path: &Path) -> anyhow::Result<FitKey> {
+        FitKey::of(path, &self.build)
+    }
+}
+impl Default for FitCache {
+    /// [`FitCache::none`].
+    fn default() -> Self {
+        Self::none()
+    }
 }
 
 /// The result stored under `key` in `dir`, checked as a carried profile is: none
@@ -101,13 +137,10 @@ mod tests {
         std::fs::write(&photo, b"one").unwrap();
         let id = crate::storage::Identity::read(&photo).unwrap();
         assert_eq!(
-            FitKey::of(&photo).unwrap().0,
+            FitKey::of(&photo, "1234-5678").unwrap().0,
             format!(
                 "{}-{}-{}-v{FIT_VERSION}-{}",
-                id.prefix_hash,
-                id.size,
-                id.modified_ns,
-                crate::decode_cache::build_identity()
+                id.prefix_hash, id.size, id.modified_ns, "1234-5678"
             )
         );
     }
@@ -129,14 +162,14 @@ mod tests {
         )
         .unwrap();
         let cache = dir.path().join("cache");
-        let key = FitKey::of(&photo).unwrap();
+        let key = FitKey::of(&photo, "test").unwrap();
         assert!(load(&cache, &key, &m).is_none());
         store(&cache, &key, &Ok(p.clone())).unwrap();
         assert_eq!(load(&cache, &key, &m), Some(Ok(p)));
         // A refusal is kept too, so it isn't fitted again.
         let other = dir.path().join("b.raw");
         std::fs::write(&other, b"two").unwrap();
-        let refused = FitKey::of(&other).unwrap();
+        let refused = FitKey::of(&other, "test").unwrap();
         store(&cache, &refused, &Err("No embedded preview".into())).unwrap();
         assert_eq!(
             load(&cache, &refused, &m),
@@ -144,7 +177,7 @@ mod tests {
         );
         // The file replaced: another key, nothing found.
         std::fs::write(&photo, b"changed contents").unwrap();
-        assert!(load(&cache, &FitKey::of(&photo).unwrap(), &m).is_none());
+        assert!(load(&cache, &FitKey::of(&photo, "test").unwrap(), &m).is_none());
         // A cache that can't be written to leaves the result unstored.
         let blocked = dir.path().join("file");
         std::fs::write(&blocked, b"").unwrap();

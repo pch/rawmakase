@@ -113,6 +113,9 @@ pub fn convert_develop(
     profiles: &[std::sync::Arc<crate::camera_profiles::CameraProfile>],
     image: Option<&dyn crate::xmp::PhotoMeasures>,
 ) -> Result<(Recipe, Vec<String>)> {
+    // Only RAWmakase's own settings name a Lensfun lens, and a Lightroom edit
+    // has none of them: it is converted against no database.
+    let none = crate::lens::lensfun::installed::Handle::none();
     let fields = develop_fields(text)?;
     let mut preset = crate::xmp::Preset {
         photo_settings: true,
@@ -373,7 +376,13 @@ pub fn convert_develop(
         for k in &keys {
             grouped.insert(k.to_string());
         }
-        match p.apply(&Recipe::with_profiles(m, profiles), m, profiles, image) {
+        match p.apply(
+            &Recipe::with_profiles(m, profiles),
+            m,
+            profiles,
+            image,
+            &none,
+        ) {
             Ok(_) => accepted.settings.extend(p.settings),
             Err(e) => warnings.push(e.to_string()),
         }
@@ -391,7 +400,13 @@ pub fn convert_develop(
         {
             p.settings.insert("AutoTone".into(), auto.clone());
         }
-        match p.apply(&Recipe::with_profiles(m, profiles), m, profiles, image) {
+        match p.apply(
+            &Recipe::with_profiles(m, profiles),
+            m,
+            profiles,
+            image,
+            &none,
+        ) {
             Ok(_) => {
                 accepted.settings.insert(key.clone(), value.clone());
             }
@@ -399,7 +414,7 @@ pub fn convert_develop(
         }
     }
     let base = Recipe::with_profiles(m, profiles);
-    let mut recipe = accepted.apply(&base, m, profiles, image)?;
+    let mut recipe = accepted.apply(&base, m, profiles, image, &none)?;
     if let Some((asked, used)) = accepted.profile_substitute(m, profiles) {
         warnings.push(format!("{asked} isn't imported; rendered with {used}"));
     }

@@ -370,10 +370,11 @@ fn show_error(error: &anyhow::Error) {
 /// face's contours; the comparison's pixels NaN outside the JPEG become transparent.
 fn dump_fit(
     path: &std::path::Path,
+    lenses: &rawmakase::photo::LensProfiles,
     fitted: &rawmakase::camera_look::Fitted,
     dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let c = rawmakase::camera_look::compare(path, fitted, 1280)?;
+    let c = rawmakase::camera_look::compare(path, lenses, fitted, 1280)?;
     std::fs::create_dir_all(dir)?;
     let write = |name: &str, pixels: &[[f32; 3]]| -> anyhow::Result<()> {
         let bytes: Vec<u16> = pixels
@@ -426,6 +427,11 @@ fn main() -> Result<()> {
         rawmakase::photo::camera_exif,
         rawmakase::photo::raw_xmp,
     );
+    // The library's context, as the environment configures it, which the
+    // commands open photos with. Making it reads nothing.
+    let core = rawmakase::environment::context();
+    let libraries = &rawmakase::environment::libraries(&core);
+    let lenses = &libraries.lenses;
     match a.command {
         Some(Command::Mcp { data_dir }) => mcp(data_dir)?,
         Some(Command::Control(cli)) => rawmakase_ctl::run(cli).map_err(anyhow::Error::msg)?,
@@ -440,7 +446,7 @@ fn main() -> Result<()> {
             }
             anyhow::ensure!(!done.imported.is_empty(), "No lens profiles imported");
         }
-        Some(Command::Lensfun(command)) => lensfun(command)?,
+        Some(Command::Lensfun(command)) => lensfun(command, &libraries.lensfun)?,
         Some(Command::Extensions(command)) => extensions(command)?,
         Some(Command::ImportProfiles { lut_space, files }) => {
             // Files and folders, imported as the app's Import does: a file that
@@ -527,6 +533,7 @@ fn main() -> Result<()> {
         }) => {
             rawmakase::comparison::compare(
                 &input,
+                libraries,
                 &reference,
                 &output,
                 recipe.as_deref(),
@@ -545,11 +552,11 @@ fn main() -> Result<()> {
             );
         }
         Some(Command::Inspect { input }) => {
-            let r = rawmakase::photo::open(&input)?;
-            let (profiles, errors) = rawmakase::camera_profiles::installed(&r.metadata);
+            let r = rawmakase::photo::open(&input, lenses)?;
+            let (profiles, errors) = libraries.profiles.installed(&r.metadata);
             eprintln!(
                 "Profile folders: {:?}\nAvailable profiles: {:?}\nProfile errors: {:?}",
-                rawmakase::camera_profiles::library_dirs(),
+                libraries.profiles.dirs().to_vec(),
                 profiles.iter().map(|p| &p.name).collect::<Vec<_>>(),
                 errors
             );
@@ -562,6 +569,7 @@ fn main() -> Result<()> {
         Some(Command::RenderBatch(options)) => {
             rawmakase::render_command::render_batch(
                 &options,
+                libraries,
                 &user_ai_denoise,
                 Cancel::NEVER,
                 &mut rawmakase::render_command::Console {
@@ -572,7 +580,7 @@ fn main() -> Result<()> {
         }
         Some(Command::Thumbnail { input, output }) => {
             use std::io::Write;
-            let data = rawmakase::photo::open(&input)?.thumbnail()?;
+            let data = rawmakase::photo::open(&input, lenses)?.thumbnail()?;
             let mut f = std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -582,6 +590,7 @@ fn main() -> Result<()> {
         Some(Command::Render(options)) => {
             rawmakase::render_command::render(
                 &options,
+                libraries,
                 &rawmakase::app::user_raw_defaults,
                 &user_ai_denoise,
                 Cancel::NEVER,
@@ -595,6 +604,7 @@ fn main() -> Result<()> {
             let flag = interrupt::flag();
             let path = rawmakase::merge_command::merge_hdr(
                 &options,
+                libraries,
                 &rawmakase::app::user_raw_defaults,
                 Cancel::new(flag),
                 &mut std::io::stderr(),
@@ -603,19 +613,20 @@ fn main() -> Result<()> {
         }
         Some(Command::Fingerprint { files }) => {
             for path in &files {
-                let line = serde_json::to_string(&rawmakase::fingerprint::fingerprint(path))?;
+                let line =
+                    serde_json::to_string(&rawmakase::fingerprint::fingerprint(path, lenses))?;
                 println!("{line}");
             }
         }
         Some(Command::DecodeDump { files, floats }) => {
             for path in &files {
-                let dump = rawmakase::decode_dump::dump(path, floats.as_deref());
+                let dump = rawmakase::decode_dump::dump(path, lenses, floats.as_deref());
                 println!("{}", serde_json::to_string(&dump)?);
             }
         }
         Some(Command::HalfCheck { files, reference }) => {
             for path in &files {
-                let check = rawmakase::half_check::check(path, reference);
+                let check = rawmakase::half_check::check(path, lenses, reference);
                 println!("{}", serde_json::to_string(&check)?);
             }
         }
@@ -636,10 +647,10 @@ fn main() -> Result<()> {
                 );
             }
             for path in &files {
-                let result = fit(path, &inputs, Cancel::NEVER);
+                let result = fit(path, lenses, &inputs, Cancel::NEVER);
                 if let (Some(dir), Ok(fitted)) = (&dump, &result) {
                     let name = path.file_name().context("A file without a name")?;
-                    dump_fit(path, fitted, &dir.join(name))?;
+                    dump_fit(path, lenses, fitted, &dir.join(name))?;
                 }
                 let (measured, outcome) = match &result {
                     Ok(f) => (Some(&f.report), format!("{:?} look", f.report.kind)),
@@ -721,7 +732,7 @@ fn main() -> Result<()> {
                 "Iterations must be 1–1000"
             );
             let t = Instant::now();
-            let im = rawmakase::photo::open(&input)?
+            let im = rawmakase::photo::open(&input, lenses)?
                 .develop(camera_data::Decode::full(Default::default()), Cancel::NEVER)?;
             let decode = t.elapsed();
             let small = develop::preview(&im, 1600);
@@ -918,10 +929,16 @@ fn find_photo(
 }
 
 /// `rawmakase lensfun`.
-fn lensfun(command: LensfunCommand) -> Result<()> {
-    use rawmakase::lens::lensfun::{choice, installed};
+fn lensfun(
+    command: LensfunCommand,
+    installed: &rawmakase::lens::lensfun::installed::Handle,
+) -> Result<()> {
+    use rawmakase::lens::lensfun::choice;
     use rawmakase::lensfun_install::{self as install, Installed, Progress, Source};
-    let dir = installed::dir();
+    let dir = installed
+        .dir()
+        .context("There is no data folder to install Lensfun's profiles in")?
+        .to_path_buf();
     let terms = || {
         println!(
             "Lensfun lens database by {}, {} ({}), from {}",

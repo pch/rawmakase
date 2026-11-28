@@ -203,8 +203,10 @@ pub(super) fn photo(image: CameraImage, source: &Path, cache: &Path, recipe: Rec
         recipe,
         values: Default::default(),
         watermark: None,
+        watermarks: Default::default(),
         demosaic: Demosaic::default(),
-        cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
+        cache: Some(DecodeCache::new(cache.to_path_buf(), u64::MAX, "test")),
+        lenses: crate::photo::LensProfiles::none(),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
         file: None,
     }
@@ -350,7 +352,7 @@ pub(super) fn fingerprints(
     // The synthetic chart DNG, decoded and rendered with its embedded profile.
     let chart =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/charts/synthetic-d65.dng");
-    let raw = crate::photo::open(&chart)?;
+    let raw = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?;
     let image = raw.develop(
         crate::camera_data::Decode::full(Default::default()),
         Cancel::NEVER,
@@ -437,7 +439,7 @@ fn a_graphic_watermark_over_an_srgb_export_matches_its_fixture() -> Result<()> {
         opacity: 0.7,
         ..crate::watermark::fonts::test_watermark()
     };
-    let ready = mark.ready_in(&images)?;
+    let ready = mark.ready_in(&images, &Default::default())?;
     let image = synthetic(96, 64);
     let mut rendered = crate::develop::ExportImage::srgb(crate::develop::render(
         &image,

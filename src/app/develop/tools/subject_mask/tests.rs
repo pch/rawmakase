@@ -1544,7 +1544,7 @@ fn the_real_model_selects_through_the_extension_and_the_mask_changes_the_render(
         .filter(|endpoint| !endpoint.is_empty());
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let image = Arc::new(
-        crate::photo::open(&raw)
+        crate::photo::open(&raw, &crate::photo::LensProfiles::none())
             .unwrap()
             .develop(
                 crate::camera_data::Decode::full(Default::default()),

@@ -336,11 +336,12 @@ impl Entry {
     /// Where the profile is in the user's library, if it is. Reads at most a few
     /// file headers and one file of the pinned size per library folder: call it
     /// when the photo's camera or the library changes, not every frame.
-    pub fn status(&self) -> Status {
-        self.status_in(
-            &library::library_dirs(),
-            &crate::storage::data_dir().join("camera-profiles"),
-        )
+    pub fn status(&self, library: &library::ProfileLibrary) -> Status {
+        // A library without folders holds nothing, and has nowhere to install to.
+        match library.destination() {
+            Some(destination) => self.status_in(library.dirs(), destination),
+            None => Status::Available,
+        }
     }
 
     fn status_in(&self, roots: &[PathBuf], destination: &Path) -> Status {
@@ -391,9 +392,19 @@ impl Entry {
     /// Installs verified bytes through the same validated, atomic, no-clobber
     /// import as a DCP the user chooses. The application captures `destination`
     /// before starting the job. Returns the installed file.
+    ///
+    /// The bytes are staged in a hidden folder beside `destination`, never
+    /// in the system's temporary folder, and the folder is removed after.
     pub fn install_into(&self, bytes: &[u8], m: &Metadata, destination: &Path) -> Result<PathBuf> {
         self.verify(bytes, m)?;
-        let staging = tempfile::tempdir()?;
+        let beside = destination
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .context("A profile's destination needs a folder around it")?;
+        std::fs::create_dir_all(beside)?;
+        let staging = tempfile::Builder::new()
+            .prefix(".profile-download-")
+            .tempdir_in(beside)?;
         let source = staging.path().join(&self.profile.filename);
         std::fs::write(&source, bytes)?;
         let imported = library::import_into(&[source], destination, LutSpace::Srgb)?;

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use clap::Parser;
 
 /// Serve editing tools over MCP stdio, connected to the running desktop app.

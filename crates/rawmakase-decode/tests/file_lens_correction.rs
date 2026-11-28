@@ -137,7 +137,7 @@ fn developed(bytes: Vec<u8>, name: &str) -> CameraImage {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(name);
     std::fs::write(&path, bytes).unwrap();
-    rawmakase_decode::photo::open(&path)
+    rawmakase_decode::photo::open(&path, &rawmakase_decode::photo::LensProfiles::none())
         .unwrap()
         .develop(Decode::Full(Demosaic::Rawmakase), Cancel::NEVER)
         .unwrap()

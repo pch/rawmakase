@@ -179,7 +179,7 @@ fn wait_cancellable(
     const SLICE: Duration = Duration::from_millis(2);
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         match device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission.clone()),
             timeout: Some(SLICE),
@@ -570,7 +570,7 @@ impl Processor {
         luminance: Option<super::luminance_noise::LuminanceDenoise>,
         cancel: Cancel<'_>,
     ) -> Result<crate::camera_data::CameraImage> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         ensure!(self.fits_pyramid(base), "Photo exceeds GPU pyramid limits");
         self.scoped_pyramid(|gpu| {
             let device = &gpu.device;
@@ -636,7 +636,7 @@ impl Processor {
         scale: f32,
         cancel: Cancel<'_>,
     ) -> Result<super::texture::TextureDetail> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         ensure!(self.fits_pyramid(image), "Photo exceeds GPU pyramid limits");
         self.scoped_pyramid(|gpu| {
             let existing = gpu.resident.as_ref().and_then(|r| r.photo_buffer(image));
@@ -670,7 +670,7 @@ impl Processor {
         max_edge: u32,
         cancel: Cancel<'_>,
     ) -> Result<Rendered> {
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         recipe.validate()?;
         ensure!(sigma.is_finite() && sigma > 0., "Invalid sharpening radius");
         ensure!(
@@ -827,7 +827,7 @@ impl Processor {
         });
         self.queue
             .write_buffer(&b.source, 0, bytemuck::cast_slice(&image.pixels));
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut dispatch = |pipeline: usize, width: u32, height: u32| {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -869,7 +869,7 @@ impl Processor {
             .context("GPU readback timed out")??;
         if cancel.is_cancelled() {
             b.staging.unmap();
-            anyhow::bail!("Render superseded");
+            return Err(rawmakase_cancel::Cancelled::new("Render superseded").into());
         }
         let mapped = b.staging.slice(..).get_mapped_range()?;
         let pixels = bytemuck::cast_slice::<u8, [f32; 3]>(&mapped).to_vec();

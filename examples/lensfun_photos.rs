@@ -18,11 +18,17 @@ fn main() -> anyhow::Result<()> {
         args.remove(0);
         installed::read_folder(std::path::Path::new(&dir))?
     } else {
-        let i = installed::current().ok_or_else(|| anyhow::anyhow!("Lensfun isn't installed"))?;
+        let lensfun = rawmakase::environment::lensfun(&rawmakase::environment::context()).clone();
+        let i = lensfun
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("Lensfun isn't installed"))?;
         i.db.clone()
     };
     for path in &args {
-        let raw = match rawmakase::photo::open(std::path::Path::new(path)) {
+        let raw = match rawmakase::photo::open(
+            std::path::Path::new(path),
+            &rawmakase::photo::LensProfiles::none(),
+        ) {
             Ok(r) => r,
             Err(e) => {
                 println!("{path}: can't open: {e:#}");

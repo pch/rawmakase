@@ -44,8 +44,14 @@ pub(crate) struct Editor {
     tx: Sender<Event>,
     rx: Receiver<Event>,
     loader: worker::Loader,
-    /// Shared size policy for Develop, neighbour prefetch and Reference View.
-    decode_cache: crate::decode_cache::DecodeCache,
+    /// The library's context, which the workers take their caches from.
+    core: rawmakase_core::Context,
+    /// The saved watermarks and the fonts they draw with, made from the
+    /// context once, so the fonts are listed once.
+    watermarks: crate::watermark::Watermarks,
+    /// The user's Desktop and Pictures folders, which exports can go to,
+    /// found once at startup.
+    user_folders: crate::export_settings::UserFolders,
     /// AI Denoise's queue, worker and cache, shared with exports.
     ai_denoise: crate::ai_denoise::Service,
     /// AI Denoise's model pack: installed, being installed or removed.
@@ -164,7 +170,7 @@ pub(crate) struct Editor {
     /// Library's previews.
     raw_defaults: std::sync::Arc<crate::raw_defaults::DevelopDefaults>,
     /// The profile library as unedited photos' previews were last built from
-    /// (`camera_profiles::library_fingerprint`): read at start and after every
+    /// (`ProfileLibrary::fingerprint` of the context's): read at start and after every
     /// profile import, rather than scanned for each preview.
     profile_library: String,
     /// Shared automation queue and independently configured input adapters.
@@ -192,6 +198,37 @@ pub(crate) struct Editor {
     /// before it passes its write gate, as `proposal_hook` does.
     #[cfg(test)]
     report_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+}
+impl Editor {
+    /// The decode cache Develop, neighbour prefetch and Reference View share:
+    /// the context's.
+    pub(in crate::app) fn decode_cache(&self) -> &crate::decode_cache::DecodeCache {
+        crate::environment::decode_cache(&self.core)
+    }
+    /// The imported lens profiles every photo is opened with: the context's.
+    pub(in crate::app) fn lens_profiles(&self) -> &crate::photo::LensProfiles {
+        crate::environment::lens_profiles(&self.core)
+    }
+    /// The libraries a photo is opened and fitted with: the context's.
+    pub(in crate::app) fn libraries(&self) -> crate::environment::Libraries {
+        crate::environment::libraries(&self.core)
+    }
+    /// The saved watermarks, the context's data folder's, and their fonts.
+    pub(in crate::app) fn watermarks(&self) -> crate::watermark::Watermarks {
+        self.watermarks.clone()
+    }
+    /// The installed XMP presets and their layout: the context's.
+    pub(in crate::app) fn preset_library(&self) -> &crate::presets::PresetLibrary {
+        crate::environment::presets(&self.core)
+    }
+    /// Lensfun's database as it is installed now: the context's.
+    pub(in crate::app) fn lensfun_db(&self) -> &crate::lens::lensfun::installed::Handle {
+        crate::environment::lensfun(&self.core)
+    }
+    /// The installed camera profiles: the context's.
+    pub(in crate::app) fn camera_profiles(&self) -> &crate::camera_profiles::ProfileLibrary {
+        crate::environment::camera_profiles(&self.core)
+    }
 }
 impl Editor {
     pub(crate) fn new(
@@ -343,13 +380,16 @@ impl Editor {
         let first_catalog = session.last_path.is_none() && session_file.is_some();
         let (tx, rx) = mpsc::channel();
         let copy_groups = session.copy_groups();
-        let decode_cache = crate::decode_cache::DecodeCache::default();
+        // The library's context, as the environment configures it: the caches
+        // are its, with the limits and folder the session chose.
+        let core = crate::environment::context();
+        let decode_cache = crate::environment::decode_cache(&core).clone();
         decode_cache.set_limit(u64::from(session.decoded_cache_size_gib()) << 30);
         crate::catalog::preview_cache::set_thumbnail_budget(
             u64::from(session.thumbnail_cache_size_mib()) << 20,
         );
         decode_cache.set_folder(session.decoded_cache_folder.as_deref());
-        let ai_cache = crate::ai_cache::AiCache::default();
+        let ai_cache = crate::environment::ai_denoise_cache(&core).clone();
         ai_cache.set_folder(session.decoded_cache_folder.as_deref());
         let ai_denoise =
             crate::ai_denoise::Service::new(ai_cache, crate::model_install::runtime_dir());
@@ -363,10 +403,18 @@ impl Editor {
                 .send(worker::Event::AiDenoiseStored(path.to_path_buf()));
             stored_ctx.request_repaint();
         }));
-        let loader = worker::Loader::new(tx.clone(), ctx.clone(), decode_cache.clone());
+        let libraries = crate::environment::libraries(&core);
+        let lensfun = libraries.lensfun.clone();
+        let profile_library = crate::environment::camera_profiles(&core).fingerprint();
+        let loader = worker::Loader::new(
+            tx.clone(),
+            ctx.clone(),
+            decode_cache.clone(),
+            libraries.clone(),
+        );
         let renderer = worker::renderer_with_backend(tx.clone(), ctx.clone(), backend);
         let reference_loader =
-            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache.clone());
+            worker::reference_loader(tx.clone(), ctx.clone(), decode_cache, libraries.clone());
         let standard_preview_size = session.standard_preview_size();
         let discard_one_to_one_after = session.discard_one_to_one_after();
         let stand_ins = crate::app::develop::stand_in::StandIns::new(
@@ -393,7 +441,7 @@ impl Editor {
             activity: Default::default(),
             presets: PresetBrowser {
                 favorites: crate::presets::load_favorites(),
-                layout: crate::presets::load_layout(),
+                layout: crate::environment::presets(&core).load_layout(),
                 view: if session.preset_list {
                     crate::app::presets::PresetView::List
                 } else {
@@ -436,7 +484,9 @@ impl Editor {
             tx,
             rx,
             loader,
-            decode_cache,
+            watermarks: crate::environment::watermarks(&core),
+            user_folders: crate::environment::user_folders(),
+            core,
             ai_denoise,
             ai_denoise_model: crate::app::develop::model_installer::Installer::new(),
             ai_loupe,
@@ -485,7 +535,7 @@ impl Editor {
                 standard_preview_size,
                 discard_one_to_one_after,
             ),
-            copies: crate::app::worker::editable_preview::decoder(),
+            copies: crate::app::worker::editable_preview::decoder(libraries),
             editable_builds: Default::default(),
             stand_ins,
             autosave: Default::default(),
@@ -522,6 +572,7 @@ impl Editor {
             ai_remove: Default::default(),
             lensfun: crate::app::develop::lensfun::Lensfun::suggesting(
                 !session.no_lensfun_suggestions,
+                lensfun.clone(),
             ),
             folder_sync: Default::default(),
             file_ops: Default::default(),
@@ -531,10 +582,11 @@ impl Editor {
                 session.edit_in_color_space.as_deref(),
             ),
             loupe_tried: None,
-            raw_defaults: std::sync::Arc::new(crate::raw_defaults::DevelopDefaults::load(
-                session.raw_defaults.clone(),
-            )),
-            profile_library: crate::camera_profiles::library_fingerprint(),
+            raw_defaults: std::sync::Arc::new(
+                crate::raw_defaults::DevelopDefaults::load(session.raw_defaults.clone())
+                    .with_lensfun(lensfun),
+            ),
+            profile_library,
             controls: crate::app::shell::automation::Hub::inactive(),
             automation: crate::app::shell::commands::Automation::default(),
             keymap: crate::app::shell::keymap::file::KeymapFile::defaults(),
@@ -614,11 +666,11 @@ impl Editor {
                 .into(),
                 raw_defaults: self.raw_defaults.settings().clone(),
                 standard_preview_size: Some(self.preview_builds.standard_size),
-                decoded_cache_size_gib: Some((self.decode_cache.limit() >> 30) as u32),
+                decoded_cache_size_gib: Some((self.decode_cache().limit() >> 30) as u32),
                 thumbnail_cache_size_mib: Some(
                     (crate::catalog::preview_cache::thumbnail_budget() >> 20) as u32,
                 ),
-                decoded_cache_folder: self.decode_cache.folder(),
+                decoded_cache_folder: self.decode_cache().folder(),
                 one_to_one_discard_days: Some(
                     self.preview_builds.discard_one_to_one_after.unwrap_or(0),
                 ),

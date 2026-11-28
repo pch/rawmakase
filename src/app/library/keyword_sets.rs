@@ -144,6 +144,13 @@ pub(super) fn shortest_label(keywords: &[ListedKeyword], id: i64) -> (String, bo
 }
 
 impl KeywordSetPanel {
+    /// Lists the sets of `store` from now on, read again when next needed.
+    pub(super) fn set_store(&mut self, store: KeywordSets) {
+        if self.store != store {
+            self.store = store;
+            self.list = None;
+        }
+    }
     /// The sets, read from their folders the first time.
     fn sets(&mut self) -> &KeywordSetList {
         self.list.get_or_insert_with(|| self.store.list())
@@ -830,7 +837,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let mut panel = KeywordSetPanel {
             store: KeywordSets {
-                dir: d.path().join("own"),
+                dir: Some(d.path().join("own")),
                 lightroom: None,
             },
             ..Default::default()
@@ -847,11 +854,39 @@ mod tests {
     }
 
     #[test]
+    fn the_library_lists_the_keyword_sets_its_libraries_give() -> anyhow::Result<()> {
+        let (d, mut e, _) = crate::app::testing::editor_with_catalog(&["a.RAF"])?;
+        let data = e.core.data_dirs().first().cloned();
+        let libraries = crate::environment::libraries(&e.core);
+        let library = e.library.as_mut().unwrap();
+        // A list read before the catalog's libraries arrive is read again.
+        library.keyword_sets.store = KeywordSets::default();
+        let built_in = library.keyword_sets.sets().sets.len();
+        let own = KeywordSets {
+            dir: Some(d.path().join("own")),
+            lightroom: None,
+        };
+        own.save("Studio", &Default::default(), false)?;
+        library.set_libraries(&crate::environment::Libraries {
+            keyword_sets: own,
+            ..libraries.clone()
+        });
+        assert_eq!(library.keyword_sets.sets().sets.len(), built_in + 1);
+        // The context's own, in its data folder.
+        library.set_libraries(&libraries);
+        assert_eq!(
+            library.keyword_sets.store.dir,
+            data.map(|d| d.join("Keyword Sets"))
+        );
+        Ok(())
+    }
+
+    #[test]
     fn a_new_keyword_set_is_saved_as_typed_and_shown() -> anyhow::Result<()> {
         let (d, mut e, _) = crate::app::testing::editor_with_catalog(&["a.RAF"])?;
         let library = e.library.as_mut().unwrap();
         library.keyword_sets.store = KeywordSets {
-            dir: d.path().join("own"),
+            dir: Some(d.path().join("own")),
             lightroom: None,
         };
         let mut slots: Box<[String; SLOTS]> = Box::default();

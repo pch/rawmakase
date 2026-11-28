@@ -43,10 +43,27 @@ fn read_whole(path: &Path) -> std::io::Result<Arc<Vec<u8>>> {
     Ok(Arc::new(bytes))
 }
 
+/// The decoders' error as the crates above this adapter type it: a cancelled
+/// decode as [`rawmakase_cancel::Cancelled`], a file the decoders don't read
+/// (not a RAW, or a variant of one they don't decode) as
+/// [`super::Unsupported`], both with the decoders' own wording, and the rest
+/// as it is.
+pub(super) fn typed(e: rawmakase_raw::Error) -> anyhow::Error {
+    match e {
+        rawmakase_raw::Error::Cancelled => {
+            anyhow::Error::new(rawmakase_cancel::Cancelled::new("Decoding cancelled"))
+        }
+        e @ (rawmakase_raw::Error::NotRaw | rawmakase_raw::Error::Unsupported(_)) => {
+            anyhow::Error::new(super::Unsupported(e))
+        }
+        e => e.into(),
+    }
+}
+
 impl Own {
     pub(super) fn open(path: &Path) -> Result<(Self, Header)> {
         let bytes = read_whole(path)?;
-        let info = rawmakase_raw::open(&bytes)?;
+        let info = rawmakase_raw::open(&bytes).map_err(typed)?;
         let header = header(&info);
         Ok((Self { bytes, info }, header))
     }
@@ -106,7 +123,7 @@ impl Own {
         Ok(rawmakase_raw::preview_reaching(&self.info, &self.bytes, edge)?.to_vec())
     }
     fn decode(&self, cancel: Cancel<'_>) -> Result<rawmakase_raw::Sensor> {
-        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel)?;
+        let s = rawmakase_raw::decode(&self.info, &self.bytes, cancel).map_err(typed)?;
         let [left, top, w, h] = s.area;
         ensure!(
             s.channels > 0
@@ -345,7 +362,7 @@ fn turned(
     [w, h]: [usize; 2],
     cancel: Cancel<'_>,
 ) -> Result<Cfa> {
-    ensure!(!cancel.is_cancelled(), "Development cancelled");
+    cancel.check("Development cancelled")?;
     // Super CCD sensors are near square: the longer stored side at most
     // four times the shorter (the dataset's widest is three), so the turned
     // image is at most 2.25 times the stored area. Anything else is not a
@@ -368,7 +385,7 @@ fn turned(
     let mut period = [None; 4];
     for y in 0..h {
         if y % 256 == 0 {
-            ensure!(!cancel.is_cancelled(), "Development cancelled");
+            cancel.check("Development cancelled")?;
         }
         for x in 0..w {
             if let Some([tx, ty]) = turn.position(y as u32, x as u32) {

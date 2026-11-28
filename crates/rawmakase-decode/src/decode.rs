@@ -39,7 +39,7 @@ impl FullSize {
     pub fn with_cache(path: &Path, demosaic: Demosaic, cache: DecodeCache) -> Self {
         Self {
             demosaic,
-            key: DecodeCache::key(path, demosaic).ok(),
+            key: cache.key(path, demosaic).ok(),
             cache,
         }
     }
@@ -53,7 +53,7 @@ impl FullSize {
     ) -> Self {
         Self {
             demosaic,
-            key: file.map(|file| DecodeCache::key_of(file, demosaic)),
+            key: file.map(|file| cache.key_of(file, demosaic)),
             cache,
         }
     }
@@ -100,6 +100,21 @@ impl FullSize {
             let _ = self.cache.store(key, image);
         }
     }
+    /// The image as a render takes it, with its highlights recovered: the
+    /// cache's copy, else `raw` (this photo, opened) decoded and recovered,
+    /// and kept for next time when `store`. An export doesn't store, so a
+    /// batch never fills the cache; Develop, its library and an editable
+    /// preview's source decode through here alike.
+    pub fn recovered(&self, raw: Raw, store: bool, cancel: Cancel<'_>) -> Result<CameraImage> {
+        if let Some(image) = self.cached(&raw.metadata) {
+            return Ok(image);
+        }
+        let image = self.decode(raw, DecodePolicy::Show, cancel)?;
+        if store {
+            self.store(&image, cancel);
+        }
+        Ok(image)
+    }
     /// The image as `policy` gets it in one step: the cache's copy, else opened
     /// with `open`, decoded and, unless exporting, stored. `None` for a prefetch the
     /// cache already has.
@@ -138,9 +153,9 @@ mod tests {
     #[test]
     fn showing_stores_exporting_reads_and_prefetching_skips_what_is_there() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
-        let open = || crate::photo::open(&chart());
+        let open = || crate::photo::open(&chart(), &crate::photo::LensProfiles::none());
         let go = AtomicBool::new(false);
         // An export decodes but leaves the cache as it was.
         assert!(
@@ -178,9 +193,9 @@ mod tests {
     fn a_shown_photo_and_its_recovered_image_hold_one_buffer() -> Result<()> {
         use crate::develop::quality::{recover_highlights, recovered};
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
         let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
-        let open = || crate::photo::open(&chart());
+        let open = || crate::photo::open(&chart(), &crate::photo::LensProfiles::none());
         let decoded = open()?.develop(Decode::Full(Demosaic::default()), Cancel::NEVER)?;
         let apart = recover_highlights(&decoded, Cancel::NEVER)?;
         assert_ne!(apart.pixels, decoded.pixels, "the chart has highlights");
@@ -203,6 +218,25 @@ mod tests {
         let export = full.decode(open()?, DecodePolicy::Export, Cancel::NEVER)?;
         assert!(export.recovered.get().is_none());
         assert_eq!(bits(&export), bits(&decoded));
+        Ok(())
+    }
+
+    /// A render's full-size image is recovered whether it is kept or not, and
+    /// is the same image either way; only one that is kept is stored.
+    #[test]
+    fn a_recovered_image_is_stored_only_when_kept() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
+        let full = FullSize::with_cache(&chart(), Demosaic::default(), cache);
+        let open = || crate::photo::open(&chart(), &crate::photo::LensProfiles::none());
+        let exported = full.recovered(open()?, false, Cancel::NEVER)?;
+        assert!(exported.recovered.get().is_some());
+        assert!(!full.is_cached());
+        let shown = full.recovered(open()?, true, Cancel::NEVER)?;
+        assert!(full.is_cached());
+        assert_eq!(shown.pixels, exported.pixels);
+        let cached = full.recovered(open()?, false, Cancel::NEVER)?;
+        assert_eq!(cached.pixels, shown.pixels);
         Ok(())
     }
 }

@@ -653,8 +653,14 @@ impl Summary {
     }
 }
 
-/// Imports what `picks` (files and folders) hold for `kind`.
-fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summary {
+/// Imports what `picks` (files and folders) hold for `kind`; a preset already
+/// in `presets`' folders is not imported again.
+fn run(
+    kind: ImportKind,
+    picks: &[PathBuf],
+    presets: &crate::presets::PresetLibrary,
+    progress: &ImportProgress,
+) -> Summary {
     progress.set(format!("Looking for {}…", kind.noun(2)));
     let found = gather(kind, picks);
     match kind {
@@ -670,7 +676,7 @@ fn run(kind: ImportKind, picks: &[PathBuf], progress: &ImportProgress) -> Summar
             &found,
             progress,
             &crate::storage::data_dir().join("xmp-presets"),
-            &crate::presets::library_dirs(),
+            presets.dirs(),
             &profile_library(),
         ),
     }
@@ -722,11 +728,12 @@ impl Editor {
         self.importing = Some(progress.clone());
         let (tx, ctx) = (self.tx.clone(), ctx.clone());
         let first = picks[0].clone();
+        let presets = self.preset_library().clone();
         crate::app::task::spawn(
             tx,
             ctx,
             move |tx| {
-                let summary = run(kind, &picks, &progress);
+                let summary = run(kind, &picks, &presets, &progress);
                 let _ = tx.send(Event::Imported(Box::new(summary)));
             },
             move |tx, error| {
@@ -780,10 +787,10 @@ impl Editor {
     }
     /// Lists the open photo's profiles again once an import has added some.
     pub(in crate::app) fn list_profiles_after_import(&mut self) {
-        self.profile_library = crate::camera_profiles::library_fingerprint();
+        self.profile_library = self.camera_profiles().fingerprint();
         let before = self.document.edit.recipe().clone();
         if let Some(m) = &self.document.metadata {
-            let listed = crate::camera_profiles::listed(m);
+            let listed = self.camera_profiles().listed(m);
             self.document.profiles = crate::app::develop::camera_look::keep_fitted_default(
                 &self.document.profiles,
                 m,
@@ -1227,7 +1234,13 @@ mod tests {
         let listed = crate::camera_profiles::listed_from(&[profiles.to_path_buf()], &photo);
         let base = crate::model::recipe::Recipe::with_profiles(&photo, &listed.profiles);
         preset
-            .apply(&base, &photo, &listed.profiles, None)
+            .apply(
+                &base,
+                &photo,
+                &listed.profiles,
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )
             .map(|_| ())
     }
 

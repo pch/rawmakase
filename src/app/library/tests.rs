@@ -95,7 +95,9 @@ fn profile_import_keeps_only_the_unchanged_current_thumbnail(import: ProfileImpo
             cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
             ..Default::default()
         };
-        editor.document.profiles = crate::camera_profiles::listed(&metadata).profiles;
+        editor.document.profiles = crate::camera_profiles::ProfileLibrary::for_tests()
+            .listed(&metadata)
+            .profiles;
         editor.document.metadata = Some(metadata.clone());
         editor.refresh_photo_defaults();
         if dirty {
@@ -328,9 +330,10 @@ fn an_unsupported_jpeg_says_why_in_develop() -> Result<()> {
     assert_eq!(refusal.label(), "JPG file");
     assert_eq!(refusal.detail(), "RAWmakase can't edit CMYK images");
     // What opening it fails with says the same.
-    let error = crate::photo::open_source(&file, Cancel::NEVER)
-        .err()
-        .expect("a CMYK file can't be opened");
+    let error =
+        crate::photo::open_source(&file, &crate::photo::LensProfiles::none(), Cancel::NEVER)
+            .err()
+            .expect("a CMYK file can't be opened");
     assert_eq!(Refusal::opening(&file, &error), Some(refusal));
     // Develop says so in its dialog, and stays in the Library.
     let mut editor = crate::app::Editor::with_context(&ctx, None, Default::default(), None);

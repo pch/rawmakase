@@ -169,12 +169,16 @@ impl HalfCheck {
     }
 }
 
-fn develop(path: &Path, decode: Decode) -> anyhow::Result<(CameraImage, f64)> {
+fn develop(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+    decode: Decode,
+) -> anyhow::Result<(CameraImage, f64)> {
     let mut best = f64::INFINITY;
     let mut image = None;
     for _ in 0..RUNS {
         let t = Instant::now();
-        let im = crate::photo::open(path)?.develop(decode, Cancel::NEVER)?;
+        let im = crate::photo::open(path, lenses)?.develop(decode, Cancel::NEVER)?;
         best = best.min(t.elapsed().as_secs_f64());
         image = Some(im);
     }
@@ -182,17 +186,21 @@ fn develop(path: &Path, decode: Decode) -> anyhow::Result<(CameraImage, f64)> {
 }
 
 /// Checks the photo at `path` against its `reference`, when there is one.
-pub fn check(path: &Path, reference: Option<Reference>) -> HalfCheck {
+pub fn check(
+    path: &Path,
+    lenses: &crate::photo::LensProfiles,
+    reference: Option<Reference>,
+) -> HalfCheck {
     let mut c = HalfCheck {
         path: path.to_path_buf(),
         reference,
         ..Default::default()
     };
     let result = (|| -> anyhow::Result<()> {
-        let (half, seconds) = develop(path, Decode::Half)?;
+        let (half, seconds) = develop(path, lenses, Decode::Half)?;
         c.half = Some([half.width, half.height]);
         c.seconds = Some(seconds);
-        let (full, full_seconds) = develop(path, Decode::Full(Demosaic::Rawmakase))?;
+        let (full, full_seconds) = develop(path, lenses, Decode::Full(Demosaic::Rawmakase))?;
         c.full = Some([full.width, full.height]);
         c.full_seconds = Some(full_seconds);
         c.xtrans = Some(full.metadata.xtrans);
@@ -476,7 +484,11 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../tests/corpus/charts/synthetic-d65.dng"
         );
-        let c = check(chart.as_ref(), reference(Some(0.5)));
+        let c = check(
+            chart.as_ref(),
+            &crate::photo::LensProfiles::none(),
+            reference(Some(0.5)),
+        );
         assert!(c.error.is_none(), "{:?}", c.error);
         assert_eq!(c.reference, reference(Some(0.5)));
         assert_eq!(c.xtrans, Some(false));

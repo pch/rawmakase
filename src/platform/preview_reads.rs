@@ -200,8 +200,8 @@ mod tests {
         use crate::metadata::PhotoInfo;
         let dir = tempfile::tempdir()?;
         let path = super::fixture::dng(dir.path());
-        let whole = crate::photo::open(&path)?.metadata;
-        let header = crate::photo::header_metadata(&path)?;
+        let whole = crate::photo::open(&path, &crate::photo::LensProfiles::none())?.metadata;
+        let header = crate::photo::header_metadata(&path, &crate::photo::LensProfiles::none())?;
         assert_eq!(
             PhotoInfo::from_metadata(&header),
             PhotoInfo::from_metadata(&whole)

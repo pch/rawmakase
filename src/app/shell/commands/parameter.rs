@@ -23,23 +23,26 @@ pub(in crate::app) enum Param {
 }
 impl Param {
     /// The sliders with a name of their own, as `midi.json` and the control
-    /// socket spell them.
+    /// socket spell them: the model's names ([`ParameterId::name`]).
     pub(in crate::app) const NAMED: [(&'static str, Self); 14] = [
-        ("exposure", Self::Setting(Exposure)),
-        ("contrast", Self::Setting(Contrast)),
-        ("highlights", Self::Setting(Highlights)),
-        ("shadows", Self::Setting(Shadows)),
-        ("whites", Self::Setting(Whites)),
-        ("blacks", Self::Setting(Blacks)),
-        ("texture", Self::Setting(Texture)),
-        ("clarity", Self::Setting(Clarity)),
-        ("dehaze", Self::Setting(Dehaze)),
-        ("vibrance", Self::Setting(Vibrance)),
-        ("saturation", Self::Setting(Saturation)),
-        ("temperature", Self::Setting(Temperature)),
-        ("tint", Self::Setting(Tint)),
-        ("straighten", Self::Setting(Straighten)),
+        Self::named(Exposure),
+        Self::named(Contrast),
+        Self::named(Highlights),
+        Self::named(Shadows),
+        Self::named(Whites),
+        Self::named(Blacks),
+        Self::named(Texture),
+        Self::named(Clarity),
+        Self::named(Dehaze),
+        Self::named(Vibrance),
+        Self::named(Saturation),
+        Self::named(Temperature),
+        Self::named(Tint),
+        Self::named(Straighten),
     ];
+    const fn named(id: ParameterId) -> (&'static str, Self) {
+        (id.name(), Self::Setting(id))
+    }
     /// `exposure`, `band3` (the channel the panel shows), `band3.sat` or
     /// `band3.gray`; bands count from 1 (Red). `temp` and `angle` are aliases.
     pub(in crate::app) fn parse(name: &str) -> Option<Self> {

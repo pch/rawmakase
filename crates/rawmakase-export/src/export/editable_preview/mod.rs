@@ -57,7 +57,7 @@ fn write_at(
     cancel: Cancel<'_>,
 ) -> Result<()> {
     let bytes = build(original, default_look, long_edge, cancel)?;
-    ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
+    cancel.check("Editable preview cancelled")?;
     crate::storage::write_atomic(path, crate::storage::Replace::Overwrite, |file| {
         use std::io::Write as _;
         file.write_all(&bytes)?;
@@ -91,12 +91,12 @@ fn build(
     // the measurement every render of the photo shares, and both are a fraction
     // of the decode before them. A cancel is honoured between stages and within
     // highlight recovery and the tiles' encoding.
-    ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
+    cancel.check("Editable preview cancelled")?;
     rawmakase_model::lens::auto_ca::prime(original);
     let recovered = crate::develop::quality::recovered(original, cancel)?;
-    ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
+    cancel.check("Editable preview cancelled")?;
     let reduced = crate::develop::preview(&recovered, long_edge);
-    ensure!(!cancel.is_cancelled(), "Editable preview cancelled");
+    cancel.check("Editable preview cancelled")?;
     let record = record::of(
         &original.metadata,
         [reduced.width, reduced.height],

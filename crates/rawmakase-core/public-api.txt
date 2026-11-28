@@ -1,0 +1,562 @@
+# The public items of rawmakase-core, the re-exported ones among them, written by
+# scripts/public-api.py and compared in CI. A change here is a change to the
+# library's surface: note it in docs/embedding.md.
+impl core::clone::Clone for rawmakase_core::Applied
+impl core::clone::Clone for rawmakase_core::CacheLimits
+impl core::clone::Clone for rawmakase_core::CameraDefault
+impl core::clone::Clone for rawmakase_core::Cancelled
+impl core::clone::Clone for rawmakase_core::Context
+impl core::clone::Clone for rawmakase_core::Control
+impl core::clone::Clone for rawmakase_core::Decode
+impl core::clone::Clone for rawmakase_core::DecodeStats
+impl core::clone::Clone for rawmakase_core::DefaultChoice
+impl core::clone::Clone for rawmakase_core::Defaults
+impl core::clone::Clone for rawmakase_core::ErrorKind
+impl core::clone::Clone for rawmakase_core::ExportSettings
+impl core::clone::Clone for rawmakase_core::HdrGamut
+impl core::clone::Clone for rawmakase_core::HdrOutput
+impl core::clone::Clone for rawmakase_core::HdrTransfer
+impl core::clone::Clone for rawmakase_core::Image
+impl core::clone::Clone for rawmakase_core::Include
+impl core::clone::Clone for rawmakase_core::Inserted
+impl core::clone::Clone for rawmakase_core::Metadata
+impl core::clone::Clone for rawmakase_core::OutputSpace
+impl core::clone::Clone for rawmakase_core::Parameter
+impl core::clone::Clone for rawmakase_core::Preset
+impl core::clone::Clone for rawmakase_core::Profile
+impl core::clone::Clone for rawmakase_core::RawDefaults
+impl core::clone::Clone for rawmakase_core::Recipe
+impl core::clone::Clone for rawmakase_core::RenderJob
+impl core::clone::Clone for rawmakase_core::RenderLoop
+impl core::clone::Clone for rawmakase_core::Scale
+impl core::clone::Clone for rawmakase_core::ToneCurve
+impl core::clone::Clone for rawmakase_core::View
+impl core::cmp::Eq for rawmakase_core::CacheLimits
+impl core::cmp::Eq for rawmakase_core::CameraDefault
+impl core::cmp::Eq for rawmakase_core::Cancelled
+impl core::cmp::Eq for rawmakase_core::Decode
+impl core::cmp::Eq for rawmakase_core::DefaultChoice
+impl core::cmp::Eq for rawmakase_core::ErrorKind
+impl core::cmp::Eq for rawmakase_core::HdrGamut
+impl core::cmp::Eq for rawmakase_core::HdrOutput
+impl core::cmp::Eq for rawmakase_core::HdrTransfer
+impl core::cmp::Eq for rawmakase_core::Inserted
+impl core::cmp::Eq for rawmakase_core::OutputSpace
+impl core::cmp::Eq for rawmakase_core::Parameter
+impl core::cmp::Eq for rawmakase_core::RawDefaults
+impl core::cmp::Eq for rawmakase_core::Scale
+impl core::cmp::Eq for rawmakase_core::View
+impl core::cmp::PartialEq for rawmakase_core::CacheLimits
+impl core::cmp::PartialEq for rawmakase_core::CameraDefault
+impl core::cmp::PartialEq for rawmakase_core::Cancelled
+impl core::cmp::PartialEq for rawmakase_core::Control
+impl core::cmp::PartialEq for rawmakase_core::Decode
+impl core::cmp::PartialEq for rawmakase_core::DecodeStats
+impl core::cmp::PartialEq for rawmakase_core::DefaultChoice
+impl core::cmp::PartialEq for rawmakase_core::ErrorKind
+impl core::cmp::PartialEq for rawmakase_core::ExportSettings
+impl core::cmp::PartialEq for rawmakase_core::HdrGamut
+impl core::cmp::PartialEq for rawmakase_core::HdrOutput
+impl core::cmp::PartialEq for rawmakase_core::HdrTransfer
+impl core::cmp::PartialEq for rawmakase_core::Include
+impl core::cmp::PartialEq for rawmakase_core::Inserted
+impl core::cmp::PartialEq for rawmakase_core::Metadata
+impl core::cmp::PartialEq for rawmakase_core::OutputSpace
+impl core::cmp::PartialEq for rawmakase_core::Parameter
+impl core::cmp::PartialEq for rawmakase_core::Preset
+impl core::cmp::PartialEq for rawmakase_core::RawDefaults
+impl core::cmp::PartialEq for rawmakase_core::Recipe
+impl core::cmp::PartialEq for rawmakase_core::Scale
+impl core::cmp::PartialEq for rawmakase_core::ToneCurve
+impl core::cmp::PartialEq for rawmakase_core::View
+impl core::default::Default for rawmakase_core::CacheLimits
+impl core::default::Default for rawmakase_core::ContextBuilder
+impl core::default::Default for rawmakase_core::DefaultChoice
+impl core::default::Default for rawmakase_core::ExportSettings
+impl core::default::Default for rawmakase_core::HdrGamut
+impl core::default::Default for rawmakase_core::HdrOutput
+impl core::default::Default for rawmakase_core::HdrTransfer
+impl core::default::Default for rawmakase_core::Include
+impl core::default::Default for rawmakase_core::OutputSpace
+impl core::default::Default for rawmakase_core::RawDefaults
+impl core::default::Default for rawmakase_core::RenderLoop
+impl core::default::Default for rawmakase_core::Scale
+impl core::default::Default for rawmakase_core::ToneCurve
+impl core::error::Error for rawmakase_core::Cancelled
+impl core::error::Error for rawmakase_core::Error
+impl core::fmt::Debug for rawmakase_core::Applied
+impl core::fmt::Debug for rawmakase_core::CacheLimits
+impl core::fmt::Debug for rawmakase_core::CameraDefault
+impl core::fmt::Debug for rawmakase_core::Cancelled
+impl core::fmt::Debug for rawmakase_core::Context
+impl core::fmt::Debug for rawmakase_core::ContextBuilder
+impl core::fmt::Debug for rawmakase_core::Control
+impl core::fmt::Debug for rawmakase_core::Decode
+impl core::fmt::Debug for rawmakase_core::DecodeStats
+impl core::fmt::Debug for rawmakase_core::DefaultChoice
+impl core::fmt::Debug for rawmakase_core::Defaults
+impl core::fmt::Debug for rawmakase_core::Error
+impl core::fmt::Debug for rawmakase_core::ErrorKind
+impl core::fmt::Debug for rawmakase_core::ExportSettings
+impl core::fmt::Debug for rawmakase_core::Frame
+impl core::fmt::Debug for rawmakase_core::HdrGamut
+impl core::fmt::Debug for rawmakase_core::HdrOutput
+impl core::fmt::Debug for rawmakase_core::HdrTransfer
+impl core::fmt::Debug for rawmakase_core::Image
+impl core::fmt::Debug for rawmakase_core::Include
+impl core::fmt::Debug for rawmakase_core::Inserted
+impl core::fmt::Debug for rawmakase_core::Metadata
+impl core::fmt::Debug for rawmakase_core::OutputSpace
+impl core::fmt::Debug for rawmakase_core::Parameter
+impl core::fmt::Debug for rawmakase_core::Photo
+impl core::fmt::Debug for rawmakase_core::Preset
+impl core::fmt::Debug for rawmakase_core::Profile
+impl core::fmt::Debug for rawmakase_core::RawDefaults
+impl core::fmt::Debug for rawmakase_core::Recipe
+impl core::fmt::Debug for rawmakase_core::RenderJob
+impl core::fmt::Debug for rawmakase_core::RenderLoop
+impl core::fmt::Debug for rawmakase_core::Rendered
+impl core::fmt::Debug for rawmakase_core::Renderer
+impl core::fmt::Debug for rawmakase_core::Scale
+impl core::fmt::Debug for rawmakase_core::ToneCurve
+impl core::fmt::Debug for rawmakase_core::View
+impl core::fmt::Display for rawmakase_core::Cancelled
+impl core::fmt::Display for rawmakase_core::Error
+impl core::hash::Hash for rawmakase_core::ErrorKind
+impl core::hash::Hash for rawmakase_core::OutputSpace
+impl core::hash::Hash for rawmakase_core::Parameter
+impl core::marker::Copy for rawmakase_core::CacheLimits
+impl core::marker::Copy for rawmakase_core::Cancelled
+impl core::marker::Copy for rawmakase_core::Decode
+impl core::marker::Copy for rawmakase_core::DecodeStats
+impl core::marker::Copy for rawmakase_core::ErrorKind
+impl core::marker::Copy for rawmakase_core::HdrGamut
+impl core::marker::Copy for rawmakase_core::HdrOutput
+impl core::marker::Copy for rawmakase_core::HdrTransfer
+impl core::marker::Copy for rawmakase_core::Include
+impl core::marker::Copy for rawmakase_core::Inserted
+impl core::marker::Copy for rawmakase_core::OutputSpace
+impl core::marker::Copy for rawmakase_core::Parameter
+impl core::marker::Copy for rawmakase_core::Scale
+impl core::marker::Copy for rawmakase_core::View
+impl core::marker::Send for rawmakase_core::Applied
+impl core::marker::Send for rawmakase_core::CacheLimits
+impl core::marker::Send for rawmakase_core::CameraDefault
+impl core::marker::Send for rawmakase_core::Cancelled
+impl core::marker::Send for rawmakase_core::Context
+impl core::marker::Send for rawmakase_core::ContextBuilder
+impl core::marker::Send for rawmakase_core::Control
+impl core::marker::Send for rawmakase_core::Decode
+impl core::marker::Send for rawmakase_core::DecodeStats
+impl core::marker::Send for rawmakase_core::DefaultChoice
+impl core::marker::Send for rawmakase_core::Defaults
+impl core::marker::Send for rawmakase_core::Error
+impl core::marker::Send for rawmakase_core::ErrorKind
+impl core::marker::Send for rawmakase_core::ExportSettings
+impl core::marker::Send for rawmakase_core::Frame
+impl core::marker::Send for rawmakase_core::HdrGamut
+impl core::marker::Send for rawmakase_core::HdrOutput
+impl core::marker::Send for rawmakase_core::HdrTransfer
+impl core::marker::Send for rawmakase_core::Image
+impl core::marker::Send for rawmakase_core::Include
+impl core::marker::Send for rawmakase_core::Inserted
+impl core::marker::Send for rawmakase_core::Metadata
+impl core::marker::Send for rawmakase_core::OutputSpace
+impl core::marker::Send for rawmakase_core::Parameter
+impl core::marker::Send for rawmakase_core::Photo
+impl core::marker::Send for rawmakase_core::Preset
+impl core::marker::Send for rawmakase_core::Profile
+impl core::marker::Send for rawmakase_core::RawDefaults
+impl core::marker::Send for rawmakase_core::Recipe
+impl core::marker::Send for rawmakase_core::RenderJob
+impl core::marker::Send for rawmakase_core::RenderLoop
+impl core::marker::Send for rawmakase_core::Rendered
+impl core::marker::Send for rawmakase_core::Renderer
+impl core::marker::Send for rawmakase_core::Scale
+impl core::marker::Send for rawmakase_core::ToneCurve
+impl core::marker::Send for rawmakase_core::View
+impl core::marker::Sync for rawmakase_core::Applied
+impl core::marker::Sync for rawmakase_core::CacheLimits
+impl core::marker::Sync for rawmakase_core::CameraDefault
+impl core::marker::Sync for rawmakase_core::Cancelled
+impl core::marker::Sync for rawmakase_core::Context
+impl core::marker::Sync for rawmakase_core::ContextBuilder
+impl core::marker::Sync for rawmakase_core::Control
+impl core::marker::Sync for rawmakase_core::Decode
+impl core::marker::Sync for rawmakase_core::DecodeStats
+impl core::marker::Sync for rawmakase_core::DefaultChoice
+impl core::marker::Sync for rawmakase_core::Defaults
+impl core::marker::Sync for rawmakase_core::Error
+impl core::marker::Sync for rawmakase_core::ErrorKind
+impl core::marker::Sync for rawmakase_core::ExportSettings
+impl core::marker::Sync for rawmakase_core::Frame
+impl core::marker::Sync for rawmakase_core::HdrGamut
+impl core::marker::Sync for rawmakase_core::HdrOutput
+impl core::marker::Sync for rawmakase_core::HdrTransfer
+impl core::marker::Sync for rawmakase_core::Image
+impl core::marker::Sync for rawmakase_core::Include
+impl core::marker::Sync for rawmakase_core::Inserted
+impl core::marker::Sync for rawmakase_core::Metadata
+impl core::marker::Sync for rawmakase_core::OutputSpace
+impl core::marker::Sync for rawmakase_core::Parameter
+impl core::marker::Sync for rawmakase_core::Photo
+impl core::marker::Sync for rawmakase_core::Preset
+impl core::marker::Sync for rawmakase_core::Profile
+impl core::marker::Sync for rawmakase_core::RawDefaults
+impl core::marker::Sync for rawmakase_core::Recipe
+impl core::marker::Sync for rawmakase_core::RenderJob
+impl core::marker::Sync for rawmakase_core::RenderLoop
+impl core::marker::Sync for rawmakase_core::Rendered
+impl core::marker::Sync for rawmakase_core::Renderer
+impl core::marker::Sync for rawmakase_core::Scale
+impl core::marker::Sync for rawmakase_core::ToneCurve
+impl core::marker::Sync for rawmakase_core::View
+impl serde_core::ser::Serialize for rawmakase_core::Control
+impl serde_core::ser::Serialize for rawmakase_core::HdrGamut
+impl serde_core::ser::Serialize for rawmakase_core::HdrOutput
+impl serde_core::ser::Serialize for rawmakase_core::HdrTransfer
+impl serde_core::ser::Serialize for rawmakase_core::Include
+impl serde_core::ser::Serialize for rawmakase_core::OutputSpace
+impl serde_core::ser::Serialize for rawmakase_core::Scale
+impl serde_core::ser::Serialize for rawmakase_core::ToneCurve
+impl<'a> core::clone::Clone for rawmakase_core::Cancel<'a>
+impl<'a> core::fmt::Debug for rawmakase_core::Cancel<'a>
+impl<'a> core::marker::Copy for rawmakase_core::Cancel<'a>
+impl<'a> core::marker::Send for rawmakase_core::Cancel<'a>
+impl<'a> core::marker::Sync for rawmakase_core::Cancel<'a>
+impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrGamut
+impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrOutput
+impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::HdrTransfer
+impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::Include
+impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::OutputSpace
+impl<'de> serde_core::de::Deserialize<'de> for rawmakase_core::ToneCurve
+pub const fn rawmakase_core::Cancelled::message(self) -> &'static str
+pub const fn rawmakase_core::Cancelled::new(message: &'static str) -> Self
+pub const fn rawmakase_core::Parameter::name(self) -> &'static str
+pub const rawmakase_core::Cancel::NEVER: Self [impl<'a> rawmakase_core::Cancel<'a>]
+pub const rawmakase_core::HdrGamut::ALL: [Self; 3]
+pub const rawmakase_core::HdrTransfer::ALL: [Self; 3]
+pub const rawmakase_core::Include::ALL: [Self; 6]
+pub const rawmakase_core::OutputSpace::ALL: [Self; 3]
+pub const rawmakase_core::Parameter::ALL: [Self; 60]
+pub const rawmakase_core::RenderLoop::QUIET: core::time::Duration
+pub enum rawmakase_core::Decode
+pub enum rawmakase_core::DefaultChoice
+pub enum rawmakase_core::ErrorKind #[non_exhaustive]
+pub enum rawmakase_core::HdrGamut
+pub enum rawmakase_core::HdrTransfer
+pub enum rawmakase_core::Include
+pub enum rawmakase_core::Inserted
+pub enum rawmakase_core::OutputSpace
+pub enum rawmakase_core::Parameter #[non_exhaustive]
+pub enum rawmakase_core::Rendered
+pub enum rawmakase_core::Scale
+pub enum rawmakase_core::View
+pub fn rawmakase_core::Cancel::check(self, message: &'static str) -> core::result::Result<(), rawmakase_core::Cancelled> [impl<'a> rawmakase_core::Cancel<'a>]
+pub fn rawmakase_core::Cancel::is_cancelled(self) -> bool [impl<'a> rawmakase_core::Cancel<'a>]
+pub fn rawmakase_core::Cancel::new(flag: &'a core::sync::atomic::AtomicBool) -> Self [impl<'a> rawmakase_core::Cancel<'a>]
+pub fn rawmakase_core::Context::build_id(&self) -> core::option::Option<&str>
+pub fn rawmakase_core::Context::builder() -> rawmakase_core::ContextBuilder
+pub fn rawmakase_core::Context::cache_dir(&self) -> core::option::Option<&std::path::Path>
+pub fn rawmakase_core::Context::data_dirs(&self) -> &[std::path::PathBuf]
+pub fn rawmakase_core::Context::export(&self, photo: &rawmakase_core::Photo, recipe: &rawmakase_core::Recipe, settings: &rawmakase_core::ExportSettings, target: impl core::convert::AsRef<std::path::Path>, replace: bool, cancel: rawmakase_core::Cancel<'_>, progress: impl core::ops::function::Fn(f32)) -> rawmakase_core::Result<core::option::Option<alloc::string::String>>
+pub fn rawmakase_core::Context::load_preset(&self, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<rawmakase_core::Preset>
+pub fn rawmakase_core::Context::load_recipe(&self, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<rawmakase_core::Recipe>
+pub fn rawmakase_core::Context::open(&self, path: impl core::convert::AsRef<std::path::Path>, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Photo>
+pub fn rawmakase_core::Context::presets(&self) -> (alloc::vec::Vec<rawmakase_core::Preset>, alloc::vec::Vec<alloc::string::String>)
+pub fn rawmakase_core::Context::raw_defaults(&self, defaults: &rawmakase_core::RawDefaults) -> rawmakase_core::Defaults
+pub fn rawmakase_core::Context::render(&self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
+pub fn rawmakase_core::Context::renderer(&self) -> rawmakase_core::Renderer
+pub fn rawmakase_core::ContextBuilder::build(self) -> rawmakase_core::Result<rawmakase_core::Context>
+pub fn rawmakase_core::ContextBuilder::cache(self, dir: impl core::convert::Into<std::path::PathBuf>, limits: rawmakase_core::CacheLimits, build_id: impl core::convert::Into<alloc::string::String>) -> Self
+pub fn rawmakase_core::ContextBuilder::data_dirs<P: core::convert::Into<std::path::PathBuf>>(self, dirs: impl core::iter::traits::collect::IntoIterator<Item = P>) -> Self
+pub fn rawmakase_core::DefaultChoice::label(&self) -> alloc::string::String
+pub fn rawmakase_core::DefaultChoice::preset(preset: &rawmakase_core::Preset) -> Self
+pub fn rawmakase_core::Defaults::choices(&self) -> rawmakase_core::RawDefaults
+pub fn rawmakase_core::Error::is_cancelled(&self) -> bool
+pub fn rawmakase_core::Error::kind(&self) -> rawmakase_core::ErrorKind
+pub fn rawmakase_core::Frame::height(&self) -> u32
+pub fn rawmakase_core::Frame::is_draft(&self) -> bool
+pub fn rawmakase_core::Frame::rgb16(&self) -> alloc::vec::Vec<u16>
+pub fn rawmakase_core::Frame::rgb8(&self) -> alloc::vec::Vec<u8>
+pub fn rawmakase_core::Frame::rgba8(&self) -> alloc::vec::Vec<u8>
+pub fn rawmakase_core::Frame::view(&self) -> rawmakase_core::View
+pub fn rawmakase_core::Frame::width(&self) -> u32
+pub fn rawmakase_core::HdrGamut::cicp(self) -> u8
+pub fn rawmakase_core::HdrGamut::from_cicp(code: u8) -> core::option::Option<Self>
+pub fn rawmakase_core::HdrGamut::label(self) -> &'static str
+pub fn rawmakase_core::HdrGamut::luminance(self) -> [f32; 3]
+pub fn rawmakase_core::HdrGamut::prophoto_to_rgb(self) -> [[f32; 3]; 3]
+pub fn rawmakase_core::HdrOutput::decode(self, signal: [f32; 3]) -> [f32; 3]
+pub fn rawmakase_core::HdrOutput::encode(self, prophoto: [f32; 3], peak: f32) -> [f32; 3]
+pub fn rawmakase_core::HdrTransfer::cicp(self) -> u8
+pub fn rawmakase_core::HdrTransfer::label(self) -> &'static str
+pub fn rawmakase_core::Image::output_size(&self, recipe: &rawmakase_core::Recipe) -> rawmakase_core::Result<(u32, u32)>
+pub fn rawmakase_core::Image::size_in(&self, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View) -> rawmakase_core::Result<(u32, u32)>
+pub fn rawmakase_core::Image::source(&self) -> &std::path::Path
+pub fn rawmakase_core::Image::stats(&self) -> rawmakase_core::DecodeStats
+pub fn rawmakase_core::Include::label(self) -> &'static str
+pub fn rawmakase_core::Include::removes_location(self) -> bool
+pub fn rawmakase_core::Inserted::index(self) -> usize
+pub fn rawmakase_core::OutputSpace::decode(self, v: f32) -> f32
+pub fn rawmakase_core::OutputSpace::encode(self, v: f32) -> f32
+pub fn rawmakase_core::OutputSpace::from_linear_srgb(self) -> [[f32; 3]; 3]
+pub fn rawmakase_core::OutputSpace::from_name(name: &str) -> core::option::Option<Self>
+pub fn rawmakase_core::OutputSpace::from_srgb(self, encoded: [f32; 3]) -> [f32; 3]
+pub fn rawmakase_core::OutputSpace::from_srgb_linear(self, linear: [f32; 3]) -> [f32; 3]
+pub fn rawmakase_core::OutputSpace::label(self) -> &'static str
+pub fn rawmakase_core::OutputSpace::luminance(self, p: [f32; 3]) -> f32
+pub fn rawmakase_core::OutputSpace::name(self) -> &'static str
+pub fn rawmakase_core::OutputSpace::needs_sixteen_bits(self) -> bool
+pub fn rawmakase_core::Parameter::named(name: &str) -> core::option::Option<Self>
+pub fn rawmakase_core::Photo::apply_preset(&self, recipe: &rawmakase_core::Recipe, preset: &rawmakase_core::Preset, image: core::option::Option<&rawmakase_core::Image>) -> rawmakase_core::Result<rawmakase_core::Applied>
+pub fn rawmakase_core::Photo::auto_tone(&self, recipe: &rawmakase_core::Recipe, image: &rawmakase_core::Image, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Recipe>
+pub fn rawmakase_core::Photo::auto_white_balance(&self, recipe: &rawmakase_core::Recipe, image: &rawmakase_core::Image, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Recipe>
+pub fn rawmakase_core::Photo::control(&self, recipe: &rawmakase_core::Recipe, parameter: rawmakase_core::Parameter) -> rawmakase_core::Control
+pub fn rawmakase_core::Photo::decode(&self, decode: rawmakase_core::Decode, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Image>
+pub fn rawmakase_core::Photo::metadata(&self) -> &rawmakase_core::Metadata
+pub fn rawmakase_core::Photo::path(&self) -> &std::path::Path
+pub fn rawmakase_core::Photo::profile_errors(&self) -> &[alloc::string::String]
+pub fn rawmakase_core::Photo::profiles(&self) -> &[rawmakase_core::Profile]
+pub fn rawmakase_core::Photo::save_recipe(&self, recipe: &rawmakase_core::Recipe, path: impl core::convert::AsRef<std::path::Path>) -> rawmakase_core::Result<()>
+pub fn rawmakase_core::Photo::set(&self, recipe: &mut rawmakase_core::Recipe, parameter: rawmakase_core::Parameter, value: f32) -> rawmakase_core::Result<()>
+pub fn rawmakase_core::Photo::set_profile(&self, recipe: &mut rawmakase_core::Recipe, profile: &rawmakase_core::Profile) -> rawmakase_core::Result<()>
+pub fn rawmakase_core::Photo::starting_recipe(&self, defaults: &rawmakase_core::Defaults) -> rawmakase_core::Result<rawmakase_core::Recipe>
+pub fn rawmakase_core::Photo::value(&self, recipe: &rawmakase_core::Recipe, parameter: rawmakase_core::Parameter) -> f32
+pub fn rawmakase_core::Preset::group(&self) -> &str
+pub fn rawmakase_core::Preset::id(&self) -> &str
+pub fn rawmakase_core::Preset::is_builtin(&self) -> bool
+pub fn rawmakase_core::Preset::measures_photo(&self) -> bool
+pub fn rawmakase_core::Preset::name(&self) -> &str
+pub fn rawmakase_core::Profile::camera(&self) -> &str
+pub fn rawmakase_core::Profile::copyright(&self) -> &str
+pub fn rawmakase_core::Profile::is_hdr(&self) -> bool
+pub fn rawmakase_core::Profile::name(&self) -> &str
+pub fn rawmakase_core::Profile::takes_amount(&self) -> bool
+pub fn rawmakase_core::Recipe::curve(&self) -> &rawmakase_core::ToneCurve
+pub fn rawmakase_core::Recipe::curve_mut(&mut self) -> &mut rawmakase_core::ToneCurve
+pub fn rawmakase_core::Recipe::hdr(&self) -> bool
+pub fn rawmakase_core::Recipe::profile(&self) -> core::option::Option<&str>
+pub fn rawmakase_core::Recipe::set_hdr(&mut self, on: bool)
+pub fn rawmakase_core::Recipe::uses_ai_denoise(&self) -> bool
+pub fn rawmakase_core::Recipe::validate(&self) -> rawmakase_core::Result<()>
+pub fn rawmakase_core::RenderLoop::close(&self)
+pub fn rawmakase_core::RenderLoop::new() -> Self
+pub fn rawmakase_core::RenderLoop::quiet(self, quiet: core::time::Duration) -> Self
+pub fn rawmakase_core::RenderLoop::run(&self, ctx: &rawmakase_core::Context, rendered: impl core::ops::function::FnMut(rawmakase_core::Rendered))
+pub fn rawmakase_core::RenderLoop::submit(&self, job: rawmakase_core::RenderJob)
+pub fn rawmakase_core::Renderer::draft_due(&self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View) -> core::option::Option<(u32, u32)>
+pub fn rawmakase_core::Renderer::render(&mut self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
+pub fn rawmakase_core::Renderer::render_draft(&mut self, image: &rawmakase_core::Image, recipe: &rawmakase_core::Recipe, view: rawmakase_core::View, cancel: rawmakase_core::Cancel<'_>) -> rawmakase_core::Result<rawmakase_core::Frame>
+pub fn rawmakase_core::Scale::position(self, value: f32, range: &core::ops::range::RangeInclusive<f32>) -> f32
+pub fn rawmakase_core::Scale::value_at(self, position: f32, range: &core::ops::range::RangeInclusive<f32>) -> f32
+pub fn rawmakase_core::ToneCurve::end_slope(&self) -> f32
+pub fn rawmakase_core::ToneCurve::evaluate(&self, x: f32) -> f32
+pub fn rawmakase_core::ToneCurve::insert(&mut self, p: [f32; 2]) -> rawmakase_core::Inserted
+pub fn rawmakase_core::ToneCurve::is_identity(&self) -> bool
+pub fn rawmakase_core::ToneCurve::move_point(&mut self, i: usize, p: [f32; 2]) -> bool
+pub fn rawmakase_core::ToneCurve::remove(&mut self, i: usize) -> bool
+pub fn rawmakase_core::ToneCurve::sampled(&self, n: usize) -> alloc::vec::Vec<[f32; 2]>
+pub fn rawmakase_core::ToneCurve::validate(&self) -> anyhow::Result<()>
+pub rawmakase_core::Applied::recipe: rawmakase_core::Recipe
+pub rawmakase_core::Applied::skipped: alloc::vec::Vec<alloc::string::String>
+pub rawmakase_core::Applied::substitute: core::option::Option<alloc::string::String>
+pub rawmakase_core::CacheLimits::ai_denoise: u64
+pub rawmakase_core::CacheLimits::decoded: u64
+pub rawmakase_core::CameraDefault::camera: alloc::string::String
+pub rawmakase_core::CameraDefault::choice: rawmakase_core::DefaultChoice
+pub rawmakase_core::Control::id: &'static str
+pub rawmakase_core::Control::label: &'static str
+pub rawmakase_core::Control::max: f32
+pub rawmakase_core::Control::min: f32
+pub rawmakase_core::Control::scale: rawmakase_core::Scale
+pub rawmakase_core::Control::step: f32
+pub rawmakase_core::Control::text: alloc::string::String
+pub rawmakase_core::Control::valid: [f32; 2]
+pub rawmakase_core::Control::value: f32
+pub rawmakase_core::Decode::Full
+pub rawmakase_core::Decode::Half
+pub rawmakase_core::DecodeStats::clipped_samples: u32
+pub rawmakase_core::DecodeStats::height: u32
+pub rawmakase_core::DecodeStats::highest_level: f32
+pub rawmakase_core::DecodeStats::reduced: bool
+pub rawmakase_core::DecodeStats::scale: f32
+pub rawmakase_core::DecodeStats::width: u32
+pub rawmakase_core::DefaultChoice::Adobe
+pub rawmakase_core::DefaultChoice::CameraSettings
+pub rawmakase_core::DefaultChoice::Preset { id: alloc::string::String, name: alloc::string::String }
+pub rawmakase_core::DefaultChoice::Rawmakase
+pub rawmakase_core::ErrorKind::Cancelled
+pub rawmakase_core::ErrorKind::Changed
+pub rawmakase_core::ErrorKind::Exists
+pub rawmakase_core::ErrorKind::Invalid
+pub rawmakase_core::ErrorKind::Missing
+pub rawmakase_core::ErrorKind::Other
+pub rawmakase_core::ErrorKind::Unsupported
+pub rawmakase_core::ExportSettings::capture: bool
+pub rawmakase_core::ExportSettings::color_space: rawmakase_core::OutputSpace
+pub rawmakase_core::ExportSettings::develop: bool
+pub rawmakase_core::ExportSettings::hdr: core::option::Option<rawmakase_core::HdrOutput>
+pub rawmakase_core::ExportSettings::include: rawmakase_core::Include
+pub rawmakase_core::ExportSettings::jxl_lossy: bool
+pub rawmakase_core::ExportSettings::location: bool
+pub rawmakase_core::ExportSettings::long_edge: core::option::Option<u32>
+pub rawmakase_core::ExportSettings::ppi: u32
+pub rawmakase_core::ExportSettings::quality: u8
+pub rawmakase_core::ExportSettings::remove_location: bool
+pub rawmakase_core::ExportSettings::size_limit: core::option::Option<u32>
+pub rawmakase_core::HdrGamut::DisplayP3
+pub rawmakase_core::HdrGamut::Rec2020
+pub rawmakase_core::HdrGamut::Rec709
+pub rawmakase_core::HdrOutput::gain_map: bool
+pub rawmakase_core::HdrOutput::gamut: rawmakase_core::HdrGamut
+pub rawmakase_core::HdrOutput::transfer: rawmakase_core::HdrTransfer
+pub rawmakase_core::HdrTransfer::Hlg
+pub rawmakase_core::HdrTransfer::Linear
+pub rawmakase_core::HdrTransfer::Pq
+pub rawmakase_core::Include::All
+pub rawmakase_core::Include::AllExceptCameraAndCameraRaw
+pub rawmakase_core::Include::AllExceptCameraRaw
+pub rawmakase_core::Include::CopyrightAndContact
+pub rawmakase_core::Include::CopyrightOnly
+pub rawmakase_core::Include::Custom
+pub rawmakase_core::Inserted::Added(usize)
+pub rawmakase_core::Inserted::Existing(usize)
+pub rawmakase_core::Inserted::Full(usize)
+pub rawmakase_core::Metadata::aperture: f32
+pub rawmakase_core::Metadata::focal: f32
+pub rawmakase_core::Metadata::height: u32
+pub rawmakase_core::Metadata::iso: f32
+pub rawmakase_core::Metadata::lens: alloc::string::String
+pub rawmakase_core::Metadata::make: alloc::string::String
+pub rawmakase_core::Metadata::model: alloc::string::String
+pub rawmakase_core::Metadata::monochrome: bool
+pub rawmakase_core::Metadata::rendered: bool
+pub rawmakase_core::Metadata::shutter: f32
+pub rawmakase_core::Metadata::width: u32
+pub rawmakase_core::OutputSpace::AdobeRgb
+pub rawmakase_core::OutputSpace::ProPhoto
+pub rawmakase_core::OutputSpace::Srgb
+pub rawmakase_core::Parameter::AiDenoiseAmount
+pub rawmakase_core::Parameter::Blacks
+pub rawmakase_core::Parameter::BluePrimaryHue
+pub rawmakase_core::Parameter::BluePrimarySaturation
+pub rawmakase_core::Parameter::Clarity
+pub rawmakase_core::Parameter::ColorNoise
+pub rawmakase_core::Parameter::ColorNoiseDetail
+pub rawmakase_core::Parameter::ColorNoiseSmoothness
+pub rawmakase_core::Parameter::Contrast
+pub rawmakase_core::Parameter::CurveSaturation
+pub rawmakase_core::Parameter::Dehaze
+pub rawmakase_core::Parameter::Exposure
+pub rawmakase_core::Parameter::GradingBalance
+pub rawmakase_core::Parameter::GradingBlending
+pub rawmakase_core::Parameter::GrainAmount
+pub rawmakase_core::Parameter::GrainRoughness
+pub rawmakase_core::Parameter::GrainSize
+pub rawmakase_core::Parameter::GreenPrimaryHue
+pub rawmakase_core::Parameter::GreenPrimarySaturation
+pub rawmakase_core::Parameter::Highlights
+pub rawmakase_core::Parameter::IncrementalTemperature
+pub rawmakase_core::Parameter::IncrementalTint
+pub rawmakase_core::Parameter::LensDistortion
+pub rawmakase_core::Parameter::LensVignetteAmount
+pub rawmakase_core::Parameter::LensVignetteMidpoint
+pub rawmakase_core::Parameter::LensVignetting
+pub rawmakase_core::Parameter::LuminanceContrast
+pub rawmakase_core::Parameter::LuminanceDetail
+pub rawmakase_core::Parameter::LuminanceNoise
+pub rawmakase_core::Parameter::ManualDistortion
+pub rawmakase_core::Parameter::Midtone
+pub rawmakase_core::Parameter::ParametricDarks
+pub rawmakase_core::Parameter::ParametricHighlights
+pub rawmakase_core::Parameter::ParametricLights
+pub rawmakase_core::Parameter::ParametricShadows
+pub rawmakase_core::Parameter::RedPrimaryHue
+pub rawmakase_core::Parameter::RedPrimarySaturation
+pub rawmakase_core::Parameter::Saturation
+pub rawmakase_core::Parameter::ShadowTint
+pub rawmakase_core::Parameter::Shadows
+pub rawmakase_core::Parameter::SharpeningAmount
+pub rawmakase_core::Parameter::SharpeningDetail
+pub rawmakase_core::Parameter::SharpeningMasking
+pub rawmakase_core::Parameter::SharpeningRadius
+pub rawmakase_core::Parameter::Straighten
+pub rawmakase_core::Parameter::Temperature
+pub rawmakase_core::Parameter::Texture
+pub rawmakase_core::Parameter::Tint
+pub rawmakase_core::Parameter::TransformAspect
+pub rawmakase_core::Parameter::TransformHorizontal
+pub rawmakase_core::Parameter::TransformOffsetX
+pub rawmakase_core::Parameter::TransformOffsetY
+pub rawmakase_core::Parameter::TransformRotate
+pub rawmakase_core::Parameter::TransformScale
+pub rawmakase_core::Parameter::TransformVertical
+pub rawmakase_core::Parameter::Vibrance
+pub rawmakase_core::Parameter::VignetteAmount
+pub rawmakase_core::Parameter::VignetteFeather
+pub rawmakase_core::Parameter::VignetteMidpoint
+pub rawmakase_core::Parameter::Whites
+pub rawmakase_core::RawDefaults::camera_overrides: bool
+pub rawmakase_core::RawDefaults::cameras: alloc::vec::Vec<rawmakase_core::CameraDefault>
+pub rawmakase_core::RawDefaults::master: rawmakase_core::DefaultChoice
+pub rawmakase_core::RenderJob::cancel: alloc::rcs::arc::Arc<core::sync::atomic::AtomicBool>
+pub rawmakase_core::RenderJob::image: rawmakase_core::Image
+pub rawmakase_core::RenderJob::recipe: rawmakase_core::Recipe
+pub rawmakase_core::RenderJob::tag: u64
+pub rawmakase_core::RenderJob::view: rawmakase_core::View
+pub rawmakase_core::Rendered::Failed { tag: u64, error: rawmakase_core::Error }
+pub rawmakase_core::Rendered::Frame { tag: u64, frame: rawmakase_core::Frame, took: core::time::Duration }
+pub rawmakase_core::Scale::Linear
+pub rawmakase_core::Scale::Reciprocal
+pub rawmakase_core::ToneCurve::natural: bool
+pub rawmakase_core::ToneCurve::points: alloc::vec::Vec<[f32; 2]>
+pub rawmakase_core::ToneCurve::smooth: bool
+pub rawmakase_core::View::Fit(u32)
+pub rawmakase_core::View::Region([u32; 4])
+pub struct rawmakase_core::Applied #[non_exhaustive]
+pub struct rawmakase_core::CacheLimits
+pub struct rawmakase_core::CameraDefault
+pub struct rawmakase_core::Cancel<'a>
+pub struct rawmakase_core::Cancelled
+pub struct rawmakase_core::Context
+pub struct rawmakase_core::ContextBuilder
+pub struct rawmakase_core::Control
+pub struct rawmakase_core::DecodeStats
+pub struct rawmakase_core::Defaults
+pub struct rawmakase_core::Error
+pub struct rawmakase_core::ExportSettings
+pub struct rawmakase_core::Frame
+pub struct rawmakase_core::HdrOutput
+pub struct rawmakase_core::Image
+pub struct rawmakase_core::Metadata #[non_exhaustive]
+pub struct rawmakase_core::Photo
+pub struct rawmakase_core::Preset
+pub struct rawmakase_core::Profile
+pub struct rawmakase_core::RawDefaults
+pub struct rawmakase_core::Recipe
+pub struct rawmakase_core::RenderJob
+pub struct rawmakase_core::RenderLoop
+pub struct rawmakase_core::Renderer
+pub struct rawmakase_core::ToneCurve
+pub type rawmakase_core::Result<T, E = rawmakase_core::Error> = core::result::Result<T, E>
+rawmakase_core::Cancel has private fields
+rawmakase_core::Cancel is a tuple struct of 1
+rawmakase_core::Cancelled has private fields
+rawmakase_core::Cancelled is a tuple struct of 1
+rawmakase_core::Context has private fields
+rawmakase_core::ContextBuilder has private fields
+rawmakase_core::Defaults has private fields
+rawmakase_core::Defaults is a tuple struct of 1
+rawmakase_core::Error has private fields
+rawmakase_core::Frame has private fields
+rawmakase_core::Image has private fields
+rawmakase_core::Photo has private fields
+rawmakase_core::Preset has private fields
+rawmakase_core::Preset is a tuple struct of 1
+rawmakase_core::Profile has private fields
+rawmakase_core::Profile is a tuple struct of 1
+rawmakase_core::Recipe has private fields
+rawmakase_core::Recipe is a tuple struct of 1
+rawmakase_core::RenderLoop has private fields
+rawmakase_core::Renderer has private fields

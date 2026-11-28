@@ -14,7 +14,9 @@ use crate::xmp::Preset;
 /// The raw defaults chosen in Preferences, as the app opens a photo with no edit,
 /// for the command line.
 pub fn user_raw_defaults() -> DevelopDefaults {
+    let lensfun = crate::environment::lensfun(&crate::environment::context()).clone();
     DevelopDefaults::load(crate::app::preferences::session::load_session().raw_defaults)
+        .with_lensfun(lensfun)
 }
 use eframe::egui;
 use std::sync::Arc;
@@ -92,7 +94,7 @@ impl Editor {
     /// photos without an edit with them. They apply even when the session
     /// cannot be saved, which is returned.
     pub(in crate::app) fn set_raw_defaults(&mut self, settings: RawDefaults) -> anyhow::Result<()> {
-        let defaults = DevelopDefaults::load(settings);
+        let defaults = DevelopDefaults::load(settings).with_lensfun(self.lensfun_db().clone());
         if defaults == *self.raw_defaults {
             return Ok(());
         }
@@ -718,13 +720,17 @@ mod tests {
             tx,
             egui::Context::default(),
             crate::decode_cache::DecodeCache::default(),
+            crate::environment::Libraries {
+                profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+                ..Default::default()
+            },
         );
         let defaults = Arc::new(crate::raw_defaults::brighter_defaults());
         loader.submit(crate::app::worker::LoadJob {
             id: 1,
             path: chart,
             from: Default::default(),
-            copies: crate::app::worker::editable_preview::decoder(),
+            copies: crate::app::worker::editable_preview::decoder(Default::default()),
             cancel: Default::default(),
             defaults: defaults.clone(),
             demosaic: crate::camera_data::Demosaic::default(),
@@ -736,7 +742,8 @@ mod tests {
                 _ => {}
             }
         };
-        let (profiles, _) = crate::camera_profiles::installed(&header.metadata);
+        let (profiles, _) =
+            crate::camera_profiles::ProfileLibrary::for_tests().installed(&header.metadata);
         assert_eq!(header.recipe.exposure, 0.7);
         assert_eq!(
             header.recipe,

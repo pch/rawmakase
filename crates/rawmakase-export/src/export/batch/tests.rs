@@ -60,7 +60,7 @@ fn names_never_collide_within_a_batch() -> Result<()> {
         photo(Path::new("/one/a.dng")),
         photo(Path::new("/one/b.dng")),
     ];
-    let plan = plan(&photos, &settings(&out), None).unwrap();
+    let plan = plan(&photos, &settings(&out), &Default::default(), None).unwrap();
     assert_eq!(
         names(&plan),
         [
@@ -74,7 +74,7 @@ fn names_never_collide_within_a_batch() -> Result<()> {
     // Same Folder: each next to its own original, so no collision.
     let mut same = settings(&out);
     same.destination = Destination::SameFolder;
-    let plan = super::plan(&photos[..2], &same, None).unwrap();
+    let plan = super::plan(&photos[..2], &same, &Default::default(), None).unwrap();
     assert_eq!(
         plan.entries
             .iter()
@@ -87,18 +87,31 @@ fn names_never_collide_within_a_batch() -> Result<()> {
     // photo's own spelling.
     let mut unique = settings(&out);
     unique.existing = Existing::Unique;
-    let plan = super::plan(&[photo(Path::new("/one/c.dng"))], &unique, None).unwrap();
+    let plan = super::plan(
+        &[photo(Path::new("/one/c.dng"))],
+        &unique,
+        &Default::default(),
+        None,
+    )
+    .unwrap();
     assert_eq!(names(&plan), [s("c-2.tif", Write::Create)]);
     // Overwrite replaces the file that is there, as it is spelled, and Ask names it
     // so: never a second file beside it in other case.
     let ask = settings(&out);
     assert_eq!(
-        super::plan(&[photo(Path::new("/one/c.dng"))], &ask, None).unwrap_err(),
+        super::plan(
+            &[photo(Path::new("/one/c.dng"))],
+            &ask,
+            &Default::default(),
+            None
+        )
+        .unwrap_err(),
         Unplanned::Conflicts(vec![out.join("C.TIF")])
     );
     let plan = super::plan(
         &[photo(Path::new("/one/c.dng"))],
         &ask,
+        &Default::default(),
         Some(Existing::Overwrite),
     )
     .unwrap();
@@ -123,10 +136,16 @@ fn ask_returns_the_files_that_exist_and_the_answer_applies_to_all() -> Result<()
     let ask = settings(&out);
     assert_eq!(ask.existing, Existing::Ask);
     assert_eq!(
-        plan(&photos, &ask, None).unwrap_err(),
+        plan(&photos, &ask, &Default::default(), None).unwrap_err(),
         Unplanned::Conflicts(vec![out.join("a.tif"), out.join("b.tif")])
     );
-    let overwrite = plan(&photos, &ask, Some(Existing::Overwrite)).unwrap();
+    let overwrite = plan(
+        &photos,
+        &ask,
+        &Default::default(),
+        Some(Existing::Overwrite),
+    )
+    .unwrap();
     assert_eq!(
         names(&overwrite),
         [
@@ -137,7 +156,7 @@ fn ask_returns_the_files_that_exist_and_the_answer_applies_to_all() -> Result<()
         ]
     );
     assert_eq!(overwrite.late, Existing::Overwrite);
-    let skip = plan(&photos, &ask, Some(Existing::Skip)).unwrap();
+    let skip = plan(&photos, &ask, &Default::default(), Some(Existing::Skip)).unwrap();
     assert_eq!(
         names(&skip),
         [
@@ -147,7 +166,7 @@ fn ask_returns_the_files_that_exist_and_the_answer_applies_to_all() -> Result<()
             s("a.tif", Write::Skip),
         ]
     );
-    let unique = plan(&photos, &ask, Some(Existing::Unique)).unwrap();
+    let unique = plan(&photos, &ask, &Default::default(), Some(Existing::Unique)).unwrap();
     assert_eq!(
         names(&unique),
         [
@@ -158,12 +177,15 @@ fn ask_returns_the_files_that_exist_and_the_answer_applies_to_all() -> Result<()
         ]
     );
     // Ask with nothing to ask about: a file appearing later is not replaced.
-    let fresh = plan(&photos[2..3], &ask, None).unwrap();
+    let fresh = plan(&photos[2..3], &ask, &Default::default(), None).unwrap();
     assert_eq!(fresh.late, Existing::Skip);
     // No folder chosen.
     let mut none = ask;
     none.folder = None;
-    assert_eq!(plan(&photos, &none, None).unwrap_err(), Unplanned::NoFolder);
+    assert_eq!(
+        plan(&photos, &none, &Default::default(), None).unwrap_err(),
+        Unplanned::NoFolder
+    );
     Ok(())
 }
 
@@ -220,13 +242,23 @@ impl Fixture {
     }
     fn batch(&self, photos: Vec<BatchPhoto>, settings: ExportSettings) -> Batch {
         Batch {
-            plan: plan(&photos, &settings, Some(Existing::Unique)).unwrap(),
+            plan: plan(
+                &photos,
+                &settings,
+                &Default::default(),
+                Some(Existing::Unique),
+            )
+            .unwrap(),
             photos,
             settings,
             defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
             watermark: None,
+            watermarks: Default::default(),
             demosaic: Default::default(),
             cache: Default::default(),
+            lenses: crate::photo::LensProfiles::none(),
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            fits: Default::default(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         }
     }
@@ -270,8 +302,8 @@ fn every_photo_is_exported_with_its_own_edit_or_said_why_not() -> Result<()> {
     let [(a, a_path), (b, b_path), _, (d, d_path), (_, e_path)] = &f.photos[..] else {
         panic!("five photos");
     };
-    let m = crate::photo::open(a_path)?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let m = crate::photo::open(a_path, &crate::photo::LensProfiles::none())?.metadata;
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut brighter = Recipe::with_profiles(&m, &profiles);
     brighter.exposure = 1.;
     let mut save = |id: PhotoId, path: &Path| {
@@ -369,7 +401,7 @@ fn a_file_that_appears_during_the_export_gets_the_batchs_answer() -> Result<()> 
         let mut settings = settings(&out);
         settings.existing = existing;
         let batch = Batch {
-            plan: plan(&photos, &settings, answer).unwrap(),
+            plan: plan(&photos, &settings, &Default::default(), answer).unwrap(),
             ..f.batch(photos.clone(), settings)
         };
         assert_eq!(batch.plan.entries[0].write, Write::Create);
@@ -408,7 +440,7 @@ fn a_file_that_appears_during_the_export_gets_the_batchs_answer() -> Result<()> 
         let mut settings = settings(&out);
         settings.existing = existing;
         let batch = Batch {
-            plan: plan(&photos, &settings, None).unwrap(),
+            plan: plan(&photos, &settings, &Default::default(), None).unwrap(),
             ..f.batch(photos.clone(), settings)
         };
         std::fs::create_dir_all(&out)?;
@@ -467,8 +499,8 @@ fn cancel_before_a_commit_leaves_nothing_and_after_it_counts_as_exported() -> Re
 fn a_batch_exports_the_edits_as_they_were_when_export_was_pressed() -> Result<()> {
     let mut f = fixture(&["a.dng"])?;
     let (id, path) = &f.photos[0];
-    let m = crate::photo::open(path)?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let m = crate::photo::open(path, &crate::photo::LensProfiles::none())?.metadata;
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut edit = Recipe::with_profiles(&m, &profiles);
     edit.exposure = 0.5;
     f.catalog.save_edit(
@@ -493,7 +525,13 @@ fn a_batch_exports_the_edits_as_they_were_when_export_was_pressed() -> Result<()
     )?;
     let snapshot = Batch {
         settings: settings(&f.out().join("after")),
-        plan: plan(&before.photos, &settings(&f.out().join("after")), None).unwrap(),
+        plan: plan(
+            &before.photos,
+            &settings(&f.out().join("after")),
+            &Default::default(),
+            None,
+        )
+        .unwrap(),
         ..before
     };
     let outcomes = run_all(&snapshot);
@@ -656,6 +694,7 @@ fn a_preset_watermark_is_read_once_for_the_whole_batch() -> Result<()> {
     };
     let batch = Batch {
         watermark: Some(gone),
+        watermarks: Default::default(),
         ..f.batch(photos.clone(), settings(&f.out().join("gone")))
     };
     let outcomes = run_all(&batch);
@@ -674,6 +713,7 @@ fn a_preset_watermark_is_read_once_for_the_whole_batch() -> Result<()> {
     };
     let marked = run_all(&Batch {
         watermark: Some(text),
+        watermarks: Default::default(),
         ..f.batch(photos.clone(), settings(&f.out().join("marked")))
     });
     let plain = run_all(&f.batch(photos, settings(&f.out().join("plain"))));
@@ -803,13 +843,17 @@ fn exporting_a_jpeg_never_replaces_it() -> Result<()> {
             ..Default::default()
         };
         let batch = Batch {
-            plan: plan(&photos, &settings, Some(existing)).unwrap(),
+            plan: plan(&photos, &settings, &Default::default(), Some(existing)).unwrap(),
             photos: photos.clone(),
             settings,
             defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
             watermark: None,
+            watermarks: Default::default(),
             demosaic: Default::default(),
             cache: Default::default(),
+            lenses: crate::photo::LensProfiles::none(),
+            profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+            fits: Default::default(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
         };
         run_all(&batch)
@@ -860,13 +904,17 @@ fn exporting_never_replaces_another_photos_original() -> Result<()> {
     };
     settings.choose_tokens(crate::export_settings::BUILTIN[0].tokens);
     let batch = Batch {
-        plan: plan(&photos, &settings, None).unwrap(),
+        plan: plan(&photos, &settings, &Default::default(), None).unwrap(),
         photos: photos.clone(),
         settings,
         defaults: Arc::new(DevelopDefaults::with_presets(Default::default(), |_| None)),
         watermark: None,
+        watermarks: Default::default(),
         demosaic: Default::default(),
         cache: Default::default(),
+        lenses: crate::photo::LensProfiles::none(),
+        profiles: crate::camera_profiles::ProfileLibrary::for_tests(),
+        fits: Default::default(),
         ai: crate::ai_denoise::AiService::refusing("no AI Denoise in tests"),
     };
     assert_eq!(batch.plan.entries[0].target, jpeg);
@@ -893,7 +941,7 @@ fn a_name_taken_twice_during_the_export_gets_the_next_number() -> Result<()> {
     settings.existing = Existing::Unique;
     let out = f.out().join("twice");
     let batch = Batch {
-        plan: plan(&photos, &settings, None).unwrap(),
+        plan: plan(&photos, &settings, &Default::default(), None).unwrap(),
         ..f.batch(photos.clone(), settings.clone())
     };
     std::fs::create_dir_all(&out)?;
@@ -904,7 +952,7 @@ fn a_name_taken_twice_during_the_export_gets_the_next_number() -> Result<()> {
 
     // Planned as a-4, beside a, a-2 and a-3: a-4 and a-5 then appear.
     let batch = Batch {
-        plan: plan(&photos, &settings, None).unwrap(),
+        plan: plan(&photos, &settings, &Default::default(), None).unwrap(),
         ..f.batch(photos, settings)
     };
     assert_eq!(batch.plan.entries[0].target, out.join("a-4.tif"));
@@ -940,7 +988,7 @@ fn a_custom_template_names_from_the_fields_taken_at_export() {
     };
     let mut s = settings(d.path());
     s.choose_tokens(crate::export_settings::BUILTIN[0].tokens);
-    let plan = plan(&photos, &s, None).unwrap();
+    let plan = plan(&photos, &s, &Default::default(), None).unwrap();
     assert_eq!(
         names(&plan),
         [
@@ -966,8 +1014,8 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
     let [(a, a_path), _] = &f.photos[..] else {
         panic!("two photos");
     };
-    let m = crate::photo::open(a_path)?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let m = crate::photo::open(a_path, &crate::photo::LensProfiles::none())?.metadata;
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut denoised = Recipe::with_profiles(&m, &profiles);
     denoised.ai_denoise = crate::model::ai_denoise::AiDenoise {
         enabled: true,
@@ -1003,8 +1051,8 @@ fn a_photo_without_its_ai_result_fails_and_the_batch_carries_on() -> Result<()> 
 fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     use crate::color::hdr_output::{HdrGamut, HdrOutput, HdrTransfer};
     let mut f = fixture(&["a.dng", "b.dng"])?;
-    let m = crate::photo::open(&f.photos[0].1)?.metadata;
-    let (profiles, _) = crate::camera_profiles::installed(&m);
+    let m = crate::photo::open(&f.photos[0].1, &crate::photo::LensProfiles::none())?.metadata;
+    let (profiles, _) = crate::camera_profiles::ProfileLibrary::for_tests().installed(&m);
     let mut hdr = Recipe::with_profiles(&m, &profiles);
     hdr.hdr.enabled = true;
     hdr.hdr.limit = 4.;
@@ -1097,6 +1145,7 @@ fn hdr_jpeg_xl_exports_cancel_fail_and_publish_as_sdr_ones_do() -> Result<()> {
     };
     let marked = run_all(&Batch {
         watermark: Some(text),
+        watermarks: Default::default(),
         ..f.batch(photos.clone(), tiff(&f.out().join("hdr-marked")))
     });
     let plain = run_all(&f.batch(photos.clone(), tiff(&f.out().join("hdr-plain"))));
@@ -1246,7 +1295,13 @@ fn photos_run_side_by_side_up_to_the_lanes_and_keep_their_order() -> Result<()> 
     );
     // The same files as one photo at a time.
     let one = Batch {
-        plan: plan(&batch.photos, &settings(&f.out().join("one")), None).unwrap(),
+        plan: plan(
+            &batch.photos,
+            &settings(&f.out().join("one")),
+            &Default::default(),
+            None,
+        )
+        .unwrap(),
         settings: settings(&f.out().join("one")),
         ..batch.clone()
     };
@@ -1607,44 +1662,45 @@ fn queue_with_backend_runs_batches_and_closes_cleanly() -> Result<()> {
 }
 
 /// The batch-scoped `ProfileCache` produces identical profile lists to
-/// `camera_profiles::installed` and keeps distinct cameras / lenses / matrices apart.
+/// `ProfileLibrary::installed` and keeps distinct cameras / lenses / matrices apart.
 #[test]
 fn profile_cache_matches_installed_and_separates_distinct_cameras() {
     let cache = ProfileCache::default();
+    let library = crate::camera_profiles::ProfileLibrary::for_tests();
     let base = crate::camera_data::Metadata {
         make: "TestMake".into(),
         model: "TestModel".into(),
         cam_xyz: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
         ..Default::default()
     };
-    let expected = crate::camera_profiles::installed(&base).0;
-    assert_eq!(cache.installed(&base), expected);
+    let expected = library.installed(&base).0;
+    assert_eq!(cache.installed(&library, &base), expected);
     // Second lookup hits the cached slot and returns the exact same profiles.
-    assert_eq!(cache.installed(&base), expected);
+    assert_eq!(cache.installed(&library, &base), expected);
 
     // Changing cam_xyz must produce a distinct cache entry and match `installed`.
     let mut different_matrix = base.clone();
     different_matrix.cam_xyz = [[0.9, 0.1, 0.], [0., 1., 0.], [0., 0.1, 0.9]];
     assert_eq!(
-        cache.installed(&different_matrix),
-        crate::camera_profiles::installed(&different_matrix).0
+        cache.installed(&library, &different_matrix),
+        library.installed(&different_matrix).0
     );
-    assert_ne!(cache.installed(&different_matrix), expected);
+    assert_ne!(cache.installed(&library, &different_matrix), expected);
 
     // Changing only dng_matrix_profile_signature must produce a distinct entry
     // so matrix-only DNGs keep their own calibration signature separate from
     // native RAWs with the same camera matrix.
     let mut different_sig = base.clone();
     different_sig.dng_matrix_profile_signature = Some("org.example.dng-writer".into());
-    let expected_sig = crate::camera_profiles::installed(&different_sig).0;
-    assert_eq!(cache.installed(&different_sig), expected_sig);
+    let expected_sig = library.installed(&different_sig).0;
+    assert_eq!(cache.installed(&library, &different_sig), expected_sig);
     assert_ne!(expected_sig, expected);
 
     // Rendered metadata bypasses the cache without panicking or colliding.
     let mut rendered = base;
     rendered.source = crate::camera_data::Source::Rendered;
     assert_eq!(
-        cache.installed(&rendered),
-        crate::camera_profiles::installed(&rendered).0
+        cache.installed(&library, &rendered),
+        library.installed(&rendered).0
     );
 }

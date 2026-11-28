@@ -601,11 +601,11 @@ impl Processor {
             pass.set_pipeline(&present);
             pass.dispatch_workgroups(cw.div_ceil(16), ch.div_ceil(16), 1);
         }
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let submission = super::submit(&self.queue, encoder);
         super::develop::submitted(&mut self.kept);
         super::wait(&device, submission)?;
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         Ok(HdrFrame {
             texture,
             generation,
@@ -867,7 +867,7 @@ impl Processor {
             0,
             HISTOGRAM_WORDS * 4,
         );
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let submission = super::submit(&self.queue, encoder);
         super::develop::submitted(&mut self.kept);
         let (tx, rx) = mpsc::channel();
@@ -929,7 +929,7 @@ impl Processor {
         let shown = samples.as_ref().map(rgb).transpose();
         unmap(presenter);
         let (small, shown) = (small?, shown?);
-        ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         Ok(Frame {
             #[cfg(test)]
             width: cw,

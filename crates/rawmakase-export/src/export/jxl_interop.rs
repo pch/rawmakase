@@ -75,7 +75,11 @@ fn jxl_interop_exports() -> Result<()> {
             .context("a fixture's name")?
             .to_string_lossy()
             .to_string();
-        let (image, recipe) = match crate::photo::open_source(&source, Cancel::NEVER)? {
+        let (image, recipe) = match crate::photo::open_source(
+            &source,
+            &crate::photo::LensProfiles::none(),
+            Cancel::NEVER,
+        )? {
             crate::photo::Opened::Rendered(image) => {
                 let recipe = Recipe::for_new_rendered(&image.metadata);
                 (image, recipe)

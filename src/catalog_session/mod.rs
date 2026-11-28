@@ -89,6 +89,10 @@ pub(crate) struct CatalogSession {
     /// the name it had then.
     relabeled: HashMap<String, i64>,
     backfill: backfill::Backfill,
+    /// The imported lens profiles photo info is read with: a lens a photo
+    /// names only by its id is named by the profile that fits it. None until
+    /// the app gives them ([`Self::set_lens_profiles`]).
+    lenses: crate::photo::LensProfiles,
     wake: Wake,
     /// Changes whenever photos may have changed place, name or master (see
     /// [`Self::reload`]), so a background result read before is dropped.
@@ -353,6 +357,7 @@ impl CatalogSession {
             keyword_labels: HashMap::new(),
             relabeled: HashMap::new(),
             backfill: Default::default(),
+            lenses: Default::default(),
             wake: std::sync::Arc::new(|| {}),
             generation: 0,
             query_revision: 0,

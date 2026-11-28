@@ -8,6 +8,7 @@
 //!
 //! This crate depends on nothing of the app's, so a client builds without its
 //! GUI, GPU or native decoding libraries.
+#![forbid(unsafe_code)]
 // Every public item says what it is for: this crate is a contract other crates
 // and clients build on.
 #![warn(missing_docs)]

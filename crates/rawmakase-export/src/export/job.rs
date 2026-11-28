@@ -7,13 +7,13 @@ use super::{
 use crate::export_settings::ExportSettings;
 use crate::{
     camera_data::{CameraImage, Demosaic},
-    decode::{DecodePolicy, FullSize},
+    decode::FullSize,
     decode_cache::DecodeCache,
     exif,
     model::recipe::Recipe,
     raw::Raw,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use std::{
     path::{Path, PathBuf},
@@ -31,10 +31,15 @@ pub struct Photo {
     /// The watermark chosen in the Export dialog, a preset or the Simple
     /// Copyright Watermark.
     pub watermark: Option<crate::watermark::Watermark>,
+    /// The saved watermarks a graphic one's image is read from.
+    pub watermarks: crate::watermark::Watermarks,
     /// The demosaic for a full-size decode, if `image` is a draft.
     pub demosaic: Demosaic,
-    /// Where a full-size decode is looked up first.
-    pub cache: DecodeCache,
+    /// Where a full-size decode is looked up first, and kept; none to decode
+    /// it each time.
+    pub cache: Option<DecodeCache>,
+    /// The imported lens profiles a full-size decode opens the photo with.
+    pub lenses: crate::photo::LensProfiles,
     /// Where the AI Denoise source comes from when the edit has AI Denoise on.
     pub ai: crate::ai_denoise::AiService,
     /// The file as it was before `image` was decoded from it, for AI Denoise: a file
@@ -96,18 +101,9 @@ pub fn run_with_backend(
     cancel: Cancel<'_>,
     progress: impl Fn(f32),
 ) -> Result<Option<String>> {
-    // The target's format, not only the settings', must hold the color space or the
-    // HDR encoding; checked before anything renders.
-    let format = crate::export_settings::Format::from_path(target);
-    if let Some(output) = settings.hdr_output()? {
-        let format = format.ok_or_else(|| {
-            anyhow::anyhow!("An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl")
-        })?;
-        crate::export_settings::Format::check_hdr(format, output)?;
-    } else if let Some(format) = format {
-        format.supports(settings.output_space()?)?;
-    }
-    let target_format = format.unwrap_or(settings.format);
+    check(&photo.recipe, settings, target)?;
+    let target_format =
+        crate::export_settings::Format::from_path(target).unwrap_or(settings.format);
     let prepared = prepare_with_backend(
         &photo,
         None,
@@ -132,6 +128,49 @@ pub fn run_with_backend(
     progress(1.);
     let notes: Vec<String> = prepared.notice.into_iter().chain(note).collect();
     Ok((!notes.is_empty()).then(|| notes.join("; ")))
+}
+
+/// Refuses an export of `recipe` with `settings` to `target` that could not
+/// succeed, before anything is decoded or rendered: a recipe or settings that
+/// don't validate, a color space or HDR encoding the target's format can't
+/// hold, and an HDR export of an edit with HDR off. [`run`] checks it first.
+pub fn check(recipe: &Recipe, settings: &ExportSettings, target: &Path) -> Result<()> {
+    // The target's format, not only the settings', must hold the color space or the
+    // HDR encoding.
+    use crate::export_settings::Format;
+    let format = Format::from_path(target);
+    if let Some(output) = settings.hdr_output()? {
+        let format = format.ok_or_else(|| {
+            rawmakase_model::error::Invalid::new(if output.gain_map {
+                "A gain-map export is a JPEG or JPEG XL: name it .jpg, .jpeg or .jxl"
+            } else {
+                "An HDR export is a TIFF or JPEG XL: name it .tif, .tiff or .jxl"
+            })
+        })?;
+        Format::check_hdr(format, output)?;
+    } else {
+        // As the file is staged: a name no format has is refused.
+        let format = format.ok_or_else(|| {
+            rawmakase_model::error::Invalid::new(format!(
+                "Export extension must be {}",
+                Format::extensions_listed()
+            ))
+        })?;
+        format.supports(settings.output_space()?)?;
+    }
+    let invalid = |e: anyhow::Error| rawmakase_model::error::Invalid::from_error(e).into();
+    settings
+        .check_output()
+        .and_then(|()| settings.options().validate())
+        .map_err(invalid)?;
+    // The edit's own intent, never the editor's or display's.
+    if settings.hdr_output()?.is_some() && !recipe.hdr.is_active() {
+        return Err(rawmakase_model::error::Invalid::new(
+            "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR",
+        )
+        .into());
+    }
+    recipe.validate().map_err(invalid)
 }
 
 /// A photo rendered for export, with what goes in the file beside its pixels.
@@ -186,13 +225,15 @@ pub fn prepare_with_backend(
     let hdr = settings.hdr_output()?;
     if hdr.is_some() {
         // Captured with the job: the edit's own intent, never the editor's or display's.
-        ensure!(
-            photo.recipe.hdr.is_active(),
-            "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR"
-        );
+        if !photo.recipe.hdr.is_active() {
+            return Err(rawmakase_model::error::Invalid::new(
+                "This photo's edit has HDR off: turn on High Dynamic Range in Develop, or export it in SDR",
+            )
+            .into());
+        }
     }
     let cancelled = || -> Result<()> {
-        ensure!(!cancel.is_cancelled(), "Cancelled");
+        cancel.check("Cancelled")?;
         Ok(())
     };
     progress(0.05);
@@ -212,20 +253,23 @@ pub fn prepare_with_backend(
     let watermark = match &photo.watermark {
         _ if preset.is_some() => preset.cloned(),
         Some(_) if simple_copyright => match copyright(&photo.values, file.as_ref()) {
-            Some(text) => Some(crate::watermark::Watermark::simple_copyright(&text).ready()?),
+            Some(text) => Some(
+                crate::watermark::Watermark::simple_copyright(&text).ready(&photo.watermarks)?,
+            ),
             None => {
                 notice = Some("no copyright in the file for the Simple Copyright Watermark".into());
                 None
             }
         },
-        Some(w) => Some(w.ready()?),
+        Some(w) => Some(w.ready(&photo.watermarks)?),
         None => None,
     };
     let image = full_size(
         photo.image.clone(),
         &photo.source,
+        &photo.lenses,
         photo.demosaic,
-        &photo.cache,
+        photo.cache.as_ref(),
         cancel,
     )?;
     cancelled()?;
@@ -333,14 +377,7 @@ pub fn decode_full(
     cache: &DecodeCache,
     cancel: Cancel<'_>,
 ) -> Result<CameraImage> {
-    let full = FullSize::with_cache(source, demosaic, cache.clone());
-    match full.cached(&raw.metadata) {
-        Some(image) => Ok(image),
-        None => crate::develop::quality::with_recovered(
-            full.decode(raw, DecodePolicy::Export, cancel)?,
-            cancel,
-        ),
-    }
+    FullSize::with_cache(source, demosaic, cache.clone()).recovered(raw, false, cancel)
 }
 
 /// The complete AI Denoise source of `photo` (full-size `image`) when its edit renders
@@ -364,7 +401,7 @@ fn ai_source(
         .ai
         .0
         .get(&photo.source, &file, image, cancel)
-        .map_err(|e| anyhow::anyhow!("AI Denoise: {e:#}"))?;
+        .map_err(rawmakase_decode::ai::failed)?;
     let ai = Arc::try_unwrap(ai).unwrap_or_else(|shared| (*shared).clone());
     crate::develop::AiSource::recover(ai, cancel).map(Some)
 }
@@ -373,22 +410,31 @@ fn ai_source(
 fn full_size(
     image: Arc<CameraImage>,
     source: &Path,
+    lenses: &crate::photo::LensProfiles,
     demosaic: Demosaic,
-    cache: &DecodeCache,
+    cache: Option<&DecodeCache>,
     cancel: Cancel<'_>,
 ) -> Result<Arc<CameraImage>> {
     if !image.fast {
         return Ok(image);
     }
-    let full = FullSize::with_cache(source, demosaic, cache.clone());
-    Ok(Arc::new(match full.cached(&image.metadata) {
-        Some(cached) => cached,
-        // Recovered in its own buffer, as `decode_full` does.
-        None => crate::develop::quality::with_recovered(
-            full.decode(crate::photo::open(source)?, DecodePolicy::Export, cancel)?,
+    let Some(cache) = cache else {
+        return Ok(Arc::new(crate::develop::quality::with_recovered(
+            crate::photo::open(source, lenses)?
+                .develop(crate::camera_data::Decode::Full(demosaic), cancel)?,
             cancel,
-        )?,
-    }))
+        )?));
+    };
+    let full = FullSize::with_cache(source, demosaic, cache.clone());
+    // Looked for before the file is opened, which a copy in the cache spares.
+    if let Some(cached) = full.cached(&image.metadata) {
+        return Ok(Arc::new(cached));
+    }
+    Ok(Arc::new(full.recovered(
+        crate::photo::open(source, lenses)?,
+        false,
+        cancel,
+    )?))
 }
 
 fn xmp(
@@ -462,8 +508,10 @@ mod tests {
             recipe: Recipe::default(),
             values: Default::default(),
             watermark: None,
+            watermarks: Default::default(),
             demosaic: Demosaic::default(),
-            cache: DecodeCache::new(cache.to_path_buf(), u64::MAX),
+            cache: Some(DecodeCache::new(cache.to_path_buf(), u64::MAX, "test")),
+            lenses: crate::photo::LensProfiles::none(),
             ai: crate::ai_denoise::AiService::refusing("no AI Denoise here"),
             file: None,
         }
@@ -519,6 +567,57 @@ mod tests {
         .unwrap_err();
         assert!(error.to_string().contains("no AI Denoise here"), "{error}");
         assert!(!target.exists());
+        Ok(())
+    }
+
+    /// Settings no export can write are refused as invalid before anything
+    /// renders, whether the settings' format or the target's can't hold them.
+    #[test]
+    fn settings_an_export_cannot_write_are_invalid() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("a.dng");
+        std::fs::write(&source, b"synthetic")?;
+        let prophoto = ExportSettings {
+            color_space: crate::color::output::OutputSpace::ProPhoto,
+            ..ExportSettings::default()
+        };
+        assert!(
+            prophoto
+                .check_output()
+                .unwrap_err()
+                .is::<rawmakase_model::error::Invalid>()
+        );
+        // ProPhoto RGB in JPEG settings, and TIFF settings sent to a JPEG target.
+        let tiff = ExportSettings {
+            format: crate::export_settings::Format::Tiff,
+            ..prophoto.clone()
+        };
+        for settings in [prophoto, tiff] {
+            let target = dir.path().join("out.jpg");
+            let error = run(
+                photo(&source, &dir.path().join("cache")),
+                &settings,
+                &target,
+                super::super::Replace::NoClobber,
+                Cancel::NEVER,
+                |_| {},
+            )
+            .unwrap_err();
+            assert!(error.is::<rawmakase_model::error::Invalid>(), "{error:#}");
+            assert!(!target.exists());
+        }
+        // A target that names no export format.
+        let target = dir.path().join("out.webp");
+        let error = run(
+            photo(&source, &dir.path().join("cache")),
+            &ExportSettings::default(),
+            &target,
+            super::super::Replace::NoClobber,
+            Cancel::NEVER,
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(error.is::<rawmakase_model::error::Invalid>(), "{error:#}");
         Ok(())
     }
 
@@ -715,8 +814,8 @@ mod tests {
         let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
-        let raw = crate::photo::open(&chart)?;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
+        let raw = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?;
         let cached = CameraImage {
             width: 4,
             height: 3,
@@ -729,7 +828,7 @@ mod tests {
             hdr: Default::default(),
         };
         let _ = cached.recovered.set(Arc::new(cached.clone()));
-        cache.store(&DecodeCache::key(&chart, Demosaic::default())?, &cached)?;
+        cache.store(&cache.key(&chart, Demosaic::default())?, &cached)?;
         let image = decode_full(raw, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
         assert_eq!((image.width, image.height), (4, 3));
         Ok(())
@@ -743,9 +842,9 @@ mod tests {
         let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
-        let raw = crate::photo::open(&chart)?;
-        let apart = crate::photo::open(&chart)?.develop(
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
+        let raw = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?;
+        let apart = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?.develop(
             crate::camera_data::Decode::Full(Demosaic::default()),
             Cancel::NEVER,
         )?;
@@ -754,7 +853,7 @@ mod tests {
         assert!(image.pixels.shares_buffer(&recovered.pixels));
         assert_ne!(image.pixels, recovered.pixels, "the chart has highlights");
         // An export never fills the cache.
-        assert!(!cache.contains(&DecodeCache::key(&chart, Demosaic::default())?));
+        assert!(!cache.contains(&cache.key(&chart, Demosaic::default())?));
         let recipe = Recipe {
             highlights: -0.7,
             ..Default::default()
@@ -777,8 +876,8 @@ mod tests {
         let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         let dir = tempfile::tempdir()?;
-        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX);
-        let metadata = crate::photo::open(&chart)?.metadata;
+        let cache = DecodeCache::new(dir.path().to_path_buf(), u64::MAX, "test");
+        let metadata = crate::photo::open(&chart, &crate::photo::LensProfiles::none())?.metadata;
         let image = |width: u32, height: u32, fast: bool| {
             let image = CameraImage {
                 width,
@@ -795,7 +894,7 @@ mod tests {
             image
         };
         cache.store(
-            &DecodeCache::key(&chart, Demosaic::default())?,
+            &cache.key(&chart, Demosaic::default())?,
             &image(4, 3, false),
         )?;
         // The half-size image, measured by a preview render.
@@ -805,7 +904,14 @@ mod tests {
             .metadata
             .lateral_ca
             .set(Some([measured.clone(), measured]));
-        let full = full_size(half, &chart, Demosaic::default(), &cache, Cancel::NEVER)?;
+        let full = full_size(
+            half,
+            &chart,
+            &crate::photo::LensProfiles::none(),
+            Demosaic::default(),
+            Some(&cache),
+            Cancel::NEVER,
+        )?;
         assert_eq!((full.width, full.height), (4, 3));
         assert!(full.metadata.lateral_ca.get().is_none());
         // Its recovered image is the same decode, with the same measurement.

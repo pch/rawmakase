@@ -13,7 +13,7 @@ fn the_settings_name_a_16_bit_tiff_beside_the_original() {
     assert_eq!(name, "DSC_3150-Edit.tif");
     assert!(notes.is_empty());
     assert_eq!(
-        settings.base_folder(source).as_deref(),
+        settings.base_folder(source, &Default::default()).as_deref(),
         Some(Path::new("/photos"))
     );
     assert_eq!(settings.format, Format::Tiff);

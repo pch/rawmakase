@@ -89,13 +89,13 @@ impl Denoise {
             Some(ai) => ai.apply(source),
             None => source.clone(),
         };
-        anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         if (self.chroma.is_some() || self.luminance.is_some())
             && let Some(out) = try_gpu(&base, self.chroma, self.luminance)
         {
             return Ok(Arc::new(out));
         }
-        anyhow::ensure!(!cancel.is_cancelled(), "Render superseded");
+        cancel.check("Render superseded")?;
         let chroma = self.chroma.map(|d| d.apply(&base, cancel)).transpose()?;
         if let Some(luminance) = self.luminance {
             Ok(Arc::new(

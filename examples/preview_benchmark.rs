@@ -52,7 +52,11 @@ fn main() -> Result<()> {
     anyhow::ensure!((1..=100).contains(&iterations), "Use 1–100 iterations");
     let cancel = AtomicBool::new(false);
     let start = Instant::now();
-    let image = rawmakase::photo::open(std::path::Path::new(path))?.develop(
+    let image = rawmakase::photo::open(
+        std::path::Path::new(path),
+        &rawmakase::photo::LensProfiles::none(),
+    )?
+    .develop(
         camera_data::Decode::full(Default::default()),
         Cancel::new(&cancel),
     )?;
@@ -62,7 +66,8 @@ fn main() -> Result<()> {
         image.height,
         ms(start)
     );
-    let (profiles, _) = rawmakase::camera_profiles::installed(&image.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&image.metadata);
     let recipe = Recipe::with_profiles(&image.metadata, &profiles);
     println!(
         "Camera: {} {}; profile: {:?}",
@@ -77,7 +82,8 @@ fn main() -> Result<()> {
     println!("Highlight recovery: {:.1} ms", ms(t));
     {
         let dir = tempfile::tempdir()?;
-        let cache = rawmakase::decode_cache::DecodeCache::new(dir.path().to_owned(), u64::MAX);
+        let cache =
+            rawmakase::decode_cache::DecodeCache::new(dir.path().to_owned(), u64::MAX, "bench");
         let cached = image.clone();
         let _ = cached
             .recovered

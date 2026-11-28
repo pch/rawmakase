@@ -80,6 +80,11 @@ if [ -n "$asm" ]; then
     status=1
 fi
 check rawmakase-export "rawmakase|$gui|$c_imaging|$inference"
+# The library is what an app outside the workspace links: never the app, its
+# GUI (egui's parts emath and ecolor named too), its file chooser or the
+# extension host, and no C imaging library. Inference comes only with the
+# AI Denoise feature, which it doesn't have yet.
+check rawmakase-core "rawmakase|rawmakase-extensions|rfd|emath|ecolor|$gui|$c_imaging|$inference"
 # Merge to HDR reads RAWs through decoding and writes DNGs: no app, catalog,
 # export, window, GUI, C imaging library or inference.
 check rawmakase-hdr-merge "rawmakase|rawmakase-catalog|rawmakase-export|rawmakase-denoise|$gui|$c_imaging|$inference"
@@ -155,12 +160,36 @@ for manifest in Cargo.toml crates/*/Cargo.toml tools/*/Cargo.toml extensions/*/C
         status=1
     fi
 done
-paths=$(grep -rln 'rawmakase_raw::' --include='*.rs' src crates tools extensions examples tests \
+# The files Git keeps or would keep: an example's build and Node folders,
+# which it ignores, are not searched.
+paths=$(git grep -l --untracked 'rawmakase_raw::' -- '*.rs' \
+    | grep -E '^(src|crates|tools|extensions|examples|tests)/' \
     | grep -v -e '^crates/rawmakase-decode/src/raw/' -e '^crates/rawmakase-raw/' || true)
 if [ -n "$paths" ]; then
     echo "rawmakase_raw is used outside rawmakase-decode's raw adapter:" >&2
     echo "$paths" | sed 's/^/    /' >&2
     status=1
 fi
+# The reference apps (examples/*/, each a workspace of its own) link the
+# library as a stranger's app would, and their trees keep out what the
+# library's does, read from each one's own lock file: the app, its GUI, file
+# chooser and extension host, and no C imaging library, SQLite, HTTP client
+# or ONNX Runtime binding (the plan's eighth measure).
+apps='sqlite.*|libsqlite3-sys|rusqlite|reqwest|ureq|hyper|isahc|curl.*|attohttpc'
+for manifest in $(git ls-files 'examples/*/Cargo.toml'); do
+    found=$(cargo tree --locked --manifest-path "$manifest" --all-features --target all \
+        -e normal,build --prefix none --format '{p}' | sort -u \
+        | grep -E "^(rawmakase|rawmakase-extensions|rawmakase-catalog|rfd|emath|ecolor|$gui|$c_imaging|$inference|$apps) " || true)
+    if [ -n "$found" ]; then
+        echo "$manifest must not depend on:" >&2
+        echo "$found" | sed 's/^/    /' >&2
+        status=1
+    fi
+    deps=$(grep -oE '^rawmakase-[a-z-]+' "$manifest" | sort -u || true)
+    if [ "$deps" != "rawmakase-core" ]; then
+        echo "$manifest names one RAWmakase crate, rawmakase-core, not: $deps" >&2
+        status=1
+    fi
+done
 [ "$status" -eq 0 ] && echo "The extracted crates depend on no app, GPU, GUI or native imaging crate beyond their own, and nothing links a C RAW library or Little CMS."
 exit "$status"

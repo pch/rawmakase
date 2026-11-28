@@ -25,17 +25,18 @@ fn raw_development_and_export() -> anyhow::Result<()> {
     for (index, path) in files.iter().enumerate() {
         let before = storage::Identity::read(path)?;
         assert!(
-            rawmakase::photo::open(path)?
+            rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?
                 .develop(
                     Decode::full(Default::default()),
                     Cancel::new(&AtomicBool::new(true))
                 )
                 .is_err()
         );
-        let fast = rawmakase::photo::open(path)?.develop(Decode::Half, Cancel::NEVER)?;
+        let fast = rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?
+            .develop(Decode::Half, Cancel::NEVER)?;
         assert!(fast.width < fast.metadata.width && fast.height < fast.metadata.height);
         drop(fast);
-        let mut raw = rawmakase::photo::open(path)?;
+        let mut raw = rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?;
         assert!(!raw.thumbnail()?.is_empty());
         let image = raw.develop(Decode::full(Default::default()), Cancel::NEVER)?;
         assert_eq!(image.scale_clipped, 0);
@@ -126,8 +127,11 @@ fn navigation_memory_stress() -> anyhow::Result<()> {
     let mut warm = 0;
     for i in 0..50 {
         {
-            let im = rawmakase::photo::open(&files[i % files.len()])?
-                .develop(Decode::full(Default::default()), Cancel::NEVER)?;
+            let im = rawmakase::photo::open(
+                &files[i % files.len()],
+                &rawmakase::photo::LensProfiles::none(),
+            )?
+            .develop(Decode::full(Default::default()), Cancel::NEVER)?;
             let small = develop::preview(&im, 1600);
             let r = Recipe::for_metadata(&im.metadata);
             let _ = develop::render(&small, &r.checked()?, 1600, Cancel::NEVER)?;

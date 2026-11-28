@@ -74,6 +74,7 @@ pub fn starting_edit(
     m: &Metadata,
     profiles: &[Arc<CameraProfile>],
     crop: Option<[f32; 4]>,
+    lensfun: &crate::lens::lensfun::installed::Handle,
 ) -> (Recipe, Vec<String>) {
     let transferred = settings_groups::transfer(
         Source {
@@ -86,6 +87,7 @@ pub fn starting_edit(
             metadata: m,
             profiles,
         },
+        lensfun,
     );
     let mut recipe = transferred.recipe;
     if let Some(crop) = crop {
@@ -106,6 +108,7 @@ pub fn publish(
     merged: &Merged,
     active: Active<'_>,
     raw_defaults: &DevelopDefaults,
+    libraries: &crate::environment::Libraries,
     destination: &Destination,
     software: &str,
     cancel: Cancel<'_>,
@@ -129,13 +132,28 @@ pub fn publish(
             .map_err(|e| failed(&e))?;
     }
     let path = provisional.path();
-    let raw = crate::photo::open(path).context("The merged DNG can't be read")?;
+    let raw =
+        crate::photo::open(path, &libraries.lenses).context("The merged DNG can't be read")?;
     let m = raw.metadata.clone();
-    let profiles =
-        crate::camera_look::with_default(path, &m, crate::camera_profiles::installed(&m).0, cancel);
+    let installed = libraries.profiles.installed(&m).0;
+    let profiles = crate::camera_look::with_default(
+        path,
+        &libraries.lenses,
+        &libraries.fits,
+        &m,
+        installed,
+        cancel,
+    );
     let defaults =
         crate::edits::resolve(&EditRecord::default(), path, &m, &profiles, raw_defaults)?.recipe;
-    let (recipe, notes) = starting_edit(&defaults, active, &m, &profiles, merged.crop);
+    let (recipe, notes) = starting_edit(
+        &defaults,
+        active,
+        &m,
+        &profiles,
+        merged.crop,
+        &libraries.lensfun,
+    );
     recipe.validate()?;
     let captured = crate::photo::camera_exif(path).and_then(|e| e.captured());
     let preview = preview(raw, &recipe, cancel)?;
@@ -235,14 +253,17 @@ impl ActiveEdit {
         record: &EditRecord,
         path: &Path,
         raw_defaults: &DevelopDefaults,
+        libraries: &crate::environment::Libraries,
         cancel: Cancel<'_>,
     ) -> Result<Self> {
-        let metadata = crate::photo::header_metadata(path)
-            .or_else(|_| crate::photo::open(path).map(|raw| raw.metadata))?;
+        let metadata = crate::photo::header_metadata(path, &libraries.lenses)
+            .or_else(|_| crate::photo::open(path, &libraries.lenses).map(|raw| raw.metadata))?;
         let profiles = crate::camera_look::with_default(
             path,
+            &libraries.lenses,
+            &libraries.fits,
             &metadata,
-            crate::camera_profiles::installed(&metadata).0,
+            libraries.profiles.installed(&metadata).0,
             cancel,
         );
         let resolved = crate::edits::resolve(record, path, &metadata, &profiles, raw_defaults)?;
@@ -433,6 +454,7 @@ pub(crate) mod tests {
                 metadata: &m,
             },
             &DevelopDefaults::default(),
+            &crate::environment::Libraries::default(),
             &Destination::beside(&dir.join("IMG_1.CR3")),
             "RAWmakase test",
             cancel,
@@ -478,7 +500,8 @@ pub(crate) mod tests {
         }
         // The preview, as the starting edit crops it and unrotated as the
         // image is kept.
-        let mut raw = crate::photo::open(&published.path).unwrap();
+        let mut raw =
+            crate::photo::open(&published.path, &crate::photo::LensProfiles::none()).unwrap();
         let preview = image::load_from_memory(&raw.thumbnail().unwrap()).unwrap();
         assert_eq!((preview.width(), preview.height()), (470, 307));
         assert_eq!(raw.metadata.flip, 6);
@@ -501,7 +524,7 @@ pub(crate) mod tests {
         let unrotated = [0.05, 0.02, 0.99, 0.98];
         let merged = merged(dir.path(), Some(unrotated));
         let published = publish_in(dir.path(), &merged, Cancel::NEVER).unwrap();
-        let raw = crate::photo::open(&published.path).unwrap();
+        let raw = crate::photo::open(&published.path, &crate::photo::LensProfiles::none()).unwrap();
         let frame = crate::model::image_frame::ImageFrame::for_metadata(&raw.metadata);
         assert_eq!(frame.turns % 2, 1, "turned a quarter");
         let crop = published.recipe.crop;

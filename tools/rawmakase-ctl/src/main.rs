@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use clap::Parser;
 fn main() -> std::process::ExitCode {
     match rawmakase_ctl::run(rawmakase_ctl::Cli::parse()) {

@@ -425,7 +425,7 @@ impl Editor {
                 name: photo.filename.clone(),
                 path: photo.path.clone(),
                 demosaic: self.session.demosaic,
-                decode_cache: self.decode_cache.clone(),
+                decode_cache: self.decode_cache().clone(),
                 folder: folder.clone(),
                 recorded,
                 discards: self.editable_builds.discards,

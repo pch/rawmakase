@@ -136,7 +136,8 @@ mod tests {
     fn a_saved_edit_comes_first_then_lightroom_then_the_defaults() -> Result<()> {
         let (_d, mut c, photos) = catalog()?;
         let metadata = chart_metadata();
-        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let (profiles, _) =
+            crate::camera_profiles::ProfileLibrary::for_tests().installed(&metadata);
         let defaults = crate::raw_defaults::brighter_defaults();
         let resolve_photo = |c: &Catalog, (id, path): &(PhotoId, std::path::PathBuf)| {
             resolve(&c.edit_record(*id)?, path, &metadata, &profiles, &defaults)
@@ -214,7 +215,8 @@ mod tests {
         use std::sync::Arc;
         let (_d, mut c, photos) = catalog()?;
         let metadata = chart_metadata();
-        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let (profiles, _) =
+            crate::camera_profiles::ProfileLibrary::for_tests().installed(&metadata);
         let defaults = Arc::new(crate::raw_defaults::brighter_defaults());
         let (a, b, unedited) = (&photos[0], &photos[1], &photos[2]);
         let mut saved = Recipe::with_profiles(&metadata, &profiles);
@@ -335,7 +337,8 @@ mod tests {
     fn an_edit_that_cant_be_used_is_an_error_never_the_defaults() -> Result<()> {
         let (_d, mut c, photos) = catalog()?;
         let metadata = chart_metadata();
-        let (profiles, _) = crate::camera_profiles::installed(&metadata);
+        let (profiles, _) =
+            crate::camera_profiles::ProfileLibrary::for_tests().installed(&metadata);
         let defaults = DevelopDefaults::default();
         let resolve_photo = |c: &Catalog, (id, path): &(PhotoId, std::path::PathBuf)| {
             c.edit_record(*id)

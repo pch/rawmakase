@@ -169,7 +169,7 @@ impl Editor {
                         continue;
                     };
                     let id = selected.for_photo(photo.as_ref());
-                    let value = *id.value_mut(&mut self.document.edit.recipe().clone());
+                    let value = id.value(self.document.edit.recipe());
                     let stepped = id.key_stepped(value, size, up);
                     // At the end of the slider: nothing changes, and no step.
                     if stepped == value {

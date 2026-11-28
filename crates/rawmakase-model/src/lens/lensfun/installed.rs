@@ -20,9 +20,9 @@ pub const MANIFEST: &str = "installed.json";
 pub const MAX_FILES: usize = 200;
 pub const MAX_BYTES: u64 = 32 << 20;
 
-/// The folder Lensfun's database is installed in.
-pub fn dir() -> PathBuf {
-    crate::storage::data_dir().join("lensfun")
+/// The folder Lensfun's database is installed in, in the data folder `data`.
+pub fn dir_in(data: &Path) -> PathBuf {
+    data.join("lensfun")
 }
 
 /// What `installed.json` records.
@@ -173,21 +173,46 @@ impl Cache {
     }
 }
 
-/// The database editing a photo resolves Lensfun lenses against: the one installed
-/// when it is asked for, so an install, update or removal since the photo opened
-/// counts; or one given (tests). Copy Settings, Sync, presets and XMP pass
-/// [`Handle::Installed`]; rendering never reads it, since an edit keeps its lens's
-/// calibration.
-#[derive(Clone, Default)]
+/// The database editing a photo resolves Lensfun lenses against: the one
+/// installed in a folder when it is asked for, so an install, update or removal
+/// since the photo opened counts; or one given (tests). Copy Settings, Sync,
+/// presets and XMP take the context's; rendering never reads it, since an edit
+/// keeps its lens's calibration. A clone follows the same folder, through the
+/// same cache.
+#[derive(Clone)]
 pub enum Handle {
-    #[default]
-    Installed,
+    /// The database installed in a folder, as it is when asked.
+    Installed(Arc<Watched>),
     Given(Option<Arc<Installed>>),
 }
+/// A folder Lensfun's database is installed in, and what was last read there.
+pub struct Watched {
+    dir: PathBuf,
+    cache: Cache,
+}
 impl Handle {
+    /// The database installed in `dir`, followed as it changes.
+    pub fn installed_in(dir: PathBuf) -> Self {
+        Self::Installed(Arc::new(Watched {
+            dir,
+            cache: Cache::new(),
+        }))
+    }
+    /// No database at all.
+    pub fn none() -> Self {
+        Self::Given(None)
+    }
+    /// The folder this handle follows, where an install goes; none for a
+    /// database given.
+    pub fn dir(&self) -> Option<&Path> {
+        match self {
+            Self::Installed(watched) => Some(&watched.dir),
+            Self::Given(_) => None,
+        }
+    }
     pub fn get(&self) -> Option<Arc<Installed>> {
         match self {
-            Self::Installed => current(),
+            Self::Installed(watched) => watched.cache.current(&watched.dir),
             Self::Given(given) => given.clone(),
         }
     }
@@ -195,16 +220,56 @@ impl Handle {
 impl std::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Installed => f.write_str("installed Lensfun"),
+            Self::Installed(watched) => write!(f, "Lensfun in {}", watched.dir.display()),
             Self::Given(Some(i)) => write!(f, "Lensfun({})", i.manifest.version),
             Self::Given(None) => f.write_str("no Lensfun"),
         }
     }
 }
 
-static INSTALLED: Cache = Cache::new();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// The database installed in the data folder now, if any.
-pub fn current() -> Option<Arc<Installed>> {
-    INSTALLED.current(&dir())
+    /// Writes version `version` of a one-lens database into `dir`, as the
+    /// installer publishes one: its folder, then the manifest naming it.
+    fn install(dir: &Path, version: i64) {
+        let folder = dir.join(Manifest::folder(version));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("lenses.xml"), super::super::fixture::xml(0.01)).unwrap();
+        let manifest = Manifest {
+            version,
+            url: "https://example.invalid/db.tar.bz2".into(),
+            bytes: 1,
+            sha256: "00".into(),
+            downloaded: "2026-11-26 12:00:00".into(),
+            lenses: 1,
+            cameras: 1,
+        };
+        std::fs::write(
+            dir.join(MANIFEST),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// A handle follows its folder: a database installed, or a newer one, while
+    /// it is in use is seen, by its clones too; another folder's isn't.
+    #[test]
+    fn a_handle_sees_what_is_installed_in_its_folder_while_it_lives() {
+        let (dir, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let handle = Handle::installed_in(dir.path().to_path_buf());
+        let shared = handle.clone();
+        let elsewhere = Handle::installed_in(other.path().to_path_buf());
+        assert!(handle.get().is_none());
+        install(dir.path(), 1_700_000_000);
+        assert_eq!(shared.get().unwrap().manifest.version, 1_700_000_000);
+        // A newer version replaces the manifest; its stamp changes.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        install(dir.path(), 1_800_000_000);
+        assert_eq!(handle.get().unwrap().manifest.version, 1_800_000_000);
+        assert!(elsewhere.get().is_none());
+        assert_eq!(handle.dir(), Some(dir.path()));
+        assert!(Handle::none().get().is_none() && Handle::none().dir().is_none());
+    }
 }

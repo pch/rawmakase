@@ -13,6 +13,8 @@ the RAW decoders or the renderer). The target layering is in docs/architecture.m
 and fails when a crate depends,
 directly or through others, on a workspace crate `scripts/deps-crates.txt` says it
 never may (the model never on the renderer, the RAW decoders on no edit).
+It also runs `scripts/ambient.py check`, the ratchet on what the library's
+crates read from the environment.
 
     python3 scripts/deps.py check    # what CI runs
     python3 scripts/deps.py report   # every edge with its sites, and the cycles
@@ -395,6 +397,9 @@ def check(edges):
     broken = check_closures(production_edges(with_crates=True))
     broken_crates, crate_rules = check_crates()
     broken += broken_crates
+    import ambient  # Imports this module, so it is loaded only here.
+
+    broken += ambient.check()
     if not new and not stale and not found and not broken:
         rules = len(read_closures())
         print(

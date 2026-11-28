@@ -1,0 +1,18 @@
+{
+  "name": "rawmakase-electron",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A single-view photo editor in Electron on RAWmakase's library",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "build": "node scripts/build-addon.mjs",
+    "start": "npm run build && electron .",
+    "test": "cargo test --locked",
+    "test:pixels": "cargo test --locked --test pixels -- --ignored --nocapture",
+    "probe": "npm run build && electron . --probe=probe-out --photo=../../tests/corpus/charts/synthetic-d65.dng"
+  },
+  "devDependencies": {
+    "electron": "^45.5.0"
+  }
+}

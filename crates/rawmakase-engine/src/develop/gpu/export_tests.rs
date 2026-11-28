@@ -85,12 +85,12 @@ fn policy_and_env_resolution_rules() {
     assert_eq!(pol, ExportBackendPolicy::CpuOnly);
     assert_eq!(reason.unwrap().0, ExportFallbackKind::ConfiguredCpu);
 
-    // `ExportBackend::new(CpuOnly)` never upgrades even if env is "1".
+    // `ExportBackend::with_switch(CpuOnly, Some("1"), false)` never upgrades.
     let (pol, reason) = resolve_policy(ExportBackendPolicy::CpuOnly, Some("1"), false);
     assert_eq!(pol, ExportBackendPolicy::CpuOnly);
     assert_eq!(reason.unwrap().0, ExportFallbackKind::ConfiguredCpu);
 
-    // `ExportBackend::from_env(CpuOnly)` honors `RAWMAKASE_EXPORT_GPU=1`.
+    // `with_switch(CpuOnly, Some("1"), true)` turns GPU on.
     assert_eq!(
         resolve_policy(ExportBackendPolicy::CpuOnly, Some("1"), true),
         (ExportBackendPolicy::Auto, None)
@@ -670,6 +670,10 @@ fn mid_band_cancel_aborts_without_cpu_fallback_or_disabling_gpu() -> Result<()> 
         .err()
         .expect("cancelled render must return Err");
     assert!(err.to_string().contains("Render superseded"), "{err}");
+    assert!(
+        err.chain().any(|e| e.is::<rawmakase_cancel::Cancelled>()),
+        "a cancelled render is the typed Cancelled: {err:#}"
+    );
     let st = backend.status();
     assert!(st.gpu_active, "cancel must not disable GPU");
     assert_eq!(st.cpu_renders, 0, "cancel must not trigger CPU fallback");

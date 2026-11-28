@@ -220,13 +220,18 @@ impl Downloads {
 
     /// The catalogue's profiles for photo `m`, with where each is installed.
     /// Measured once per camera and profile library (`library`, its fingerprint).
-    fn measure(&mut self, m: &Metadata, library: &str) -> &[Listed] {
+    fn measure(
+        &mut self,
+        m: &Metadata,
+        installed: &crate::camera_profiles::ProfileLibrary,
+        library: &str,
+    ) -> &[Listed] {
         let key = measure_key(m, library);
         if self.measured.as_ref().is_none_or(|c| c.key != key) {
             let profiles = catalogue()
                 .matching(m)
                 .into_iter()
-                .map(|e| Listed::measure(e, e.status(), m))
+                .map(|e| Listed::measure(e, e.status(installed), m))
                 .collect();
             self.measured = Some(Measured { key, profiles });
         }
@@ -239,8 +244,12 @@ impl Editor {
     /// catalogue covers. Only then does the Profile menu offer them.
     pub(in crate::app) fn has_catalogue_profiles(&mut self) -> bool {
         let library = self.profile_library.clone();
+        let installed = self.camera_profiles().clone();
         match &self.document.metadata {
-            Some(m) => !self.profile_download.measure(m, &library).is_empty(),
+            Some(m) => !self
+                .profile_download
+                .measure(m, &installed, &library)
+                .is_empty(),
             None => false,
         }
     }
@@ -255,6 +264,7 @@ impl Editor {
     pub(in crate::app) fn profile_offer(&mut self) -> Option<Offer> {
         let m = self.document.metadata.clone()?;
         let library = self.profile_library.clone();
+        let installed = self.camera_profiles().clone();
         let current = self.document.edit.recipe().profile.clone();
         let camera = camera_key(&m);
         let requested = self.profile_download.requested.contains(&camera);
@@ -276,7 +286,7 @@ impl Editor {
         });
         let profiles: Vec<Offered> = self
             .profile_download
-            .measure(&m, &library)
+            .measure(&m, &installed, &library)
             .iter()
             .map(|listed| Offered {
                 entry: listed.entry,

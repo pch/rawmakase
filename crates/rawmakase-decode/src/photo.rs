@@ -12,10 +12,11 @@ use rawmakase_cancel::Cancel;
 use rawmakase_model::camera_data::{CameraImage, Metadata, Source};
 use std::path::Path;
 
-/// The imported lens profiles, shared by everything that opens photos (Develop's
-/// loaders, the Library's previews, exports, Sync Settings) so they are read once
-/// each time the files change, not once per thread.
-static LENS_PROFILES: crate::lens::lcp::LibraryCache = crate::lens::lcp::LibraryCache::new();
+/// The imported lens profiles a photo is opened with: the caller's, one handle
+/// shared by everything that opens photos (Develop's loaders, the Library's
+/// previews, exports, Sync Settings), so they are read once each time the files
+/// change, not once per thread.
+pub use rawmakase_model::lens::lcp::Profiles as LensProfiles;
 
 /// A photo opened for developing: a RAW still to decode, or a rendered file
 /// already decoded (it has no half-size or cached stage).
@@ -35,9 +36,9 @@ impl Opened {
 /// Opens `path` as [`source`] says: as a RAW, or as a rendered file
 /// ([`raster`]). A rendered file opens as the scene its default rendering is of
 /// (`develop::rendered`), which Develop renders as a raw scene.
-pub fn open_source(path: &Path, cancel: Cancel<'_>) -> Result<Opened> {
+pub fn open_source(path: &Path, lenses: &LensProfiles, cancel: Cancel<'_>) -> Result<Opened> {
     match source(path) {
-        Source::Raw => open(path).map(Opened::Raw),
+        Source::Raw => open(path, lenses).map(Opened::Raw),
         Source::Rendered => raster::open(path, cancel).map(|image| {
             let mut image = rawmakase_engine::develop::rendered::to_scene(image);
             // Its recovered image is the file as it is (`develop::quality::recovered`):
@@ -78,9 +79,10 @@ pub fn raw_xmp(path: &Path) -> Option<Vec<u8>> {
     crate::raw::embedded_xmp(path)
 }
 
-/// The photo at `path`, opened for developing.
-pub fn open(path: &Path) -> Result<Raw> {
-    with_file_facts(path, Raw::open_file(path)?)
+/// The photo at `path`, opened for developing, with the profiles of `lenses`
+/// that fit it.
+pub fn open(path: &Path, lenses: &LensProfiles) -> Result<Raw> {
+    with_file_facts(path, Raw::open_file(path)?, lenses)
 }
 
 /// The metadata [`open`] gives the RAW at `path`, from its header read in
@@ -90,8 +92,8 @@ pub fn open(path: &Path) -> Result<Raw> {
 /// levels) are not to be relied on. An error when the header can't be read
 /// that way, or gives none of ISO, shutter speed and aperture; the caller then
 /// opens the file whole.
-pub fn header_metadata(path: &Path) -> Result<crate::camera_data::Metadata> {
-    let metadata = with_file_facts(path, Raw::open_header(path)?)?.metadata;
+pub fn header_metadata(path: &Path, lenses: &LensProfiles) -> Result<crate::camera_data::Metadata> {
+    let metadata = with_file_facts(path, Raw::open_header(path)?, lenses)?.metadata;
     // An EXIF directory beyond the parts read reads as empty, and photo info
     // is kept once read: none of ISO, shutter speed and aperture is read from
     // the file whole instead, as a file truly without them is today.
@@ -110,14 +112,17 @@ fn has_exposure(metadata: &crate::camera_data::Metadata) -> bool {
 /// The imported lens profiles that fit the photo `metadata` describes: what
 /// [`open`] gives a photo, for a photo opened another way (an editable
 /// preview, whose facts are its original's).
-pub fn lens_profiles(metadata: &Metadata) -> rawmakase_model::optics::lcp::PhotoProfiles {
-    LENS_PROFILES.current().for_photo(metadata)
+pub fn lens_profiles(
+    metadata: &Metadata,
+    lenses: &LensProfiles,
+) -> rawmakase_model::optics::lcp::PhotoProfiles {
+    lenses.current().for_photo(metadata)
 }
 
 /// `raw`, opened from `path`, with what the file says beyond the decoders'
 /// facts: lens tables, a DNG's profile and hints, and the imported lens
 /// profiles.
-fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
+fn with_file_facts(path: &Path, mut raw: Raw, lenses: &LensProfiles) -> Result<Raw> {
     let metadata = &mut raw.metadata;
     let builtin = crate::raw::lens::read_builtin(path, metadata);
     (metadata.lens, metadata.lens_stand_in) = (builtin.lens, builtin.stand_in);
@@ -177,7 +182,7 @@ fn with_file_facts(path: &Path, mut raw: Raw) -> Result<Raw> {
             metadata.camera_crop = dng.user_crop.filter(|c| *c != [0., 0., 1., 1.]);
         }
     }
-    metadata.lens_profiles = lens_profiles(metadata);
+    metadata.lens_profiles = lens_profiles(metadata, lenses);
     // Pentax bodies record no lens name, only the lens ID: name the lens as the
     // profile matched by that ID does. Matched first, as the ID only counts for a
     // file without a lens name.
@@ -242,7 +247,7 @@ mod tests {
             if !rawmakase_model::storage::is_raw(&path) {
                 continue;
             }
-            let Ok(whole) = super::open(&path) else {
+            let Ok(whole) = super::open(&path, &crate::photo::LensProfiles::none()) else {
                 continue;
             };
             let variant = crate::raw::header_variant(&path);
@@ -250,7 +255,8 @@ mod tests {
             let counts = tally
                 .entry(variant.unwrap_or_else(|| format!("{} files", extension.to_uppercase())))
                 .or_default();
-            let Ok(header) = super::header_metadata(&path) else {
+            let Ok(header) = super::header_metadata(&path, &crate::photo::LensProfiles::none())
+            else {
                 counts[2] += 1;
                 continue;
             };
@@ -306,7 +312,12 @@ mod tests {
                 "{}/../../tests/corpus/charts/{name}.dng",
                 env!("CARGO_MANIFEST_DIR")
             );
-            super::open(std::path::Path::new(&path)).unwrap().metadata
+            super::open(
+                std::path::Path::new(&path),
+                &crate::photo::LensProfiles::none(),
+            )
+            .unwrap()
+            .metadata
         };
         let named = chart("synthetic-d65");
         assert_eq!(named.embedded_profile_status, S::Usable);
@@ -331,7 +342,9 @@ mod tests {
             }
             let out = dir.path().join(name);
             std::fs::write(&out, bytes).unwrap();
-            super::open(&out).unwrap().metadata
+            super::open(&out, &crate::photo::LensProfiles::none())
+                .unwrap()
+                .metadata
         };
         // A profile tag whose value lies past the file's end: unreadable, not absent.
         let unreadable = patched("unreadable.dng", &|tag, entry| {
@@ -415,7 +428,9 @@ mod tests {
             bytes.extend(0u32.to_le_bytes());
             let path = dir.path().join("matrix-only.dng");
             std::fs::write(&path, bytes).unwrap();
-            let m = super::open(&path).unwrap().metadata;
+            let m = super::open(&path, &crate::photo::LensProfiles::none())
+                .unwrap()
+                .metadata;
             assert!(
                 m.embedded_dcp.is_none(),
                 "fixture must exercise the matrix-only fallback"
@@ -569,7 +584,7 @@ mod tests {
         ];
         let data: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
         let (_dir, path) = dng_file(entries, data, "merged.dng");
-        let raw = super::open(&path).unwrap();
+        let raw = super::open(&path, &crate::photo::LensProfiles::none()).unwrap();
         let wb = raw.metadata.wb;
         let im = raw
             .develop(
@@ -601,7 +616,7 @@ mod tests {
         use rawmakase_model::model::recipe::Recipe;
         // 120 lies below the black level: noise there develops as 0.
         let (_dir, path) = monochrome_dng(4, &[220, 2236, 8301, 16383, 1000, 4000, 12000, 120]);
-        let raw = super::open(&path).unwrap();
+        let raw = super::open(&path, &crate::photo::LensProfiles::none()).unwrap();
         let m = raw.metadata.clone();
         assert!(m.monochrome);
         assert_eq!((m.wb, m.daylight_wb), ([1.; 3], [1.; 3]));
@@ -661,7 +676,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("no-baseline.dng");
         std::fs::write(&path, bytes).unwrap();
-        let m = super::open(&path).unwrap().metadata;
+        let m = super::open(&path, &crate::photo::LensProfiles::none())
+            .unwrap()
+            .metadata;
         // A camera without a table row would otherwise take the table's median.
         assert_eq!(m.baseline_exposure, Some(0.));
         assert_eq!(crate::camera_profiles::reference::baseline_exposure(&m), 0.);
@@ -725,7 +742,9 @@ mod tests {
                 (51125, 5, 4, longs(&[1, 10, 1, 4, 9, 10, 3, 4])),
             ],
         );
-        let m = super::open(&path).unwrap().metadata;
+        let m = super::open(&path, &crate::photo::LensProfiles::none())
+            .unwrap()
+            .metadata;
         let frame = [m.crop_left, m.crop_top, m.crop_width, m.crop_height];
         assert_eq!(frame, [10, 10, 900, 700]);
         let crop = m.camera_crop.expect("the DNG's default user crop");
@@ -753,7 +772,13 @@ mod tests {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../tests/data/formats")
                 .join(name);
-            match super::open_source(&path, Cancel::new(&cancel)).unwrap() {
+            match super::open_source(
+                &path,
+                &crate::photo::LensProfiles::none(),
+                Cancel::new(&cancel),
+            )
+            .unwrap()
+            {
                 super::Opened::Rendered(image) => assert!(image.metadata.is_rendered(), "{name}"),
                 super::Opened::Raw(_) => panic!("{name} must open as rendered"),
             }
@@ -767,7 +792,8 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/data/formats")
             .join("corners.png");
-        let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER).unwrap()
+        let super::Opened::Rendered(image) =
+            super::open_source(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap()
         else {
             panic!("a PNG opens as rendered");
         };
@@ -786,7 +812,8 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/data/formats")
             .join("pq.avif");
-        let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER).unwrap()
+        let super::Opened::Rendered(image) =
+            super::open_source(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap()
         else {
             panic!("an HDR file opens as rendered");
         };
@@ -828,7 +855,13 @@ mod tests {
         let raw_pixel = crate::raster::open(&path, Cancel::new(&cancel))
             .unwrap()
             .pixels[0];
-        match super::open_source(&path, Cancel::new(&cancel)).unwrap() {
+        match super::open_source(
+            &path,
+            &crate::photo::LensProfiles::none(),
+            Cancel::new(&cancel),
+        )
+        .unwrap()
+        {
             super::Opened::Rendered(image) => {
                 assert!(image.metadata.is_rendered());
                 // The pixels are the pseudo-scene of the file's linear values.
@@ -847,12 +880,16 @@ mod tests {
         let path = dir.path().join("garbage.ARW");
         std::fs::write(&path, b"not a raw file").unwrap();
         let cancel = std::sync::atomic::AtomicBool::new(false);
-        let raw = super::open(&path)
+        let raw = super::open(&path, &crate::photo::LensProfiles::none())
             .err()
             .expect("the decoder refuses garbage");
-        let opened = super::open_source(&path, Cancel::new(&cancel))
-            .err()
-            .expect("the decoder refuses garbage");
+        let opened = super::open_source(
+            &path,
+            &crate::photo::LensProfiles::none(),
+            Cancel::new(&cancel),
+        )
+        .err()
+        .expect("the decoder refuses garbage");
         assert_eq!(opened.to_string(), raw.to_string());
     }
 
@@ -867,7 +904,9 @@ mod tests {
                 (50720, 4, 2, longs(&[900, 500])),
             ],
         );
-        let m = super::open(&path).unwrap().metadata;
+        let m = super::open(&path, &crate::photo::LensProfiles::none())
+            .unwrap()
+            .metadata;
         assert_eq!(m.make, "Sony");
         let frame = [m.crop_left, m.crop_top, m.crop_width, m.crop_height];
         assert_eq!(frame, [20, 100, 900, 500]);
@@ -906,7 +945,9 @@ mod tests {
             let path = dir.path().join(name);
             std::fs::write(&path, turned_jpeg())?;
             assert_eq!(super::source(&path), Source::Rendered, "{name}");
-            let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER)? else {
+            let super::Opened::Rendered(image) =
+                super::open_source(&path, &super::LensProfiles::none(), Cancel::NEVER)?
+            else {
                 panic!("{name} opened as a RAW");
             };
             assert_eq!((image.width, image.height), (1, 2), "{name}");
@@ -921,7 +962,9 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("IMG_1.CR2");
         image::RgbImage::new(3, 2).save_with_format(&path, image::ImageFormat::Png)?;
-        let super::Opened::Rendered(image) = super::open_source(&path, Cancel::NEVER)? else {
+        let super::Opened::Rendered(image) =
+            super::open_source(&path, &super::LensProfiles::none(), Cancel::NEVER)?
+        else {
             panic!("opened as a RAW");
         };
         assert_eq!((image.width, image.height), (3, 2));
@@ -938,7 +981,7 @@ mod tests {
             .join("../../tests/corpus/charts/synthetic-d65.dng");
         assert_eq!(super::source(&chart), Source::Raw);
         assert!(matches!(
-            super::open_source(&chart, Cancel::NEVER),
+            super::open_source(&chart, &super::LensProfiles::none(), Cancel::NEVER),
             Ok(super::Opened::Raw(_))
         ));
         let dir = tempfile::tempdir().unwrap();
@@ -957,13 +1000,13 @@ mod tests {
             std::fs::write(&path, bytes).unwrap();
             assert_eq!(super::source(&path), source, "{name}");
             assert!(
-                super::open_source(&path, Cancel::NEVER).is_err(),
+                super::open_source(&path, &super::LensProfiles::none(), Cancel::NEVER).is_err(),
                 "{name} opened"
             );
         }
         // A file that can't be read fails as a RAW, as before.
         let missing = dir.path().join("missing.CR2");
         assert_eq!(super::source(&missing), Source::Raw);
-        assert!(super::open_source(&missing, Cancel::NEVER).is_err());
+        assert!(super::open_source(&missing, &super::LensProfiles::none(), Cancel::NEVER).is_err());
     }
 }

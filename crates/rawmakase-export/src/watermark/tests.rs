@@ -27,6 +27,7 @@ fn graphic(w: u32, h: u32, sixteen: bool) -> Result<(tempfile::TempDir, Watermar
     let store = dir.path().join("watermarks");
     let saved = save_in(
         &store,
+        &fonts::Fonts::default(),
         &Watermark {
             name: "Logo".into(),
             style: Style::Graphic,
@@ -53,7 +54,10 @@ fn each_anchor_puts_the_mark_on_its_point_with_its_inset() -> Result<()> {
         (Anchor(0, 2), (10, 70)),
     ] {
         w.anchor = anchor;
-        let placed = w.ready_in(&images)?.place(200, 100).unwrap();
+        let placed = w
+            .ready_in(&images, &fonts::Fonts::default())?
+            .place(200, 100)
+            .unwrap();
         assert_eq!((placed.width, placed.height), (20, 20), "{anchor:?}");
         assert_eq!((placed.x, placed.y), at, "{anchor:?}");
     }
@@ -66,17 +70,26 @@ fn fit_and_fill_size_the_mark_to_the_photo() -> Result<()> {
     let images = dir.path().join("watermarks/images");
     w.inset = [0.1, 0.1];
     w.size = Size::Fit;
-    let p = w.ready_in(&images)?.place(200, 100).unwrap();
+    let p = w
+        .ready_in(&images, &fonts::Fonts::default())?
+        .place(200, 100)
+        .unwrap();
     assert_eq!((p.width, p.height), (160, 40));
     // Fit stays within the photo; Fill covers it, cut at its edges.
     let (dir, mut w) = graphic(10, 40, false)?;
     let images = dir.path().join("watermarks/images");
     w.inset = [0., 0.];
     w.size = Size::Fit;
-    let p = w.ready_in(&images)?.place(200, 100).unwrap();
+    let p = w
+        .ready_in(&images, &fonts::Fonts::default())?
+        .place(200, 100)
+        .unwrap();
     assert_eq!((p.width, p.height), (25, 100));
     w.size = Size::Fill;
-    let p = w.ready_in(&images)?.place(200, 100).unwrap();
+    let p = w
+        .ready_in(&images, &fonts::Fonts::default())?
+        .place(200, 100)
+        .unwrap();
     // Twice the photo at most: 200 high, so 50 wide.
     assert_eq!((p.width, p.height), (50, 200));
     Ok(())
@@ -88,7 +101,10 @@ fn rotation_turns_the_mark_in_quarter_turns() -> Result<()> {
     let images = dir.path().join("watermarks/images");
     w.size = Size::Proportional(0.1);
     w.rotation = 1;
-    let p = w.ready_in(&images)?.place(100, 100).unwrap();
+    let p = w
+        .ready_in(&images, &fonts::Fonts::default())?
+        .place(100, 100)
+        .unwrap();
     // Turned upright: 10 wide (a tenth of the photo), 20 tall.
     assert_eq!((p.width, p.height), (10, 20));
     // The transparent left half is now at the bottom.
@@ -107,7 +123,8 @@ fn png_alpha_is_honoured_and_untouched_pixels_keep_full_precision() -> Result<()
     // A value 16-bit TIFF holds and 8-bit can't.
     let v = 1000. / 65535.;
     let mut image = crate::develop::ExportImage::srgb(gray(100, 100, v));
-    w.ready_in(&images)?.apply(&mut image);
+    w.ready_in(&images, &fonts::Fonts::default())?
+        .apply(&mut image);
     let pixels = image.pixels();
     // Outside the mark, and under its transparent half, exactly as rendered.
     assert_eq!(pixels[99 * 100 + 99], [v; 3]);
@@ -126,7 +143,10 @@ fn a_missing_image_fails_before_anything_is_drawn() {
         image: Some("gone.png".into()),
         ..crate::watermark::fonts::test_watermark()
     };
-    let error = w.ready_in(Path::new("/nonexistent")).err().unwrap();
+    let error = w
+        .ready_in(Path::new("/nonexistent"), &fonts::Fonts::default())
+        .err()
+        .unwrap();
     assert_eq!(error.to_string(), "Watermark image not found: gone.png");
 }
 
@@ -139,10 +159,47 @@ fn deleting_a_preset_removes_its_own_image() -> Result<()> {
     assert_eq!(presets_in(&store), vec![w.clone()]);
     // The source can go: the preset has its own copy.
     std::fs::remove_file(dir.path().join("logo.png"))?;
-    assert!(w.ready_in(&store.join("images")).is_ok());
+    assert!(
+        w.ready_in(&store.join("images"), &fonts::Fonts::default())
+            .is_ok()
+    );
     delete_in(&store, &w)?;
     assert!(!image.exists());
     assert!(presets_in(&store).is_empty());
+    Ok(())
+}
+
+#[test]
+fn the_folder_given_is_where_presets_and_images_are() -> Result<()> {
+    let (dir, w) = graphic(4, 4, false)?;
+    let marks = Watermarks::in_dir(dir.path().join("watermarks"));
+    assert_eq!(marks.presets(), vec![w.clone()]);
+    assert!(!w.image_missing(&marks));
+    assert!(w.ready(&marks).is_ok());
+    marks.delete(&w)?;
+    assert!(marks.presets().is_empty());
+    assert!(w.image_missing(&marks));
+    Ok(())
+}
+
+#[test]
+fn without_a_folder_nothing_is_saved_and_no_image_is_found() -> Result<()> {
+    let (_dir, w) = graphic(4, 4, false)?;
+    let none = Watermarks::none();
+    assert!(none.presets().is_empty());
+    // Not looked for in the working folder.
+    assert!(w.image_missing(&none));
+    let error = w.ready(&none).err().unwrap();
+    assert_eq!(
+        error.to_string(),
+        format!("Watermark image not found: {}", w.image.clone().unwrap())
+    );
+    let error = none.save(&w, None, None).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "There is no data folder to keep watermarks in"
+    );
+    assert!(none.delete(&w).is_err());
     Ok(())
 }
 
@@ -154,7 +211,7 @@ fn text_is_drawn_with_smooth_edges_and_a_shadow() -> Result<()> {
         color: [1., 1., 1.],
         ..crate::watermark::fonts::test_watermark()
     };
-    let plain = w.ready()?.place(400, 200).unwrap();
+    let plain = w.ready(&Watermarks::none())?.place(400, 200).unwrap();
     assert!((plain.width as f32 - 200.).abs() < 12.);
     let alphas: Vec<f32> = plain.rgba.iter().map(|p| p[3]).collect();
     assert!(alphas.iter().any(|a| *a > 0.99), "solid strokes");
@@ -166,7 +223,7 @@ fn text_is_drawn_with_smooth_edges_and_a_shadow() -> Result<()> {
     // The shadow darkens around the text, not over it.
     w.shadow.enabled = true;
     w.shadow.opacity = 1.;
-    let shadowed = w.ready()?.place(400, 200).unwrap();
+    let shadowed = w.ready(&Watermarks::none())?.place(400, 200).unwrap();
     let covered = |p: &Placed| p.rgba.iter().filter(|c| c[3] > 0.01).count();
     assert!(covered(&shadowed) > covered(&plain));
     assert!(
@@ -185,7 +242,7 @@ fn the_weight_follows_the_style() -> Result<()> {
             size: Size::Proportional(0.5),
             ..crate::watermark::fonts::test_watermark()
         };
-        let placed = w.ready()?.place(400, 200).unwrap();
+        let placed = w.ready(&Watermarks::none())?.place(400, 200).unwrap();
         Ok(placed.rgba.iter().map(|p| p[3]).sum::<f32>() / (placed.width * placed.height) as f32)
     };
     assert!(ink("Bold")? > ink("Regular")? * 1.2);
@@ -198,6 +255,7 @@ fn renaming_a_preset_keeps_its_image() -> Result<()> {
     let store = dir.path().join("watermarks");
     let renamed = save_in(
         &store,
+        &fonts::Fonts::default(),
         &Watermark {
             name: "Studio".into(),
             ..w.clone()
@@ -207,7 +265,11 @@ fn renaming_a_preset_keeps_its_image() -> Result<()> {
     )?;
     let names: Vec<String> = presets_in(&store).into_iter().map(|p| p.name).collect();
     assert_eq!(names, ["Studio"]);
-    assert!(renamed.ready_in(&store.join("images")).is_ok());
+    assert!(
+        renamed
+            .ready_in(&store.join("images"), &fonts::Fonts::default())
+            .is_ok()
+    );
     // A new preset of the old name doesn't share the renamed one's image.
     assert_ne!(renamed.image, w.image);
     // Renamed with a new image: the old preset and its image go.
@@ -215,6 +277,7 @@ fn renaming_a_preset_keeps_its_image() -> Result<()> {
     image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 255, 255])).save(&source)?;
     let again = save_in(
         &store,
+        &fonts::Fonts::default(),
         &Watermark {
             name: "Office".into(),
             ..renamed
@@ -226,7 +289,11 @@ fn renaming_a_preset_keeps_its_image() -> Result<()> {
     assert_eq!(names, ["Office"]);
     let images: Vec<_> = std::fs::read_dir(store.join("images"))?.flatten().collect();
     assert_eq!(images.len(), 1);
-    assert!(again.ready_in(&store.join("images")).is_ok());
+    assert!(
+        again
+            .ready_in(&store.join("images"), &fonts::Fonts::default())
+            .is_ok()
+    );
     Ok(())
 }
 
@@ -244,18 +311,48 @@ fn names_that_make_the_same_file_and_unreadable_images_are_refused() -> Result<(
         name: name.into(),
         ..clash.clone()
     };
-    save_in(&store, &named("A/B"), None, None)?;
-    assert!(save_in(&store, &named("A?B"), None, None).is_err());
+    save_in(&store, &fonts::Fonts::default(), &named("A/B"), None, None)?;
+    assert!(save_in(&store, &fonts::Fonts::default(), &named("A?B"), None, None).is_err());
     // A new one, or a rename, onto an existing name is refused too.
-    assert!(save_in(&store, &named("Logo"), None, None).is_err());
-    assert!(save_in(&store, &named("Logo"), Some("A/B"), None).is_err());
-    assert!(save_in(&store, &named("logo"), None, None).is_err());
-    assert!(save_in(&store, &named(SIMPLE_COPYRIGHT), None, None).is_err());
+    assert!(save_in(&store, &fonts::Fonts::default(), &named("Logo"), None, None).is_err());
+    assert!(
+        save_in(
+            &store,
+            &fonts::Fonts::default(),
+            &named("Logo"),
+            Some("A/B"),
+            None
+        )
+        .is_err()
+    );
+    assert!(save_in(&store, &fonts::Fonts::default(), &named("logo"), None, None).is_err());
+    assert!(
+        save_in(
+            &store,
+            &fonts::Fonts::default(),
+            &named(SIMPLE_COPYRIGHT),
+            None,
+            None
+        )
+        .is_err()
+    );
     let broken = dir.path().join("broken.png");
     std::fs::write(&broken, b"not a png")?;
-    assert!(save_in(&store, &w, Some(&w.name), Some(&broken)).is_err());
+    assert!(
+        save_in(
+            &store,
+            &fonts::Fonts::default(),
+            &w,
+            Some(&w.name),
+            Some(&broken)
+        )
+        .is_err()
+    );
     // The preset's image is untouched by the failed save.
-    assert!(w.ready_in(&store.join("images")).is_ok());
+    assert!(
+        w.ready_in(&store.join("images"), &fonts::Fonts::default())
+            .is_ok()
+    );
     Ok(())
 }
 
@@ -275,6 +372,7 @@ fn transparent_pixels_dont_darken_scaled_edges() -> Result<()> {
     let store = dir.path().join("watermarks");
     let w = save_in(
         &store,
+        &fonts::Fonts::default(),
         &Watermark {
             name: "Edge".into(),
             style: Style::Graphic,
@@ -284,7 +382,10 @@ fn transparent_pixels_dont_darken_scaled_edges() -> Result<()> {
         None,
         Some(&source),
     )?;
-    let placed = w.ready_in(&store.join("images"))?.place(100, 100).unwrap();
+    let placed = w
+        .ready_in(&store.join("images"), &fonts::Fonts::default())?
+        .place(100, 100)
+        .unwrap();
     // Every visible pixel stays white.
     for p in placed.rgba.iter().filter(|p| p[3] > 0.01) {
         assert!(p[0] > 0.99, "{p:?}");
@@ -307,7 +408,7 @@ fn a_wide_shadow_on_large_text_stays_cheap() -> Result<()> {
         angle: -45.,
     };
     let started = std::time::Instant::now();
-    let placed = w.ready()?.place(3000, 1000).unwrap();
+    let placed = w.ready(&Watermarks::none())?.place(3000, 1000).unwrap();
     assert!(started.elapsed().as_secs() < 20);
     assert!(placed.rgba.iter().any(|p| p[3] > 0.5));
     Ok(())
@@ -319,7 +420,13 @@ fn a_replaced_image_of_another_kind_leaves_no_old_copy() -> Result<()> {
     let store = dir.path().join("watermarks");
     let jpeg = dir.path().join("new.jpg");
     image::RgbImage::from_pixel(4, 4, image::Rgb([0, 255, 0])).save(&jpeg)?;
-    let saved = save_in(&store, &w, Some(&w.name), Some(&jpeg))?;
+    let saved = save_in(
+        &store,
+        &fonts::Fonts::default(),
+        &w,
+        Some(&w.name),
+        Some(&jpeg),
+    )?;
     let images: Vec<_> = std::fs::read_dir(store.join("images"))?.flatten().collect();
     assert_eq!(images.len(), 1);
     assert_eq!(saved.image.as_deref(), Some("Logo.jpg"));
@@ -341,7 +448,7 @@ fn a_shadow_never_makes_the_mark_larger_than_the_photo() -> Result<()> {
         radius: 0.4,
         angle: -45.,
     };
-    let placed = w.ready()?.place(600, 300).unwrap();
+    let placed = w.ready(&Watermarks::none())?.place(600, 300).unwrap();
     assert!(
         // The ink fits the photo; the shadow reaches no further than the
         // text's line box, whatever its offset and radius.
@@ -360,9 +467,17 @@ fn a_missing_font_style_fails_rather_than_drawing_another() {
         face: "Regular".into(),
         ..crate::watermark::fonts::test_watermark()
     };
-    assert!(w.ready().is_ok());
-    assert!(fonts::load("No Such Family", "Bold").is_err());
-    assert!(fonts::load(fonts::SYSTEM, "No Such Style").is_err());
+    assert!(w.ready(&Watermarks::none()).is_ok());
+    assert!(
+        fonts::Fonts::default()
+            .load("No Such Family", "Bold")
+            .is_err()
+    );
+    assert!(
+        fonts::Fonts::default()
+            .load(fonts::SYSTEM, "No Such Style")
+            .is_err()
+    );
 }
 
 #[test]
@@ -371,6 +486,7 @@ fn renaming_by_case_alone_keeps_the_preset() -> Result<()> {
     let store = dir.path().join("watermarks");
     let renamed = save_in(
         &store,
+        &fonts::Fonts::default(),
         &Watermark {
             name: "LOGO".into(),
             ..w.clone()
@@ -380,7 +496,11 @@ fn renaming_by_case_alone_keeps_the_preset() -> Result<()> {
     )?;
     let names: Vec<String> = presets_in(&store).into_iter().map(|p| p.name).collect();
     assert_eq!(names, ["LOGO"]);
-    assert!(renamed.ready_in(&store.join("images")).is_ok());
+    assert!(
+        renamed
+            .ready_in(&store.join("images"), &fonts::Fonts::default())
+            .is_ok()
+    );
     Ok(())
 }
 
@@ -412,7 +532,7 @@ fn an_hdr_master_gets_the_marks_white_at_graphics_white() -> Result<()> {
     );
     let before = hdr.pixels.clone();
     // Opaque: the red is sRGB's red at graphics white over the bright rows.
-    let ready = w.ready_in(&images)?;
+    let ready = w.ready_in(&images, &fonts::Fonts::default())?;
     assert!(ready.apply_hdr(&mut hdr));
     let srgb = |p: [f32; 3]| mul(to_srgb, p);
     let red = srgb(hdr.pixels[10 * 100 + 90]);
@@ -422,9 +542,11 @@ fn an_hdr_master_gets_the_marks_white_at_graphics_white() -> Result<()> {
     // Half opaque over the grey: the sRGB export's mix, in its encoding.
     w.opacity = 0.5;
     let mut hdr = master(before);
-    w.ready_in(&images)?.apply_hdr(&mut hdr);
+    w.ready_in(&images, &fonts::Fonts::default())?
+        .apply_hdr(&mut hdr);
     let mut sdr = crate::develop::ExportImage::srgb(gray(100, 100, srgb_encode(0.2)));
-    w.ready_in(&images)?.apply(&mut sdr);
+    w.ready_in(&images, &fonts::Fonts::default())?
+        .apply(&mut sdr);
     let ours = srgb(hdr.pixels[40 * 100 + 90]).map(srgb_encode);
     let theirs = sdr.pixels()[40 * 100 + 90];
     for c in 0..3 {

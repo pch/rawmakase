@@ -236,7 +236,7 @@ impl Editor {
                 if self.presets.layout.hidden.remove(&old) {
                     self.presets.layout.hidden.insert(new.clone());
                     self.presets.revision += 1;
-                    let _ = crate::presets::save_layout(&self.presets.layout);
+                    let _ = self.preset_library().save_layout(&self.presets.layout);
                 }
                 let mut defaults = self.raw_defaults.settings().clone();
                 defaults.rename_preset(&old, &new, name.trim());

@@ -8,7 +8,12 @@ fn counting(
     cache: Option<PreviewCache>,
     wanted: Wanted,
 ) -> (Renders, Receiver<EditResult>) {
-    fn render(_: &Path, _: &EditSource, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn render(
+        _: &Path,
+        _: &crate::environment::Libraries,
+        _: &EditSource,
+        _: Cancel<'_>,
+    ) -> anyhow::Result<image::RgbImage> {
         RENDERED.fetch_add(1, Ordering::SeqCst);
         Ok(image::RgbImage::new(4, 4))
     }
@@ -26,7 +31,7 @@ fn counting(
         },
         render,
         render_ai: render_edited_with_ai,
-        profiles: String::new,
+        profiles: |_| String::new(),
     };
     (renders, rx)
 }

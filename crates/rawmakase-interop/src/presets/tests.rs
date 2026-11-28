@@ -139,7 +139,13 @@ fn builtin_presets_apply_without_imported_profiles() {
     let (presets, _) = builtin::presets();
     for p in &presets {
         let r = p
-            .apply(&base, &m, &profiles, None)
+            .apply(
+                &base,
+                &m,
+                &profiles,
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )
             .unwrap_or_else(|e| panic!("{}: {e:#}", p.name));
         match p.settings.get("CameraProfile") {
             Some(_) => {
@@ -171,7 +177,13 @@ fn builtin_presets_prefer_imported_adobe_profiles() {
     let (presets, _) = builtin::presets();
     let haze = presets.iter().find(|p| p.name == "Concrete Haze").unwrap();
     let r = haze
-        .apply(&Recipe::with_profiles(&m, &profiles), &m, &profiles, None)
+        .apply(
+            &Recipe::with_profiles(&m, &profiles),
+            &m,
+            &profiles,
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
         .unwrap();
     assert_eq!(r.profile.unwrap().name, "Adobe Standard");
     assert!(haze.profile_substitute(&m, &profiles).is_none());
@@ -193,6 +205,7 @@ fn builtin_presets_prefer_imported_adobe_profiles() {
             &dng,
             &profiles,
             None,
+            &crate::lens::lensfun::installed::Handle::none(),
         )
         .unwrap();
     assert_eq!(r.profile.unwrap().name, embedded.name);
@@ -209,7 +222,15 @@ fn imported_presets_still_need_their_profile() {
         .unwrap();
     imported.builtin = false;
     let base = Recipe::with_profiles(&m, &profiles);
-    let e = imported.apply(&base, &m, &profiles, None).unwrap_err();
+    let e = imported
+        .apply(
+            &base,
+            &m,
+            &profiles,
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )
+        .unwrap_err();
     assert!(format!("{e:#}").contains("Missing camera profile ‘Adobe Standard’"));
     assert!(imported.profile_substitute(&m, &profiles).is_none());
 }
@@ -222,7 +243,15 @@ fn builtin_presets_offer_an_amount() {
     let profiles = open_profiles(&m);
     let base = Recipe::with_profiles(&m, &profiles);
     for p in builtin::presets().0 {
-        let full = p.apply(&base, &m, &profiles, None).unwrap();
+        let full = p
+            .apply(
+                &base,
+                &m,
+                &profiles,
+                None,
+                &crate::lens::lensfun::installed::Handle::none(),
+            )
+            .unwrap();
         let amount = super::amount::PresetAmount::new(&p, base.clone(), full);
         assert_eq!(amount.is_ok(), p.name != "Linear", "{}", p.name);
         if let Ok(amount) = amount {

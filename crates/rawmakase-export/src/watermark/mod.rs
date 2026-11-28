@@ -3,7 +3,6 @@
 //! 16-bit TIFF keeps its precision outside the mark and under a partly
 //! transparent one. Watermarks are saved as presets in the data folder's
 //! `watermarks`, a graphic one with its own copy of the image.
-pub mod font_dirs;
 pub mod fonts;
 mod raster;
 use crate::color::OutputSpace;
@@ -160,11 +159,66 @@ enum Asset {
     Font(fonts::Font),
 }
 
-pub fn dir() -> PathBuf {
-    crate::storage::data_dir().join("watermarks")
+/// The saved watermark presets and their images, and the fonts text ones
+/// draw with. The folder is the caller's (the context's first data folder's
+/// `watermarks`), or none, where nothing is saved and a graphic watermark
+/// has no image. A clone names the same folder and shares the fonts.
+#[derive(Clone, Debug, Default)]
+pub struct Watermarks {
+    dir: Option<PathBuf>,
+    fonts: fonts::Fonts,
 }
-fn images_dir() -> PathBuf {
-    dir().join("images")
+
+impl Watermarks {
+    /// The presets saved in `dir`, their images in its `images` folder.
+    pub fn in_dir(dir: PathBuf) -> Self {
+        Self {
+            dir: Some(dir),
+            ..Self::default()
+        }
+    }
+    /// No folder and no fonts: there are no presets, none can be saved,
+    /// and a text watermark finds no font.
+    pub fn none() -> Self {
+        Self::default()
+    }
+    /// The same folder, drawing text with `fonts`.
+    #[must_use]
+    pub fn with_fonts(self, fonts: fonts::Fonts) -> Self {
+        Self { fonts, ..self }
+    }
+    /// The fonts text watermarks draw with.
+    pub fn fonts(&self) -> &fonts::Fonts {
+        &self.fonts
+    }
+    /// The folder the presets are saved in, if there is one.
+    pub fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
+    }
+    fn images(&self) -> Option<PathBuf> {
+        self.dir.as_ref().map(|d| d.join("images"))
+    }
+    /// The saved presets, by name.
+    pub fn presets(&self) -> Vec<Watermark> {
+        self.dir().map(presets_in).unwrap_or_default()
+    }
+    /// Saves `watermark` as [`save_in`] does, in this folder.
+    pub fn save(
+        &self,
+        watermark: &Watermark,
+        replacing: Option<&str>,
+        source: Option<&Path>,
+    ) -> Result<Watermark> {
+        save_in(self.folder()?, &self.fonts, watermark, replacing, source)
+    }
+    /// Deletes a preset and the image it owns, as [`delete_in`] does.
+    pub fn delete(&self, watermark: &Watermark) -> Result<()> {
+        delete_in(self.folder()?, watermark)
+    }
+    fn folder(&self) -> Result<&Path> {
+        self.dir()
+            .context("There is no data folder to keep watermarks in")
+    }
 }
 
 impl Watermark {
@@ -177,38 +231,47 @@ impl Watermark {
             ..Default::default()
         }
     }
-    /// Loads its image or font, from `images` for a graphic preset.
-    pub fn ready_in(&self, images: &Path) -> Result<Ready> {
+    /// Loads its image or font: a graphic preset's from `images`, a text
+    /// one's from `fonts`.
+    pub fn ready_in(&self, images: &Path, fonts: &fonts::Fonts) -> Result<Ready> {
+        self.ready_from(Some(images), fonts)
+    }
+    /// Loads its image or font, from the images and fonts of `marks`.
+    pub fn ready(&self, marks: &Watermarks) -> Result<Ready> {
+        self.ready_from(marks.images().as_deref(), &marks.fonts)
+    }
+    fn ready_from(&self, images: Option<&Path>, fonts: &fonts::Fonts) -> Result<Ready> {
         let asset = match self.style {
             Style::Graphic => {
                 let name = self.image.clone().unwrap_or_default();
-                let path = images.join(&name);
-                ensure!(
-                    !name.is_empty() && path.is_file(),
-                    "Watermark image not found: {name}"
-                );
+                let path = images
+                    .filter(|_| !name.is_empty())
+                    .map(|images| images.join(&name))
+                    .filter(|path| path.is_file());
+                let Some(path) = path else {
+                    anyhow::bail!("Watermark image not found: {name}");
+                };
                 Asset::Image(std::sync::Arc::new(
                     decode(&path)
                         .with_context(|| format!("Watermark image not readable: {name}"))?,
                 ))
             }
-            Style::Text => Asset::Font(fonts::load(&self.family, &self.face)?),
+            Style::Text => Asset::Font(fonts.load(&self.family, &self.face)?),
         };
         Ok(Ready {
             watermark: self.clone(),
             asset,
         })
     }
-    pub fn ready(&self) -> Result<Ready> {
-        self.ready_in(&images_dir())
-    }
-    /// A graphic watermark whose image is gone, without reading it.
-    pub fn image_missing(&self) -> bool {
+    /// A graphic watermark whose image is gone from the images of `marks`,
+    /// without reading it.
+    pub fn image_missing(&self, marks: &Watermarks) -> bool {
         self.style == Style::Graphic
             && !self
                 .image
                 .as_ref()
-                .is_some_and(|name| images_dir().join(name).is_file())
+                .zip(marks.images())
+                .is_some_and(|(name, images)| images.join(name).is_file())
     }
 }
 
@@ -485,10 +548,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Saved presets, by name.
-pub fn presets() -> Vec<Watermark> {
-    presets_in(&dir())
-}
+/// The presets saved in `dir`, by name.
 pub fn presets_in(dir: &Path) -> Vec<Watermark> {
     let mut found: Vec<Watermark> = std::fs::read_dir(dir)
         .into_iter()
@@ -521,6 +581,7 @@ fn file_name(name: &str) -> String {
 /// file changes, and the old files go only once the new ones are written.
 pub fn save_in(
     dir: &Path,
+    fonts: &fonts::Fonts,
     watermark: &Watermark,
     replacing: Option<&str>,
     source: Option<&Path>,
@@ -563,9 +624,9 @@ pub fn save_in(
     }
     // Checked once installed fonts are listed; until then the export checks.
     if watermark.style == Style::Text
-        && (watermark.family == fonts::SYSTEM || fonts::families_if_listed().is_some())
+        && (watermark.family == fonts::SYSTEM || fonts.families_if_listed().is_some())
     {
-        let font = fonts::load(&watermark.family, &watermark.face)?;
+        let font = fonts.load(&watermark.family, &watermark.face)?;
         ensure!(
             raster::measure(&font, &watermark.text, 100.).is_some(),
             "The font has none of the text's characters; choose another"
@@ -625,13 +686,6 @@ pub fn save_in(
     }
     Ok(saved)
 }
-pub fn save(
-    watermark: &Watermark,
-    replacing: Option<&str>,
-    source: Option<&Path>,
-) -> Result<Watermark> {
-    save_in(&dir(), watermark, replacing, source)
-}
 /// Deletes a preset and the image it owns.
 pub fn delete_in(dir: &Path, watermark: &Watermark) -> Result<()> {
     let path = dir.join(file_name(&watermark.name));
@@ -644,9 +698,6 @@ pub fn delete_in(dir: &Path, watermark: &Watermark) -> Result<()> {
         let _ = std::fs::remove_file(dir.join("images").join(image));
     }
     Ok(())
-}
-pub fn delete(watermark: &Watermark) -> Result<()> {
-    delete_in(&dir(), watermark)
 }
 #[cfg(test)]
 mod tests;

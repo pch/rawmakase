@@ -99,6 +99,8 @@ pub(in crate::app) struct Item {
     pub demosaic: Demosaic,
     /// Where a full-size decode is looked up first.
     pub decode_cache: crate::decode_cache::DecodeCache,
+    /// What the photo is opened with and its edit resolved among.
+    pub libraries: crate::environment::Libraries,
     pub identity: String,
     pub kind: PreviewKind,
     /// The long edge asked for; 0 for full size.
@@ -199,11 +201,17 @@ fn thumbnail(image: &image::RgbImage) -> image::RgbImage {
 /// identity-checked record (a protected or unreadable edit fails, never falling
 /// back to the defaults), Upright completed, then a cancellable render.
 pub(in crate::app) fn render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
-    let opened = crate::photo::open_source(&item.path, cancel)
+    let opened = crate::photo::open_source(&item.path, &item.libraries.lenses, cancel)
         .with_context(|| format!("{} can't be read", item.path.display()))?;
-    let (profiles, _) = crate::camera_profiles::installed(opened.metadata());
-    let profiles =
-        crate::camera_look::with_default(&item.path, opened.metadata(), profiles, cancel);
+    let (profiles, _) = item.libraries.profiles.installed(opened.metadata());
+    let profiles = crate::camera_look::with_default(
+        &item.path,
+        &item.libraries.lenses,
+        &item.libraries.fits,
+        opened.metadata(),
+        profiles,
+        cancel,
+    );
     let mut recipe = item_recipe(item, opened.metadata(), &profiles)?;
     let image = match opened {
         Opened::Raw(raw) if needs_full(&recipe, &raw.metadata, item.edge) => {
@@ -375,7 +383,7 @@ impl Builder {
                         }
                         continue;
                     }
-                    Next::Build(item, cancel) => (item, cancel),
+                    Next::Build(item, cancel) => (*item, cancel),
                 };
                 let held = cache.as_mut();
                 let build = || build_one(&item, held, render, Cancel::new(&cancel));
@@ -529,7 +537,7 @@ impl Drop for Builder {
 enum Next {
     /// Upkeep, with the generation it was taken in.
     Op(Op, u64),
-    Build(Item, Arc<AtomicBool>),
+    Build(Box<Item>, Arc<AtomicBool>),
     /// A step of giving back the space discarded previews left.
     Release,
 }
@@ -621,7 +629,7 @@ impl Shared {
             if let Some(item) = state.waiting.pop_front() {
                 state.running = Some((item.photo, item.kind));
                 let cancel = state.cancel.clone();
-                return Some(Next::Build(item, cancel));
+                return Some(Next::Build(Box::new(item), cancel));
             }
             if release {
                 return Some(Next::Release);
@@ -849,6 +857,7 @@ impl Editor {
             .map_err(|e| format!("The catalog could not be read: {e:#}"))?;
         let edge = self.preview_builds.edge(kind);
         let mut items = Vec::with_capacity(chosen.len());
+        let libraries = crate::environment::libraries(&self.core);
         for ((photo, name, path), record) in chosen.into_iter().zip(records) {
             let edited = has_edit(&record.edit);
             // A JPEG, PNG, TIFF, WebP, AVIF, HEIF or JPEG XL without an edit is its own
@@ -872,7 +881,8 @@ impl Editor {
                 path,
                 defaults: self.raw_defaults.clone(),
                 demosaic: self.session.demosaic,
-                decode_cache: self.decode_cache.clone(),
+                decode_cache: self.decode_cache().clone(),
+                libraries: libraries.clone(),
                 kind,
                 edge,
             });

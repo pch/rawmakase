@@ -18,7 +18,7 @@ use rayon::prelude::*;
 use std::sync::Arc;
 
 fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
-    ensure!(!cancel.is_cancelled(), "Render superseded");
+    cancel.check("Render superseded")?;
     Ok(())
 }
 
@@ -28,6 +28,16 @@ pub fn fit_edge(width: u32, height: u32, viewport: [u32; 2]) -> u32 {
         .min(1.);
     ((width.max(height) as f64 * scale).round() as u32).max(1)
 }
+/// The size a preview render of `image` with `recipe` comes out at, its long
+/// edge at most `max_edge` (0 for full size): the recipe checked and resolved
+/// for the photo as the render resolves it (a panel switched off included),
+/// then scaled and rounded as its Fit is.
+pub fn rendered_size(image: &CameraImage, recipe: &Recipe, max_edge: u32) -> Result<(u32, u32)> {
+    let checked = recipe.checked()?;
+    let full = resolve(image, &checked).geometry;
+    Ok(output_size(full.width, full.height, max_edge))
+}
+
 pub(crate) fn output_size(width: u32, height: u32, max_edge: u32) -> (u32, u32) {
     if max_edge == 0 || width.max(height) <= max_edge {
         return (width, height);
@@ -141,7 +151,10 @@ pub(super) mod tests {
     fn cancelled_highlight_recovery_keeps_nothing() {
         let cancel = AtomicBool::new(true);
         let image = fixture();
-        assert!(recover_highlights(&image, Cancel::new(&cancel)).is_err());
+        let Err(e) = recover_highlights(&image, Cancel::new(&cancel)) else {
+            panic!("a cancelled recovery returned an image");
+        };
+        assert!(e.is::<rawmakase_cancel::Cancelled>(), "{e:#}");
         assert!(image.recovered.get().is_none());
     }
     pub(super) fn fixture() -> CameraImage {

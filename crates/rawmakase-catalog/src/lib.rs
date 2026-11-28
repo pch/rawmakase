@@ -3,6 +3,7 @@
 //! `rawmakase_interop::edits` resolves into the edit a photo develops with. Like the
 //! model and file formats below it, it builds without the RAW decoders, the
 //! renderer, wgpu or the GUI.
+#![forbid(unsafe_code)]
 use rawmakase_fs as fsops;
 use rawmakase_interop::{edits, exif, export_settings, isobmff, jpeg, riff, xmp};
 use rawmakase_model::{camera_profiles, ids, metadata, model, optics, storage, tiff, time, xml};

@@ -47,6 +47,8 @@ pub(in crate::app) struct Inputs<'a> {
     pub(in crate::app) recipe: &'a Recipe,
     pub(in crate::app) metadata: &'a Metadata,
     pub(in crate::app) profiles: &'a [Arc<CameraProfile>],
+    /// Lensfun's database, which a preset's Lensfun lens resolves against.
+    pub(in crate::app) lensfun: &'a crate::lens::lensfun::installed::Handle,
     /// The display profile the tiles are converted for, as the main view's.
     pub(in crate::app) monitor: Option<PathBuf>,
     pub(in crate::app) library: &'a Arc<crate::presets::Library>,
@@ -134,6 +136,7 @@ struct Job {
     recipe: Recipe,
     metadata: Metadata,
     profiles: Vec<Arc<CameraProfile>>,
+    lensfun: crate::lens::lensfun::installed::Handle,
     monitor: Option<PathBuf>,
     library: Arc<crate::presets::Library>,
     /// Indices into `library` and their ids, in display order.
@@ -169,6 +172,8 @@ pub(in crate::app) struct JobView<'a> {
     pub(in crate::app) recipe: &'a Recipe,
     pub(in crate::app) metadata: &'a Metadata,
     pub(in crate::app) profiles: &'a [Arc<CameraProfile>],
+    /// Lensfun's database, which a preset's Lensfun lens resolves against.
+    pub(in crate::app) lensfun: &'a crate::lens::lensfun::installed::Handle,
     pub(in crate::app) monitor: Option<&'a std::path::Path>,
     pub(in crate::app) edge: u32,
 }
@@ -355,6 +360,7 @@ impl Thumbnails {
             recipe: inputs.recipe.clone(),
             metadata: inputs.metadata.clone(),
             profiles: inputs.profiles.to_vec(),
+            lensfun: inputs.lensfun.clone(),
             monitor: inputs.monitor.clone(),
             library: inputs.library.clone(),
             tiles: due,
@@ -506,6 +512,7 @@ fn run(render: &mut impl Render, job: &Job, inbox: &Mutex<Vec<Outcome>>, ctx: &e
         recipe: &job.recipe,
         metadata: &job.metadata,
         profiles: &job.profiles,
+        lensfun: &job.lensfun,
         monitor: job.monitor.as_deref(),
         edge: job.edge,
     };
@@ -570,6 +577,7 @@ impl Render for Renderer {
             job.metadata,
             job.profiles,
             Some(&measures),
+            job.lensfun,
         )?;
         // Auto CA is measured here, at normal priority, before the slow pool.
         ThumbnailRenderer::prime(job.image, &applied.recipe);

@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     // What the loader shows first today: the camera's JPEG, at most 2560 px.
     let t = Instant::now();
-    let mut raw = rawmakase::photo::open(path)?;
+    let mut raw = rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?;
     let embedded = rawmakase::raw::thumbnail(&mut raw)?;
     println!(
         "Embedded JPEG {}x{}: {:.1} ms",
@@ -39,7 +39,8 @@ fn main() -> Result<()> {
 
     // Building the Standard preview, as Build Standard-Sized Previews does for a
     // photo with the default edit: the half-size decode when it is large enough.
-    let (profiles, _) = rawmakase::camera_profiles::installed(&raw.metadata);
+    let (profiles, _) =
+        rawmakase::camera_profiles::ProfileLibrary::for_tests().installed(&raw.metadata);
     let recipe = Recipe::with_profiles(&raw.metadata, &profiles);
     let g = develop::Geometry::for_metadata(&raw.metadata, &recipe);
     // FULL=1 builds from the full decode, to tell its share of the handoff difference.
@@ -92,7 +93,7 @@ fn main() -> Result<()> {
 
     // The first live Fit: from the decode cache, and from a decode.
     let t = Instant::now();
-    let full = rawmakase::photo::open(path)?.develop(
+    let full = rawmakase::photo::open(path, &rawmakase::photo::LensProfiles::none())?.develop(
         camera_data::Decode::full(Default::default()),
         Cancel::new(&cancel),
     )?;
@@ -100,8 +101,11 @@ fn main() -> Result<()> {
     let recovered = develop::quality::recover_highlights(&full, Cancel::NEVER)?;
     let _ = full.recovered.set(std::sync::Arc::new(recovered));
     let cached = {
-        let decode_cache =
-            rawmakase::decode_cache::DecodeCache::new(dir.path().join("decoded"), u64::MAX);
+        let decode_cache = rawmakase::decode_cache::DecodeCache::new(
+            dir.path().join("decoded"),
+            u64::MAX,
+            "bench",
+        );
         decode_cache.store("benchmark", &full)?;
         let t = Instant::now();
         let loaded = decode_cache
@@ -119,7 +123,9 @@ fn main() -> Result<()> {
             let pool = rawmakase::raw::background_pool(2, "preview-build").unwrap();
             while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                 pool.install(|| {
-                    let raw = rawmakase::photo::open(&path).unwrap();
+                    let raw =
+                        rawmakase::photo::open(&path, &rawmakase::photo::LensProfiles::none())
+                            .unwrap();
                     let im = raw
                         .develop(camera_data::Decode::Half, Cancel::new(&stop))
                         .ok()?;

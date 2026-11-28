@@ -265,7 +265,7 @@ impl Editor {
         true
     }
     fn set_preset_layout(&mut self, layout: PresetLayout) {
-        if let Err(e) = crate::presets::save_layout(&layout) {
+        if let Err(e) = self.preset_library().save_layout(&layout) {
             self.messages.fail(format!("Preset order not saved: {e:#}"));
         }
         self.presets.layout = layout;

@@ -2,7 +2,7 @@
 //! through [`own`]), reading their metadata, development into linear
 //! camera-space pixels and the embedded preview. The values they produce are
 //! [`crate::camera_data`]'s.
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use rawmakase_cancel::Cancel;
 use rayon::prelude::*;
 use std::path::Path;
@@ -16,6 +16,18 @@ use crate::camera_data::{
 };
 #[doc(hidden)]
 pub use own::whole_file_reads;
+
+/// A file RAWmakase's decoders don't read: not a RAW file they recognise, or
+/// a variant of one (an encoding, a layout, a sensor) they don't decode. It
+/// says what the decoders say.
+#[derive(Debug)]
+pub struct Unsupported(rawmakase_raw::Error);
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+impl std::error::Error for Unsupported {}
 /// The version of the decoder photos open with.
 pub fn version() -> String {
     rawmakase_raw::VERSION.to_string()
@@ -445,7 +457,7 @@ impl Raw {
             .own
             .cfa(cancel)?
             .ok_or_else(|| anyhow::anyhow!("Sensor data RAWmakase cannot develop"))?;
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(crate::ai::denoise::PackedBayer::pack(
             cfa.width as usize,
             cfa.height as usize,
@@ -472,13 +484,13 @@ impl Raw {
                 p[c] / wb[c].max(f32::MIN_POSITIVE)
             })
             .collect();
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(crate::ai::denoise::PackedBayer::pack(w, h, &data, [0, 0]))
     }
     pub fn develop(mut self, decode: Decode, cancel: Cancel<'_>) -> Result<CameraImage> {
         // Small RAWs develop at full size in either mode, as they always have.
         if let Some((width, height, pixels)) = self.own.rgb(self.metadata.wb, cancel)? {
-            ensure!(!cancel.is_cancelled(), "Development cancelled");
+            cancel.check("Development cancelled")?;
             return Ok(CameraImage {
                 recovered: Default::default(),
                 width,
@@ -517,7 +529,7 @@ impl Raw {
         else {
             return Ok(None);
         };
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         let wb = self.metadata.wb;
         let (width, height) = (w as usize, h as usize);
         let clipped = data
@@ -546,7 +558,7 @@ impl Raw {
         } else {
             (w, h, crate::demosaic::demosaic(&cfa))
         };
-        ensure!(!cancel.is_cancelled(), "Development cancelled");
+        cancel.check("Development cancelled")?;
         Ok(Some(CameraImage {
             recovered: Default::default(),
             width: w,
@@ -826,6 +838,19 @@ fn preview_image(bytes: Vec<u8>, flip: i32) -> anyhow::Result<image::RgbImage> {
 #[cfg(test)]
 mod tests {
     use rawmakase_cancel::Cancel;
+
+    /// A file the decoders don't recognise is refused as unsupported, with
+    /// their wording, so the library can tell it from a damaged RAW.
+    #[test]
+    fn a_file_the_decoders_do_not_read_is_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.CR2");
+        std::fs::write(&path, b"not a raw file at all, only text").unwrap();
+        let error = super::Raw::open_file(&path).err().unwrap();
+        let typed = error.downcast_ref::<super::Unsupported>().unwrap();
+        assert_eq!(typed.to_string(), rawmakase_raw::Error::NotRaw.to_string());
+        assert_eq!(error.to_string(), "Unsupported file format or not RAW file");
+    }
     /// A JPEG XL preview (Lightroom's DNGs embed one, of 1024 pixels, beside
     /// a 256-pixel JPEG) decodes, turned by the RAW's orientation:
     /// `rawmakase-raw`'s 8 × 4 lossless test codestream, whose pixel (x, y)

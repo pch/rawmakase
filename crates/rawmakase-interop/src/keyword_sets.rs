@@ -135,38 +135,15 @@ pub fn write(name: &str, keywords: &[String; SLOTS]) -> String {
     out
 }
 
-/// The sets of RAWmakase's folder and Lightroom's.
-#[derive(Clone, Debug, PartialEq)]
+/// The sets of RAWmakase's folder and Lightroom's, both as the caller gives
+/// them. Without its own folder only the built-in sets and Lightroom's are
+/// listed, and none can be saved.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct KeywordSets {
     /// RAWmakase's own sets.
-    pub dir: PathBuf,
+    pub dir: Option<PathBuf>,
     /// Lightroom Classic's, where this computer has a place for them.
     pub lightroom: Option<PathBuf>,
-}
-
-impl Default for KeywordSets {
-    fn default() -> Self {
-        Self {
-            dir: crate::storage::data_dir().join("Keyword Sets"),
-            lightroom: lightroom_dir(),
-        }
-    }
-}
-
-/// Where Lightroom Classic keeps its keyword sets on this computer.
-fn lightroom_dir() -> Option<PathBuf> {
-    let base = directories::BaseDirs::new()?;
-    if cfg!(target_os = "macos") {
-        Some(
-            base.home_dir()
-                .join("Library/Application Support/Adobe/Lightroom/Keyword Sets"),
-        )
-    } else if cfg!(windows) {
-        // Roaming application data: %APPDATA%.
-        Some(base.config_dir().join("Adobe/Lightroom/Keyword Sets"))
-    } else {
-        None
-    }
 }
 
 /// The sets found, by name, and the files that could not be read.
@@ -190,7 +167,9 @@ impl KeywordSets {
     pub fn list(&self) -> KeywordSetList {
         let mut list = KeywordSetList::default();
         let mut found = Vec::new();
-        read_dir(&self.dir, Origin::Own, &mut found, &mut list.errors);
+        if let Some(dir) = &self.dir {
+            read_dir(dir, Origin::Own, &mut found, &mut list.errors);
+        }
         if let Some(dir) = &self.lightroom {
             read_dir(dir, Origin::Lightroom, &mut found, &mut list.errors);
         }
@@ -219,7 +198,7 @@ impl KeywordSets {
             replace || own.is_none(),
             "A keyword set named \"{name}\" is already saved"
         );
-        std::fs::create_dir_all(&self.dir)?;
+        std::fs::create_dir_all(self.own_dir()?)?;
         let text = write(name, keywords);
         // Only the set's own file is replaced; a new set takes a file no
         // other set has, as two names can make one file name ("A/B", "A:B").
@@ -269,6 +248,12 @@ impl KeywordSets {
         std::fs::remove_file(path)?;
         Ok(())
     }
+    /// RAWmakase's own folder, which a set is saved in.
+    fn own_dir(&self) -> Result<&Path> {
+        self.dir
+            .as_deref()
+            .context("There is no data folder to keep keyword sets in")
+    }
     /// A file for a new set named `name` that no file has yet: its name as
     /// a file name, else with " 2", " 3" and so on.
     fn free_path(&self, name: &str) -> Result<PathBuf> {
@@ -276,7 +261,8 @@ impl KeywordSets {
         ensure!(!stem.is_empty(), "That name can't be a file name");
         // Whatever the case of a name already there, as a Mac's or Windows'
         // disk compares them.
-        let taken: Vec<String> = std::fs::read_dir(&self.dir)
+        let dir = self.own_dir()?;
+        let taken: Vec<String> = std::fs::read_dir(dir)
             .into_iter()
             .flatten()
             .flatten()
@@ -288,13 +274,18 @@ impl KeywordSets {
                 n => format!("{stem} {n}.lrtemplate"),
             })
             .find(|file| !taken.contains(&file.to_lowercase()))
-            .map(|file| self.dir.join(file))
+            .map(|file| dir.join(file))
             .context("Too many keyword sets of that name")
     }
     /// The file of RAWmakase's own set named `name`, ignoring case.
     fn own(&self, name: &str) -> Option<PathBuf> {
         let mut found = Vec::new();
-        read_dir(&self.dir, Origin::Own, &mut found, &mut Vec::new());
+        read_dir(
+            self.dir.as_deref()?,
+            Origin::Own,
+            &mut found,
+            &mut Vec::new(),
+        );
         let key = name.trim().to_lowercase();
         found
             .into_iter()
@@ -367,9 +358,24 @@ mod tests {
 
     fn store(dir: &Path) -> KeywordSets {
         KeywordSets {
-            dir: dir.join("own"),
+            dir: Some(dir.join("own")),
             lightroom: Some(dir.join("lightroom")),
         }
+    }
+
+    #[test]
+    fn without_its_own_folder_the_built_in_sets_are_listed_and_none_saved() {
+        let none = KeywordSets::default();
+        let list = none.list();
+        assert_eq!(list.sets.len(), BUILT_IN.len());
+        assert!(list.errors.is_empty());
+        let error = none.save("Studio", &keywords(&["a"]), false).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "There is no data folder to keep keyword sets in"
+        );
+        assert!(none.rename("Studio", "Other").is_err());
+        assert!(none.delete("Studio").is_err());
     }
 
     #[test]

@@ -146,6 +146,103 @@ pub struct Descriptor<Id = ParameterId> {
     pub display: Display,
 }
 
+/// How a slider's positions map to its values.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Scale {
+    /// Evenly in the value.
+    #[default]
+    Linear,
+    /// Evenly in the value's reciprocal, as Temp moves in mireds: a step along
+    /// the slider is a similar change of color anywhere on it.
+    Reciprocal,
+}
+
+impl Scale {
+    /// Where `value` sits along a slider covering `range`, from 0 at its
+    /// start to 1 at its end, clamped. A range of one value puts every value
+    /// at or before it at the start, as the sliders have always drawn it.
+    pub fn position(self, value: f32, range: &RangeInclusive<f32>) -> f32 {
+        let (start, end, value) = match self {
+            Self::Linear => (*range.start(), *range.end(), value),
+            Self::Reciprocal => (1. / range.start(), 1. / range.end(), 1. / value),
+        };
+        unit_of(value, start, end)
+    }
+    /// The value at `position` (0 to 1, clamped) along a slider covering
+    /// `range`: the inverse of [`Scale::position`], its ends exactly the
+    /// range's.
+    pub fn value_at(self, position: f32, range: &RangeInclusive<f32>) -> f32 {
+        let t = position.clamp(0., 1.);
+        if t == 0. {
+            return *range.start();
+        } else if t == 1. {
+            return *range.end();
+        }
+        let lerp = |a: f32, b: f32| (1. - t) * a + t * b;
+        match self {
+            Self::Linear => lerp(*range.start(), *range.end()),
+            Self::Reciprocal => 1. / lerp(1. / range.start(), 1. / range.end()),
+        }
+    }
+}
+
+/// `x` from `start..end` (either way round) to 0..1, clamped, without
+/// dividing by an empty range: egui's `remap_clamp`, which the sliders used.
+fn unit_of(x: f32, start: f32, end: f32) -> f32 {
+    if end < start {
+        return 1. - unit_of(x, end, start);
+    }
+    if x <= start {
+        0.
+    } else if end <= x {
+        1.
+    } else {
+        ((x - start) / (end - start)).min(1.)
+    }
+}
+
+impl<Id> Descriptor<Id> {
+    /// How its slider's positions map to its values: in mireds for a setting
+    /// whose dial turns in mireds.
+    pub fn scale(&self) -> Scale {
+        match self.tick {
+            Tick::Linear(_) => Scale::Linear,
+            Tick::Mireds(_) => Scale::Reciprocal,
+        }
+    }
+    /// What a step of its slider is, in the recipe's units: its drag step, or
+    /// else one unit of the last decimal it shows.
+    pub fn step(&self) -> f32 {
+        self.drag_step
+            .unwrap_or_else(|| 0.1f32.powi(self.display.decimals as i32) / self.display.scale)
+    }
+}
+
+/// A setting's slider as a front end draws it: its range, how it moves and
+/// its value now, in the recipe's units, with the text RAWmakase shows.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Control {
+    /// The setting's name ([`ParameterId::name`]).
+    pub id: &'static str,
+    /// The slider's label.
+    pub label: &'static str,
+    /// The lowest value the slider reaches.
+    pub min: f32,
+    /// The highest value the slider reaches.
+    pub max: f32,
+    /// The lowest and highest a recipe may hold, which a typed value may be.
+    pub valid: [f32; 2],
+    /// A step of the slider ([`Descriptor::step`]).
+    pub step: f32,
+    /// How positions map to values.
+    pub scale: Scale,
+    /// The value now.
+    pub value: f32,
+    /// The value as RAWmakase shows it: "+0.50", "-35", "6500".
+    pub text: String,
+}
+
 const UNIT: Display = Display {
     scale: 100.,
     decimals: 0,
@@ -383,6 +480,111 @@ const DESCRIPTORS: [Descriptor; 60] = [
     percent(ParameterId::GradingBalance, "Balance"),
 ];
 
+/// The develop settings in one table: each one's id, its name and the recipe
+/// field it is, from which [`ParameterId::ALL`], [`ParameterId::name`],
+/// [`ParameterId::value`] and [`ParameterId::value_mut`] are made, so the four
+/// can't disagree.
+macro_rules! parameters {
+    ($($id:ident $name:literal => { $($field:tt)+ })*) => {
+        impl ParameterId {
+            /// Every setting, in the order of their descriptors.
+            pub const ALL: [Self; [$(Self::$id),*].len()] = [$(Self::$id),*];
+            /// The setting's name, as `midi.json`, the control socket and the
+            /// library spell it: `exposure`, `sharpening_amount`.
+            pub const fn name(self) -> &'static str {
+                match self {
+                    $(Self::$id => $name,)*
+                }
+            }
+            /// The recipe field this setting is.
+            pub fn value_mut(self, r: &mut Recipe) -> &mut f32 {
+                match self {
+                    $(Self::$id => &mut r.$($field)+,)*
+                }
+            }
+            /// The setting's value in `r`, in the recipe's units.
+            pub fn value(self, r: &Recipe) -> f32 {
+                match self {
+                    $(Self::$id => r.$($field)+,)*
+                }
+            }
+        }
+    };
+}
+
+/// The table [`parameters`] is made from, given to `$callback`: how a crate
+/// above the model makes its own list of the settings from the same table.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! with_parameters {
+    ($callback:path) => {
+        $callback! {
+            Exposure "exposure" => { exposure }
+            Contrast "contrast" => { contrast }
+            Highlights "highlights" => { highlights }
+            Shadows "shadows" => { shadows }
+            Whites "whites" => { whites }
+            Blacks "blacks" => { blacks }
+            Texture "texture" => { effects.texture }
+            Clarity "clarity" => { effects.clarity }
+            Dehaze "dehaze" => { effects.dehaze }
+            Vibrance "vibrance" => { vibrance }
+            Saturation "saturation" => { saturation }
+            Temperature "temperature" => { temperature }
+            Tint "tint" => { tint }
+            IncrementalTemperature "incremental_temperature" => { incremental_temperature }
+            IncrementalTint "incremental_tint" => { incremental_tint }
+            Straighten "straighten" => { straighten }
+            SharpeningAmount "sharpening_amount" => { sharpening }
+            SharpeningRadius "sharpening_radius" => { sharpening_radius }
+            SharpeningDetail "sharpening_detail" => { sharpening_detail }
+            SharpeningMasking "sharpening_masking" => { sharpening_masking }
+            LuminanceNoise "luminance_noise" => { noise_luma }
+            LuminanceDetail "luminance_detail" => { effects.luma_detail }
+            LuminanceContrast "luminance_contrast" => { effects.luma_contrast }
+            ColorNoise "color_noise" => { noise_chroma }
+            ColorNoiseDetail "color_noise_detail" => { effects.chroma_detail }
+            ColorNoiseSmoothness "color_noise_smoothness" => { effects.chroma_smoothness }
+            AiDenoiseAmount "ai_denoise_amount" => { ai_denoise.amount }
+            VignetteAmount "vignette_amount" => { effects.vignette }
+            VignetteMidpoint "vignette_midpoint" => { effects.vignette_midpoint }
+            VignetteFeather "vignette_feather" => { effects.vignette_feather }
+            GrainAmount "grain_amount" => { effects.grain }
+            GrainSize "grain_size" => { effects.grain_size }
+            GrainRoughness "grain_roughness" => { effects.grain_roughness }
+            TransformVertical "transform_vertical" => { transform.vertical }
+            TransformHorizontal "transform_horizontal" => { transform.horizontal }
+            TransformRotate "transform_rotate" => { transform.rotate }
+            TransformAspect "transform_aspect" => { transform.aspect }
+            TransformScale "transform_scale" => { transform.scale }
+            TransformOffsetX "transform_offset_x" => { transform.offset_x }
+            TransformOffsetY "transform_offset_y" => { transform.offset_y }
+            LensDistortion "lens_distortion" => { lens_distortion }
+            LensVignetting "lens_vignetting" => { lens_vignetting }
+            ManualDistortion "manual_distortion" => { lens_manual_distortion }
+            LensVignetteAmount "lens_vignette_amount" => { effects.lens_vignette }
+            LensVignetteMidpoint "lens_vignette_midpoint" => { effects.lens_vignette_midpoint }
+            ShadowTint "shadow_tint" => { effects.shadow_tint }
+            RedPrimaryHue "red_primary_hue" => { effects.calibration[0][0] }
+            RedPrimarySaturation "red_primary_saturation" => { effects.calibration[0][1] }
+            GreenPrimaryHue "green_primary_hue" => { effects.calibration[1][0] }
+            GreenPrimarySaturation "green_primary_saturation" => { effects.calibration[1][1] }
+            BluePrimaryHue "blue_primary_hue" => { effects.calibration[2][0] }
+            BluePrimarySaturation "blue_primary_saturation" => { effects.calibration[2][1] }
+            ParametricShadows "parametric_shadows" => { effects.parametric[0] }
+            ParametricDarks "parametric_darks" => { effects.parametric[1] }
+            ParametricLights "parametric_lights" => { effects.parametric[2] }
+            ParametricHighlights "parametric_highlights" => { effects.parametric[3] }
+            CurveSaturation "curve_saturation" => { curve_saturation }
+            Midtone "midtone" => { midtone }
+            GradingBlending "grading_blending" => { effects.blending }
+            GradingBalance "grading_balance" => { effects.balance }
+        }
+    };
+}
+
+with_parameters!(parameters);
+
 impl ParameterId {
     /// The setting this control moves on photo `m`: a JPEG, PNG or TIFF keeps its
     /// white balance as relative Temp and Tint, so Temperature and Tint move those.
@@ -413,136 +615,29 @@ impl ParameterId {
         [Self::GreenPrimaryHue, Self::GreenPrimarySaturation],
         [Self::BluePrimaryHue, Self::BluePrimarySaturation],
     ];
-    #[cfg(test)]
-    pub const ALL: [Self; 60] = [
-        Self::Exposure,
-        Self::Contrast,
-        Self::Highlights,
-        Self::Shadows,
-        Self::Whites,
-        Self::Blacks,
-        Self::Texture,
-        Self::Clarity,
-        Self::Dehaze,
-        Self::Vibrance,
-        Self::Saturation,
-        Self::Temperature,
-        Self::Tint,
-        Self::IncrementalTemperature,
-        Self::IncrementalTint,
-        Self::Straighten,
-        Self::SharpeningAmount,
-        Self::SharpeningRadius,
-        Self::SharpeningDetail,
-        Self::SharpeningMasking,
-        Self::LuminanceNoise,
-        Self::LuminanceDetail,
-        Self::LuminanceContrast,
-        Self::ColorNoise,
-        Self::ColorNoiseDetail,
-        Self::ColorNoiseSmoothness,
-        Self::AiDenoiseAmount,
-        Self::VignetteAmount,
-        Self::VignetteMidpoint,
-        Self::VignetteFeather,
-        Self::GrainAmount,
-        Self::GrainSize,
-        Self::GrainRoughness,
-        Self::TransformVertical,
-        Self::TransformHorizontal,
-        Self::TransformRotate,
-        Self::TransformAspect,
-        Self::TransformScale,
-        Self::TransformOffsetX,
-        Self::TransformOffsetY,
-        Self::LensDistortion,
-        Self::LensVignetting,
-        Self::ManualDistortion,
-        Self::LensVignetteAmount,
-        Self::LensVignetteMidpoint,
-        Self::ShadowTint,
-        Self::RedPrimaryHue,
-        Self::RedPrimarySaturation,
-        Self::GreenPrimaryHue,
-        Self::GreenPrimarySaturation,
-        Self::BluePrimaryHue,
-        Self::BluePrimarySaturation,
-        Self::ParametricShadows,
-        Self::ParametricDarks,
-        Self::ParametricLights,
-        Self::ParametricHighlights,
-        Self::CurveSaturation,
-        Self::Midtone,
-        Self::GradingBlending,
-        Self::GradingBalance,
-    ];
+
+    /// The setting's slider, with its value in `r`.
+    pub fn control(self, r: &Recipe) -> Control {
+        let d = self.descriptor();
+        let value = self.value(r);
+        Control {
+            id: self.name(),
+            label: d.label,
+            min: *d.interactive.start(),
+            max: *d.interactive.end(),
+            valid: [*d.valid.start(), *d.valid.end()],
+            step: d.step(),
+            scale: d.scale(),
+            value,
+            text: self.text(value),
+        }
+    }
+    /// The setting named `name` ([`ParameterId::name`]).
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|id| id.name() == name)
+    }
     pub fn descriptor(self) -> &'static Descriptor {
         &DESCRIPTORS[self as usize]
-    }
-    /// The recipe field this setting is.
-    pub fn value_mut(self, r: &mut Recipe) -> &mut f32 {
-        match self {
-            Self::Exposure => &mut r.exposure,
-            Self::Contrast => &mut r.contrast,
-            Self::Highlights => &mut r.highlights,
-            Self::Shadows => &mut r.shadows,
-            Self::Whites => &mut r.whites,
-            Self::Blacks => &mut r.blacks,
-            Self::Texture => &mut r.effects.texture,
-            Self::Clarity => &mut r.effects.clarity,
-            Self::Dehaze => &mut r.effects.dehaze,
-            Self::Vibrance => &mut r.vibrance,
-            Self::Saturation => &mut r.saturation,
-            Self::Temperature => &mut r.temperature,
-            Self::Tint => &mut r.tint,
-            Self::IncrementalTemperature => &mut r.incremental_temperature,
-            Self::IncrementalTint => &mut r.incremental_tint,
-            Self::Straighten => &mut r.straighten,
-            Self::SharpeningAmount => &mut r.sharpening,
-            Self::SharpeningRadius => &mut r.sharpening_radius,
-            Self::SharpeningDetail => &mut r.sharpening_detail,
-            Self::SharpeningMasking => &mut r.sharpening_masking,
-            Self::LuminanceNoise => &mut r.noise_luma,
-            Self::LuminanceDetail => &mut r.effects.luma_detail,
-            Self::LuminanceContrast => &mut r.effects.luma_contrast,
-            Self::ColorNoise => &mut r.noise_chroma,
-            Self::ColorNoiseDetail => &mut r.effects.chroma_detail,
-            Self::ColorNoiseSmoothness => &mut r.effects.chroma_smoothness,
-            Self::AiDenoiseAmount => &mut r.ai_denoise.amount,
-            Self::VignetteAmount => &mut r.effects.vignette,
-            Self::VignetteMidpoint => &mut r.effects.vignette_midpoint,
-            Self::VignetteFeather => &mut r.effects.vignette_feather,
-            Self::GrainAmount => &mut r.effects.grain,
-            Self::GrainSize => &mut r.effects.grain_size,
-            Self::GrainRoughness => &mut r.effects.grain_roughness,
-            Self::TransformVertical => &mut r.transform.vertical,
-            Self::TransformHorizontal => &mut r.transform.horizontal,
-            Self::TransformRotate => &mut r.transform.rotate,
-            Self::TransformAspect => &mut r.transform.aspect,
-            Self::TransformScale => &mut r.transform.scale,
-            Self::TransformOffsetX => &mut r.transform.offset_x,
-            Self::TransformOffsetY => &mut r.transform.offset_y,
-            Self::LensDistortion => &mut r.lens_distortion,
-            Self::LensVignetting => &mut r.lens_vignetting,
-            Self::ManualDistortion => &mut r.lens_manual_distortion,
-            Self::LensVignetteAmount => &mut r.effects.lens_vignette,
-            Self::LensVignetteMidpoint => &mut r.effects.lens_vignette_midpoint,
-            Self::ShadowTint => &mut r.effects.shadow_tint,
-            Self::RedPrimaryHue => &mut r.effects.calibration[0][0],
-            Self::RedPrimarySaturation => &mut r.effects.calibration[0][1],
-            Self::GreenPrimaryHue => &mut r.effects.calibration[1][0],
-            Self::GreenPrimarySaturation => &mut r.effects.calibration[1][1],
-            Self::BluePrimaryHue => &mut r.effects.calibration[2][0],
-            Self::BluePrimarySaturation => &mut r.effects.calibration[2][1],
-            Self::ParametricShadows => &mut r.effects.parametric[0],
-            Self::ParametricDarks => &mut r.effects.parametric[1],
-            Self::ParametricLights => &mut r.effects.parametric[2],
-            Self::ParametricHighlights => &mut r.effects.parametric[3],
-            Self::CurveSaturation => &mut r.curve_saturation,
-            Self::Midtone => &mut r.midtone,
-            Self::GradingBlending => &mut r.effects.blending,
-            Self::GradingBalance => &mut r.effects.balance,
-        }
     }
     /// `value` in the units the slider shows, rounded to thousandths.
     pub fn shown(self, value: f32) -> f64 {
@@ -777,6 +872,84 @@ impl LocalParameterId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_setting_has_one_name_and_its_field_read_both_ways() {
+        let mut names = std::collections::HashSet::new();
+        let mut r = Recipe::default();
+        for (k, id) in ParameterId::ALL.into_iter().enumerate() {
+            assert_eq!(id as usize, k, "ALL in the order of the descriptors");
+            assert!(names.insert(id.name()), "{} twice", id.name());
+            assert!(
+                id.name()
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b == b'_')
+            );
+            assert_eq!(ParameterId::named(id.name()), Some(id));
+            *id.value_mut(&mut r) = 0.123 + k as f32;
+        }
+        for (k, id) in ParameterId::ALL.into_iter().enumerate() {
+            assert_eq!(id.value(&r), 0.123 + k as f32, "{}", id.name());
+        }
+        assert_eq!(ParameterId::named("no such slider"), None);
+        // As midi.json and the control socket have always spelled them.
+        assert_eq!(ParameterId::Exposure.name(), "exposure");
+        assert_eq!(ParameterId::Temperature.name(), "temperature");
+        assert_eq!(ParameterId::Straighten.name(), "straighten");
+    }
+
+    #[test]
+    fn temp_s_slider_is_even_in_mireds_and_others_in_their_value() {
+        let temp = ParameterId::Temperature.descriptor();
+        assert_eq!(temp.scale(), Scale::Reciprocal);
+        let range = temp.interactive.clone();
+        let middle = 2. / (1. / range.start() + 1. / range.end());
+        assert!((temp.scale().position(middle, &range) - 0.5).abs() < 1e-5);
+        let exposure = ParameterId::Exposure.descriptor();
+        assert_eq!(exposure.scale(), Scale::Linear);
+        assert_eq!(exposure.scale().position(0., &exposure.interactive), 0.5);
+        for d in [temp, exposure] {
+            for t in [0., 0.25, 0.5, 1.] {
+                let v = d.scale().value_at(t, &d.interactive);
+                assert!((d.scale().position(v, &d.interactive) - t).abs() < 1e-4);
+            }
+            assert_eq!(d.scale().position(f32::MAX, &d.interactive).round(), 1.);
+        }
+    }
+
+    /// A range of one value (Levels' Black point once White is at its
+    /// lowest) and the ends of Temp's rail, as the sliders had them.
+    #[test]
+    fn a_slider_s_ends_and_an_empty_range_map_as_before() {
+        for scale in [Scale::Linear, Scale::Reciprocal] {
+            assert_eq!(scale.position(1., &(1.0..=1.0)), 0.);
+        }
+        assert_eq!(Scale::Linear.position(0.5, &(1.0..=1.0)), 0.);
+        assert_eq!(Scale::Linear.position(0., &(0.0..=0.0)), 0.);
+        let temp = TEMPERATURE_MIN..=TEMPERATURE_MAX;
+        assert_eq!(Scale::Reciprocal.value_at(1., &temp), TEMPERATURE_MAX);
+        assert_eq!(Scale::Reciprocal.value_at(0., &temp), TEMPERATURE_MIN);
+        assert_eq!(Scale::Reciprocal.position(TEMPERATURE_MAX, &temp), 1.);
+        assert_eq!(Scale::Reciprocal.position(TEMPERATURE_MIN, &temp), 0.);
+    }
+
+    #[test]
+    fn a_control_describes_its_slider_with_a_step_each() {
+        let r = Recipe {
+            exposure: 0.5,
+            ..Default::default()
+        };
+        let c = ParameterId::Exposure.control(&r);
+        assert_eq!((c.id, c.label, c.value), ("exposure", "Exposure", 0.5));
+        assert_eq!((c.min, c.max, c.step), (-5., 5., 0.05));
+        assert_eq!(c.valid, [-EXPOSURE_LIMIT, EXPOSURE_LIMIT]);
+        assert_eq!(c.text, "+0.50");
+        // A slider that states no drag step steps by the last decimal it shows.
+        assert_eq!(ParameterId::Contrast.descriptor().step(), 0.01);
+        for id in ParameterId::ALL {
+            assert!(id.descriptor().step() > 0., "{}", id.name());
+        }
+    }
 
     /// A small negative value, such as a drag that ends just left of zero, shows as
     /// 0, never as -0.

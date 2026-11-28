@@ -13,6 +13,7 @@
 //! This crate depends on no other crate of RAWmakase's, so an extension's SDK
 //! builds without the app, as `rawmakase-protocol` does for control clients.
 //! The reference is in `docs/extensions/` (manifest.md and protocol.md).
+#![forbid(unsafe_code)]
 // Every public item says what it is for: this crate is a contract third-party
 // extensions build on.
 #![warn(missing_docs)]

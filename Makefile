@@ -15,7 +15,7 @@ else
 PROGRAM_DIR = $(PREFIX)/lib/rawmakase
 endif
 
-.PHONY: all build check check-python check-msrv check-tools install uninstall
+.PHONY: all build check check-examples check-python check-msrv check-tools install uninstall
 all: build
 
 build:
@@ -44,6 +44,8 @@ CHECK_VENV ?= target/check-venv
 # - the Arch package build and install, and the portable catalog SQL
 #   prepared on Postgres, which need an Arch container and a Postgres server.
 # cargo deny and desktop-file-validate run when installed (check-tools).
+# The library's public items are read with the nightly toolchain
+# scripts/public-api.py names: `rustup toolchain install` it once.
 # The tests read an empty data folder, not this machine's: installed camera
 # profiles change what Develop resolves, and saved export settings would send
 # Export with Previous somewhere real.
@@ -56,23 +58,39 @@ TEST_ENV = RAWMAKASE_DATA_DIR="$(TEST_DATA)" XDG_DATA_HOME="$(TEST_DATA)"
 # (clippy --all-targets checks them), and the doctests run after them, as in CI.
 TEST_TARGETS = --lib --bins --tests
 
-check: check-python check-tools check-msrv
+check: check-python check-tools check-msrv check-examples
 	rm -rf -- "$(TEST_DATA)" && mkdir -p -- "$(TEST_DATA)"
 	python3 scripts/deps.py check
 	scripts/crate-closures.sh
+	python3 scripts/public-api.py check
+	python3 scripts/test_public_api.py
 	cargo fmt --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo build --locked -p rawmakase-mcp -p rawmakase-midi -p rawmakase-ai-masks
 	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-hdr-merge
 	$(TEST_ENV) cargo test --locked --doc -p rawmakase -p rawmakase-decode -p rawmakase-denoise -p rawmakase-export -p rawmakase-hdr-merge
-	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
+	cargo clippy --locked --all-targets -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-model -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi -- -D warnings
 	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-model --all-features
 	$(TEST_ENV) cargo test --locked --doc -p rawmakase-model --all-features
-	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
-	$(TEST_ENV) cargo test --locked --doc -p rawmakase-cancel -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
+	$(TEST_ENV) cargo test --locked --doc -p rawmakase-cancel -p rawmakase-core -p rawmakase-fs -p rawmakase-tiff -p rawmakase-raw -p rawmakase-interop -p rawmakase-catalog -p rawmakase-engine
 	$(TEST_ENV) cargo test --locked $(TEST_TARGETS) -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
 	$(TEST_ENV) cargo test --locked --doc -p rawmakase-protocol -p rawmakase-remote -p rawmakase-ctl -p rawmakase-mcp -p rawmakase-inference -p rawmakase-selection -p rawmakase-model-install -p rawmakase-ai-masks -p rawmakase-extension-protocol -p rawmakase-extension -p rawmakase-extensions -p cargo-rawmakase -p rawmakase-example -p rawmakase-midi
 	RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --all-features --no-deps --locked --document-private-items
+
+# The reference apps on the library (examples/*/), each a workspace of its own
+# with its own lock file, as CI's "Reference apps" job checks them: formatted,
+# linted (with every feature too: examples/electron's Node addon) and tested,
+# the tests the desktop's binary is needed for included.
+EXAMPLES = $(patsubst %/Cargo.toml,%,$(shell git ls-files 'examples/*/Cargo.toml'))
+check-examples:
+	cargo build --locked --bin rawmakase
+	set -e; for example in $(EXAMPLES); do \
+		(cd "$$example" && cargo fmt --check \
+			&& cargo clippy --locked --all-targets -- -D warnings \
+			&& cargo clippy --locked --all-targets --all-features -- -D warnings \
+			&& cargo test --locked -- --include-ignored); \
+	done
 
 check-msrv:
 	@test -n "$(MSRV)" || { echo "Cargo.toml declares no rust-version"; exit 1; }
@@ -86,6 +104,7 @@ endif
 check-python: $(CHECK_VENV)/.installed
 	$(CHECK_VENV)/bin/python -m unittest discover -s scripts/cameras
 	$(CHECK_VENV)/bin/python -m unittest discover -s scripts/corpus
+	python3 scripts/test_ambient.py
 
 $(CHECK_VENV)/.installed:
 	python3 -m venv $(CHECK_VENV)

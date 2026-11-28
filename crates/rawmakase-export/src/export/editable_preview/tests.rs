@@ -34,7 +34,7 @@ const EDGE: u32 = 480;
 
 /// The full-size decode of `path`, as Develop has it.
 fn decoded(path: &Path) -> CameraImage {
-    crate::photo::open(path)
+    crate::photo::open(path, &crate::photo::LensProfiles::none())
         .unwrap()
         .develop(Decode::Full(Demosaic::default()), Cancel::NEVER)
         .unwrap()
@@ -68,7 +68,7 @@ fn facts(m: &Metadata) -> Record {
 fn a_copy_opens_with_its_originals_pixels_and_facts() {
     for name in CHARTS {
         let w = written(name);
-        let copy = open(&w.path, Cancel::NEVER).unwrap();
+        let copy = open(&w.path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap();
         let recovered = crate::develop::quality::recovered(&w.original, Cancel::NEVER).unwrap();
         let reduced = crate::develop::preview(&recovered, EDGE);
         let image = &copy.image;
@@ -117,7 +117,7 @@ fn a_copy_opens_with_its_originals_pixels_and_facts() {
 #[test]
 fn the_synthetic_charts_embedded_profile_comes_back() {
     let w = written(CHARTS[0]);
-    let copy = open(&w.path, Cancel::NEVER).unwrap();
+    let copy = open(&w.path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap();
     assert!(w.original.metadata.embedded_dcp.is_some());
     assert_eq!(
         copy.image.metadata.embedded_dcp,
@@ -168,7 +168,7 @@ fn highlights_above_white_are_kept() {
     let path = dir.path().join("bright.dng");
     let original = bright();
     write(&path, &original, None, Cancel::NEVER).unwrap();
-    let copy = open(&path, Cancel::NEVER).unwrap();
+    let copy = open(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap();
     // Not reduced: the photo is smaller than the long edge.
     assert_eq!(copy.image.pixels.len(), original.pixels.len());
     let brightest = copy.image.pixels.last().unwrap();
@@ -191,7 +191,7 @@ fn a_copy_is_an_ordinary_linear_dng_to_the_dng_reader() {
     for name in CHARTS {
         let w = written(name);
         let plain = decoded(&w.path);
-        let copy = open(&w.path, Cancel::NEVER).unwrap();
+        let copy = open(&w.path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap();
         assert_eq!(plain.pixels, copy.image.pixels, "{name}");
         let (m, o) = (&plain.metadata, &w.original.metadata);
         assert_eq!((m.width, m.height), (copy.image.width, copy.image.height));
@@ -255,7 +255,8 @@ fn a_copy_this_release_cant_read_is_refused() {
     let refused = |name: &str, bytes: &[u8]| {
         let path = w.path.with_file_name(name);
         std::fs::write(&path, bytes).unwrap();
-        let opened: Option<anyhow::Error> = open(&path, Cancel::NEVER).err();
+        let opened: Option<anyhow::Error> =
+            open(&path, &crate::photo::LensProfiles::none(), Cancel::NEVER).err();
         format!("{:#}", opened.unwrap_or_else(|| panic!("{name} opened")))
     };
     // A later version.
@@ -283,7 +284,7 @@ fn a_copy_this_release_cant_read_is_refused() {
     refused("empty.dng", b"");
     // A missing file.
     let missing = w.path.with_file_name("missing.dng");
-    assert!(open(&missing, Cancel::NEVER).is_err());
+    assert!(open(&missing, &crate::photo::LensProfiles::none(), Cancel::NEVER).is_err());
 }
 
 /// The record written names each fact, and holds no identity of the
@@ -382,7 +383,8 @@ fn a_copy_renders_as_its_original_reduced() {
     ];
     for name in CHARTS {
         let w = written(name);
-        let copy: EditablePreview = open(&w.path, Cancel::NEVER).unwrap();
+        let copy: EditablePreview =
+            open(&w.path, &crate::photo::LensProfiles::none(), Cancel::NEVER).unwrap();
         let edge = copy.image.width.max(copy.image.height);
         // The reduced image itself, as Develop would have it with no file.
         let recovered = crate::develop::quality::recovered(&w.original, Cancel::NEVER).unwrap();

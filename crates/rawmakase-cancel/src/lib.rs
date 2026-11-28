@@ -1,8 +1,9 @@
 //! Cancellation of long-running work: decoding, rendering, measuring, file
 //! operations and inference. The work's owner keeps the flag it sets (usually an
 //! `Arc<AtomicBool>` in the task that runs the work) and lends it to the work as a
-//! [`Cancel`], which the work reads at its own cancellation points. What a cancelled
-//! piece of work returns is its own: each keeps its error.
+//! [`Cancel`], which the work reads at its own cancellation points. Work that
+//! stops returns [`Cancelled`] through [`Cancel::check`], with its own wording,
+//! so a caller can tell a cancelled job from a failed one by its type.
 //!
 //! It depends on no other crate, so every crate, the RAW decoders and inference
 //! among them, can take it.
@@ -32,7 +33,42 @@ impl<'a> Cancel<'a> {
     pub fn is_cancelled(self) -> bool {
         self.0.is_some_and(|flag| flag.load(Ordering::Relaxed))
     }
+
+    /// [`Cancelled`] with `message` once the owner has asked the work to stop.
+    /// `message` is the work's own wording ("Development cancelled"), which is
+    /// all the error prints.
+    pub fn check(self, message: &'static str) -> Result<(), Cancelled> {
+        match self.is_cancelled() {
+            true => Err(Cancelled(message)),
+            false => Ok(()),
+        }
+    }
 }
+
+/// Work stopped because its owner asked it to, not because it failed. It
+/// prints the wording of the work that stopped, and has no cause.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cancelled(&'static str);
+
+impl Cancelled {
+    /// Cancelled work that says `message`.
+    pub const fn new(message: &'static str) -> Self {
+        Self(message)
+    }
+
+    /// The work's own wording.
+    pub const fn message(self) -> &'static str {
+        self.0
+    }
+}
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Cancelled {}
 
 #[cfg(test)]
 mod tests {
@@ -57,5 +93,17 @@ mod tests {
         assert!(cancel.is_cancelled() && copy.is_cancelled());
         flag.store(false, Ordering::Relaxed);
         assert!(!copy.is_cancelled());
+    }
+
+    #[test]
+    fn check_returns_the_work_s_own_wording() {
+        let flag = AtomicBool::new(false);
+        assert_eq!(Cancel::new(&flag).check("Opening cancelled"), Ok(()));
+        flag.store(true, Ordering::Relaxed);
+        let error = Cancel::new(&flag).check("Opening cancelled").unwrap_err();
+        assert_eq!(error, Cancelled::new("Opening cancelled"));
+        assert_eq!(error.to_string(), "Opening cancelled");
+        assert!(std::error::Error::source(&error).is_none());
+        assert_eq!(Cancel::NEVER.check("never"), Ok(()));
     }
 }

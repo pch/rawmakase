@@ -115,11 +115,12 @@ impl Editor {
         };
         let (generation, _) = self.document.camera_thumbnail_task.start();
         let id = self.document.load_id();
+        let lenses = self.lens_profiles().clone();
         crate::app::task::spawn(
             self.tx.clone(),
             self.context.clone(),
             move |tx| {
-                let result = crate::camera_look::preview_srgb(&path)
+                let result = crate::camera_look::preview_srgb(&path, &lenses)
                     .map(|mut preview| {
                         preview.image = bounded(preview.image);
                         preview

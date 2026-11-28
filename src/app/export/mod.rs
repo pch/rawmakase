@@ -222,7 +222,7 @@ impl Editor {
         self.exports.read.cancel();
         self.exports.scope = scope;
         self.exports.draft = ExportSettings::load().unwrap_or_default();
-        self.exports.watermarks = crate::watermark::presets();
+        self.exports.watermarks = self.watermarks().presets();
         self.exports.saved = crate::app::export::naming::presets::Library::load();
         self.exports.dialog = true;
     }
@@ -231,6 +231,7 @@ impl Editor {
     pub(in crate::app) fn open_watermark_editor(&mut self, ctx: &egui::Context) {
         self.exports.watermark_editor = Some(watermark_editor::WatermarkEditor::new(
             Default::default(),
+            self.watermarks(),
             ctx,
         ));
     }
@@ -436,6 +437,7 @@ impl Editor {
                         path: p.source.clone(),
                         standalone: p.id.is_none(),
                         descriptive: p.fields.lacks_descriptive(),
+                        lenses: self.lens_profiles().clone(),
                     })
                     .collect();
                 self.exports
@@ -480,7 +482,7 @@ impl Editor {
                     "Photo info could not be read for the file names: {why}"
                 ));
                 self.exports.draft = settings;
-                self.exports.watermarks = crate::watermark::presets();
+                self.exports.watermarks = self.watermarks().presets();
                 self.exports.dialog = true;
             }
         }
@@ -646,8 +648,10 @@ impl Editor {
             recipe: self.document.edit.recipe().clone(),
             values,
             watermark: None,
+            watermarks: self.watermarks(),
             demosaic: self.session.demosaic,
-            cache: self.decode_cache.clone(),
+            cache: Some(self.decode_cache().clone()),
+            lenses: self.lens_profiles().clone(),
             ai: self.ai_service(),
             file: self.document.image_file.clone(),
         })
@@ -666,7 +670,7 @@ impl Editor {
         // Its names are made from what the scope has now.
         self.exports.read.cancel();
         let watermark = if settings.watermark {
-            match watermark_for(&settings.watermark_name) {
+            match watermark_for(&settings.watermark_name, &self.watermarks()) {
                 Some(w) => Some(w),
                 None => {
                     self.messages
@@ -754,7 +758,12 @@ impl Editor {
     /// Plans where each file goes and queues the batch, or asks about the files
     /// that exist first.
     fn plan_export(&mut self, mut pending: Pending, answer: Option<Existing>) {
-        match batch::plan(&pending.batch, &pending.settings, answer) {
+        match batch::plan(
+            &pending.batch,
+            &pending.settings,
+            &self.user_folders,
+            answer,
+        ) {
             Ok(plan) => {
                 // Files a delivery still sends keep their bytes: an export
                 // into a folder it writes to names its own copies apart. Only
@@ -816,7 +825,11 @@ impl Editor {
             defaults: self.raw_defaults.clone(),
             watermark: pending.watermark,
             demosaic: self.session.demosaic,
-            cache: self.decode_cache.clone(),
+            cache: self.decode_cache().clone(),
+            lenses: self.lens_profiles().clone(),
+            profiles: self.camera_profiles().clone(),
+            fits: self.libraries().fits,
+            watermarks: self.watermarks(),
             ai: self.ai_service(),
         };
         let ticket = self.export_queue().submit(batch);
@@ -860,7 +873,12 @@ impl Editor {
             .iter()
             .map(|p| p.id.map(|id| (id, p.source.clone())))
             .collect();
-        match batch::plan(&batch, &settings, Some(Existing::Unique)) {
+        match batch::plan(
+            &batch,
+            &settings,
+            &self.user_folders,
+            Some(Existing::Unique),
+        ) {
             Ok(plan) => {
                 let pending = Pending {
                     batch,
@@ -889,7 +907,7 @@ impl Editor {
             let (each_tx, each_ctx) = (tx.clone(), ctx.clone());
             Queue::with_backend(
                 batch::Lanes::for_machine(logical, crate::platform::memory::total()),
-                Arc::new(crate::develop::ExportBackend::auto()),
+                Arc::new(crate::environment::export_backend()),
                 move |ticket, index, outcome| {
                     let outcome = outcome.clone();
                     let _ = each_tx.send(Event::PhotoExported {
@@ -1137,15 +1155,18 @@ fn to_show(exported: &[PathBuf]) -> Vec<PathBuf> {
 
 /// The watermark named in the Export dialog: a saved preset, or the Simple
 /// Copyright Watermark, whose text comes from each photo at export.
-fn watermark_for(name: &str) -> Option<crate::watermark::Watermark> {
-    use crate::watermark::{SIMPLE_COPYRIGHT, Watermark, presets};
+fn watermark_for(
+    name: &str,
+    marks: &crate::watermark::Watermarks,
+) -> Option<crate::watermark::Watermark> {
+    use crate::watermark::{SIMPLE_COPYRIGHT, Watermark};
     if name == SIMPLE_COPYRIGHT {
         return Some(Watermark {
             name: SIMPLE_COPYRIGHT.into(),
             ..Default::default()
         });
     }
-    presets().into_iter().find(|w| w.name == name)
+    marks.presets().into_iter().find(|w| w.name == name)
 }
 
 #[cfg(test)]

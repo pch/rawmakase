@@ -17,7 +17,7 @@ use crate::{
     camera_data::Metadata, camera_profiles::CameraProfile, export_settings::ExportOptions,
     model::recipe::Recipe, raw_defaults::DevelopDefaults, storage::Identity,
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use std::{path::Path, sync::Arc};
 
 /// A saved RAWmakase edit: the recipe, with its spots and masks, and how the
@@ -157,10 +157,12 @@ impl EditRecord {
         };
         let saved: Identity =
             serde_json::from_str(self.identity.as_deref().context("Missing photo identity")?)?;
-        ensure!(
-            saved.same_photo(file),
-            "Photo changed since this catalog edit was saved; catalog edit protected"
-        );
+        if !saved.same_photo(file) {
+            return Err(rawmakase_model::error::Changed::new(
+                "Photo changed since this catalog edit was saved; catalog edit protected",
+            )
+            .into());
+        }
         let recipe = crate::model::stored_recipe::from_text(&self.assets, recipe)?;
         let recipe = recipe.with_local(local_edits(self.local.as_deref())?);
         recipe.validate()?;

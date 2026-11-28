@@ -324,6 +324,7 @@ mod tests {
             &m,
             &profiles,
             None,
+            &crate::lens::lensfun::installed::Handle::none(),
         )?;
         assert_eq!(back.profile.as_ref().unwrap().name, "Test Creative");
         assert_eq!(back.profile_amount, 0.35);
@@ -359,6 +360,7 @@ mod tests {
             &m,
             &[],
             None,
+            &crate::lens::lensfun::installed::Handle::none(),
         )?;
         assert_eq!((back.incremental_temperature, back.wb), (20., r.wb));
         Ok(())
@@ -389,7 +391,13 @@ mod tests {
             ..Default::default()
         };
         let before = Recipe::default();
-        let full = parsed.apply(&before, &m, &[], None)?;
+        let full = parsed.apply(
+            &before,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         let amount = crate::presets::amount::PresetAmount::new(&parsed, before, full)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         assert_eq!(amount.at(0.5, &m).exposure, 0.25);
@@ -437,15 +445,26 @@ mod tests {
             Path::new("Warm.xmp"),
             &preset(&r, &landscape(), &info, &color),
         )?
-        .apply(&target, &m, &[], None)?;
+        .apply(
+            &target,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(applied.point_colors.len(), 1);
         assert_eq!(applied.point_colors[0].shift, swatch.shift);
         assert_eq!(applied.point_colors[0].variance, swatch.variance);
         // Without swatches, Lightroom's empty selection clears the target's.
         let text = preset(&Recipe::default(), &landscape(), &info, &color);
         assert!(text.contains("<rdf:li>-1.000000, -1.000000"), "{text}");
-        let cleared =
-            crate::xmp::parse(Path::new("Clear.xmp"), &text)?.apply(&target, &m, &[], None)?;
+        let cleared = crate::xmp::parse(Path::new("Clear.xmp"), &text)?.apply(
+            &target,
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert!(cleared.point_colors.is_empty());
         // Other groups leave them alone.
         let mut exposure = GroupSelection::none();
@@ -481,7 +500,13 @@ mod tests {
             matrix: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
             ..Default::default()
         };
-        let applied = parsed.apply(&Recipe::default(), &m, &[], None)?;
+        let applied = parsed.apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert_eq!(applied.exposure, 0.5);
         assert_eq!(applied.contrast, 0.);
         assert_eq!(applied.curve.points.len(), 2);
@@ -490,7 +515,13 @@ mod tests {
             Path::new("All.xmp"),
             &preset(&edited(), &landscape(), &info, &GroupSelection::all()),
         )?
-        .apply(&Recipe::default(), &m, &[], None)?;
+        .apply(
+            &Recipe::default(),
+            &m,
+            &[],
+            None,
+            &crate::lens::lensfun::installed::Handle::none(),
+        )?;
         assert!(all.effects.monochrome);
         // A chosen panel's switch is written either way, so applying turns it on.
         let mut grain = GroupSelection::none();

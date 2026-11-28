@@ -416,13 +416,19 @@ impl Editor {
         // A panic ends the folder change as a failure does, so closing never waits
         // for it.
         let opened = ctx.clone();
+        let libraries = crate::environment::libraries(&self.core);
         crate::app::task::spawn(
             self.tx.clone(),
             ctx.clone(),
             move |tx| {
                 let event = match change_folders(&catalog, job) {
                     Ok((relinked, report, conflicts)) => {
-                        reopened(&catalog, false, relinked, &report, &conflicts, tx, &opened)
+                        let change = FolderChange {
+                            relinked,
+                            report,
+                            conflicts,
+                        };
+                        reopened(&catalog, &libraries, false, change, tx, &opened)
                     }
                     Err(e) => Event::CatalogReady(Err(format!("{e:#}"))),
                 };
@@ -542,16 +548,22 @@ fn entry(
 /// again after a folder change, with what the change found. Upgrading one of
 /// an earlier format as it opens says how far it has got through `tx`. Only a
 /// chosen catalog deletes the backups earlier upgrades left
-/// ([`super::open_for_user`]).
+/// ([`super::open_for_user`]). The Library is given `libraries` before
+/// anything reads a photo: a relinked catalog reads the info of the photos
+/// it finds here at once.
 pub(in crate::app) fn reopened(
     location: &CatalogLocation,
+    libraries: &crate::environment::Libraries,
     chosen: bool,
-    relinked: bool,
-    report: &crate::catalog::SidecarReport,
-    conflicts: &[Conflict],
+    change: FolderChange,
     tx: &std::sync::mpsc::Sender<Event>,
     ctx: &egui::Context,
 ) -> Event {
+    let FolderChange {
+        relinked,
+        report,
+        conflicts,
+    } = change;
     Event::CatalogReady(
         if chosen {
             super::open_for_user(location, &mut super::upgrade_progress(tx, ctx))
@@ -563,6 +575,7 @@ pub(in crate::app) fn reopened(
         }
         .map(|opened| crate::app::library::Library::new(opened, ctx.clone()))
         .map(|mut l| {
+            l.set_libraries(libraries);
             if relinked {
                 l.wait_for_availability();
                 let available = l.available_count();
@@ -579,11 +592,20 @@ pub(in crate::app) fn reopened(
                     l.messages.done(said);
                 }
             }
-            folder_added(&mut l, report, conflicts);
+            folder_added(&mut l, &report, &conflicts);
             Box::new(l)
         })
         .map_err(|e| format!("{e:#}")),
     )
+}
+/// What a folder change did that the catalog opened after it says: whether it
+/// relinked a folder (the Library then waits to see which photos are here),
+/// the sidecars it couldn't read and the folders found elsewhere.
+#[derive(Default)]
+pub(in crate::app) struct FolderChange {
+    pub(in crate::app) relinked: bool,
+    pub(in crate::app) report: crate::catalog::SidecarReport,
+    pub(in crate::app) conflicts: Vec<Conflict>,
 }
 /// Reports what adding a folder skipped, if anything, on the Library's
 /// status line: sidecars that could not be read and folders found elsewhere.

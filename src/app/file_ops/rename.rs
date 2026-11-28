@@ -205,6 +205,8 @@ impl Renaming {
                         path: o.path.clone(),
                         standalone: false,
                         descriptive: o.fields.lacks_descriptive(),
+                        // A photo in a catalog has its info there: no file's is read.
+                        lenses: Default::default(),
                     })
                     .collect();
                 self.read.start(photos, events.clone(), ctx.clone());
