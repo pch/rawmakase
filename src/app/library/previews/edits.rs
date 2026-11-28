@@ -5,7 +5,7 @@ use super::source::{EditSource, PreviewAi};
 use super::thumbnails::Worker;
 use crate::app::preferences::monitor::DisplayProfile;
 use crate::catalog::PhotoId;
-use crate::catalog::preview_cache::{PreviewCache, Stamp};
+use crate::catalog::preview_cache::{PreviewCache, Stamp, StoreOutcome};
 use eframe::egui;
 use rawmakase_cancel::Cancel;
 use rawmakase_decode::ai::cache::AiCache;
@@ -439,17 +439,17 @@ fn reopen(at: &Mutex<Option<PreviewCache>>, path: &Path) {
 }
 impl Renders {
     /// Keeps `image`, rendered from the file at `path` as `stamp` gives it,
-    /// as its preview under `tag`, a variant of the edit `family`; a file
-    /// changed since gets none of it, and that is not a cache failure.
+    /// as its preview under `tag`, a variant of the edit `family`. A file
+    /// changed, removed or unreachable since gets none of it
+    /// ([`StoreOutcome::Stale`]), and that is not a cache failure.
     fn store(&self, path: &Path, family: &str, tag: &str, stamp: &Stamp, image: &image::RgbImage) {
         let stored = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            match &mut *cache(&self.cache) {
-                Some(cache) if Stamp::read(path).ok().as_ref() == Some(stamp) => cache
-                    .store_tagged(path, family, tag, stamp, image)
-                    .err()
-                    .map(|error| error.to_string()),
-                _ => None,
-            }
+            let mut cache = cache(&self.cache);
+            store_error(
+                cache
+                    .as_mut()?
+                    .store_tagged(path, family, tag, stamp, image),
+            )
         }));
         match stored {
             Ok(Some(error)) => self.results.send(EditResult::CacheError(error)),
@@ -608,18 +608,19 @@ impl Renders {
                         plain_of(&source),
                     ),
                 };
+                // A file changed while it rendered is shown but not kept, and
+                // that is not a cache failure.
                 if named_before
                     && as_named()
                     && let Some(cache) = &mut *cache(&cache_at)
-                    && let Err(error) = cache.store_tagged(
+                {
+                    cache_error = store_error(cache.store_tagged(
                         &path,
                         &source.tag(),
                         &source.preview_tag(shows),
                         &stamp,
                         &image,
-                    )
-                {
-                    cache_error = Some(error.to_string());
+                    ));
                 }
                 Some(image)
             }));
@@ -644,6 +645,10 @@ impl Renders {
             None => drop(std::thread::spawn(task)),
         }
     }
+}
+/// The cache failure a store came to, if any: a stale source is none.
+fn store_error(stored: anyhow::Result<StoreOutcome>) -> Option<String> {
+    stored.err().map(|error| error.to_string())
 }
 /// A preview for photo `id`: shown, converted to `display`, unless it was
 /// asked ahead and the photo is not shown yet.
