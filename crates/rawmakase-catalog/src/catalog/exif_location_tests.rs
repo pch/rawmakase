@@ -243,3 +243,27 @@ fn a_dngs_own_xmp_ending_with_a_nul_is_read() -> Result<()> {
     );
     Ok(())
 }
+
+/// Read Metadata from Files leaves a photo whose values can't be written as
+/// it was, the camera's location included.
+#[test]
+fn a_photo_whose_xmp_cant_be_written_gets_no_cameras_gps_either() -> Result<()> {
+    let (_dir, mut cat, ids) = photos(&["a.NEF", "b.NEF"])?;
+    let (a, b) = (ids[0], ids[1]);
+    let bad = crate::xmp::descriptive::Read {
+        // Not a date the catalog can sort by.
+        capture: Some(crate::metadata::Capture {
+            captured: "garbage".into(),
+            subsec: None,
+            offset: None,
+        }),
+        ..Default::default()
+    };
+    let reads = [(a, std::path::PathBuf::from("a.NEF.xmp"), bad)];
+    let locations = [(a, camera_location()), (b, camera_location())];
+    let report = cat.apply_file_metadata(&reads, &locations, Merge::Overwrite)?;
+    assert_eq!(report.unreadable.len(), 1);
+    assert_eq!(cat.descriptive(a)?.location, None);
+    assert_eq!(cat.descriptive(b)?.location, Some(camera_location()));
+    Ok(())
+}

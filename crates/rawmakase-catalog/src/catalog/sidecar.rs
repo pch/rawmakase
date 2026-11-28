@@ -512,7 +512,8 @@ impl Catalog {
     }
     /// Writes what was read from files, in one transaction, as `merge`
     /// says. A photo whose values can't be written (an impossible date) is
-    /// left as it was and reported with its file. `locations`, from the
+    /// left as it was, the camera's location included, and reported with
+    /// its file. `locations`, from the
     /// cameras' EXIF GPS, go only to photos the catalog then has no location
     /// for, never over one given or removed.
     pub fn apply_file_metadata(
@@ -523,13 +524,16 @@ impl Catalog {
     ) -> Result<SidecarReport> {
         self.db.write(|w| {
             let mut report = SidecarReport::default();
+            let mut left = std::collections::HashSet::new();
             for (id, path, read) in reads {
                 // One photo that can't be written leaves the others saved.
                 if let Err(e) = w.savepoint(|w| apply(w, *id, read, merge)) {
                     report.unreadable.push((path.clone(), format!("{e:#}")));
+                    left.insert(*id);
                 }
             }
-            for (id, location) in locations {
+            // A photo left as it was gets no location either.
+            for (id, location) in locations.iter().filter(|(id, _)| !left.contains(id)) {
                 super::descriptive::fill_location(w, *id, location)?;
             }
             Ok(report)
