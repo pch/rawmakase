@@ -191,7 +191,7 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
         assert_eq!(count(&labels, absent), 0, "{absent}: {labels:?}");
     }
     // Close it, then open the WB menu: no Kelvin presets.
-    controls_frame(
+    let closed = controls_frame(
         &ctx,
         &mut editor,
         vec![egui::Event::Key {
@@ -206,18 +206,24 @@ fn the_basic_panel_offers_relative_white_balance_for_a_jpeg() {
     controls_frame(&ctx, &mut editor, down);
     controls_frame(&ctx, &mut editor, up);
     let menu = controls_frame(&ctx, &mut editor, vec![]);
-    let labels: Vec<String> = menu
-        .nodes
-        .iter()
-        // A drop-down shows the choice it holds beside its name.
-        .flat_map(|(_, n)| [n.label(), n.value()])
-        .flatten()
-        .map(String::from)
-        .collect();
+    // What the menu adds to the panels, which have controls of the same names
+    // (Basic's Auto, Upright's).
+    let shown = |frame: &egui::accesskit::TreeUpdate| -> Vec<String> {
+        frame
+            .nodes
+            .iter()
+            // A drop-down shows the choice it holds beside its name.
+            .flat_map(|(_, n)| [n.label(), n.value()])
+            .flatten()
+            .map(String::from)
+            .collect()
+    };
+    let (labels, closed) = (shown(&menu), shown(&closed));
+    let added = |label: &str| count(&labels, label) - count(&closed, label);
     // The box shows As Shot, and the menu offers it with Auto and Custom.
     assert_eq!(count(&labels, "As Shot"), 2, "{labels:?}");
-    for offered in ["Auto", "Custom"] {
-        assert_eq!(count(&labels, offered), 1, "{offered}: {labels:?}");
+    for offered in ["As Shot", "Auto", "Custom"] {
+        assert_eq!(added(offered), 1, "{offered}: {labels:?}");
     }
     assert_eq!(count(&labels, "Daylight"), 0, "{labels:?}");
 }

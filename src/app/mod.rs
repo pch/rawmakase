@@ -291,6 +291,10 @@ impl Editor {
                 session.collapsed.clone(),
             );
             d.insert_temp(
+                crate::app::ui::widgets::expanded_sections_id(),
+                session.expanded.clone(),
+            );
+            d.insert_temp(
                 crate::app::ui::widgets::solo_sections_id(),
                 session.solo.clone(),
             );

@@ -414,6 +414,16 @@ fn describe(before: &Recipe, after: &Recipe) -> Step {
             format!("{:.0}", a.ai_denoise.amount * 100.),
         );
     }
+    // The Negative panel names its own steps; a conversion changed another way (a
+    // paste, Sync) reads as its panel.
+    if a.negative != b.negative {
+        let value = match &a.negative {
+            None => "Off",
+            Some(_) if b.negative.is_none() => "On",
+            Some(_) => "",
+        };
+        return Step::new("Negative", value);
+    }
     if a.effects.monochrome != b.effects.monochrome {
         let treatment = if a.effects.monochrome {
             "Black & White"

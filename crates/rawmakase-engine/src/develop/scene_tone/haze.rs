@@ -2,7 +2,7 @@
 //! stage's input (docs/scene-tone-stage.md#dehaze).
 //!
 //! The haze is measured once per photo on its measurement copy at Exposure 0
-//! ([`Haze::of`]):
+//! ([`Haze::of_in_mask`]):
 //! - the airlight `A`: the per-channel median of the haziest 0.17% of pixels, ranked by
 //!   the dark channel (window minimum of the darkest channel) of the camera's
 //!   white-balanced values;
@@ -97,21 +97,48 @@ impl Haze {
     /// channel candidates by `ranked` (the same pixels in the camera's white-balanced
     /// space, where saturated lights retain more of their weakest channel than in
     /// ProPhoto).
+    #[cfg(test)]
     pub(crate) fn of(ranked: &[[f32; 3]], scene: &[[f32; 3]], width: usize, height: usize) -> Self {
-        Self::build(ranked, scene, width, height, false)
+        Self::build(ranked, scene, width, height, false, None)
+    }
+
+    /// As [`Self::build`], restricting the airlight sample pool to cells where `active` is
+    /// true (used for cropped negative scans so clamped border copies do not bias the
+    /// haziest percentile).
+    pub(crate) fn of_in_mask(
+        ranked: &[[f32; 3]],
+        scene: &[[f32; 3]],
+        width: usize,
+        height: usize,
+        active: Option<&[bool]>,
+    ) -> Self {
+        Self::build(ranked, scene, width, height, false, active)
     }
 
     /// As [`Self::of`], for an SDR rendered file (`F⁻¹`-inverted JPEG/PNG/TIFF): refines
     /// the dark-channel density with He et al.'s guided filter on linear relative
     /// luminance `clamp(Y / Y_A, 0, 2)` rather than the 2-stop log joint bilateral
     /// filter, preventing bright sky optical depth from bleeding across horizons.
+    #[cfg(test)]
     pub(crate) fn of_rendered(
         ranked: &[[f32; 3]],
         scene: &[[f32; 3]],
         width: usize,
         height: usize,
     ) -> Self {
-        Self::build(ranked, scene, width, height, true)
+        Self::build(ranked, scene, width, height, true, None)
+    }
+
+    /// As [`Self::of_in_mask`], for an SDR rendered file (`F⁻¹`-inverted JPEG/PNG/TIFF),
+    /// restricting the airlight sample pool to `active`.
+    pub(crate) fn of_rendered_in_mask(
+        ranked: &[[f32; 3]],
+        scene: &[[f32; 3]],
+        width: usize,
+        height: usize,
+        active: Option<&[bool]>,
+    ) -> Self {
+        Self::build(ranked, scene, width, height, true, active)
     }
 
     fn build(
@@ -120,9 +147,13 @@ impl Haze {
         width: usize,
         height: usize,
         rendered: bool,
+        active: Option<&[bool]>,
     ) -> Self {
         assert_eq!(scene.len(), width * height);
         assert_eq!(ranked.len(), scene.len());
+        if let Some(mask) = active {
+            assert_eq!(mask.len(), scene.len());
+        }
         if scene.is_empty() {
             return Self {
                 width,
@@ -141,15 +172,28 @@ impl Haze {
             height,
             r,
         );
-        // Airlight: per-channel median over the haziest 0.17% of pixels.
-        let mut sorted = dark.clone();
-        let k = (sorted.len() - 1) * (10_000 - HAZIEST_PER_TEN_THOUSAND) / 10_000;
-        let threshold = *sorted.select_nth_unstable_by(k, f32::total_cmp).1;
+        // Airlight: per-channel median over the haziest 0.17% of pixels (within `active`
+        // when provided).
+        let mut sorted: Vec<f32> = match active {
+            Some(mask) => dark
+                .iter()
+                .zip(mask)
+                .filter_map(|(&d, &on)| on.then_some(d))
+                .collect(),
+            None => dark.clone(),
+        };
         let mut chans = [Vec::new(), Vec::new(), Vec::new()];
-        for (p, d) in scene.iter().zip(&dark) {
-            if *d >= threshold && p.iter().all(|v| v.is_finite()) {
-                for c in 0..3 {
-                    chans[c].push(p[c].max(0.));
+        if !sorted.is_empty() {
+            let k = (sorted.len() - 1) * (10_000 - HAZIEST_PER_TEN_THOUSAND) / 10_000;
+            let threshold = *sorted.select_nth_unstable_by(k, f32::total_cmp).1;
+            for (i, (p, d)) in scene.iter().zip(&dark).enumerate() {
+                if active.is_none_or(|mask| mask[i])
+                    && *d >= threshold
+                    && p.iter().all(|v| v.is_finite())
+                {
+                    for c in 0..3 {
+                        chans[c].push(p[c].max(0.));
+                    }
                 }
             }
         }
@@ -369,8 +413,11 @@ impl Dehazing {
             .min(p[2] / air[2])
             .max(0.);
         let d = density.min(pixel_dc) * dark_weight(y);
-        let t = (1. - omega * d).max(MIN_TRANSMISSION);
-        let j: [f32; 3] = std::array::from_fn(|c| (p[c] - air[c]) / t + air[c]);
+        let drop = (omega * d).min(1. - MIN_TRANSMISSION);
+        let t = 1. - drop;
+        // Algebraically `(p - A) / t + A = (p - (1 - t) * A) / t`, avoiding catastrophic
+        // cancellation when `A >> p` and `t` is near 1.
+        let j: [f32; 3] = std::array::from_fn(|c| (p[c] - drop * air[c]) / t);
         // No channel falls below half of the pixel's color scaled by its luminance's
         // change: weak channels of bright, saturated colors are not driven to black.
         let ratio = super::luminance(j).max(0.) / y.max(1e-9);

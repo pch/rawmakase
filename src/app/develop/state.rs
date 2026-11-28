@@ -20,9 +20,10 @@ pub(in crate::app) struct Document {
     pub(in crate::app) path: Option<PathBuf>,
     pub(in crate::app) metadata: Option<Metadata>,
     image: Option<Arc<CameraImage>>,
-    /// How the decoded photo's colors spread, for Auto black & white; measured on
-    /// first use.
-    color_spread: std::cell::OnceCell<crate::develop::ColorSpread>,
+    /// How the decoded photo's colors spread, for Auto black & white, and the
+    /// negative conversion they were measured through; measured on first use, and
+    /// again for another conversion.
+    color_spread: ColorSpreadCell,
     /// A conversion to black & white waiting for the photo to decode, for its
     /// Auto mix.
     pub(in crate::app) pending_treatment: Option<PendingTreatment>,
@@ -392,6 +393,8 @@ pub(in crate::app) enum Tool {
     Defringe,
     /// Point Color's dropper, which adds a swatch.
     PointColor,
+    /// The Negative panel's film base picker.
+    FilmBase,
     /// Spot removal: Heal and Clone.
     Remove,
     /// Experimental AI Retouch: extensions' retouch generators (AI Remove,
@@ -405,6 +408,82 @@ pub(in crate::app) enum Tool {
     Guided,
     /// The Targeted Adjustment Tool of the Tone Curve, the Color Mixer or B&W.
     Targeted(crate::develop::targeted::Target),
+}
+/// The crop, geometry and lens-distortion settings that decide which scan pixels
+/// [`crate::develop::auto_negative`] and [`crate::develop::ColorSpread::for_recipe`]
+/// sample.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::app) struct NegativeFrame {
+    crop: [f32; 4],
+    rotation: u8,
+    straighten: f32,
+    constrain_crop: bool,
+    flip_x: bool,
+    flip_y: bool,
+    transform: crate::model::transform::Transform,
+    upright: crate::model::transform::Upright,
+    lens_builtin: bool,
+    lens_file_correction: bool,
+    lens_profile: bool,
+    lens_profile_choice: crate::lens::choice::LensProfileChoice,
+    lens_distortion: f32,
+    lens_manual_distortion: f32,
+    lens_ca: bool,
+    lens_panel: crate::model::panels::PanelState,
+    transform_panel: crate::model::panels::PanelState,
+}
+impl NegativeFrame {
+    pub(in crate::app) fn of(r: &Recipe) -> Self {
+        Self {
+            crop: r.crop,
+            rotation: r.rotation,
+            straighten: r.straighten,
+            constrain_crop: r.constrain_crop,
+            flip_x: r.flip_x,
+            flip_y: r.flip_y,
+            transform: r.transform,
+            upright: r.upright.clone(),
+            lens_builtin: r.lens_builtin,
+            lens_file_correction: r.lens_file_correction,
+            lens_profile: r.lens_profile,
+            lens_profile_choice: r.lens_profile_choice.clone(),
+            lens_distortion: r.lens_distortion,
+            lens_manual_distortion: r.lens_manual_distortion,
+            lens_ca: r.lens_ca,
+            lens_panel: r.panels.state(crate::model::panels::Panel::LensCorrections),
+            transform_panel: r.panels.state(crate::model::panels::Panel::Transform),
+        }
+    }
+}
+/// Where the Negative panel's Auto found part of the film holder: the photo's load,
+/// the crop/geometry it measured and the conversion it set.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::app) struct NegativeHolder {
+    load: u64,
+    frame: NegativeFrame,
+    conversion: crate::model::negative::NegativeConversion,
+}
+impl NegativeHolder {
+    pub(in crate::app) fn new(
+        load: u64,
+        r: &Recipe,
+        conversion: crate::model::negative::NegativeConversion,
+    ) -> Self {
+        Self {
+            load,
+            frame: NegativeFrame::of(r),
+            conversion,
+        }
+    }
+    /// Whether the note still speaks of the photo loaded as `load`, edited as `r`: the
+    /// same photo, crop/geometry and conversion as Auto measured. Undoing that Auto,
+    /// another film base, a pasted conversion, or changing crop/straighten/rotation/
+    /// transform/lens distortion ends it.
+    pub(in crate::app) fn holds(&self, load: u64, r: &crate::model::recipe::Recipe) -> bool {
+        self.load == load
+            && self.frame == NegativeFrame::of(r)
+            && r.negative.as_ref() == Some(&self.conversion)
+    }
 }
 /// The tool open, kept where only [`ViewState`]'s methods reach it, and
 /// how many times a tool was taken up.
@@ -450,6 +529,13 @@ pub(in crate::app) struct ViewState {
     /// The tool open, read with [`ViewState::tool`] and set with
     /// [`ViewState::set_tool`] alone.
     pub(in crate::app) tool_slot: ToolSlot,
+    /// Why the film base picker's last click read no base, while it stays open:
+    /// the Negative panel says so under it. Any change of tool clears it.
+    pub(in crate::app) film_base_refusal: Option<crate::develop::FilmBaseRefusal>,
+    /// The Negative panel's last Auto found part of the film holder in the crop: the
+    /// panel says so under Levels while that photo, crop and conversion stay
+    /// ([`NegativeHolder::holds`]). Neither the recipe nor History holds it.
+    pub(in crate::app) negative_holder: Option<NegativeHolder>,
     /// A drag on the crop, from the press to the release.
     pub(in crate::app) crop_drag: Option<crate::app::develop::tools::crop_drag::CropDrag>,
     /// The aspect this photo's crop is locked to, in the Crop menu's values: the
@@ -545,6 +631,8 @@ impl Default for ViewState {
             readout: Default::default(),
             tone_drag: None,
             tool_slot: ToolSlot::default(),
+            film_base_refusal: None,
+            negative_holder: None,
             crop_drag: None,
             aspect: -1.,
             aspect_read: false,
@@ -911,6 +999,7 @@ impl ViewState {
             self.tool_slot.taken += 1;
         }
         self.tool_slot.tool = tool;
+        self.film_base_refusal = None;
     }
     /// How many times a tool was taken up: what was begun with no tool open
     /// ends once it moves, though the tool is gone again by the time it is
@@ -926,12 +1015,12 @@ impl ViewState {
     pub(crate) fn retouching(&self) -> bool {
         matches!(self.tool(), Tool::Remove | Tool::AiRetouch)
     }
-    /// An eyedropper is active: White Balance, the Fringe Color Selector or Point
-    /// Color's dropper.
+    /// An eyedropper is active: White Balance, the Fringe Color Selector, Point
+    /// Color's dropper or the film base picker.
     pub(crate) fn picks_color(&self) -> bool {
         matches!(
             self.tool(),
-            Tool::WhiteBalance | Tool::Defringe | Tool::PointColor
+            Tool::WhiteBalance | Tool::Defringe | Tool::PointColor | Tool::FilmBase
         )
     }
     /// What the eyedropper's loupe asks for.
@@ -939,6 +1028,7 @@ impl ViewState {
         match self.tool() {
             Tool::Defringe => "Pick a purple or green fringe",
             Tool::PointColor => "Pick a color to adjust",
+            Tool::FilmBase => "Click the clear film edge",
             _ => "Pick a target neutral",
         }
     }
@@ -1060,9 +1150,10 @@ impl Document {
             .then(|| self.ai.source().cloned())
             .flatten()
     }
-    /// How the decoded photo's colors spread, once it is decoded.
+    /// How the decoded photo's colors spread, through its edit's conversion and crop,
+    /// once it is decoded.
     pub(in crate::app) fn color_spread(&self) -> Option<crate::develop::ColorSpread> {
-        self.colors().spread()
+        self.colors().spread(self.edit.recipe())
     }
     /// The recipe to edit, and what the photo's colors are measured from, borrowed
     /// apart so a panel can measure them only when it needs them.
@@ -1097,17 +1188,34 @@ pub(in crate::app) struct PendingTreatment {
 #[derive(Clone, Copy)]
 pub(in crate::app) struct PhotoColorSource<'a> {
     image: Option<&'a Arc<CameraImage>>,
-    spread: &'a std::cell::OnceCell<crate::develop::ColorSpread>,
+    spread: &'a ColorSpreadCell,
     pub(in crate::app) metadata: Option<&'a Metadata>,
 }
 impl PhotoColorSource<'_> {
-    /// How the photo's colors spread, measured on first use once it is decoded.
-    pub(in crate::app) fn spread(&self) -> Option<crate::develop::ColorSpread> {
+    /// How the photo's colors spread for `r`, measured on first use once it is decoded,
+    /// and again when a negative conversion or its crop/geometry changes.
+    pub(in crate::app) fn spread(&self, r: &Recipe) -> Option<crate::develop::ColorSpread> {
         let im = self.image?;
-        Some(
-            *self
-                .spread
-                .get_or_init(|| crate::develop::ColorSpread::measure(im)),
-        )
+        let key = r
+            .negative
+            .as_ref()
+            .map(|n| (n.clone(), NegativeFrame::of(r)));
+        let mut cell = self.spread.borrow_mut();
+        if let Some((measured, spread)) = &*cell
+            && *measured == key
+        {
+            return Some(*spread);
+        }
+        let spread = crate::develop::ColorSpread::for_recipe(im, r);
+        *cell = Some((key, spread));
+        Some(spread)
     }
 }
+/// The photo's color spread and the negative conversion + crop/geometry it was measured
+/// through (`None` when no negative conversion is active).
+type ColorSpreadCell = std::cell::RefCell<
+    Option<(
+        Option<(crate::model::negative::NegativeConversion, NegativeFrame)>,
+        crate::develop::ColorSpread,
+    )>,
+>;

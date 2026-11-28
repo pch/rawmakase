@@ -698,6 +698,20 @@ impl Editor {
             hdr: &hdr,
             hdr_second: hdr_second.as_ref(),
         };
+        let negative_view = panels::negative::View {
+            decoded: self.document.full().is_some(),
+            auto_running: self.document.auto.is_running(),
+            hdr_file: self
+                .document
+                .metadata
+                .as_ref()
+                .is_some_and(|m| m.hdr_source.is_some()),
+            holder_in_crop: self
+                .view
+                .negative_holder
+                .as_ref()
+                .is_some_and(|h| h.holds(self.document.load_id(), self.document.edit.recipe())),
+        };
         let mut requests = panels::Requests::default();
         let view = &mut self.view;
         let step = &mut self.step_name;
@@ -750,6 +764,16 @@ impl Editor {
         ));
         panels::effects::show(ui, step, r, metadata);
         panels::calibration::show(ui, step, r, metadata);
+        // Kept at the bottom (collapsed by default) so Basic stays first for regular photos.
+        requests.add(panels::negative::show(
+            ui,
+            step,
+            r,
+            view,
+            &negative_view,
+            &palette,
+        ));
+        ui.add_space(space::XXL);
         self.carry_out(requests, ui, &adobe, adobe_key);
     }
     /// Carries out what the Develop panels asked for this frame, still during the

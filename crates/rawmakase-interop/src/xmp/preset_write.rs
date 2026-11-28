@@ -52,10 +52,18 @@ pub fn preset(r: &Recipe, shown: &Metadata, info: &PresetInfo, groups: &GroupSel
     groups.set(SettingGroup::UprightTransforms, GroupInclusion::Excluded);
     let groups = &groups;
     // Lightroom's Amount slider, offered when every setting written scales with it.
-    // Spots and masks are never written.
+    // Spots, masks and a film negative conversion (which Lightroom has no setting for)
+    // are never written.
     let supports_amount = groups
         .groups()
-        .filter(|g| !matches!(g, SettingGroup::SpotRemoval | SettingGroup::Masking))
+        .filter(|g| {
+            !matches!(
+                g,
+                SettingGroup::SpotRemoval
+                    | SettingGroup::Masking
+                    | SettingGroup::NegativeConversion
+            )
+        })
         .all(SettingGroup::scales_with_amount);
     let supports_amount = if supports_amount { "True" } else { "False" };
     let mut attributes: Vec<(String, String)> = [
@@ -376,6 +384,7 @@ mod tests {
             // Never written, so they don't count.
             SettingGroup::SpotRemoval,
             SettingGroup::Masking,
+            SettingGroup::NegativeConversion,
         ] {
             tones.set(group, GroupInclusion::Included);
         }

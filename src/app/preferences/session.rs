@@ -5,8 +5,8 @@ use crate::storage::{data_dir, read_json_or_default};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// `Session::copy_groups` as releases before AI Denoise read it: without AI Denoise's
-/// and High Dynamic Range's groups, which are saved apart.
+/// `Session::copy_groups` as releases before AI Denoise read it: without AI Denoise's,
+/// High Dynamic Range's and Negative Conversion's groups, which are saved apart.
 mod known_groups {
     use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -19,7 +19,12 @@ mod known_groups {
             .map(|g| {
                 g.groups()
                     .filter(|g| {
-                        !matches!(g, SettingGroup::AiDenoise | SettingGroup::HighDynamicRange)
+                        !matches!(
+                            g,
+                            SettingGroup::AiDenoise
+                                | SettingGroup::HighDynamicRange
+                                | SettingGroup::NegativeConversion
+                        )
                     })
                     .collect::<Vec<_>>()
             })
@@ -73,9 +78,17 @@ pub(crate) struct Session {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub maximized: bool,
-    /// Titles of panel sections the user collapsed; all others start open.
+    /// Titles of panel sections the user collapsed; all others start open unless
+    /// marked collapsed by default.
     #[serde(default, deserialize_with = "lenient")]
     pub collapsed: std::collections::BTreeSet<String>,
+    /// Titles of default-collapsed panel sections (such as Negative) the user expanded.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::collections::BTreeSet::is_empty"
+    )]
+    pub expanded: std::collections::BTreeSet<String>,
     /// The sides of the window in Solo Mode, where opening a panel closes the
     /// others: "develop-left", "develop-right", "library-left", "library-right".
     #[serde(default, deserialize_with = "lenient")]
@@ -184,7 +197,7 @@ pub(crate) struct Session {
     /// with only the groups releases before AI Denoise know (an unknown one makes them
     /// drop the whole session) and read leniently, skipping names this release does
     /// not know; AI Denoise's group is in `copy_ai_denoise`, High Dynamic Range's in
-    /// `copy_hdr`.
+    /// `copy_hdr`, Negative Conversion's in `copy_negative`.
     #[serde(default, with = "known_groups")]
     pub copy_groups: Option<crate::model::settings_groups::GroupSelection>,
     /// The groups Synchronize Settings applied last time, which Auto Sync applies;
@@ -218,6 +231,13 @@ pub(crate) struct Session {
         skip_serializing_if = "Option::is_none"
     )]
     pub copy_hdr: Option<bool>,
+    /// Whether Copy Settings includes Negative Conversion, apart from `copy_groups`.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub copy_negative: Option<bool>,
     /// Develop's Presets panel shows its presets as a list of names rather than
     /// as thumbnails of the photo.
     #[serde(
@@ -351,9 +371,9 @@ impl<'de> Deserialize<'de> for Unknown {
 }
 
 impl Session {
-    /// The Copy Settings groups saved last time, with AI Denoise's and High Dynamic
-    /// Range's (saved apart), which a session from before them includes, as they are
-    /// by default.
+    /// The Copy Settings groups saved last time, with AI Denoise's, High Dynamic
+    /// Range's and Negative Conversion's (saved apart), which a session from before
+    /// them includes, as they are by default.
     pub(crate) fn copy_groups(&self) -> Option<crate::model::settings_groups::GroupSelection> {
         use crate::model::settings_groups::{GroupInclusion, SettingGroup};
         let mut groups = self.copy_groups.clone()?;
@@ -369,6 +389,12 @@ impl Session {
             GroupInclusion::Excluded
         };
         groups.set(SettingGroup::HighDynamicRange, inclusion);
+        let inclusion = if self.copy_negative.unwrap_or(true) {
+            GroupInclusion::Included
+        } else {
+            GroupInclusion::Excluded
+        };
+        groups.set(SettingGroup::NegativeConversion, inclusion);
         Some(groups)
     }
     /// The Thumbnail Cache size in MiB, or the default when none in
@@ -529,8 +555,10 @@ pub(in crate::app) struct SessionState {
     layout: LibraryLayout,
     /// Whether the window is maximized, as last saved.
     pub(in crate::app) maximized: bool,
-    /// The panel sections folded, and the ones in solo mode.
+    /// The panel sections folded, default-collapsed sections expanded, and the sides in
+    /// solo mode.
     pub(in crate::app) collapsed: std::collections::BTreeSet<String>,
+    pub(in crate::app) expanded: std::collections::BTreeSet<String>,
     pub(in crate::app) solo: std::collections::BTreeSet<String>,
     pub(in crate::app) onboarding_done: bool,
     /// Preferences > Performance's demosaic, for every full-size decode.
@@ -579,6 +607,7 @@ impl SessionState {
             layout,
             maximized: session.maximized,
             collapsed: session.collapsed.clone(),
+            expanded: session.expanded.clone(),
             solo: session.solo.clone(),
             onboarding_done,
             demosaic: session.demosaic,
@@ -645,6 +674,7 @@ impl SessionState {
                 last_path: path.or_else(|| self.fallback_path.clone()),
                 maximized: self.maximized,
                 collapsed: self.collapsed.clone(),
+                expanded: self.expanded.clone(),
                 solo: self.solo.clone(),
                 onboarding_done: self.onboarding_done,
                 library_source: self.place.source.clone(),
@@ -666,6 +696,10 @@ impl SessionState {
                 copy_hdr: Some(
                     self.copy_groups
                         .contains(crate::model::settings_groups::SettingGroup::HighDynamicRange),
+                ),
+                copy_negative: Some(
+                    self.copy_groups
+                        .contains(crate::model::settings_groups::SettingGroup::NegativeConversion),
                 ),
                 zoom_level: self.zoom_level,
                 unknown: self.unknown.clone(),
@@ -890,10 +924,12 @@ mod copy_groups_tests {
             };
             groups.set(SettingGroup::AiDenoise, inclusion);
             groups.set(SettingGroup::HighDynamicRange, inclusion);
+            groups.set(SettingGroup::NegativeConversion, inclusion);
             let session = Session {
                 copy_groups: Some(groups.clone()),
                 copy_ai_denoise: Some(groups.contains(SettingGroup::AiDenoise)),
                 copy_hdr: Some(groups.contains(SettingGroup::HighDynamicRange)),
+                copy_negative: Some(groups.contains(SettingGroup::NegativeConversion)),
                 ..Default::default()
             };
             let json = serde_json::to_value(&session).unwrap();
@@ -903,6 +939,11 @@ mod copy_groups_tests {
                 !names.iter().any(|n| n == "high_dynamic_range"),
                 "{names:?}"
             );
+            assert!(
+                !names.iter().any(|n| n == "negative_conversion"),
+                "{names:?}"
+            );
+            assert_eq!(json["copy_negative"], included);
             assert!(names.iter().any(|n| n == "color_noise_reduction"));
             let read: Session = serde_json::from_value(json).unwrap();
             assert_eq!(read.copy_groups(), Some(groups));
@@ -915,6 +956,7 @@ mod copy_groups_tests {
         assert!(groups.contains(SettingGroup::Exposure));
         assert!(groups.contains(SettingGroup::AiDenoise));
         assert!(groups.contains(SettingGroup::HighDynamicRange));
+        assert!(groups.contains(SettingGroup::NegativeConversion));
         assert!(!groups.contains(SettingGroup::Contrast));
     }
 }
@@ -1174,6 +1216,67 @@ mod compatibility_tests {
             // And this release reads it back as it was.
             let back: Session = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(back.copy_groups(), Some(e.session.copy_groups.clone()));
+        }
+    }
+
+    /// The Negative Conversion group, which no release before this one knows, never
+    /// enters `copy_groups`: v0.4.10 reads the session strictly and would reset every
+    /// preference over it, and the lenient releases after it would skip it anyway. It
+    /// is saved apart, in `copy_negative`, a field older releases skip (and since
+    /// v0.5.0 keep), so they lose at most that one checkbox. Synchronize's groups are
+    /// written whole: every release that reads `sync_groups` skips names it doesn't
+    /// know.
+    #[test]
+    fn a_saved_session_with_negative_conversion_stays_readable_by_older_releases() {
+        for negative in [GroupInclusion::Included, GroupInclusion::Excluded] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("session.json");
+            std::fs::write(&path, serde_json::to_vec(&later_release_session()).unwrap()).unwrap();
+            let session: Session = crate::storage::read_json_or_default(&path);
+            let mut e =
+                Editor::with_context(&eframe::egui::Context::default(), None, session, None);
+            e.session.set_file(Some(path.clone()));
+            e.session
+                .copy_groups
+                .set(SettingGroup::NegativeConversion, negative);
+            e.session
+                .copy_groups
+                .set(SettingGroup::Exposure, GroupInclusion::Included);
+            let mut sync = crate::model::settings_groups::GroupSelection::none();
+            sync.set(SettingGroup::NegativeConversion, GroupInclusion::Included);
+            sync.set(SettingGroup::Exposure, GroupInclusion::Included);
+            e.session.sync_groups = Some(sync.clone());
+            if negative == GroupInclusion::Included {
+                e.session.expanded.insert("Negative".into());
+            }
+            e.session.maximized = true;
+            e.save_session().unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                !json["copy_groups"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|g| g == "negative_conversion"),
+                "{json}"
+            );
+            assert_eq!(json["copy_negative"], negative == GroupInclusion::Included);
+            assert_eq!(
+                json.get("expanded").is_some(),
+                negative == GroupInclusion::Included
+            );
+            let old: SessionV0_4_10 = serde_json::from_slice(&bytes).unwrap();
+            assert!(old.maximized && old.onboarding_done);
+            assert!(
+                old.copy_groups
+                    .is_some_and(|g| g.iter().any(|g| matches!(g, GroupV0_4_10::Exposure)))
+            );
+            // This release reads it back as it was, Synchronize's groups and expanded too.
+            let back: Session = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(back.copy_groups(), Some(e.session.copy_groups.clone()));
+            assert_eq!(back.sync_groups, Some(sync));
+            assert_eq!(back.expanded, e.session.expanded);
         }
     }
 

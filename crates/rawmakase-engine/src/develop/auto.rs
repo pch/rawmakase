@@ -13,7 +13,7 @@ use anyhow::{Result, bail, ensure};
 use rawmakase_cancel::Cancel;
 
 /// Long edge of the crop white balance is sampled on.
-const WHITE_BALANCE_EDGE: u32 = 256;
+pub(super) const WHITE_BALANCE_EDGE: u32 = 256;
 /// Long edge of the cropped render the tone estimates are measured on. The fit to
 /// Lightroom was measured at this size: the brightest and darkest percentiles depend on
 /// how much small highlights and shadows are averaged away.
@@ -119,7 +119,7 @@ pub fn auto_tone_basis(r: &Recipe) -> Recipe {
     }
 }
 
-fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
+pub(super) fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
     if cancel.is_cancelled() {
         bail!("Cancelled");
     }
@@ -129,7 +129,7 @@ fn check_cancel(cancel: Cancel<'_>) -> Result<()> {
 /// Long edge of a reduced copy of `im` whose crop under `r` has a long edge of about
 /// `edge`, so a tight crop is still measured on enough pixels, up to
 /// [`ANALYSIS_SOURCE_MAX`] for the whole copy.
-fn analysis_edge(im: &CameraImage, r: &Recipe, edge: u32) -> u32 {
+pub(super) fn analysis_edge(im: &CameraImage, r: &Recipe, edge: u32) -> u32 {
     let [x0, y0, x1, y1] = r.crop;
     // The crop's sides may be in rotated (oriented) coordinates, so the shorter source
     // side gives a crop edge that is never overestimated.
@@ -161,7 +161,18 @@ const AUTO_TEMPERATURE: (f32, f32) = (2850., 7500.);
 const AUTO_TINT: (f32, f32) = (0., 30.);
 
 fn fit_white_balance(im: &CameraImage, r: &mut Recipe) -> Result<()> {
-    fit_white_balance_to(&crop_samples(im, r), &im.metadata, r)
+    let samples = crop_samples(im, r);
+    // A scanned negative is balanced as its positive: the white balance applies after
+    // the conversion. The light around the film (clipped) is no part of it.
+    let samples = match super::negative::Inversion::of(r, &im.metadata) {
+        Some(negative) => samples
+            .into_iter()
+            .filter(|p| !super::negative::clipped(*p, &im.metadata))
+            .map(|p| negative.apply(p))
+            .collect(),
+        None => samples,
+    };
+    fit_white_balance_to(&samples, &im.metadata, r)
 }
 
 fn fit_white_balance_to(samples: &[[f32; 3]], m: &Metadata, r: &mut Recipe) -> Result<()> {
@@ -186,23 +197,59 @@ fn fit_white_balance_to(samples: &[[f32; 3]], m: &Metadata, r: &mut Recipe) -> R
 /// correction, as rendering samples them, so areas cropped away do not pull white
 /// balance.
 fn crop_samples(im: &CameraImage, r: &Recipe) -> Vec<[f32; 3]> {
-    let g = super::Geometry::new(im, r, WHITE_BALANCE_EDGE);
+    crop_grid(im, r, 0.)
+        .samples
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect()
+}
+
+/// The samples of [`crop_grid`]: a grid over the crop, each sample at its cell's
+/// column and row. Cells outside the photo have none.
+pub(super) struct CropGrid {
+    pub(super) columns: u32,
+    pub(super) rows: u32,
+    pub(super) samples: Vec<([u32; 2], [f32; 3])>,
+}
+
+/// [`crop_samples`] leaving out `inset` of the crop's width and height at each side,
+/// each with its cell in the grid over that inset crop.
+pub(super) fn crop_grid(im: &CameraImage, r: &Recipe, inset: f32) -> CropGrid {
+    crop_grid_at(im, r, WHITE_BALANCE_EDGE, inset)
+}
+
+/// As [`crop_grid`], sizing the grid to `max_edge` on its long edge.
+pub(super) fn crop_grid_at(im: &CameraImage, r: &Recipe, max_edge: u32, inset: f32) -> CropGrid {
+    // Respect switched-off Transform and Lens Corrections panels, matching rendering.
+    let rendered = r.as_rendered();
+    let r = rendered.as_ref();
+    let g = super::Geometry::new(im, r, max_edge);
     let lens = super::image_space::LensMap::new(im, r);
     let (columns, rows) = (g.width.max(1), g.height.max(1));
     let mut samples = Vec::with_capacity((columns * rows) as usize);
     for row in 0..rows {
         for column in 0..columns {
-            let u = (column as f32 + 0.5) / columns as f32;
-            let v = (row as f32 + 0.5) / rows as f32;
+            let at = [
+                (column as f32 + 0.5) / columns as f32,
+                (row as f32 + 0.5) / rows as f32,
+            ];
+            let [u, v] = at.map(|t| inset + (1. - 2. * inset) * t);
             let [x, y] = g.source(u, v);
             let [x, y] = lens.as_ref().map_or([x, y], |l| l.forward(x, y));
             let (x, y) = (x.round(), y.round());
             if x >= 0. && y >= 0. && x < im.width as f32 && y < im.height as f32 {
-                samples.push(im.pixels[y as usize * im.width as usize + x as usize]);
+                samples.push((
+                    [column, row],
+                    im.pixels[y as usize * im.width as usize + x as usize],
+                ));
             }
         }
     }
-    samples
+    CropGrid {
+        columns,
+        rows,
+        samples,
+    }
 }
 
 /// Per-channel gains, relative to As Shot and normalised to green, that make the
@@ -364,7 +411,7 @@ impl crate::model::measures::PhotoMeasures for Measures<'_> {
         auto_white_balance(self.0, base, Cancel::NEVER)
     }
     fn auto_gray_mix(&self, r: &Recipe, m: &Metadata) -> [f32; 8] {
-        let spread = super::ColorSpread::measure(self.0);
+        let spread = super::ColorSpread::for_recipe(self.0, r);
         super::AutoMix {
             spread: &spread,
             metadata: m,
@@ -1049,7 +1096,7 @@ mod tests {
         let preset = crate::xmp::parse(std::path::Path::new("auto.xmp"), &packet(attrs))?;
         let base = Recipe::default();
         let r = preset.apply(&base, &m, &[], Some(&Measures(&im)))?;
-        let spread = super::super::ColorSpread::measure(&im);
+        let spread = super::super::ColorSpread::measure(&im, None);
         let expected = super::super::AutoMix {
             spread: &spread,
             metadata: &m,

@@ -954,7 +954,7 @@ fn auto_black_white_mix_matches_camera_raw_on_the_chart() {
     let im = develop(&chart_path("synthetic-d65"));
     let profiles = embedded_profiles(&im);
     let r = rawmakase::model::recipe::Recipe::with_profiles(&im.metadata, &profiles);
-    let spread = rawmakase::develop::ColorSpread::measure(&im);
+    let spread = rawmakase::develop::ColorSpread::measure(&im, None);
     let auto = rawmakase::develop::AutoMix {
         spread: &spread,
         metadata: &im.metadata,

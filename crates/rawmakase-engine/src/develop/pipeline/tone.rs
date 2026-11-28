@@ -405,19 +405,24 @@ impl CurveSet {
     /// Highlights).
     pub(super) fn for_image(im: Source, r: &Recipe, camera: Camera, local_tone: bool) -> Self {
         let (mut lut, measured) = Self::measured(im, r, camera);
-        let small = measured_copy(im, r);
         let sliders = crate::develop::local_tone::Sliders::of(r);
+        let mr = measure_recipe(im, r);
+        let mut copy: Option<MeasuredCopy<'_>> = None;
         // The base reads what the measures read, and Exposure.
         let base =
             crate::develop::local_tone::LocalToneMap::needed(sliders, local_tone).then(|| {
                 let scene = |color| {
                     crate::develop::scene_tone::luminance(exposure_stage(color, &lut, None))
                 };
-                let size = [small.width, small.height];
                 match &measured {
                     // The copy's camera color reads only what the measures read: kept
                     // with them, so an Exposure change only exposes it.
                     Some(m) => m.map_base(r.exposure, || {
+                        let copy = copy.get_or_insert_with(|| MeasuredCopy::for_recipe(im, &mr));
+                        let small = &copy.image;
+                        let map_crop =
+                            copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
+                        let size = [small.width, small.height];
                         let colors = m.colors(|| {
                             small
                                 .pixels
@@ -427,18 +432,25 @@ impl CurveSet {
                         });
                         let lum = colors.par_iter().map(|c| scene(*c)).collect();
                         crate::develop::local_tone::MapBase::new(lum, size)
-                            .with_crop(crate::develop::local_tone::active_crop_rect(&small))
+                            .with_crop(map_crop)
                             .with_rendered(
                                 small.metadata.is_rendered() && small.metadata.hdr_source.is_none(),
                             )
                             .with_exposure(r.exposure)
                     }),
-                    None => Arc::new(
-                        crate::develop::local_tone::MapBase::of(&small, |p| {
-                            scene(scene_color(p, r, &lut, camera, None))
-                        })
-                        .with_exposure(r.exposure),
-                    ),
+                    None => {
+                        let copy = copy.get_or_insert_with(|| MeasuredCopy::for_recipe(im, &mr));
+                        let small = &copy.image;
+                        let map_crop =
+                            copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
+                        Arc::new(
+                            crate::develop::local_tone::MapBase::of(small, |p| {
+                                scene(scene_color(p, r, &lut, camera, None))
+                            })
+                            .with_crop(map_crop)
+                            .with_exposure(r.exposure),
+                        )
+                    }
                 }
             });
         lut.local = base.as_ref().map(|base| {
@@ -450,10 +462,13 @@ impl CurveSet {
             )
         });
         let shift_dark = r.shadows != 0. || local_tone;
-        let shift_white = r.highlights != 0. && !r.hdr.is_active() && !small.metadata.is_rendered();
+        let shift_white = r.highlights != 0. && !r.hdr.is_active() && !im.metadata.is_rendered();
         if (shift_dark || shift_white)
             && let (Some(map), Some(base)) = (&lut.local, &base)
         {
+            let copy = copy.get_or_insert_with(|| MeasuredCopy::for_recipe(im, &mr));
+            let small = &copy.image;
+            let map_crop = copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
             let levels = base.lum();
             let sw = small.width as usize;
             let mut adjusted = lut.measures;
@@ -464,12 +479,15 @@ impl CurveSet {
                 // follows the post-Shadows dark level for both positive and negative
                 // Shadows. Masks select this response locally; an unmasked pixel keeps
                 // the global key.
-                let active: Vec<usize> = match crate::develop::local_tone::active_crop_rect(&small)
-                {
-                    Some([x0, y0, x1, y1]) => (y0..y1)
+                let active: Vec<usize> = match (map_crop, copy.mask.as_deref()) {
+                    (Some([x0, y0, x1, y1]), Some(mask)) => (y0..y1)
+                        .flat_map(|y| (x0..x1).map(move |x| y * sw + x).filter(|&i| mask[i]))
+                        .collect(),
+                    (Some([x0, y0, x1, y1]), None) => (y0..y1)
                         .flat_map(|y| (x0..x1).map(move |x| y * sw + x))
                         .collect(),
-                    None => (0..levels.len()).collect(),
+                    (None, Some(mask)) => (0..levels.len()).filter(|&i| mask[i]).collect(),
+                    (None, None) => (0..levels.len()).collect(),
                 };
                 let q001 = |mut vals: Vec<f32>| {
                     if vals.is_empty() {
@@ -519,7 +537,7 @@ impl CurveSet {
                 // Camera Raw keys `GlobalTone`'s white point W* (and white3 top) on the
                 // photo's 128 px maximum as global Highlights leaves it, not as it finds
                 // it. Masked Highlights leaves the global white point untouched.
-                let make_camera = || as_shot_camera(&small, r);
+                let make_camera = || as_shot_camera(small, r);
                 let camera = match &measured {
                     Some(m) => m.as_shot(make_camera),
                     None => Arc::new(make_camera()),
@@ -545,15 +563,11 @@ impl CurveSet {
                         [c[0] * g, c[1] * g, c[2] * g]
                     })
                     .collect();
-                let post_max = box_reduce(
-                    &post_camera,
-                    small.width,
-                    small.height,
-                    crate::develop::scene_tone::MAX_EDGE,
-                )
-                .into_iter()
-                .flatten()
-                .fold(f32::MIN_POSITIVE, f32::max);
+                let post_max = copy
+                    .box_reduce_active(&post_camera, crate::develop::scene_tone::MAX_EDGE)
+                    .into_iter()
+                    .flatten()
+                    .fold(f32::MIN_POSITIVE, f32::max);
                 adjusted.max = post_max.log2().min(adjusted.sensor_white);
             }
             let haze = lut.scene.haze.take();
@@ -744,7 +758,8 @@ fn cached_photo_measures(
             None,
         );
     };
-    let key = crate::develop::stage_cache::MeasuresKey::new(copy, im.unretouched, r, camera);
+    let mr = measure_recipe(im, r);
+    let key = crate::develop::stage_cache::MeasuresKey::new(copy, im.unretouched, &mr, camera);
     // Not locked while measuring, whose parallel work may run other renders' tasks.
     let cache = || {
         cache
@@ -786,17 +801,21 @@ pub(super) fn photo_measures(
     r: &Recipe,
     camera: Camera,
 ) -> crate::develop::scene_tone::PhotoMeasures {
-    let small = measured_copy(im, r);
+    let mr = measure_recipe(im, r);
+    let copy = MeasuredCopy::for_recipe(im, &mr);
+    let small = &copy.image;
     let base = Recipe {
         exposure: 0.,
         ..r.clone()
     };
     let lut = CurveSet::new(&base);
-    let scene = measured_scene(&small, &base, &lut, camera);
+    let scene = measured_scene(small, &base, &lut, camera);
     // The copy without retouching, when it differs, for the darkest level so a local
-    // repair (red eye, spot removal) does not move the whole photo's black.
+    // repair (red eye, spot removal) does not move the whole photo's black. `measured_scene`
+    // is strictly per-pixel and `masked_lum` skips out-of-crop indices, so `plain` does
+    // not need a second crop-clamp pass.
     let unretouched_scene: Option<Vec<[f32; 3]>> = match (im.measured, im.unretouched) {
-        (Some(copy), Some(plain)) if !Arc::ptr_eq(copy, plain) => {
+        (Some(mcopy), Some(plain)) if !Arc::ptr_eq(mcopy, plain) => {
             Some(measured_scene(plain, &base, &lut, camera))
         }
         _ => None,
@@ -819,19 +838,34 @@ pub(super) fn photo_measures(
         })
         .collect();
     let edge = crate::develop::scene_tone::MAX_EDGE;
-    let max = box_reduce(&camera_as_shot, small.width, small.height, edge)
+    let max = copy
+        .box_reduce_active(&camera_as_shot, edge)
         .into_iter()
         .flatten()
         .fold(f32::MIN_POSITIVE, f32::max);
     // A neutral whose last channel just clips (highlight recovery rebuilds the others
     // up to it): the sensor clips at 1 in camera values divided by the as-shot white
     // balance, before the recipe's. Measured on the synthetic chart, whose white
-    // balance is not neutral.
-    let clip = (0..3)
-        .map(|c| metadata.wb[c].max(1e-3))
-        .fold(0f32, f32::max);
+    // balance is not neutral. A converted negative's white is the conversion's
+    // instead, its `dmax` at 1 in every channel: the sensor's clip is the film base,
+    // the scene's darkest end.
+    let (white, white_camera) = match shot_camera.negative {
+        Some(_) => (
+            crate::develop::negative::WHITE,
+            Camera {
+                negative: None,
+                ..shot_camera
+            },
+        ),
+        None => (
+            (0..3)
+                .map(|c| metadata.wb[c].max(1e-3))
+                .fold(0f32, f32::max),
+            shot_camera,
+        ),
+    };
     let white = crate::develop::scene_tone::luminance(exposure_stage(
-        scene_color([clip; 3], &as_shot, &base_lut, shot_camera, None),
+        scene_color([white; 3], &as_shot, &base_lut, white_camera, None),
         &base_lut,
         None,
     ));
@@ -839,12 +873,14 @@ pub(super) fn photo_measures(
     // its pseudo-scene was made with (`develop::rendered`), whatever the scene measures:
     // so the file renders back as it is at default settings.
     let rendered = metadata.is_rendered();
-    let crop = crate::develop::local_tone::active_crop_rect(&small).filter(|&[x0, y0, x1, y1]| {
-        // Tiny sub-percent sensor margins are already clamped at raw resolution by
-        // `crop_clamped_preview`; only slice `small` when a substantial optical-black
-        // border (>2% of pixels, e.g. Sony A7R VI) would bias quantiles like `p99`.
-        (x1 - x0) * (y1 - y0) < small.pixels.len() * 98 / 100
-    });
+    let sensor_crop =
+        crate::develop::local_tone::active_crop_rect(small).filter(|&[x0, y0, x1, y1]| {
+            // Tiny sub-percent sensor margins are already clamped at raw resolution by
+            // `crop_clamped_preview`; only slice `small` when a substantial optical-black
+            // border (>2% of pixels, e.g. Sony A7R VI) would bias quantiles like `p99`.
+            (x1 - x0) * (y1 - y0) < small.pixels.len() * 98 / 100
+        });
+    let crop = copy.combined_crop(sensor_crop);
     let [cx0, cy0, cx1, cy1] = crop.unwrap_or([0, 0, small.width as usize, small.height as usize]);
     let (cw, ch) = (cx1 - cx0, cy1 - cy0);
     let crop_lum = |pixels: &[[f32; 3]]| -> Vec<f32> {
@@ -867,8 +903,26 @@ pub(super) fn photo_measures(
                 .collect(),
         }
     };
-    let mut lum = crop_lum(&scene);
-    let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
+    let masked_lum = |pixels: &[[f32; 3]], mask: &[bool]| -> Vec<f32> {
+        let w = small.width as usize;
+        let mut out = Vec::with_capacity(cw * ch);
+        for y in cy0..cy1 {
+            let row = y * w;
+            for x in cx0..cx1 {
+                let idx = row + x;
+                if mask[idx] {
+                    out.push(crate::develop::scene_tone::luminance(pixels[idx]));
+                }
+            }
+        }
+        out
+    };
+    let mut grid_lum = crop_lum(&scene);
+    let mut active_lum = copy
+        .mask
+        .as_deref()
+        .map(|mask| masked_lum(&scene, mask))
+        .filter(|v| !v.is_empty());
     // For SDR positive Whites (`whites_p99` and `whites_p01`), remove single-pixel
     // point sources via a 3×3 median on the reduced copy, box-reduce to `MAX_EDGE`
     // (128 px), and exclude flat cells (e.g. blown-out skies or uniform synthetic
@@ -876,7 +930,7 @@ pub(super) fn photo_measures(
     // region in or out). Point sources (like night streetlamps) do not smear across
     // `MAX_EDGE` boxes while textured highlights and dark pixels stay intact. Plain
     // `p99` is kept untouched for HDR positive Whites (`PhotoMeasures::hdr_whites_level`).
-    let (whites_p99, whites_p01) = if !lum.is_empty() && !rendered && white > 1e-6 {
+    let (whites_p99, whites_p01) = if !grid_lum.is_empty() && !rendered && white > 1e-6 {
         let as_shot_lum = crop_lum(&camera_as_shot);
         let scale = (edge as f32 / cw.max(ch) as f32).min(1.);
         let (bw, bh) = (
@@ -888,13 +942,13 @@ pub(super) fn photo_measures(
         // speckle and night-lamp response).
         let (med_s, med_a) = if cw.max(ch) > edge as usize && cw >= 3 && ch >= 3 {
             (
-                Some(median_3x3(&lum, cw, ch)),
+                Some(median_3x3(&grid_lum, cw, ch)),
                 Some(median_3x3(&as_shot_lum, cw, ch)),
             )
         } else {
             (None, None)
         };
-        let src_s = med_s.as_deref().unwrap_or(&lum);
+        let src_s = med_s.as_deref().unwrap_or(&grid_lum);
         let src_a = med_a.as_deref().unwrap_or(&as_shot_lum);
         let total_cells = bw * bh;
         let mut all_cells = Vec::with_capacity(total_cells);
@@ -962,6 +1016,8 @@ pub(super) fn photo_measures(
     } else {
         (None, None)
     };
+    let lum = active_lum.as_mut().unwrap_or(&mut grid_lum);
+    let min = lum.iter().copied().fold(f32::INFINITY, f32::min);
     let p99 = if lum.is_empty() {
         1.
     } else {
@@ -971,11 +1027,14 @@ pub(super) fn photo_measures(
     let whites_p99 = whites_p99.unwrap_or(p99);
     let whites_p01 = whites_p01.unwrap_or(min);
     let mut dark_lum = match unretouched_scene {
-        Some(ref plain) => crop_lum(plain),
+        Some(ref plain) => match copy.mask.as_deref() {
+            Some(mask) => masked_lum(plain, mask),
+            None => crop_lum(plain),
+        },
         None => Vec::new(),
     };
     let dark_slice = if dark_lum.is_empty() {
-        &mut lum
+        lum
     } else {
         &mut dark_lum
     };
@@ -999,22 +1058,26 @@ pub(super) fn photo_measures(
 }
 /// The haze Dehaze uses (`scene_tone::Haze`), on the scene values `photo_measures`
 /// reads: the measurement copy at the stage's input, Exposure 0. Airlight candidates
-/// are ranked in the camera's white-balanced values (`small.pixels` × `r.wb`).
+/// are ranked in the camera's white-balanced values (`small.pixels` × `r.wb`), a
+/// scanned negative's converted first.
 pub(super) fn photo_haze(
     im: Source,
     r: &Recipe,
     camera: Camera,
 ) -> crate::develop::scene_tone::Haze {
-    let small = measured_copy(im, r);
+    let mr = measure_recipe(im, r);
+    let copy = MeasuredCopy::for_recipe(im, &mr);
+    let small = &copy.image;
     let base = Recipe {
         exposure: 0.,
         ..r.clone()
     };
-    let scene = measured_scene(&small, &base, &CurveSet::new(&base), camera);
+    let scene = measured_scene(small, &base, &CurveSet::new(&base), camera);
     let ranked: Vec<[f32; 3]> = small
         .pixels
         .par_iter()
         .map(|p| {
+            let p = camera.negative.as_ref().map_or(*p, |n| n.apply(*p));
             std::array::from_fn(|c| {
                 let held = if p[c] > camera.clip[c] {
                     camera.clip[c]
@@ -1026,18 +1089,20 @@ pub(super) fn photo_haze(
         })
         .collect();
     if small.metadata.is_rendered() && small.metadata.hdr_source.is_none() {
-        crate::develop::scene_tone::Haze::of_rendered(
+        crate::develop::scene_tone::Haze::of_rendered_in_mask(
             &ranked,
             &scene,
             small.width as usize,
             small.height as usize,
+            copy.mask.as_deref(),
         )
     } else {
-        crate::develop::scene_tone::Haze::of(
+        crate::develop::scene_tone::Haze::of_in_mask(
             &ranked,
             &scene,
             small.width as usize,
             small.height as usize,
+            copy.mask.as_deref(),
         )
     }
 }
@@ -1178,6 +1243,171 @@ fn measured_copy<'a>(im: Source<'a>, r: &Recipe) -> std::borrow::Cow<'a, CameraI
         )),
     }
 }
+/// The recipe whose crop and aspect constraint negative measurements follow: `r` as-is
+/// normally, or with `im.measure_crop` restored while the Crop tool displays the full
+/// uncropped scan.
+fn measure_recipe<'a>(im: Source, r: &'a Recipe) -> std::borrow::Cow<'a, Recipe> {
+    let Some(mc) = im.measure_crop.filter(|_| r.negative.is_some()) else {
+        return std::borrow::Cow::Borrowed(r);
+    };
+    let mut m = r.clone();
+    m.crop = mc.crop;
+    m.constrain_crop = mc.constrain_crop;
+    std::borrow::Cow::Owned(m)
+}
+/// A measurement copy prepared for `r`: for a regular photo, the borrowed copy as-is;
+/// for a converted negative with an active crop or warp, a copy whose out-of-crop border
+/// pixels are clamped to the nearest in-crop pixel (eliminating film-holder spikes and
+/// cross-border filter halos while keeping exact spatial alignment with the full image),
+/// paired with the per-pixel in-crop mask and its tight pixel bounding box.
+struct MeasuredCopy<'a> {
+    image: std::borrow::Cow<'a, CameraImage>,
+    mask: Option<Vec<bool>>,
+    bounds: Option<[usize; 4]>,
+}
+impl<'a> MeasuredCopy<'a> {
+    fn for_recipe(im: Source<'a>, r: &Recipe) -> Self {
+        apply_negative_crop(measured_copy(im, r), r)
+    }
+    /// Intersects `sensor_crop` (optical-black camera crop) with this copy's negative
+    /// crop bounding box when present.
+    fn combined_crop(&self, sensor_crop: Option<[usize; 4]>) -> Option<[usize; 4]> {
+        match (sensor_crop, self.bounds) {
+            (Some([ax0, ay0, ax1, ay1]), Some([bx0, by0, bx1, by1])) => {
+                let (x0, y0, x1, y1) = (ax0.max(bx0), ay0.max(by0), ax1.min(bx1), ay1.min(by1));
+                if x0 < x1 && y0 < y1 {
+                    Some([x0, y0, x1, y1])
+                } else {
+                    Some([bx0, by0, bx1, by1])
+                }
+            }
+            (None, bounds) => bounds,
+            (sensor, None) => sensor,
+        }
+    }
+    /// Box-reduces `pixels` over the negative crop bounding box when present, or over
+    /// the whole measurement copy otherwise.
+    fn box_reduce_active(&self, pixels: &[[f32; 3]], edge: u32) -> Vec<[f32; 3]> {
+        match self.bounds {
+            Some([x0, y0, x1, y1]) => {
+                let w = self.image.width as usize;
+                let (cw, ch) = (x1 - x0, y1 - y0);
+                let mut sliced = Vec::with_capacity(cw * ch);
+                for y in y0..y1 {
+                    sliced.extend_from_slice(&pixels[y * w + x0..y * w + x1]);
+                }
+                box_reduce(&sliced, cw as u32, ch as u32, edge)
+            }
+            None => box_reduce(pixels, self.image.width, self.image.height, edge),
+        }
+    }
+}
+fn apply_negative_crop<'a>(
+    small: std::borrow::Cow<'a, CameraImage>,
+    r: &Recipe,
+) -> MeasuredCopy<'a> {
+    if r.negative.is_none() || small.width == 0 || small.height == 0 {
+        return MeasuredCopy {
+            image: small,
+            mask: None,
+            bounds: None,
+        };
+    }
+    let lens = crate::develop::image_space::LensMap::new(&small, r);
+    if r.crop == [0., 0., 1., 1.]
+        && r.straighten == 0.
+        && r.transform.is_identity()
+        && r.upright.correction().is_none()
+        && r.lens_manual_distortion == 0.
+        && lens.is_none()
+    {
+        return MeasuredCopy {
+            image: small,
+            mask: None,
+            bounds: None,
+        };
+    }
+    let g = crate::develop::Geometry::new(&small, r, 0);
+    let (w, h) = (small.width as usize, small.height as usize);
+    let coords: Vec<[f32; 2]> = (0..w * h)
+        .into_par_iter()
+        .map(|i| {
+            let (x, y) = ((i % w) as f32, (i / w) as f32);
+            let [lx, ly] = lens.as_ref().map_or([x, y], |l| l.inverse(x, y));
+            g.view(lx, ly)
+        })
+        .collect();
+    let mut mask = vec![false; w * h];
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (w, h, 0usize, 0usize);
+    let mut inside_count = 0usize;
+    for (i, &[u, v]) in coords.iter().enumerate() {
+        if u.is_finite() && v.is_finite() && (0. ..=1.).contains(&u) && (0. ..=1.).contains(&v) {
+            mask[i] = true;
+            inside_count += 1;
+            let (x, y) = (i % w, i / w);
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+    if inside_count == 0 || inside_count == w * h {
+        return MeasuredCopy {
+            image: small,
+            mask: None,
+            bounds: None,
+        };
+    }
+    let bounds = [min_x, min_y, max_x + 1, max_y + 1];
+    let first_inside = mask.iter().position(|&on| on).unwrap();
+    let eps_u = (0.5 / g.width.max(1) as f32).min(0.49);
+    let eps_v = (0.5 / g.height.max(1) as f32).min(0.49);
+    let map_in = |u: f32, v: f32| -> usize {
+        let [sx, sy] = g.source(u, v);
+        let [sx, sy] = lens.as_ref().map_or([sx, sy], |l| l.forward(sx, sy));
+        let ix = (sx.round() as isize).clamp(0, w as isize - 1) as usize;
+        let iy = (sy.round() as isize).clamp(0, h as isize - 1) as usize;
+        iy * w + ix
+    };
+    let center_idx = {
+        let c = map_in(0.5, 0.5);
+        if mask[c] { c } else { first_inside }
+    };
+    let mut clamped = (*small).clone();
+    clamped
+        .pixels
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, dst)| {
+            if mask[i] {
+                return;
+            }
+            let [u, v] = coords[i];
+            let uc = if u.is_finite() {
+                u.clamp(eps_u, 1. - eps_u)
+            } else {
+                0.5
+            };
+            let vc = if v.is_finite() {
+                v.clamp(eps_v, 1. - eps_v)
+            } else {
+                0.5
+            };
+            let mut idx = map_in(uc, vc);
+            if !mask[idx] {
+                let uc2 = (uc + (0.5 - uc).signum() * eps_u).clamp(0., 1.);
+                let vc2 = (vc + (0.5 - vc).signum() * eps_v).clamp(0., 1.);
+                let idx2 = map_in(uc2, vc2);
+                idx = if mask[idx2] { idx2 } else { center_idx };
+            }
+            *dst = small.pixels[idx];
+        });
+    MeasuredCopy {
+        image: std::borrow::Cow::Owned(clamped),
+        mask: Some(mask),
+        bounds: Some(bounds),
+    }
+}
 /// Camera Raw's Contrast pivot for this photo, from its reduced copy rendered as the
 /// recipe's profile, white balance and calibration render it, at the camera's
 /// exposure: the user's Exposure does not move it (measured on the chart). Dehaze is
@@ -1189,7 +1419,9 @@ pub(super) fn contrast_pivot(
     measures: &crate::develop::scene_tone::PhotoMeasures,
     haze: Option<Arc<crate::develop::scene_tone::Haze>>,
 ) -> f32 {
-    let small = measured_copy(im, r);
+    let mr = measure_recipe(im, r);
+    let copy = MeasuredCopy::for_recipe(im, &mr);
+    let small = &copy.image;
     // Measured on the SDR rendering, HDR or not, as Camera Raw measures it.
     // Saturation and Vibrance apply inside `profile_stage`, so clear them here
     // to match the cached pivot key (`MeasuresKey` + Dehaze).
@@ -1223,11 +1455,22 @@ pub(super) fn contrast_pivot(
             tone_stage(*p, &default, &lut, camera, pos, None).map(|v| srgb_encode(v.clamp(0., 1.)))
         })
         .collect();
-    let pivot = crate::develop::basic_tone::photo_pivot(&crate::develop::basic_tone::blocks(
-        &encoded,
-        small.width as usize,
-        small.height as usize,
-    ));
+    let blocks = match copy.bounds {
+        Some([x0, y0, x1, y1]) => {
+            let (cw, ch) = (x1 - x0, y1 - y0);
+            let mut cropped = Vec::with_capacity(cw * ch);
+            for y in y0..y1 {
+                cropped.extend_from_slice(&encoded[y * width + x0..y * width + x1]);
+            }
+            crate::develop::basic_tone::blocks(&cropped, cw, ch)
+        }
+        None => crate::develop::basic_tone::blocks(
+            &encoded,
+            small.width as usize,
+            small.height as usize,
+        ),
+    };
+    let pivot = crate::develop::basic_tone::photo_pivot(&blocks);
     if small.metadata.is_rendered() {
         crate::develop::basic_tone::rendered_pivot(pivot)
     } else {

@@ -440,7 +440,11 @@ pub fn check_hdr_file(r: &super::recipe::Recipe, m: &crate::camera_data::Metadat
             && c.points.last() == Some(&[1., 1.])
             && c.points.iter().all(|p| p[0] == p[1])
     };
-    let refused: [(&str, bool); 14] = [
+    let refused: [(&str, bool); 15] = [
+        // The master renders the file's light with Exposure applied first
+        // (`quality::hdr_file_scene`); a conversion reading it after would take a
+        // brighter Exposure for denser film. The SDR rendition renders it.
+        ("A negative conversion", r.negative.is_some()),
         (
             "White balance",
             r.temperature != d.temperature
@@ -579,8 +583,15 @@ mod tests {
         fine.hdr.sdr.brightness = 0.1;
         assert!(check_for(&fine, &file).is_ok());
         type Change = fn(&mut super::super::recipe::Recipe);
-        let refusals: [(&str, Change); 7] = [
+        let refusals: [(&str, Change); 8] = [
             ("White balance", |r| r.incremental_temperature = 10.),
+            // The master renders the file's light after its Exposure, which a
+            // conversion would then read as the scan: Exposure would run backwards.
+            ("A negative conversion", |r| {
+                r.negative = Some(crate::model::negative::NegativeConversion::new(
+                    crate::model::negative::FilmType::Colour,
+                ))
+            }),
             ("Tone", |r| r.contrast = 10.),
             ("Detail", |r| r.sharpening = 40.),
             ("AI Denoise", |r| r.ai_denoise.enabled = true),

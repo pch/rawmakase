@@ -3324,3 +3324,47 @@ fn a_merged_dngs_packet_is_its_starting_settings() -> Result<()> {
     assert!(!export.contains("IsMergedHDR"));
     Ok(())
 }
+
+/// A film negative conversion is RAWmakase's own: an export's XMP and an XMP preset
+/// write nothing of it (the preset still offers an Amount), and applying XMP settings
+/// to a photo leaves its conversion as it was.
+#[test]
+fn a_negative_conversion_is_never_written_to_xmp_and_survives_applying_it() -> Result<()> {
+    use crate::model::negative::{FilmType, NegativeConversion};
+    use crate::model::settings_groups::{GroupInclusion, GroupSelection, SettingGroup};
+    let plain = Recipe {
+        exposure: 0.5,
+        ..Default::default()
+    };
+    let converted = Recipe {
+        negative: Some(NegativeConversion {
+            base: [0.8, 0.5, 0.3],
+            ..NegativeConversion::new(FilmType::Colour)
+        }),
+        ..plain.clone()
+    };
+    let photo = write::Photo {
+        settings: true,
+        ..Default::default()
+    };
+    let m = Metadata::default();
+    assert_eq!(
+        write::packet(&converted, &m, &photo),
+        write::packet(&plain, &m, &photo)
+    );
+    let info = preset_write::PresetInfo {
+        uuid: "0".repeat(32),
+        ..preset_write::PresetInfo::new("Roll", "User Presets")
+    };
+    let mut groups = GroupSelection::none();
+    for group in [SettingGroup::Exposure, SettingGroup::NegativeConversion] {
+        groups.set(group, GroupInclusion::Included);
+    }
+    let preset = preset_write::preset(&converted, &m, &info, &groups);
+    assert_eq!(preset, preset_write::preset(&plain, &m, &info, &groups));
+    assert!(preset.contains(r#"crs:SupportsAmount="True""#), "{preset}");
+    let parsed = parse(Path::new("Roll.xmp"), &preset)?;
+    let applied = parsed.apply(&converted, &m, &[], None)?;
+    assert_eq!(applied.negative, converted.negative);
+    Ok(())
+}

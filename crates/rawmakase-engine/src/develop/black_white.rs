@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 /// How the photo's colors spread, as Auto black & white measures them: the mean and
 /// covariance of its decoded camera values (white balanced as shot), without
-/// pixels near clipping. Measured once per photo; a white balance or profile is
-/// applied to the statistics, since both are linear.
+/// pixels near clipping, a scanned negative's converted first. Measured once per
+/// photo and conversion; a white balance or profile is applied to the statistics,
+/// since both are linear and come after the conversion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorSpread {
     pub mean: [f64; 3],
@@ -17,8 +18,14 @@ pub struct ColorSpread {
 
 impl ColorSpread {
     /// Measures every `step`-th pixel in each direction of a photo up to about 1024
-    /// pixels on its long edge.
-    pub fn measure(im: &CameraImage) -> Self {
+    /// pixels on its long edge, through `negative`'s conversion when there is one:
+    /// the positive, which the white balance and profile render.
+    pub fn measure(
+        im: &CameraImage,
+        negative: Option<&crate::model::negative::NegativeConversion>,
+    ) -> Self {
+        let inversion =
+            negative.map(|n| super::negative::Inversion::new(n, im.metadata.is_rendered()));
         let step = (im.width.max(im.height) / 1024).max(1) as usize;
         let (mut n, mut sum, mut products) = (0f64, [0f64; 3], [[0f64; 3]; 3]);
         let width = im.width as usize;
@@ -27,13 +34,26 @@ impl ColorSpread {
             // never copied out whole.
             let row = im.pixels.range(y * width..(y + 1) * width);
             for p in row.iter().step_by(step) {
-                let peak = (0..3)
-                    .map(|c| p[c] / im.metadata.wb[c].max(0.001))
-                    .fold(0f32, f32::max);
-                if peak > CLIPPED || !p.iter().all(|v| v.is_finite()) {
+                let clipped = if inversion.is_some() {
+                    // Use the shared negative clip threshold (`negative::clipped`, 0.98 in
+                    // scan linear space) for both RAW and rendered negative scans: rendered
+                    // scans' pseudo-scene exceeds 1.0, and brightly exposed negative film
+                    // bases sit near the top of the scan where all negative measurements
+                    // share the same clip cut-off.
+                    super::negative::clipped(*p, &im.metadata)
+                } else {
+                    let peak = (0..3)
+                        .map(|c| p[c] / im.metadata.wb[c].max(0.001))
+                        .fold(0f32, f32::max);
+                    peak > CLIPPED
+                };
+                if clipped || !p.iter().all(|v| v.is_finite()) {
                     continue;
                 }
-                let p = p.map(f64::from);
+                let p = inversion
+                    .as_ref()
+                    .map_or(*p, |n| n.apply(*p))
+                    .map(f64::from);
                 n += 1.;
                 for i in 0..3 {
                     sum[i] += p[i];
@@ -43,6 +63,36 @@ impl ColorSpread {
                 }
             }
         }
+        Self::finish(n, sum, products)
+    }
+
+    /// As [`Self::measure`], for `r`: a regular photo measures the full frame unchanged;
+    /// a converted negative samples inside `r`'s crop so a cropped-out black film holder
+    /// cannot dominate the mean and covariance.
+    pub fn for_recipe(im: &CameraImage, r: &Recipe) -> Self {
+        let Some(negative) = r.negative.as_ref() else {
+            return Self::measure(im, None);
+        };
+        let inversion = super::negative::Inversion::new(negative, im.metadata.is_rendered());
+        let grid = super::auto::crop_grid_at(im, r, 1024, 0.);
+        let (mut n, mut sum, mut products) = (0f64, [0f64; 3], [[0f64; 3]; 3]);
+        for (_, p) in grid.samples {
+            if super::negative::clipped(p, &im.metadata) || !p.iter().all(|v| v.is_finite()) {
+                continue;
+            }
+            let p = inversion.apply(p).map(f64::from);
+            n += 1.;
+            for i in 0..3 {
+                sum[i] += p[i];
+                for j in 0..3 {
+                    products[i][j] += p[i] * p[j];
+                }
+            }
+        }
+        Self::finish(n, sum, products)
+    }
+
+    fn finish(n: f64, sum: [f64; 3], products: [[f64; 3]; 3]) -> Self {
         let n = n.max(1.);
         let mean = sum.map(|s| s / n);
         let covariance = std::array::from_fn(|i| {

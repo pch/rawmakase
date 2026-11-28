@@ -17,8 +17,9 @@
 //!   a Profile Amount scales it from 0 instead;
 //!
 //! Point Color swatches scale their shifts. Lens corrections, chromatic aberration,
-//! crop, geometry, Upright, spots, masks and Point Color swatches added or taken away
-//! don't scale: a preset that changes any of them gets no Amount.
+//! crop, geometry, Upright, spots, masks, Point Color swatches added or taken away and
+//! a film negative conversion don't scale: a preset that changes any of them gets no
+//! Amount.
 use crate::model::recipe::{Recipe, TEMPERATURE_MAX, TEMPERATURE_MIN};
 use crate::{
     camera_data::Metadata,
@@ -127,6 +128,7 @@ fn fixed_change(a: &Recipe, b: &Recipe) -> Option<SettingGroup> {
         (a.masks != b.masks, Masking),
         (a.ai_denoise != b.ai_denoise, AiDenoise),
         (a.hdr != b.hdr, HighDynamicRange),
+        (a.negative != b.negative, NegativeConversion),
         (!same_swatches(a, b), ColorAdjustments),
         // Settings from a newer release: their kind is unknown.
         (a.unknown != b.unknown, ProcessVersion),
@@ -344,6 +346,7 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         lens_vignetting,
         lens_manual_distortion,
         lens_ca,
+        negative,
         effects: b_effects,
         preset_name,
         profile,
@@ -445,6 +448,8 @@ fn blend(a: &Recipe, b: &Recipe, t: f32, m: &Metadata) -> Recipe {
         lens_vignetting: *lens_vignetting,
         lens_manual_distortion: *lens_manual_distortion,
         lens_ca: *lens_ca,
+        // `fixed_change` has made sure it is the same before and after.
+        negative: negative.clone(),
         effects: effects(&a.effects, b_effects, t),
         preset_name: preset_name.clone(),
         profile: profile.clone(),

@@ -125,6 +125,22 @@ impl Editor {
         {
             self.view.set_tool(crate::app::develop::state::Tool::None);
         }
+        // Auto's note of the holder in the crop goes with the photo, crop and
+        // conversion it measured.
+        if self
+            .view
+            .negative_holder
+            .as_ref()
+            .is_some_and(|h| !h.holds(self.document.load_id(), self.document.edit.recipe()))
+        {
+            self.view.negative_holder = None;
+        }
+        // The film base picker goes with the conversion: turned off, reset or undone.
+        if self.view.is(crate::app::develop::state::Tool::FilmBase)
+            && self.document.edit.recipe().negative.is_none()
+        {
+            self.view.set_tool(crate::app::develop::state::Tool::None);
+        }
         // Point Color's dropper goes with its tab: another tab, black & white, an older
         // process or the Library put it away, so a click never adds a hidden swatch.
         if self.view.is(crate::app::develop::state::Tool::PointColor)

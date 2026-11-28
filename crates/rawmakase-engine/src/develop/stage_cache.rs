@@ -188,15 +188,17 @@ impl Keyed for MeasuredKey {
     }
 }
 
-/// The recipe as the cached stages read it: the samples, and the photo's measures.
+/// The recipe as the cached stages read it: the samples, camera color, and the photo's
+/// measures.
 struct StageRecipes {
     samples: Recipe,
+    color: Recipe,
     measures: Recipe,
 }
-/// The recipe as the camera color (S1: white balance, the profile's matrix and
-/// HueSatMap, Camera Calibration) reads it: the measures' fields, which hold them.
+/// The recipe as the camera color (S1: a negative's conversion, white balance, the
+/// profile's matrix and HueSatMap, Camera Calibration) reads it.
 pub(crate) fn color_recipe(r: &Recipe) -> Recipe {
-    stage_recipes(r).measures
+    stage_recipes(r).color
 }
 /// Splits `r` into what each cached stage reads. `Recipe` and `Effects` are taken
 /// apart without `..`, so adding a field to either is a compile error here until it is
@@ -211,6 +213,10 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         lens_vignetting,
         lens_manual_distortion,
         lens_ca,
+        // The film negative conversion renders first in the per-pixel stage, and the
+        // photo's measures read the positive it makes. The samples are of the camera
+        // image before it, and don't.
+        negative,
         crop,
         rotation,
         straighten,
@@ -315,6 +321,44 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
         defringe: _,
         defringe_ranges: _,
     } = effects;
+    let color = Recipe {
+        negative: negative.clone(),
+        wb: *wb,
+        temperature: *temperature,
+        tint: *tint,
+        incremental_temperature: *incremental_temperature,
+        incremental_tint: *incremental_tint,
+        auto_white_balance: *auto_white_balance,
+        profile: profile.clone(),
+        profile_amount: *profile_amount,
+        camera_exposure: *camera_exposure,
+        effects: Effects {
+            calibration: *calibration,
+            shadow_tint: *shadow_tint,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // For a converted negative, measurements exclude pixels outside the crop so a
+    // cropped-out film holder does not bias tone, haze or contrast statistics.
+    let mut measures = color.clone();
+    if negative.is_some() {
+        measures.crop = *crop;
+        measures.rotation = *rotation;
+        measures.straighten = *straighten;
+        measures.constrain_crop = *constrain_crop;
+        measures.flip_x = *flip_x;
+        measures.flip_y = *flip_y;
+        measures.transform = *transform;
+        measures.upright = upright.clone();
+        measures.lens_builtin = *lens_builtin;
+        measures.lens_file_correction = *lens_file_correction;
+        measures.lens_profile = *lens_profile;
+        measures.lens_profile_choice = lens_profile_choice.clone();
+        measures.lens_distortion = *lens_distortion;
+        measures.lens_manual_distortion = *lens_manual_distortion;
+        measures.lens_ca = *lens_ca;
+    }
     StageRecipes {
         // Geometry, lens correction and noise reduction.
         samples: Recipe {
@@ -348,24 +392,10 @@ fn stage_recipes(r: &Recipe) -> StageRecipes {
             },
             ..Default::default()
         },
-        // White balance, the profile's color and calibration, at the camera's exposure.
-        measures: Recipe {
-            wb: *wb,
-            temperature: *temperature,
-            tint: *tint,
-            incremental_temperature: *incremental_temperature,
-            incremental_tint: *incremental_tint,
-            auto_white_balance: *auto_white_balance,
-            profile: profile.clone(),
-            profile_amount: *profile_amount,
-            camera_exposure: *camera_exposure,
-            effects: Effects {
-                calibration: *calibration,
-                shadow_tint: *shadow_tint,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
+        // The negative conversion, white balance, the profile's color and calibration,
+        // at the camera's exposure.
+        color,
+        measures,
     }
 }
 
@@ -464,6 +494,8 @@ pub(crate) struct MaskKey {
     samples: SampleKey,
     masks: Vec<(Vec<crate::model::masks::MaskComponent>, bool)>,
     recipe: Option<Recipe>,
+    /// Range masks read developed colors, which depend on `measure_crop` for negatives.
+    measure_crop: Option<crate::develop::MeasureCrop>,
 }
 impl Keyed for MaskKey {
     fn gone(&self) -> bool {
@@ -491,6 +523,9 @@ impl MaskKey {
                 masks: Vec::new(),
                 ..r.clone()
             }),
+            measure_crop: (ranges && r.negative.is_some())
+                .then_some(toned.measure_crop)
+                .flatten(),
         }
     }
 }
@@ -510,8 +545,16 @@ mod tests {
         };
         let changes = |r: &Recipe| stage_recipes(&base).samples != stage_recipes(r).samples;
         // (edit, changes the samples)
-        let cases: [(&str, Recipe, bool); 16] = [
+        let negative = Some(crate::model::negative::NegativeConversion::new(
+            crate::model::negative::FilmType::Colour,
+        ));
+        let cases: [(&str, Recipe, bool); 17] = [
             ("temperature", edit(&|r| r.temperature = 3000.), false),
+            (
+                "negative conversion",
+                edit(&|r| r.negative = negative.clone()),
+                false,
+            ),
             (
                 "file's lens correction",
                 edit(&|r| r.lens_file_correction = false),
@@ -549,7 +592,25 @@ mod tests {
         }
         // (edit, changes the photo's measures)
         let measures = |r: &Recipe| stage_recipes(&base).measures != stage_recipes(r).measures;
-        let cases: [(&str, Recipe, bool); 14] = [
+        let cases: [(&str, Recipe, bool); 16] = [
+            (
+                "negative conversion",
+                edit(&|r| r.negative = negative.clone()),
+                true,
+            ),
+            (
+                "film base",
+                edit(&|r| {
+                    r.negative =
+                        negative
+                            .clone()
+                            .map(|n| crate::model::negative::NegativeConversion {
+                                base: [0.9, 0.55, 0.3],
+                                ..n
+                            })
+                }),
+                true,
+            ),
             ("white balance", edit(&|r| r.wb = [1.2, 1., 0.8]), true),
             ("temperature", edit(&|r| r.temperature = 3000.), true),
             ("tint", edit(&|r| r.tint = 10.), true),
@@ -576,6 +637,44 @@ mod tests {
         ];
         for (name, r, changed) in cases {
             assert_eq!(measures(&r), changed, "{name}");
+        }
+        // With a negative conversion active, crop and geometry changes invalidate the
+        // photo's measures (so cropped-out film holders are excluded) without changing
+        // the per-pixel camera color recipe.
+        let mut neg_base = base.clone();
+        neg_base.negative = negative;
+        let neg_edit = |f: &dyn Fn(&mut Recipe)| {
+            let mut r = neg_base.clone();
+            f(&mut r);
+            r
+        };
+        for (name, r) in [
+            (
+                "negative crop",
+                neg_edit(&|r| r.crop = [0.1, 0.1, 0.9, 0.9]),
+            ),
+            ("negative straighten", neg_edit(&|r| r.straighten = 2.)),
+            ("negative rotation", neg_edit(&|r| r.rotation = 1)),
+            ("negative flip", neg_edit(&|r| r.flip_x = true)),
+            (
+                "negative transform",
+                neg_edit(&|r| r.transform.vertical = 0.2),
+            ),
+            (
+                "negative lens distortion",
+                neg_edit(&|r| r.lens_manual_distortion = -0.2),
+            ),
+        ] {
+            assert_ne!(
+                stage_recipes(&neg_base).measures,
+                stage_recipes(&r).measures,
+                "{name} changes measures"
+            );
+            assert_eq!(
+                color_recipe(&neg_base),
+                color_recipe(&r),
+                "{name} keeps camera color"
+            );
         }
     }
     #[test]
@@ -608,5 +707,60 @@ mod tests {
         );
         assert_eq!(lru.len(), ENTRIES);
         Ok(())
+    }
+    #[test]
+    fn mask_key_tracks_measure_crop_for_negative_range_masks() {
+        let im = Arc::new(CameraImage {
+            width: 32,
+            height: 24,
+            pixels: vec![[0.5; 3]; 32 * 24].into(),
+            metadata: Default::default(),
+            recovered: Default::default(),
+            hdr: Default::default(),
+            fast: false,
+            scale_factor: 1.,
+            scale_clipped: 0,
+        });
+        let toned = |measure_crop| Toned {
+            image: im.clone(),
+            scale: 1.,
+            untextured: None,
+            measured: None,
+            unretouched: None,
+            measures: None,
+            measure_crop,
+        };
+        let mut r = Recipe {
+            negative: Some(crate::model::negative::NegativeConversion::new(
+                crate::model::negative::FilmType::Colour,
+            )),
+            ..Default::default()
+        };
+        let g = Geometry::new(&im, &r, 0);
+        let region = [0, 0, g.width, g.height];
+        let a = Some(crate::develop::MeasureCrop {
+            crop: [0.1, 0.1, 0.9, 0.9],
+            constrain_crop: false,
+        });
+        let b = Some(crate::develop::MeasureCrop {
+            crop: [0.2, 0.2, 0.8, 0.8],
+            constrain_crop: false,
+        });
+        assert!(
+            MaskKey::new(&toned(a), &r, &g, region, 0., true)
+                != MaskKey::new(&toned(b), &r, &g, region, 0., true),
+            "range mask on a negative must invalidate when measure_crop changes"
+        );
+        assert!(
+            MaskKey::new(&toned(a), &r, &g, region, 0., false)
+                == MaskKey::new(&toned(b), &r, &g, region, 0., false),
+            "non-range mask does not depend on measure_crop"
+        );
+        r.negative = None;
+        assert!(
+            MaskKey::new(&toned(a), &r, &g, region, 0., true)
+                == MaskKey::new(&toned(b), &r, &g, region, 0., true),
+            "positive photo range mask does not depend on measure_crop"
+        );
     }
 }

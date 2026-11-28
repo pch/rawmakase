@@ -315,6 +315,34 @@ mod tests {
         .unwrap()
     }
 
+    /// A negative conversion of an HDR file: its master is refused, by name, as the
+    /// master applies Exposure to the light before anything reads it, so a conversion
+    /// after it would run Exposure backwards. The SDR rendition converts the file's
+    /// own values, Exposure after the conversion: +1 brightens it.
+    #[test]
+    fn an_hdr_files_master_refuses_a_negative_conversion() -> Result<()> {
+        use crate::model::negative::{FilmType, NegativeConversion};
+        let im = hdr_file(6, 4, |x, _| [0.05 + 0.1 * x as f32; 3]);
+        let mut r = Recipe::for_new_rendered(&im.metadata);
+        r.negative = Some(NegativeConversion {
+            base: [0.8; 3],
+            ..NegativeConversion::new(FilmType::BlackWhite)
+        });
+        let error = render_hdr(&im, &r.checked()?, None, 0, Cancel::NEVER).unwrap_err();
+        assert!(error.to_string().contains("negative conversion"), "{error}");
+        let mut brighter = r.clone();
+        brighter.exposure = 1.;
+        let sdr = |r: &Recipe| crate::develop::render(&im, &r.checked().unwrap(), 0, Cancel::NEVER);
+        let (at_0, at_1) = (sdr(&r)?, sdr(&brighter)?);
+        assert!(
+            at_1.pixels[3][1] > at_0.pixels[3][1],
+            "{:?} {:?}",
+            at_0.pixels[3],
+            at_1.pixels[3]
+        );
+        Ok(())
+    }
+
     /// An HDR file's master at its own settings is its light, above white and colored
     /// alike, within the pseudo-scene's precision (0.0001 stop); a negative channel
     /// renders as 0, as an HDR master never renders one. Exposure is a gain; Rotate

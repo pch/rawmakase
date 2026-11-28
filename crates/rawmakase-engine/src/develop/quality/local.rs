@@ -148,6 +148,7 @@ pub(super) fn local_stage(
         measured: Some(measured),
         unretouched: Some(unretouched),
         measures,
+        measure_crop: None,
     };
     Ok((toned, tonal))
 }

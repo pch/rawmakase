@@ -15,6 +15,10 @@ pub(crate) mod slot {
         CAMERA: 9,
         // `Camera::clip`, each channel's.
         CAMERA_CLIP: 3,
+        // A scanned negative's conversion (`negative::Inversion::gpu`): on, black &
+        // white, the film base's log2, `dmax` in base-2 units and the stretch; 0 when
+        // off.
+        NEGATIVE: 11,
         WB: 3,
         HUE: 5,
         HUE2: 1,
@@ -537,6 +541,11 @@ fn set_rgb_table(p: &mut PixelParams, look: Option<&crate::camera_profiles::RgbL
 }
 fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     let profile = r.profile.as_ref()?;
+    // A rendered file's conversion reads its linear values, which the port doesn't
+    // reconstruct from the pseudo-scene: it renders on the CPU.
+    if camera.negative.is_some_and(|n| !n.on_gpu()) {
+        return None;
+    }
     let mut p = PixelParams {
         params: vec![0.; slot::HEADER],
         tables: Vec::new(),
@@ -546,6 +555,10 @@ fn fill(r: &Recipe, lut: CurveSet, camera: Camera) -> Option<PixelParams> {
     };
     p.set(slot::CAMERA, camera.matrix.as_flattened());
     p.set(slot::CAMERA_CLIP, &camera.clip);
+    p.set(
+        slot::NEGATIVE,
+        &camera.negative.map_or([0.; 11], |n| n.gpu()),
+    );
     p.set(slot::WB, &r.wb);
     let t = profile.gpu_tables(r.temperature);
     p.table(slot::HUE, t.hue.map(|h| h.0));

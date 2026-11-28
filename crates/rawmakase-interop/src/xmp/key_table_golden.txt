@@ -10740,6 +10740,55 @@ jpeg Whites2012=["x"] error Invalid Whites2012: x: invalid float literal || leni
     </rdf:Description>
    </rdf:RDF>
   </x:xmpmeta>
+# preset NegativeConversion
+  <x:xmpmeta xmlns:x="adobe:ns:meta/">
+   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+      xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+     crs:PresetType="Normal"
+     crs:Cluster=""
+     crs:UUID="0123456789ABCDEF0123456789ABCDEF"
+     crs:SupportsAmount="True"
+     crs:SupportsColor="True"
+     crs:SupportsMonochrome="True"
+     crs:SupportsHighDynamicRange="True"
+     crs:SupportsNormalDynamicRange="True"
+     crs:SupportsSceneReferred="True"
+     crs:SupportsOutputReferred="True"
+     crs:CameraModelRestriction=""
+     crs:Copyright=""
+     crs:ContactInfo=""
+     crs:Version="15.4"
+     crs:RAWmakasePreset="3"
+     crs:HasSettings="True">
+     <crs:Name>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default">Case</rdf:li>
+      </rdf:Alt>
+     </crs:Name>
+     <crs:ShortName>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default"></rdf:li>
+      </rdf:Alt>
+     </crs:ShortName>
+     <crs:SortName>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default"></rdf:li>
+      </rdf:Alt>
+     </crs:SortName>
+     <crs:Group>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default">Tests</rdf:li>
+      </rdf:Alt>
+     </crs:Group>
+     <crs:Description>
+      <rdf:Alt>
+       <rdf:li xml:lang="x-default"></rdf:li>
+      </rdf:Alt>
+     </crs:Description>
+    </rdf:Description>
+   </rdf:RDF>
+  </x:xmpmeta>
 # preset all
   <x:xmpmeta xmlns:x="adobe:ns:meta/">
    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">

@@ -71,12 +71,15 @@ pub(crate) fn hue_weights(hue: f32) -> [f32; 8] {
     }
     weights
 }
-/// What the camera stage does to a camera sample before the profile's tables: each
-/// channel held at most at `clip`, then `matrix`, the profile's (`scene_color`).
+/// What the camera stage does to a camera sample before the profile's tables: a
+/// scanned negative's conversion to a positive, each channel held at most at `clip`,
+/// then `matrix`, the profile's (`scene_color`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Camera {
     pub(crate) matrix: [[f32; 3]; 3],
     pub(crate) clip: [f32; 3],
+    /// The film negative conversion, prepared for this photo (`develop::negative`).
+    pub(crate) negative: Option<crate::develop::negative::Inversion>,
 }
 /// No clip: `Camera::clip` for samples kept as they are.
 pub(crate) const UNCLIPPED: f32 = f32::MAX;
@@ -85,10 +88,12 @@ pub(crate) const UNCLIPPED: f32 = f32::MAX;
 /// profile's matrix; a RAW's is `Recipe::wb`, unclipped.
 pub(crate) fn camera_stage(m: &Metadata, r: &Recipe) -> Camera {
     let matrix = profile_matrix(m, r);
+    let negative = crate::develop::negative::Inversion::of(r, m);
     if !m.is_rendered() {
         return Camera {
             matrix,
             clip: [UNCLIPPED; 3],
+            negative,
         };
     }
     let wb = crate::model::white_balance::rendered_white_balance(
@@ -106,6 +111,7 @@ pub(crate) fn camera_stage(m: &Metadata, r: &Recipe) -> Camera {
         } else {
             wb.clip.map(|c| c.min(UNCLIPPED))
         },
+        negative,
     }
 }
 fn profile_matrix(m: &Metadata, r: &Recipe) -> [[f32; 3]; 3] {

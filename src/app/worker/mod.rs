@@ -63,6 +63,9 @@ pub(crate) enum AutoKind {
     Settings,
     /// White balance alone, the WB menu's Auto.
     WhiteBalance,
+    /// A scanned negative's levels, the Negative panel's Auto: the conversion's
+    /// density bounds measured from the frame.
+    Negative,
 }
 pub(crate) enum Event {
     /// A file dialog or background work of Preferences > Extensions.
@@ -225,11 +228,13 @@ pub(crate) enum Event {
         sampled: Box<Recipe>,
         result: Result<crate::develop::targeted::TargetSample, String>,
     },
-    /// An Auto estimate for the photo loaded as `id`.
+    /// An Auto estimate for the photo loaded as `id`; for the Negative panel's, whether
+    /// the crop seems to hold part of the film holder.
     Auto {
         id: u64,
         kind: AutoKind,
         result: Result<Box<Recipe>, String>,
+        holder_in_crop: bool,
     },
     /// Upright's corrections for the photo loaded as `id`, analysed from `analysed`.
     Upright {
@@ -522,6 +527,8 @@ pub(crate) struct RenderJob {
     /// Also present the HDR master's preview, held to this display headroom: where
     /// the viewport is due to show the master (`Editor::hdr_preview_due`).
     pub hdr: Option<f32>,
+    /// Crop override for negative measurements while the Crop tool renders uncropped.
+    pub measure_crop: Option<crate::develop::MeasureCrop>,
 }
 fn send(tx: &Sender<Event>, ctx: &egui::Context, event: Event) {
     let _ = tx.send(event);

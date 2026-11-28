@@ -730,6 +730,17 @@ impl Editor {
             recipe.auto_white_balance = None;
             self.view.set_tool(Tool::None);
         }
+        // The film base picker reads the decoded scan, which every photo shown has.
+        if self.view.is(Tool::FilmBase)
+            && picking
+            && response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+            && rect.contains(pos)
+        {
+            let u = (pos.x - rect.left()) / rect.width();
+            let v = (pos.y - rect.top()) / rect.height();
+            self.pick_film_base(u, v);
+        }
         // Point Color's dropper adds a swatch of the color under the pointer and
         // selects it; the top bar says why when it can't. The preview must show the
         // settings the sample is taken with, or the clicked color isn't the one sampled.

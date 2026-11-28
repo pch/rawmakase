@@ -343,8 +343,8 @@ pub(super) mod tests {
         }
         // Auto black & white measures the decode's colors row by row.
         assert_eq!(
-            crate::develop::ColorSpread::measure(&one),
-            crate::develop::ColorSpread::measure(&apart)
+            crate::develop::ColorSpread::measure(&one, None),
+            crate::develop::ColorSpread::measure(&apart, None)
         );
         assert!(
             one.pixels.shares_buffer(&made.pixels),

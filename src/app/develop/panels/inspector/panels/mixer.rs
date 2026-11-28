@@ -43,7 +43,7 @@ pub(in crate::app::develop::panels::inspector) fn show(
             let heading = subheading(ui, "Black & White Mix");
             // Measured (once) only while this panel is open.
             let auto_mix = photo
-                .spread()
+                .spread(r)
                 .zip(photo.metadata)
                 .map(|(spread, metadata)| {
                     crate::develop::AutoMix {

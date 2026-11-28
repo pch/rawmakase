@@ -1,6 +1,15 @@
 //! Sampling the camera image: the source, previews and footprint sampling.
 use super::*;
 
+/// The crop and aspect constraint a render measures a converted negative inside when
+/// the view itself is rendered uncropped (such as in the Crop tool), so a cropped-out
+/// film holder does not shift tone while adjusting the crop.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeasureCrop {
+    pub crop: [f32; 4],
+    pub constrain_crop: bool,
+}
+
 /// Camera pixels as the pipeline samples them, with the copies the photo is measured on.
 #[derive(Clone, Copy)]
 pub(crate) struct Source<'a> {
@@ -13,6 +22,8 @@ pub(crate) struct Source<'a> {
     pub(crate) unretouched: Option<&'a std::sync::Arc<CameraImage>>,
     /// Where the measures of that copy are kept (see [`Toned::measures`]).
     pub(crate) measures: Option<&'a crate::develop::stage_cache::MeasuresCache>,
+    /// Crop override for negative measurements while displaying the uncropped frame.
+    pub(crate) measure_crop: Option<MeasureCrop>,
 }
 impl<'a> Source<'a> {
     pub(crate) fn new(image: &'a CameraImage) -> Self {
@@ -22,6 +33,7 @@ impl<'a> Source<'a> {
             measured: None,
             unretouched: None,
             measures: None,
+            measure_crop: None,
         }
     }
     pub(super) fn px(&self, i: usize) -> [f32; 3] {
@@ -56,6 +68,8 @@ pub(crate) struct Toned {
     /// The stage cache's measures of `measured`, so slider edits that do not change
     /// them reuse them; without it each render measures the photo.
     pub(crate) measures: Option<std::sync::Arc<crate::develop::stage_cache::MeasuresCache>>,
+    /// Crop override for negative measurements while displaying the uncropped frame.
+    pub(crate) measure_crop: Option<MeasureCrop>,
 }
 impl Toned {
     pub(crate) fn source(&self) -> Source<'_> {
@@ -64,6 +78,7 @@ impl Toned {
             measured: self.measured.as_ref(),
             unretouched: self.unretouched.as_ref(),
             measures: self.measures.as_deref(),
+            measure_crop: self.measure_crop,
             ..Source::new(&self.image)
         }
     }

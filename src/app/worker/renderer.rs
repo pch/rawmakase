@@ -79,6 +79,7 @@ struct Shown {
     image: Origin,
     ai: Option<Origin>,
     recipe: Recipe,
+    measure_crop: Option<develop::MeasureCrop>,
     max_edge: u32,
     region: Option<[u32; 4]>,
     clipping: crate::rendered::ClipOverlay,
@@ -111,6 +112,7 @@ impl Shown {
             image: Origin::of(&job.image),
             ai: Origin::of_ai(&job.ai),
             recipe: job.recipe.clone(),
+            measure_crop: job.measure_crop,
             max_edge: job.max_edge,
             region: job.region,
             clipping: job.clipping,
@@ -127,6 +129,7 @@ impl Shown {
             && self.max_edge == job.max_edge
             && self.region == job.region
             && self.recipe == job.recipe
+            && self.measure_crop == job.measure_crop
             && self.overlay == job.overlay;
         match &self.out {
             Shot::Pixels(_) => same,
@@ -498,8 +501,9 @@ fn render(
                 },
             );
         };
-        // The AI Denoise source this job captured.
+        // The AI Denoise source and negative measurement crop this job captured.
         processor.set_ai(job.ai.clone());
+        processor.set_measure_crop(job.measure_crop);
         let result = (|| -> anyhow::Result<()> {
             if job.cancel.load(Ordering::Relaxed) {
                 return Ok(());
@@ -784,8 +788,14 @@ fn render(
 
 type Histogram = Box<crate::rendered::Histogram>;
 /// A whole photo's histogram and what it was rendered from: the image, its AI Denoise
-/// source and the edit.
-type WholeHistogram = (Origin, Option<Origin>, Recipe, Histogram);
+/// source, the edit, and any negative measurement crop override.
+type WholeHistogram = (
+    Origin,
+    Option<Origin>,
+    Recipe,
+    Option<develop::MeasureCrop>,
+    Histogram,
+);
 
 /// At 100% the view shows a region, but the histogram describes the whole
 /// photo, as Lightroom's does: from the Fit render of the same edit when there
@@ -799,32 +809,43 @@ fn whole_histogram(
     tx: &Sender<Event>,
     ctx: &egui::Context,
 ) -> anyhow::Result<()> {
-    let same = |image: &Origin, ai: &Option<Origin>, recipe: &Recipe| {
-        image.is(&job.image) && Origin::is_ai(ai, &job.ai) && *recipe == job.recipe
+    let same = |image: &Origin,
+                ai: &Option<Origin>,
+                recipe: &Recipe,
+                measure_crop: Option<develop::MeasureCrop>| {
+        image.is(&job.image)
+            && Origin::is_ai(ai, &job.ai)
+            && *recipe == job.recipe
+            && measure_crop == job.measure_crop
     };
-    let histogram =
-        if let Some((.., histogram)) = whole.as_ref().filter(|(i, a, r, _)| same(i, a, r)) {
-            histogram.clone()
-        } else if let Some(shown) = fit.as_ref().filter(|s| same(&s.image, &s.ai, &s.recipe)) {
-            match &shown.out {
-                Shot::Pixels(out) => Box::new(out.histogram()),
-                Shot::Frame { histogram, .. } => histogram.clone(),
-            }
-        } else {
-            let out = processor.render_to(
-                &job.image,
-                &job.recipe,
-                job.max_edge,
-                None,
-                Cancel::new(&job.cancel),
-                None,
-            )?;
-            Box::new(out.pixels().histogram())
-        };
+    let histogram = if let Some((.., histogram)) =
+        whole.as_ref().filter(|(i, a, r, mc, _)| same(i, a, r, *mc))
+    {
+        histogram.clone()
+    } else if let Some(shown) = fit
+        .as_ref()
+        .filter(|s| same(&s.image, &s.ai, &s.recipe, s.measure_crop))
+    {
+        match &shown.out {
+            Shot::Pixels(out) => Box::new(out.histogram()),
+            Shot::Frame { histogram, .. } => histogram.clone(),
+        }
+    } else {
+        let out = processor.render_to(
+            &job.image,
+            &job.recipe,
+            job.max_edge,
+            None,
+            Cancel::new(&job.cancel),
+            None,
+        )?;
+        Box::new(out.pixels().histogram())
+    };
     *whole = Some((
         Origin::of(&job.image),
         Origin::of_ai(&job.ai),
         job.recipe.clone(),
+        job.measure_crop,
         histogram.clone(),
     ));
     if !job.cancel.load(Ordering::Relaxed) {
@@ -926,6 +947,7 @@ mod tests {
             ai,
             drawn: Vec::new(),
             hdr: None,
+            measure_crop: None,
         });
         let mut stages = Vec::new();
         loop {
@@ -1185,6 +1207,7 @@ mod tests {
             ai: None,
             drawn: Vec::new(),
             hdr: None,
+            measure_crop: None,
         });
         loop {
             match rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap() {
@@ -1224,6 +1247,7 @@ mod tests {
                 ai: None,
                 drawn: Vec::new(),
                 hdr: None,
+                measure_crop: None,
             });
             loop {
                 match rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap() {

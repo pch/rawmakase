@@ -188,3 +188,15 @@ fn shots_of_new_develop_preset() {
         |e, ctx| e.copy_dialog_window(ctx),
     );
 }
+
+/// Copy Settings, Negative Conversion's section first (New Develop Preset leaves it
+/// out), for `RAWMAKASE_UI_SHOTS` ([`crate::app::ui::shots`]).
+#[test]
+fn shots_of_copy_settings() {
+    crate::app::ui::shots::shot(
+        "copy-settings",
+        egui::vec2(900., 900.),
+        |e, _| e.open_copy_dialog(crate::app::develop::settings_transfer::Transfer::Copy),
+        |e, ctx| e.copy_dialog_window(ctx),
+    );
+}

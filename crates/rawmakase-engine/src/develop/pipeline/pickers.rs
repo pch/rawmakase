@@ -1,4 +1,6 @@
-//! The pickers that read a color from the photo: the fringe color selector and the white-balance neutral.
+//! The pickers that read a color from the photo: the fringe color selector and the
+//! white-balance neutral. A scanned negative's film base picker is
+//! `develop::negative`'s.
 use super::*;
 use crate::develop::effects::EffectsRendering;
 
@@ -56,13 +58,18 @@ pub fn pick_fringe(r: &mut Recipe, rgb: [f32; 3]) -> Option<usize> {
     .unwrap_or([l, h, c]);
     r.effects.pick_fringe_hue(hue, chroma)
 }
+/// The white balance gains that make the photo neutral at (`u`, `v`) of the rendered
+/// frame, averaged over 5 × 5 camera pixels. A scanned negative's are read converted,
+/// as its white balance applies after the conversion.
 pub fn neutral_pick(im: &CameraImage, r: &Recipe, u: f32, v: f32) -> [f32; 3] {
     let g = Geometry::new(im, r, 0);
     let [x, y] = g.source(u, v);
+    let negative = crate::develop::negative::Inversion::of(r, &im.metadata);
     let mut sum = [0.; 3];
     for dy in -2..=2 {
         for dx in -2..=2 {
             let p = sample(im.into(), x + dx as f32, y + dy as f32);
+            let p = negative.as_ref().map_or(p, |n| n.apply(p));
             for c in 0..3 {
                 sum[c] += p[c];
             }

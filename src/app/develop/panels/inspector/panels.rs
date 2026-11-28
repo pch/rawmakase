@@ -10,6 +10,7 @@ pub(super) mod detail;
 pub(super) mod effects;
 pub(super) mod lens_corrections;
 pub(super) mod mixer;
+pub(super) mod negative;
 pub(super) mod tone_curve;
 pub(super) mod transform;
 
