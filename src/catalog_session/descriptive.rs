@@ -156,6 +156,15 @@ impl CatalogSession {
         self.refresh_photos(ids)?;
         Ok(written)
     }
+    /// Gives each photo of `locations` the location its camera's EXIF gives,
+    /// where the catalog has none for it (Read Metadata from Files).
+    pub(crate) fn fill_file_locations(
+        &mut self,
+        locations: &[(PhotoId, crate::metadata::Location)],
+    ) -> Result<()> {
+        self.changed();
+        self.catalog.fill_locations(locations)
+    }
     /// Names virtual copy `id` `name`, trimmed, in the catalog and the lists.
     pub(crate) fn rename_copy(&mut self, id: PhotoId, name: &str) -> Result<()> {
         self.changed();

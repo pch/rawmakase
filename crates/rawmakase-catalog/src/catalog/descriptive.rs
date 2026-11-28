@@ -79,6 +79,21 @@ impl Catalog {
             });
         })
     }
+    /// Gives each photo of `locations` that location where the catalog has
+    /// none for it (neither one given nor one removed): Read Metadata from
+    /// Files' location from a camera's EXIF. One transaction.
+    pub fn fill_locations(&mut self, locations: &[(PhotoId, Location)]) -> Result<()> {
+        self.db.write(|w| {
+            for (id, location) in locations {
+                let mut d = read(w, *id)?;
+                if d.location.is_none() {
+                    d.location = Some(location.clone());
+                    write(w, *id, &d)?;
+                }
+            }
+            Ok(())
+        })
+    }
     /// Leaves the location of every photo given out, its file's included.
     pub fn clear_location(&mut self, ids: &[PhotoId]) -> Result<()> {
         self.update_descriptive(ids, |d| d.location = Some(Location::Cleared))

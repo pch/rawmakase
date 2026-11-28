@@ -9,14 +9,22 @@ use crate::catalog::{MetadataSnapshot, PhotoId};
 use crate::metadata::TextField;
 use anyhow::{Result, ensure};
 
+/// What one photo's files hold, as Read Metadata from Files reads them.
+type FilesRead = (
+    Option<crate::catalog::FileMetadata>,
+    crate::catalog::SidecarReport,
+);
+
 /// Read Metadata from Files while its files are being read.
 pub(super) struct Reread {
-    reader: crate::catalog_session::background::Reader<(
-        Option<crate::catalog::FileMetadata>,
-        crate::catalog::SidecarReport,
-    )>,
+    /// What each photo's files hold, with the location its camera's EXIF
+    /// gives when its XMP has none.
+    reader:
+        crate::catalog_session::background::Reader<(FilesRead, Option<crate::metadata::Location>)>,
     paths: std::collections::HashMap<PhotoId, std::path::PathBuf>,
     read: Vec<(PhotoId, std::path::PathBuf, crate::catalog::FileMetadata)>,
+    /// The locations cameras' EXIF gave, for the photos without one.
+    locations: Vec<(PhotoId, crate::metadata::Location)>,
     report: crate::catalog::SidecarReport,
     place: Place,
     /// The session's structural generation it started under: what it read
@@ -195,7 +203,8 @@ impl Library {
     }
     /// Lightroom's Read Metadata from Files, for the masters among `ids`:
     /// the files are read in the background, then what they have replaces
-    /// the catalog's values, edits included, as one command.
+    /// the catalog's values, edits included (a location the camera's EXIF
+    /// gives only where the catalog has none), as one command.
     pub(in crate::app) fn read_metadata_from_files(&mut self, ids: &[PhotoId]) -> Result<()> {
         let wanted: std::collections::HashSet<PhotoId> = ids.iter().copied().collect();
         let photos: Vec<(PhotoId, std::path::PathBuf)> = self
@@ -220,9 +229,21 @@ impl Library {
             reader: crate::catalog_session::background::Reader::start(
                 photos,
                 self.wake(),
-                crate::catalog_session::read_file_metadata,
+                |path| {
+                    let read = crate::catalog_session::read_file_metadata(path);
+                    // The camera's only where the XMP has none: the file is
+                    // opened again only then.
+                    let location = read
+                        .0
+                        .as_ref()
+                        .is_none_or(|m| m.location.is_none())
+                        .then(|| crate::catalog_session::exif_location(path))
+                        .flatten();
+                    (read, location)
+                },
             ),
             read: Vec::new(),
+            locations: Vec::new(),
             report: Default::default(),
             place: self.place(),
             generation: self.session.generation(),
@@ -250,7 +271,10 @@ impl Library {
             return;
         };
         let (batch, done) = reread.reader.poll();
-        for (id, (read, report)) in batch {
+        for (id, ((read, report), location)) in batch {
+            if let Some(location) = location {
+                reread.locations.push((id, location));
+            }
             reread.report.unreadable.extend(report.unreadable);
             reread.report.ignored.extend(report.ignored);
             if let Some(read) = read
@@ -290,6 +314,14 @@ impl Library {
         let wanted: std::collections::HashSet<PhotoId> = ids.iter().copied().collect();
         let before = self.session.catalog().metadata_snapshot(&ids)?;
         let ratings_before = self.ratings_by_id(&wanted);
+        // A location the catalog has, or that was removed, stays.
+        let locations: Vec<_> = reread
+            .locations
+            .into_iter()
+            .filter(|(id, _)| self.photo(*id).is_some_and(|p| p.master.is_none()))
+            .collect();
+        self.session.fill_file_locations(&locations)?;
+
         let mut report = reread.report;
         let written = self.session.apply_file_metadata(&ids, &read)?;
         report.unreadable.extend(written.unreadable);

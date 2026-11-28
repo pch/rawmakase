@@ -192,6 +192,12 @@ pub fn assemble(
     }
     if policy.location {
         exif.gps = match &d.location {
+            // The location the catalog read from this very GPS directory
+            // (Add Folder, Read Metadata from Files): the directory whole, so
+            // its time, direction and other tags go with it.
+            Some(location) if file.is_some_and(|f| f.location().as_ref() == Some(location)) => {
+                file.map(|f| f.gps.clone()).unwrap_or_default()
+            }
             Some(Location::At { lat, lon, alt }) => gps(*lat, *lon, *alt),
             Some(Location::Cleared) => Vec::new(),
             None => file.map(|f| f.gps.clone()).unwrap_or_default(),

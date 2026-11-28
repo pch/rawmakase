@@ -47,6 +47,13 @@ pub(crate) fn read_file_metadata(
 ) {
     crate::catalog::read_file_metadata(path, crate::photo::raw_xmp)
 }
+/// Where the camera's EXIF of the photo at `path` says it was taken
+/// ([`crate::exif::CameraExif::location`]), a CR3's, MRW's or X3F's found by
+/// the RAW decoders: Read Metadata from Files' location where the XMP has
+/// none.
+pub(crate) fn exif_location(path: &Path) -> Option<crate::metadata::Location> {
+    crate::photo::camera_exif(path)?.location()
+}
 pub(crate) use background::Wake;
 pub(crate) use descriptive::{Committed, DescriptiveChange, DescriptiveEdit, KeywordListEdit};
 pub(crate) use entries::entry;

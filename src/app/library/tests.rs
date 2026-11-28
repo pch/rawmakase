@@ -6241,3 +6241,51 @@ fn a_neighbour_prepared_before_a_save_is_not_shown() -> Result<()> {
     assert!(h > w, "the version saved, upright: {w} × {h}");
     Ok(())
 }
+/// Read Metadata from Files gives a photo without a location the one its
+/// camera's EXIF has, keeps a location the user removed, and Undo takes it
+/// back with the rest.
+#[test]
+fn read_metadata_from_files_fills_the_cameras_gps() -> Result<()> {
+    use crate::metadata::Location;
+    let (dir, mut library) = library_of(&["a.tif", "b.tif"])?;
+    let tiff = crate::exif::gps_fixture::tiff(&crate::exif::gps_fixture::coordinates(
+        "N",
+        [(40, 1), (42, 1), (5363, 100)],
+        "W",
+        [(73, 1), (59, 1), (5480, 100)],
+    ));
+    for name in ["a.tif", "b.tif"] {
+        std::fs::write(dir.path().join("photos").join(name), &tiff)?;
+    }
+    let id = |library: &Library, name: &str| {
+        library
+            .session
+            .photos()
+            .iter()
+            .find(|p| p.filename == name)
+            .unwrap()
+            .id
+    };
+    let (a, b) = (id(&library, "a.tif"), id(&library, "b.tif"));
+    library
+        .session
+        .catalog_mut_for_tests()
+        .clear_location(&[b])?;
+    library.read_metadata_from_files(&[a, b])?;
+    while library.reread.is_some() {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        library.poll_reread();
+    }
+    let location =
+        |library: &Library, id| library.session.catalog().descriptive(id).unwrap().location;
+    assert!(
+        matches!(location(&library, a), Some(Location::At { lat, lon, .. })
+            if (lat - 40.7148972).abs() < 1e-6 && (lon + 73.9985556).abs() < 1e-6)
+    );
+    assert_eq!(location(&library, b), Some(Location::Cleared));
+    let done = library.take_descriptive_done();
+    assert_eq!(done.len(), 1);
+    library.restore_descriptive(&done[0].before, &done[0].ratings_before)?;
+    assert_eq!(location(&library, a), None);
+    Ok(())
+}
