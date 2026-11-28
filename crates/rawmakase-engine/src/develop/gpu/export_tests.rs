@@ -939,6 +939,107 @@ fn a_render_waiting_for_the_gpu_stops_once_cancelled_without_rendering() -> Resu
     Ok(())
 }
 
+/// When one caller holds the GPU and another drains to idle, `release_buffers`
+/// returns immediately without waiting for the render or clearing working buffers
+/// still in use; once idle, it releases them normally.
+#[test]
+fn release_buffers_does_not_block_or_evict_while_a_render_holds_the_gpu() -> Result<()> {
+    use std::sync::mpsc;
+
+    struct BlockingDriver {
+        entered: Option<mpsc::Sender<()>>,
+        release: mpsc::Receiver<()>,
+        releases: Arc<AtomicUsize>,
+    }
+    impl MockGpuDriver for BlockingDriver {
+        fn render_banded(
+            &mut self,
+            job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            if let Some(tx) = self.entered.take() {
+                let _ = tx.send(());
+            }
+            let _ = self.release.recv_timeout(Duration::from_secs(5));
+            Ok(ExportImage::from_pixels(
+                job.out_w,
+                job.out_h,
+                ExportPixels::Rgb8(vec![0u8; (job.out_w * job.out_h * 3) as usize]),
+                job.space,
+            ))
+        }
+        fn release_buffers(&mut self) {
+            self.releases.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let im = synthetic_photo(48, 32);
+    let recipe = profiled_recipe(&im);
+    let valid = recipe.checked()?;
+    let releases = Arc::new(AtomicUsize::new(0));
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let backend = ExportBackend::with_mock(
+        "MockGPU",
+        Box::new(BlockingDriver {
+            entered: Some(entered_tx),
+            release: release_rx,
+            releases: releases.clone(),
+        }),
+    );
+
+    std::thread::scope(|s| -> Result<()> {
+        let render = s.spawn(|| {
+            backend.render_export(
+                &im,
+                &valid,
+                None,
+                0,
+                OutputSpace::Srgb,
+                ExportFormat::Rgb8,
+                Cancel::NEVER,
+            )
+        });
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("render reached the GPU");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let backend_ref = &backend;
+        let releaser = s.spawn(move || {
+            backend_ref.release_buffers();
+            let _ = done_tx.send(());
+        });
+        let returned_while_busy = done_rx.recv_timeout(Duration::from_millis(200)).is_ok();
+        let evicted_while_busy = releases.load(Ordering::SeqCst);
+
+        release_tx.send(()).expect("release render");
+        render.join().expect("render joined")?;
+        releaser.join().expect("releaser joined");
+
+        assert!(
+            returned_while_busy,
+            "release_buffers() blocked while another render held the GPU"
+        );
+        assert_eq!(
+            evicted_while_busy, 0,
+            "release_buffers() cleared buffers while another render was in flight"
+        );
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            0,
+            "release_buffers() ran after waiting instead of skipping a busy backend"
+        );
+        Ok(())
+    })?;
+
+    // Once idle, release_buffers() acquires the lock and frees working buffers.
+    backend.release_buffers();
+    assert_eq!(releases.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
 /// A backend whose device is stalled on a cancelled band is dropped at exit on the
 /// thread that held it last: the drop returns at once, the device dropping on its
 /// own thread.

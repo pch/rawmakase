@@ -660,7 +660,7 @@ impl Shared {
             state = self.wake.wait(state).ok()?;
         }
     }
-    /// Records how a build ended; whether no other build is waiting.
+    /// Records how a build ended; whether the queue is open and idle.
     fn finish(&self, finished: &Finished) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
@@ -673,7 +673,7 @@ impl Shared {
                 .failed
                 .push((finished.item.name.clone(), why.clone()));
         }
-        state.waiting.is_empty()
+        !state.closed && state.waiting.is_empty()
     }
     fn close(&self) {
         if let Ok(mut state) = self.state.lock() {

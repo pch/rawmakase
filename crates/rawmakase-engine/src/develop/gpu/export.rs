@@ -523,8 +523,16 @@ impl ExportBackend {
 
     /// Releases reusable GPU photo and band working buffers to return VRAM to the OS
     /// when idle, while keeping the device and compiled compute pipelines resident.
+    ///
+    /// Never blocks on an in-flight GPU render: when another caller sharing the
+    /// backend holds `exec`, the backend is not idle and this returns immediately
+    /// without clearing buffers still in use.
     pub fn release_buffers(&self) {
-        let mut exec = self.lock_exec();
+        let mut exec = match self.exec.try_lock() {
+            Ok(exec) => exec,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
         match &mut exec.engine {
             Engine::Gpu(ctx) => ctx.release_buffers(),
             #[cfg(test)]
