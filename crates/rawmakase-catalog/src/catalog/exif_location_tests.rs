@@ -181,3 +181,18 @@ fn a_photo_from_a_lightroom_catalog_gets_no_camera_gps_in_the_background() -> Re
     assert_eq!(cat.descriptive(photo)?.location, Some(camera_location()));
     Ok(())
 }
+
+/// A virtual copy made its master before the photo's file was read takes
+/// its import facts with it, and the family still gets the camera's GPS.
+#[test]
+fn a_copy_set_as_master_before_the_read_gets_the_cameras_gps() -> Result<()> {
+    let (_dir, mut cat, ids) = photos(&["a.DNG"])?;
+    let a = ids[0];
+    let copy = cat.create_virtual_copy(a)?;
+    cat.set_copy_as_master(copy)?;
+    let located = cat.record_capture_reads(&[(copy, None)], &[(copy, camera_location())])?;
+    assert!(located.contains(&copy), "{located:?}");
+    assert_eq!(cat.descriptive(copy)?.location, Some(camera_location()));
+    assert_eq!(cat.descriptive(a)?.location, Some(camera_location()));
+    Ok(())
+}

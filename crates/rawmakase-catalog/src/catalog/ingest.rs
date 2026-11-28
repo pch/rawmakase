@@ -748,8 +748,13 @@ impl Catalog {
             }
             let mut located = Vec::new();
             for (id, location) in locations {
+                // Of the family: Set Copy as Master leaves the photo's
+                // import row on the master it was.
                 let from_files: bool = w.read_one(
-                    sql!("SELECT EXISTS(SELECT 1 FROM photo_imports WHERE photo=?)"),
+                    sql!(
+                        "SELECT EXISTS(SELECT 1 FROM photo_imports i JOIN photos p ON p.id=i.photo
+                         WHERE p.id=?1 OR p.master_id=?1)"
+                    ),
                     &[id],
                 )?;
                 if !from_files {
