@@ -880,16 +880,18 @@ impl Editor {
         }
     }
 
-    /// The export queue, started with the first export.
+    /// The export queue, started with the first export, rendering through the
+    /// backend preview builds share.
     fn export_queue(&mut self) -> &Queue {
         let (tx, ctx) = (self.tx.clone(), self.context.clone());
         let repaint = self.context.clone();
+        let backend = self.export_backend.clone();
         self.exports.queue.get_or_insert_with(|| {
             let logical = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
             let (each_tx, each_ctx) = (tx.clone(), ctx.clone());
             Queue::with_backend(
                 batch::Lanes::for_machine(logical, crate::platform::memory::total()),
-                Arc::new(crate::develop::ExportBackend::auto()),
+                backend,
                 move |ticket, index, outcome| {
                     let outcome = outcome.clone();
                     let _ = each_tx.send(Event::PhotoExported {

@@ -14,7 +14,11 @@ static RELEASED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
 /// Renders by the file's name: "panic…" panics, "fail…" fails, "slow…" waits
 /// until released or cancelled, "edited…" resolves its edit first as a build does;
 /// anything else is a small solid image.
-fn test_render(item: &Item, cancel: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+fn test_render(
+    item: &Item,
+    _: &ExportBackend,
+    cancel: Cancel<'_>,
+) -> anyhow::Result<image::RgbImage> {
     RENDERED.lock().unwrap().push(item.path.clone());
     let name = item.path.file_name().unwrap().to_string_lossy().to_string();
     if name.starts_with("panic") {
@@ -233,7 +237,7 @@ fn a_cancel_seen_after_the_render_still_stores_nothing() {
     // The build's flag, which the render sets as it finishes, as a cancel arriving
     // then would.
     static CANCEL: AtomicBool = AtomicBool::new(false);
-    fn cancels(_: &Item, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn cancels(_: &Item, _: &ExportBackend, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
         CANCEL.store(true, Ordering::Relaxed);
         Ok(image::RgbImage::new(8, 8))
     }
@@ -255,7 +259,13 @@ fn a_cancel_seen_after_the_render_still_stores_nothing() {
         edge: 2048,
         ticket: None,
     };
-    let outcome = build_one(&item, Some(&mut cache), cancels, Cancel::new(&CANCEL));
+    let outcome = build_one(
+        &item,
+        Some(&mut cache),
+        cancels,
+        &ExportBackend::cpu_only(),
+        Cancel::new(&CANCEL),
+    );
     assert!(matches!(outcome, Outcome::Cancelled));
     assert!(
         !cache
@@ -596,7 +606,14 @@ fn upright_is_completed_before_rendering() {
     let image = synthetic(96, 64);
     let mut recipe = Recipe::default();
     recipe.upright.mode = crate::model::transform::UprightMode::Auto;
-    let out = develop(&mut recipe, &image, 48, Cancel::NEVER).unwrap();
+    let out = develop(
+        &mut recipe,
+        &image,
+        48,
+        &ExportBackend::cpu_only(),
+        Cancel::NEVER,
+    )
+    .unwrap();
     assert!(!recipe.upright.needs_analysis());
     assert!(out.width().max(out.height()) <= 48);
 }
@@ -605,7 +622,138 @@ fn upright_is_completed_before_rendering() {
 fn a_real_render_stops_once_cancelled() {
     let image = synthetic(96, 64);
     let mut recipe = Recipe::default();
-    assert!(develop(&mut recipe, &image, 48, Cancel::new(&AtomicBool::new(true))).is_err());
+    let (backend, cancelled) = (ExportBackend::cpu_only(), AtomicBool::new(true));
+    let out = develop(&mut recipe, &image, 48, &backend, Cancel::new(&cancelled));
+    assert!(out.is_err());
+}
+
+/// A colorful photo with an identity camera matrix, and an edit resolved with its
+/// default profile, which the GPU export backend takes.
+fn profiled(width: u32, height: u32) -> (crate::camera_data::CameraImage, Recipe) {
+    let identity = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
+    let metadata = Metadata {
+        width,
+        height,
+        wb: [1.05, 1., 0.96],
+        daylight_wb: [1.05, 1., 0.96],
+        matrix: identity,
+        cam_xyz: identity,
+        ..Default::default()
+    };
+    let pixels = (0..width * height)
+        .map(|i| {
+            let (x, y) = (i % width, i / width);
+            let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
+            let bar = if (x / 11 + y / 13) % 2 == 0 { 0.08 } else { 0. };
+            [
+                (0.04 + 0.55 * fx + bar).min(0.95),
+                (0.06 + 0.65 * fy + bar).min(0.95),
+                (0.05 + 0.5 * (1. - fx) * (0.4 + 0.6 * fy)).min(0.95),
+            ]
+        })
+        .collect();
+    let profile = crate::camera_profiles::CameraProfile::camera_matrix_default(&metadata)
+        .expect("a default profile");
+    let image = crate::camera_data::CameraImage {
+        recovered: Default::default(),
+        width,
+        height,
+        pixels,
+        metadata,
+        fast: false,
+        scale_factor: 1.,
+        scale_clipped: 0,
+        hdr: Default::default(),
+    };
+    let recipe = Recipe {
+        profile: Some(Arc::new(profile)),
+        exposure: 0.4,
+        shadows: 0.3,
+        highlights: -0.25,
+        vibrance: 0.2,
+        noise_luma: 0.15,
+        ..Default::default()
+    };
+    (image, recipe)
+}
+
+#[test]
+fn builds_and_exports_render_through_one_backend() {
+    let (_dir, e, _) = editor_with_catalog(&["a.ARW"]).unwrap();
+    assert!(Arc::ptr_eq(&e.export_backend, &e.preview_builds.backend));
+}
+
+#[test]
+fn a_build_on_the_cpu_renders_what_develop_render_did() {
+    let (image, mut recipe) = profiled(160, 120);
+    let reference = crate::develop::render(&image, &recipe.checked().unwrap(), 96, Cancel::NEVER)
+        .unwrap()
+        .rgb8();
+    let built = develop(
+        &mut recipe,
+        &image,
+        96,
+        &ExportBackend::cpu_only(),
+        Cancel::NEVER,
+    )
+    .unwrap();
+    assert_eq!(built.into_raw(), reference);
+}
+
+#[test]
+fn a_build_renders_point_colors_edit_while_visualize_range_is_on() {
+    use crate::model::point_color::{PointColor, visualize_range};
+    let (image, mut recipe) = profiled(160, 120);
+    let mut swatch = PointColor::sampled([0.5, 0.6, 0.4]);
+    swatch.shift = [0.4, -0.5, 0.2];
+    recipe.point_colors = vec![swatch];
+    let mut shown = recipe.clone();
+    shown.point_colors = visualize_range(&recipe.point_colors, 0).unwrap();
+    // Develop's render of the visualization is not the edit's.
+    let visualized = crate::develop::render(&image, &shown.checked().unwrap(), 96, Cancel::NEVER)
+        .unwrap()
+        .rgb8();
+    let backend = ExportBackend::cpu_only();
+    let edit = develop(&mut recipe, &image, 96, &backend, Cancel::NEVER).unwrap();
+    let built = develop(&mut shown, &image, 96, &backend, Cancel::NEVER).unwrap();
+    assert_ne!(edit.as_raw(), &visualized);
+    assert_eq!(built, edit);
+}
+
+/// The largest difference between two renders, in 8-bit levels.
+fn max_level_difference(a: &image::RgbImage, b: &image::RgbImage) -> u8 {
+    assert_eq!(a.dimensions(), b.dimensions());
+    a.as_raw()
+        .iter()
+        .zip(b.as_raw())
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap_or(0)
+}
+
+/// A Standard preview and a 1:1 large enough to render in several bands: the GPU's
+/// build is within a level of the CPU's, and neither fell back to the CPU.
+#[test]
+#[ignore = "Requires a hardware compute adapter; run explicitly on supported machines"]
+fn a_build_on_the_gpu_matches_the_cpu_standard_and_one_to_one() {
+    let (image, recipe) = profiled(4800, 3200);
+    let gpu = ExportBackend::auto();
+    let cpu = ExportBackend::cpu_only();
+    for edge in [DEFAULT_STANDARD_SIZE, 0] {
+        let on_gpu = develop(&mut recipe.clone(), &image, edge, &gpu, Cancel::NEVER).unwrap();
+        let on_cpu = develop(&mut recipe.clone(), &image, edge, &cpu, Cancel::NEVER).unwrap();
+        let expected = if edge == 0 { 4800 } else { edge };
+        assert_eq!(on_gpu.width().max(on_gpu.height()), expected);
+        let worst = max_level_difference(&on_gpu, &on_cpu);
+        assert!(worst <= 1, "edge {edge}: {worst} levels apart");
+    }
+    let status = gpu.status();
+    assert!(status.gpu_active, "{status:?}");
+    assert_eq!(
+        (status.gpu_renders, status.cpu_renders),
+        (2, 0),
+        "{status:?}"
+    );
 }
 
 #[test]
@@ -860,7 +1008,7 @@ fn one_to_one_previews_build_at_full_size_and_discard_on_their_own() {
 
 #[test]
 fn a_photo_too_large_for_a_jpeg_fails_with_why() {
-    fn panorama(_: &Item, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
+    fn panorama(_: &Item, _: &ExportBackend, _: Cancel<'_>) -> anyhow::Result<image::RgbImage> {
         Ok(image::RgbImage::new(JPEG_LIMIT + 1, 1))
     }
     let dir = tempfile::tempdir().unwrap();
@@ -881,7 +1029,13 @@ fn a_photo_too_large_for_a_jpeg_fails_with_why() {
         edge: 0,
         ticket: None,
     };
-    let outcome = build_one(&item, Some(&mut cache), panorama, Cancel::NEVER);
+    let outcome = build_one(
+        &item,
+        Some(&mut cache),
+        panorama,
+        &ExportBackend::cpu_only(),
+        Cancel::NEVER,
+    );
     assert!(matches!(outcome, Outcome::Failed(why) if why.contains("65535")));
 }
 
@@ -1116,7 +1270,7 @@ fn a_jpeg_preview_renders_from_the_file() -> anyhow::Result<()> {
         edge: 2048,
         ticket: None,
     };
-    let preview = render(&item, Cancel::NEVER)?;
+    let preview = render(&item, &ExportBackend::cpu_only(), Cancel::NEVER)?;
     assert_eq!(preview.dimensions(), (48, 32));
     for p in preview.pixels() {
         for (got, want) in p.0.iter().zip(colour.0) {

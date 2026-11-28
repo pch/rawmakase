@@ -850,6 +850,421 @@ fn status_does_not_block_while_gpu_export_is_in_flight() -> Result<()> {
     Ok(())
 }
 
+/// Exit with an export rendering and a preview build waiting for the GPU behind it:
+/// once both are cancelled, the export's render stops at its next check, and the
+/// build, given the GPU, stops before rendering anything, on the GPU or the CPU.
+#[test]
+fn a_render_waiting_for_the_gpu_stops_once_cancelled_without_rendering() -> Result<()> {
+    use std::sync::mpsc;
+
+    /// Renders until cancelled, checking as the real backend's poll slices do.
+    struct UntilCancelled {
+        entered: Option<mpsc::Sender<()>>,
+        calls: Arc<AtomicUsize>,
+    }
+    impl MockGpuDriver for UntilCancelled {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(tx) = self.entered.take() {
+                let _ = tx.send(());
+            }
+            let until = Instant::now() + Duration::from_secs(5);
+            while !cancel.is_cancelled() && Instant::now() < until {
+                std::thread::sleep(BAND_POLL_SLICE);
+            }
+            Err(GpuFailure::Cancelled)
+        }
+        fn release_buffers(&mut self) {}
+    }
+
+    let im = synthetic_photo(48, 32);
+    let recipe = profiled_recipe(&im);
+    let valid = recipe.checked()?;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let backend = ExportBackend::with_mock(
+        "MockGPU",
+        Box::new(UntilCancelled {
+            entered: Some(entered_tx),
+            calls: calls.clone(),
+        }),
+    );
+    let (export_cancel, build_cancel) = (AtomicBool::new(false), AtomicBool::new(false));
+    let render = |cancel: &AtomicBool| {
+        backend.render_export(
+            &im,
+            &valid,
+            None,
+            0,
+            OutputSpace::Srgb,
+            ExportFormat::Rgb8,
+            Cancel::new(cancel),
+        )
+    };
+
+    std::thread::scope(|s| {
+        let export = s.spawn(|| render(&export_cancel));
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the export reached the GPU");
+        let build = s.spawn(|| render(&build_cancel));
+        // The build has finished its CPU preparation and waits for the GPU.
+        let until = Instant::now() + Duration::from_secs(5);
+        while backend.exec_asked.load(Ordering::SeqCst) < 2 {
+            assert!(Instant::now() < until, "the build never asked for the GPU");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let quit = Instant::now();
+        build_cancel.store(true, Ordering::SeqCst);
+        export_cancel.store(true, Ordering::SeqCst);
+        for render in [export, build] {
+            let err = render.join().expect("joined").err().expect("cancelled");
+            assert!(err.to_string().contains("Render superseded"), "{err}");
+        }
+        assert!(
+            quit.elapsed() < Duration::from_secs(1),
+            "stopping took {:?}",
+            quit.elapsed()
+        );
+    });
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "the build never rendered");
+    let st = backend.status();
+    assert_eq!((st.gpu_renders, st.cpu_renders), (0, 0));
+    assert!(st.gpu_active, "a cancel never turns the GPU off");
+    Ok(())
+}
+
+/// When one caller holds the GPU and another drains to idle, `release_buffers`
+/// returns immediately without waiting for the render or clearing working buffers
+/// still in use; once idle, it releases them normally.
+#[test]
+fn release_buffers_does_not_block_or_evict_while_a_render_holds_the_gpu() -> Result<()> {
+    use std::sync::mpsc;
+
+    struct BlockingDriver {
+        entered: Option<mpsc::Sender<()>>,
+        release: mpsc::Receiver<()>,
+        releases: Arc<AtomicUsize>,
+    }
+    impl MockGpuDriver for BlockingDriver {
+        fn render_banded(
+            &mut self,
+            job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            if let Some(tx) = self.entered.take() {
+                let _ = tx.send(());
+            }
+            let _ = self.release.recv_timeout(Duration::from_secs(5));
+            Ok(ExportImage::from_pixels(
+                job.out_w,
+                job.out_h,
+                ExportPixels::Rgb8(vec![0u8; (job.out_w * job.out_h * 3) as usize]),
+                job.space,
+            ))
+        }
+        fn release_buffers(&mut self) {
+            self.releases.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let im = synthetic_photo(48, 32);
+    let recipe = profiled_recipe(&im);
+    let valid = recipe.checked()?;
+    let releases = Arc::new(AtomicUsize::new(0));
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let backend = ExportBackend::with_mock(
+        "MockGPU",
+        Box::new(BlockingDriver {
+            entered: Some(entered_tx),
+            release: release_rx,
+            releases: releases.clone(),
+        }),
+    );
+
+    std::thread::scope(|s| -> Result<()> {
+        let render = s.spawn(|| {
+            backend.render_export(
+                &im,
+                &valid,
+                None,
+                0,
+                OutputSpace::Srgb,
+                ExportFormat::Rgb8,
+                Cancel::NEVER,
+            )
+        });
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("render reached the GPU");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let backend_ref = &backend;
+        let releaser = s.spawn(move || {
+            backend_ref.release_buffers();
+            let _ = done_tx.send(());
+        });
+        let returned_while_busy = done_rx.recv_timeout(Duration::from_millis(200)).is_ok();
+        let evicted_while_busy = releases.load(Ordering::SeqCst);
+
+        release_tx.send(()).expect("release render");
+        render.join().expect("render joined")?;
+        releaser.join().expect("releaser joined");
+
+        assert!(
+            returned_while_busy,
+            "release_buffers() blocked while another render held the GPU"
+        );
+        assert_eq!(
+            evicted_while_busy, 0,
+            "release_buffers() cleared buffers while another render was in flight"
+        );
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            0,
+            "release_buffers() ran after waiting instead of skipping a busy backend"
+        );
+        Ok(())
+    })?;
+
+    // Once idle, release_buffers() acquires the lock and frees working buffers.
+    backend.release_buffers();
+    assert_eq!(releases.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+/// A backend whose device is stalled on a cancelled band is dropped at exit on the
+/// thread that held it last: the drop returns at once, the device dropping on its
+/// own thread.
+#[test]
+fn dropping_a_backend_never_waits_for_its_device() {
+    use std::sync::mpsc;
+
+    /// Stands in for a device whose `Queue::drop` waits for a stalled GPU.
+    struct StalledDevice {
+        dropped: mpsc::Sender<std::thread::ThreadId>,
+        release: mpsc::Receiver<()>,
+    }
+    impl MockGpuDriver for StalledDevice {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            Err(GpuFailure::Cancelled)
+        }
+        fn release_buffers(&mut self) {}
+    }
+    impl Drop for StalledDevice {
+        fn drop(&mut self) {
+            let _ = self.release.recv_timeout(Duration::from_secs(5));
+            let _ = self.dropped.send(std::thread::current().id());
+        }
+    }
+
+    let (dropped_tx, dropped_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let backend = ExportBackend::with_mock(
+        "MockGPU",
+        Box::new(StalledDevice {
+            dropped: dropped_tx,
+            release: release_rx,
+        }),
+    );
+    let start = Instant::now();
+    drop(backend);
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "dropping waited {:?} for the device",
+        start.elapsed()
+    );
+    release_tx
+        .send(())
+        .expect("the device is still being dropped");
+    let on = dropped_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the device was dropped");
+    assert_ne!(on, std::thread::current().id());
+}
+
+/// A validation or internal error turns the GPU off for the session. The render's
+/// CPU fallback doesn't wait for the device's drop, which waits for outstanding GPU
+/// work: the device drops on its own thread, on the SDR, HDR and gain-map paths alike.
+#[test]
+fn a_driver_error_never_waits_for_the_device_it_retires() -> Result<()> {
+    use std::sync::mpsc;
+
+    /// Fails every render with a driver error, and stands in for a device whose
+    /// `Queue::drop` waits for outstanding work.
+    struct BusyDevice {
+        dropped: mpsc::Sender<std::thread::ThreadId>,
+        release: mpsc::Receiver<()>,
+    }
+    fn driver_error() -> GpuFailure {
+        GpuFailure::Session(ExportFallbackKind::DriverError, "validation error".into())
+    }
+    impl MockGpuDriver for BusyDevice {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            Err(driver_error())
+        }
+        fn render_hdr_banded(
+            &mut self,
+            _job: &PreparedHdrExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<crate::rendered::HdrImage, GpuFailure> {
+            Err(driver_error())
+        }
+        fn render_pair_banded(
+            &mut self,
+            _hdr: &PreparedHdrExport<'_>,
+            _sdr: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<(crate::rendered::HdrImage, ExportImage), GpuFailure> {
+            Err(driver_error())
+        }
+        fn release_buffers(&mut self) {}
+    }
+    impl Drop for BusyDevice {
+        fn drop(&mut self) {
+            let _ = self.release.recv_timeout(Duration::from_secs(5));
+            let _ = self.dropped.send(std::thread::current().id());
+        }
+    }
+
+    let sdr = synthetic_photo(48, 32);
+    let sdr_recipe = profiled_recipe(&sdr);
+    let sdr_recipe = sdr_recipe.checked()?;
+    let hdr = synthetic_hdr_photo(48, 32);
+    let hdr_recipe = hdr_profiled_recipe(&hdr);
+    let hdr_recipe = hdr_recipe.checked()?;
+    type Render<'a> = Box<dyn Fn(&ExportBackend) -> Result<()> + 'a>;
+    let paths: [(&str, Render); 3] = [
+        (
+            "SDR",
+            Box::new(|b| {
+                b.render_export(
+                    &sdr,
+                    &sdr_recipe,
+                    None,
+                    0,
+                    OutputSpace::Srgb,
+                    ExportFormat::Rgb8,
+                    Cancel::NEVER,
+                )
+                .map(drop)
+            }),
+        ),
+        (
+            "HDR",
+            Box::new(|b| {
+                b.render_hdr(&hdr, &hdr_recipe, None, 0, Cancel::NEVER)
+                    .map(drop)
+            }),
+        ),
+        (
+            "gain map",
+            Box::new(|b| {
+                b.render_hdr_and_sdr(&hdr, &hdr_recipe, None, 0, Cancel::NEVER)
+                    .map(drop)
+            }),
+        ),
+    ];
+
+    for (path, render) in paths {
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let backend = ExportBackend::with_mock(
+            "MockGPU",
+            Box::new(BusyDevice {
+                dropped: dropped_tx,
+                release: release_rx,
+            }),
+        );
+        render(&backend)?;
+        let st = backend.status();
+        assert!(!st.gpu_active, "{path}: the GPU stays on");
+        assert_eq!(
+            st.fallback_kind,
+            Some(ExportFallbackKind::DriverError),
+            "{path}"
+        );
+        assert_eq!((st.gpu_renders, st.cpu_renders), (0, 1), "{path}");
+        release_tx
+            .send(())
+            .unwrap_or_else(|_| panic!("{path}: the render waited for the device's drop"));
+        let on = dropped_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|_| panic!("{path}: the device was never dropped"));
+        assert_ne!(
+            on,
+            std::thread::current().id(),
+            "{path}: dropped on the render"
+        );
+    }
+    Ok(())
+}
+
+/// When the thread a retired device drops on can't start, the device is leaked, not
+/// dropped on the caller, whose drop could wait for a stalled GPU.
+#[test]
+fn a_device_is_never_dropped_on_the_caller_when_its_thread_cant_start() {
+    struct StalledDevice(Arc<AtomicBool>);
+    impl MockGpuDriver for StalledDevice {
+        fn render_banded(
+            &mut self,
+            _job: &PreparedExport<'_>,
+            _band_cap: Option<u32>,
+            _cancel: Cancel<'_>,
+        ) -> std::result::Result<ExportImage, GpuFailure> {
+            Err(GpuFailure::Cancelled)
+        }
+        fn release_buffers(&mut self) {}
+    }
+    impl Drop for StalledDevice {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let dropped = Arc::new(AtomicBool::new(false));
+    let engine = Engine::Mock(Box::new(StalledDevice(dropped.clone())));
+    retire_engine_on(engine, |_| {
+        Err(std::io::Error::from(std::io::ErrorKind::WouldBlock))
+    });
+    assert!(!dropped.load(Ordering::SeqCst), "dropped on the caller");
+
+    // Started, the thread is handed the engine and drops it there.
+    let engine = Engine::Mock(Box::new(StalledDevice(dropped.clone())));
+    let (on_tx, on_rx) = std::sync::mpsc::channel();
+    retire_engine_on(engine, move |rx| {
+        std::thread::spawn(move || {
+            drop(rx.recv());
+            let _ = on_tx.send(std::thread::current().id());
+        });
+        Ok(())
+    });
+    let on = on_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("dropped on its thread");
+    assert_ne!(on, std::thread::current().id());
+    assert!(dropped.load(Ordering::SeqCst));
+}
+
 #[test]
 fn visualize_range_is_stripped_on_export_backend() -> Result<()> {
     let im = synthetic_photo(48, 32);

@@ -97,6 +97,11 @@ pub(crate) struct Editor {
     /// Gives back to the system what the app's work freed, once it goes quiet.
     freed: crate::platform::memory::Release,
     exports: export::Exports,
+    /// The headless GPU (or CPU reference) renderer that exports and preview
+    /// builds share: one device and one budget of its memory, and a GPU failure
+    /// that turns it off for the session turns it off for both. Creating it does
+    /// no GPU work; the GPU starts with the first render.
+    export_backend: std::sync::Arc<crate::develop::ExportBackend>,
     /// Build Standard-Sized Previews, in the background.
     preview_builds: crate::app::library::preview_build::PreviewBuilds,
     /// Reads and writes editable previews' files: for the loader and the
@@ -383,6 +388,7 @@ impl Editor {
             worker::reference_loader(tx.clone(), ctx.clone(), decode_cache.clone());
         let standard_preview_size = session.standard_preview_size();
         let discard_one_to_one_after = session.discard_one_to_one_after();
+        let export_backend = std::sync::Arc::new(crate::develop::ExportBackend::auto());
         let stand_ins = crate::app::develop::stand_in::StandIns::new(
             tx.clone(),
             ctx.clone(),
@@ -500,7 +506,9 @@ impl Editor {
             preview_builds: crate::app::library::preview_build::PreviewBuilds::new(
                 standard_preview_size,
                 discard_one_to_one_after,
+                export_backend.clone(),
             ),
+            export_backend,
             copies: crate::app::worker::editable_preview::decoder(),
             editable_builds: Default::default(),
             stand_ins,

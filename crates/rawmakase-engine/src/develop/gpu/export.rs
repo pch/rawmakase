@@ -135,9 +135,11 @@ pub struct ExportBackendStatus {
     pub fallback_reason: Option<String>,
     /// Structured Tier-2 fallback category, if session-disabled.
     pub fallback_kind: Option<ExportFallbackKind>,
-    /// Count of exports completed on the GPU.
+    /// Count of renders completed on the GPU, by every caller sharing the backend
+    /// (in the app, exports and preview builds alike).
     pub gpu_renders: u64,
-    /// Count of exports completed on the CPU reference.
+    /// Count of renders completed on the CPU reference, by every caller sharing the
+    /// backend.
     pub cpu_renders: u64,
     /// Per-reason fallback counts (both Tier-1 per-photo and Tier-2 session fallbacks).
     pub fallback_counts: Vec<(ExportFallbackKind, u64)>,
@@ -156,14 +158,20 @@ impl ExportBackendStatus {
 /// Thread-safe GPU export backend with deterministic CPU fallback.
 ///
 /// Owns no persistent background threads: GPU submissions execute synchronously on
-/// the calling export thread under `exec` so multiple CPU decode/encode lanes share
-/// one compute device and one working-set VRAM budget without contending with the UI
-/// device. Telemetry and status live under a separate short-lived `meta` lock so
+/// the calling thread under `exec` so multiple CPU decode/encode lanes (and, in the
+/// app, the preview build worker) share one compute device and one working-set VRAM
+/// budget without contending with the UI device. A caller waiting for `exec` can't
+/// be cancelled while it waits; it checks its cancel as soon as it holds `exec`,
+/// before any GPU work or CPU fallback. Telemetry and status live under a separate
+/// short-lived `meta` lock so
 /// [`Self::status`] and [`Self::reset_stats`] never wait on an in-flight GPU export.
 /// Lock ordering: `exec` may briefly lock `meta`; `meta` never locks `exec`.
 pub struct ExportBackend {
     exec: Mutex<ExecState>,
     meta: Mutex<StatusState>,
+    /// SDR renders that have asked for `exec`, so a test knows one is waiting for it.
+    #[cfg(test)]
+    exec_asked: std::sync::atomic::AtomicUsize,
 }
 
 // Compile-time check that ExportBackend is Send + Sync.
@@ -171,6 +179,19 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<ExportBackend>();
 };
+
+impl Drop for ExportBackend {
+    /// Drops a live GPU device on a detached thread. A cancel stops waiting for a
+    /// submitted band without waiting for the GPU, and `wgpu`'s `Queue::drop` waits
+    /// for the device to go idle with no deadline: dropped on the thread that drops
+    /// the last owner (in the app, the UI thread at exit), a stalled band would
+    /// hang it.
+    fn drop(&mut self) {
+        let exec = self.exec.get_mut().unwrap_or_else(PoisonError::into_inner);
+        let engine = std::mem::replace(&mut exec.engine, Engine::Disabled);
+        retire_engine(engine);
+    }
+}
 
 impl Default for ExportBackend {
     fn default() -> Self {
@@ -214,20 +235,55 @@ enum Engine {
     Mock(Box<dyn MockGpuDriver + Send>),
 }
 
-/// Drops a retired GPU engine outside any mutex. When `async_drop` is true (stalled
-/// driver timeout, device loss, or panic unwind), drops a real `wgpu::Device`/`Queue`
-/// on a detached thread so `wgpu`'s unbounded `Queue::drop` idle wait cannot stall the
-/// caller, sibling export lanes, or shutdown past the 5 s band deadline.
-fn retire_engine(engine: Engine, async_drop: bool) {
-    if async_drop && matches!(engine, Engine::Gpu(_)) {
-        if let Err(err) = std::thread::Builder::new()
-            .name("export-gpu-drop".into())
-            .spawn(move || drop(engine))
-        {
-            eprintln!("RAWmakase export GPU async drop spawn failed: {err}");
+impl Engine {
+    /// Whether dropping this engine drops a device (or, in tests, a driver standing in
+    /// for one).
+    fn holds_device(&self) -> bool {
+        match self {
+            Engine::Gpu(_) => true,
+            #[cfg(test)]
+            Engine::Mock(_) => true,
+            Engine::Uninitialized | Engine::Disabled => false,
         }
-    } else {
+    }
+}
+
+/// Drops a retired GPU engine outside any mutex, on a detached thread. A retired
+/// engine may still have GPU work outstanding (after a band that timed out or was
+/// cancelled, a lost device, a validation or internal error, or a panic), and
+/// `wgpu`'s `Queue::drop` waits for the device to go idle with no deadline: dropped
+/// on the caller, it could stall that caller's CPU fallback, the renders waiting for
+/// `exec`, or shutdown. A retired engine is never reused, so nothing waits for its
+/// drop.
+fn retire_engine(engine: Engine) {
+    retire_engine_on(engine, |rx| {
+        std::thread::Builder::new()
+            .name("export-gpu-drop".into())
+            .spawn(move || drop(rx.recv()))
+            .map(drop)
+    });
+}
+
+/// [`retire_engine`], starting the thread the engine drops on with `spawn`, which
+/// is handed the engine only once it has started. When the thread can't start, the
+/// engine is leaked: its device's memory is lost, where dropping it here could hang.
+/// Nothing is written to stderr there: a closed or full pipe would panic (dropping
+/// the engine here after all) or block.
+fn retire_engine_on(
+    engine: Engine,
+    spawn: impl FnOnce(mpsc::Receiver<Engine>) -> std::io::Result<()>,
+) {
+    if !engine.holds_device() {
         drop(engine);
+        return;
+    }
+    let (tx, rx) = mpsc::channel();
+    let unsent = match spawn(rx) {
+        Ok(()) => tx.send(engine).err().map(|mpsc::SendError(engine)| engine),
+        Err(_) => Some(engine),
+    };
+    if let Some(engine) = unsent {
+        std::mem::forget(engine);
     }
 }
 
@@ -241,7 +297,7 @@ enum GpuFailure {
     PerPhoto(ExportFallbackKind, String),
     /// Tier 1 retryable OOM: release cached buffers and retry once with halved band height.
     OutOfMemory(String),
-    /// Tier 2: session-wide CPU fallback; drop GPU device and stay on CPU.
+    /// Tier 2: session-wide CPU fallback; retire the GPU device and stay on CPU.
     Session(ExportFallbackKind, String),
 }
 
@@ -301,7 +357,7 @@ impl Drop for PanicGuard<'_> {
                     "GPU export panicked; disabled GPU for remainder of session".into(),
                 );
             }
-            retire_engine(old, true);
+            retire_engine(old);
         }
     }
 }
@@ -403,6 +459,8 @@ impl ExportBackend {
                 max_binding_override: None,
             }),
             meta: Mutex::new(StatusState::new(policy, fallback)),
+            #[cfg(test)]
+            exec_asked: Default::default(),
         }
     }
 
@@ -465,8 +523,16 @@ impl ExportBackend {
 
     /// Releases reusable GPU photo and band working buffers to return VRAM to the OS
     /// when idle, while keeping the device and compiled compute pipelines resident.
+    ///
+    /// Never blocks on an in-flight GPU render: when another caller sharing the
+    /// backend holds `exec`, the backend is not idle and this returns immediately
+    /// without clearing buffers still in use.
     pub fn release_buffers(&self) {
-        let mut exec = self.lock_exec();
+        let mut exec = match self.exec.try_lock() {
+            Ok(exec) => exec,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
         match &mut exec.engine {
             Engine::Gpu(ctx) => ctx.release_buffers(),
             #[cfg(test)]
@@ -591,6 +657,8 @@ impl ExportBackend {
         };
 
         // Acquire the serialized GPU execution lock (`meta` remains free for `status()`).
+        #[cfg(test)]
+        self.exec_asked.fetch_add(1, Ordering::SeqCst);
         let (gpu_outcome, retired) = {
             let mut exec = self.lock_exec();
             let guard = PanicGuard::new(&mut exec, &self.meta);
@@ -599,15 +667,15 @@ impl ExportBackend {
                 Err(GpuFailure::Session(kind, reason)) => {
                     let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
                     self.lock_meta().mark_disabled(*kind, reason.clone());
-                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                    Some(old)
                 }
                 _ => None,
             };
             guard.disarm();
             (outcome, retired)
         };
-        if let Some((old_engine, async_drop)) = retired {
-            retire_engine(old_engine, async_drop);
+        if let Some(old_engine) = retired {
+            retire_engine(old_engine);
         }
 
         match gpu_outcome {
@@ -753,15 +821,15 @@ impl ExportBackend {
                 Err(GpuFailure::Session(kind, reason)) => {
                     let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
                     self.lock_meta().mark_disabled(*kind, reason.clone());
-                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                    Some(old)
                 }
                 _ => None,
             };
             guard.disarm();
             (outcome, retired)
         };
-        if let Some((old_engine, async_drop)) = retired {
-            retire_engine(old_engine, async_drop);
+        if let Some(old_engine) = retired {
+            retire_engine(old_engine);
         }
 
         match gpu_outcome {
@@ -952,15 +1020,15 @@ impl ExportBackend {
                 Err(GpuFailure::Session(kind, reason)) => {
                     let old = std::mem::replace(&mut guard.exec.engine, Engine::Disabled);
                     self.lock_meta().mark_disabled(*kind, reason.clone());
-                    Some((old, *kind == ExportFallbackKind::DeviceLostOrTimeout))
+                    Some(old)
                 }
                 _ => None,
             };
             guard.disarm();
             (outcome, retired)
         };
-        if let Some((old_engine, async_drop)) = retired {
-            retire_engine(old_engine, async_drop);
+        if let Some(old_engine) = retired {
+            retire_engine(old_engine);
         }
 
         match gpu_outcome {
@@ -3598,6 +3666,7 @@ impl ExportBackend {
                 max_binding_override: None,
             }),
             meta: Mutex::new(meta),
+            exec_asked: Default::default(),
         }
     }
 
