@@ -12,6 +12,9 @@ use std::time::Duration;
 
 /// The pack on disk and the install in progress, if any.
 pub(crate) struct Installer {
+    /// The pack's folder: [`crate::model_install::dir`] in the app. A test passes
+    /// one of its own, so it never sees or changes this computer's installed model.
+    dir: PathBuf,
     /// What the folder held when last looked at, and when: the files on disk decide
     /// whether the models are installed (a copy made, or deleted, by hand counts), not
     /// a note of what this process did.
@@ -24,8 +27,9 @@ pub(crate) struct Installer {
 }
 
 impl Installer {
-    pub(in crate::app) fn new() -> Self {
+    pub(in crate::app) fn new(dir: PathBuf) -> Self {
         Self {
+            dir,
             seen: Default::default(),
             progress: None,
             thread: None,
@@ -41,7 +45,7 @@ impl Installer {
         match self.seen.get() {
             Some((at, installed)) if at.elapsed() < Duration::from_secs(1) => installed,
             _ => {
-                let installed = crate::model_install::is_installed();
+                let installed = crate::model_install::is_installed_in(&self.dir);
                 self.seen.set(Some((std::time::Instant::now(), installed)));
                 installed
             }
@@ -52,7 +56,7 @@ impl Installer {
     }
     /// The folder holding the model's files.
     pub(in crate::app) fn path(&self) -> Option<PathBuf> {
-        self.installed().then(crate::model_install::dir)
+        self.installed().then(|| self.dir.clone())
     }
     pub(in crate::app) fn busy(&self) -> bool {
         self.progress.is_some() || self.removing
@@ -95,11 +99,12 @@ impl Installer {
         let progress = Arc::new(Progress::default());
         self.progress = Some(progress.clone());
         self.failed = None;
+        let dir = self.dir.clone();
         let spawned = std::thread::Builder::new()
             .name("model-install".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    crate::model_install::install(import.as_deref(), &progress)
+                    crate::model_install::install(&dir, import.as_deref(), &progress)
                 }))
                 .unwrap_or_else(|_| {
                     Err(InstallError::Failed(
@@ -134,9 +139,10 @@ impl Installer {
             return;
         }
         self.removing = true;
+        let dir = self.dir.clone();
         std::thread::spawn(move || {
             unload();
-            let result = std::fs::remove_dir_all(crate::model_install::dir())
+            let result = std::fs::remove_dir_all(&dir)
                 .or_else(|e| {
                     if e.kind() == std::io::ErrorKind::NotFound {
                         Ok(())
@@ -161,7 +167,7 @@ mod tests {
 
     #[test]
     fn a_failed_install_says_why_until_the_next_one() {
-        let mut installer = Installer::new();
+        let mut installer = Installer::new(PathBuf::new());
         installer.finished(&Err(InstallError::Failed(
             "could not download the model: timed out".into(),
         )));
@@ -171,5 +177,27 @@ mod tests {
         );
         installer.finished(&Err(InstallError::Cancelled));
         assert_eq!(installer.failure(), None);
+    }
+
+    /// The installer looks only in the folder it was given: a model installed
+    /// elsewhere on this computer is not its, and one placed in its folder is.
+    #[test]
+    fn the_installer_looks_only_in_its_own_folder() {
+        use rawmakase_model_install::{RECEIPT, receipt};
+        let dir = tempfile::tempdir().unwrap();
+        let installer = Installer::new(dir.path().to_path_buf());
+        assert!(!installer.installed());
+        assert_eq!(installer.path(), None);
+        let files = rawmakase_inference::manifest::denoise_files();
+        for file in &files {
+            std::fs::File::create(dir.path().join(file.name))
+                .unwrap()
+                .set_len(file.size_bytes)
+                .unwrap();
+        }
+        std::fs::write(dir.path().join(RECEIPT), receipt(&files)).unwrap();
+        installer.forget();
+        assert!(installer.installed());
+        assert_eq!(installer.path().as_deref(), Some(dir.path()));
     }
 }

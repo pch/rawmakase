@@ -192,6 +192,11 @@ pub(crate) struct Editor {
     /// before it passes its write gate, as `proposal_hook` does.
     #[cfg(test)]
     report_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// A test editor's own empty models folder, kept for the editor's life and
+    /// handed to [`Self::ai_denoise_model`], so a test neither sees nor changes this
+    /// computer's installed model.
+    #[cfg(test)]
+    test_models: Option<tempfile::TempDir>,
 }
 impl Editor {
     pub(crate) fn new(
@@ -250,7 +255,16 @@ impl Editor {
         session: crate::app::preferences::session::Session,
         session_file: Option<PathBuf>,
     ) -> Self {
-        Self::with_backend(ctx, path, session, session_file, worker::RenderBackend::Cpu)
+        let mut editor =
+            Self::with_backend(ctx, path, session, session_file, worker::RenderBackend::Cpu);
+        // The models folder is this computer's own and never moves with
+        // RAWMAKASE_DATA_DIR (on macOS, nor with XDG_DATA_HOME), so a test editor
+        // gets an empty one of its own instead.
+        let models = tempfile::tempdir().expect("a temporary models folder");
+        editor.ai_denoise_model =
+            crate::app::develop::model_installer::Installer::new(models.path().to_path_buf());
+        editor.test_models = Some(models);
+        editor
     }
     fn with_backend(
         ctx: &egui::Context,
@@ -438,7 +452,9 @@ impl Editor {
             loader,
             decode_cache,
             ai_denoise,
-            ai_denoise_model: crate::app::develop::model_installer::Installer::new(),
+            ai_denoise_model: crate::app::develop::model_installer::Installer::new(
+                crate::model_install::dir(),
+            ),
             ai_loupe,
             renderer,
             reference: Default::default(),
@@ -548,6 +564,8 @@ impl Editor {
             read_hook: None,
             #[cfg(test)]
             report_hook: None,
+            #[cfg(test)]
+            test_models: None,
         };
         app.reload_presets(ctx);
         if skipped_last_photo {

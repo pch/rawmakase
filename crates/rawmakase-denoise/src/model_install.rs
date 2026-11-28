@@ -30,10 +30,6 @@ pub fn dir() -> PathBuf {
     );
     rawmakase_model_install::models_dir().join(format!("{id}-v{version}"))
 }
-/// Whether every file is in place and verified.
-pub fn is_installed() -> bool {
-    is_installed_in(&dir())
-}
 /// Whether every file is in place and verified in `dir`, a folder of the pack's
 /// own (its [`dir`] or another the caller chose).
 pub fn is_installed_in(dir: &Path) -> bool {
@@ -44,10 +40,10 @@ pub fn megabytes() -> u64 {
     bytes().div_ceil(1_000_000)
 }
 
-/// Fetches or copies the pack's files into its folder and checks them; see
-/// [`rawmakase_model_install::install`].
-pub fn install(import: Option<&Path>, progress: &Progress) -> Result<(), InstallError> {
-    rawmakase_model_install::install(&dir(), &files(), import, progress)
+/// Fetches or copies the pack's files into `dir` (its [`dir`] or another the caller
+/// chose) and checks them; see [`rawmakase_model_install::install`].
+pub fn install(dir: &Path, import: Option<&Path>, progress: &Progress) -> Result<(), InstallError> {
+    rawmakase_model_install::install(dir, &files(), import, progress)
 }
 
 #[cfg(test)]
