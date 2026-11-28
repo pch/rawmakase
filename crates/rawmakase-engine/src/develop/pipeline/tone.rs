@@ -405,21 +405,24 @@ impl CurveSet {
     /// Highlights).
     pub(super) fn for_image(im: Source, r: &Recipe, camera: Camera, local_tone: bool) -> Self {
         let (mut lut, measured) = Self::measured(im, r, camera);
-        let copy = MeasuredCopy::for_recipe(im, r);
-        let small = &copy.image;
-        let map_crop = copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
         let sliders = crate::develop::local_tone::Sliders::of(r);
+        let mr = measure_recipe(im, r);
+        let mut copy: Option<MeasuredCopy<'_>> = None;
         // The base reads what the measures read, and Exposure.
         let base =
             crate::develop::local_tone::LocalToneMap::needed(sliders, local_tone).then(|| {
                 let scene = |color| {
                     crate::develop::scene_tone::luminance(exposure_stage(color, &lut, None))
                 };
-                let size = [small.width, small.height];
                 match &measured {
                     // The copy's camera color reads only what the measures read: kept
                     // with them, so an Exposure change only exposes it.
                     Some(m) => m.map_base(r.exposure, || {
+                        let copy = copy.get_or_insert_with(|| MeasuredCopy::for_recipe(im, &mr));
+                        let small = &copy.image;
+                        let map_crop =
+                            copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
+                        let size = [small.width, small.height];
                         let colors = m.colors(|| {
                             small
                                 .pixels
@@ -435,13 +438,19 @@ impl CurveSet {
                             )
                             .with_exposure(r.exposure)
                     }),
-                    None => Arc::new(
-                        crate::develop::local_tone::MapBase::of(small, |p| {
-                            scene(scene_color(p, r, &lut, camera, None))
-                        })
-                        .with_crop(map_crop)
-                        .with_exposure(r.exposure),
-                    ),
+                    None => {
+                        let copy = copy.get_or_insert_with(|| MeasuredCopy::for_recipe(im, &mr));
+                        let small = &copy.image;
+                        let map_crop =
+                            copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
+                        Arc::new(
+                            crate::develop::local_tone::MapBase::of(small, |p| {
+                                scene(scene_color(p, r, &lut, camera, None))
+                            })
+                            .with_crop(map_crop)
+                            .with_exposure(r.exposure),
+                        )
+                    }
                 }
             });
         lut.local = base.as_ref().map(|base| {
@@ -453,10 +462,13 @@ impl CurveSet {
             )
         });
         let shift_dark = r.shadows != 0. || local_tone;
-        let shift_white = r.highlights != 0. && !r.hdr.is_active() && !small.metadata.is_rendered();
+        let shift_white = r.highlights != 0. && !r.hdr.is_active() && !im.metadata.is_rendered();
         if (shift_dark || shift_white)
             && let (Some(map), Some(base)) = (&lut.local, &base)
         {
+            let copy = copy.get_or_insert_with(|| MeasuredCopy::for_recipe(im, &mr));
+            let small = &copy.image;
+            let map_crop = copy.combined_crop(crate::develop::local_tone::active_crop_rect(small));
             let levels = base.lum();
             let sw = small.width as usize;
             let mut adjusted = lut.measures;
@@ -746,7 +758,8 @@ fn cached_photo_measures(
             None,
         );
     };
-    let key = crate::develop::stage_cache::MeasuresKey::new(copy, im.unretouched, r, camera);
+    let mr = measure_recipe(im, r);
+    let key = crate::develop::stage_cache::MeasuresKey::new(copy, im.unretouched, &mr, camera);
     // Not locked while measuring, whose parallel work may run other renders' tasks.
     let cache = || {
         cache
@@ -788,7 +801,8 @@ pub(super) fn photo_measures(
     r: &Recipe,
     camera: Camera,
 ) -> crate::develop::scene_tone::PhotoMeasures {
-    let copy = MeasuredCopy::for_recipe(im, r);
+    let mr = measure_recipe(im, r);
+    let copy = MeasuredCopy::for_recipe(im, &mr);
     let small = &copy.image;
     let base = Recipe {
         exposure: 0.,
@@ -797,11 +811,12 @@ pub(super) fn photo_measures(
     let lut = CurveSet::new(&base);
     let scene = measured_scene(small, &base, &lut, camera);
     // The copy without retouching, when it differs, for the darkest level so a local
-    // repair (red eye, spot removal) does not move the whole photo's black.
+    // repair (red eye, spot removal) does not move the whole photo's black. `measured_scene`
+    // is strictly per-pixel and `masked_lum` skips out-of-crop indices, so `plain` does
+    // not need a second crop-clamp pass.
     let unretouched_scene: Option<Vec<[f32; 3]>> = match (im.measured, im.unretouched) {
         (Some(mcopy), Some(plain)) if !Arc::ptr_eq(mcopy, plain) => {
-            let plain = apply_negative_crop(std::borrow::Cow::Borrowed(plain.as_ref()), r);
-            Some(measured_scene(&plain.image, &base, &lut, camera))
+            Some(measured_scene(plain, &base, &lut, camera))
         }
         _ => None,
     };
@@ -1050,7 +1065,8 @@ pub(super) fn photo_haze(
     r: &Recipe,
     camera: Camera,
 ) -> crate::develop::scene_tone::Haze {
-    let copy = MeasuredCopy::for_recipe(im, r);
+    let mr = measure_recipe(im, r);
+    let copy = MeasuredCopy::for_recipe(im, &mr);
     let small = &copy.image;
     let base = Recipe {
         exposure: 0.,
@@ -1227,6 +1243,18 @@ fn measured_copy<'a>(im: Source<'a>, r: &Recipe) -> std::borrow::Cow<'a, CameraI
         )),
     }
 }
+/// The recipe whose crop and aspect constraint negative measurements follow: `r` as-is
+/// normally, or with `im.measure_crop` restored while the Crop tool displays the full
+/// uncropped scan.
+fn measure_recipe<'a>(im: Source, r: &'a Recipe) -> std::borrow::Cow<'a, Recipe> {
+    let Some(mc) = im.measure_crop.filter(|_| r.negative.is_some()) else {
+        return std::borrow::Cow::Borrowed(r);
+    };
+    let mut m = r.clone();
+    m.crop = mc.crop;
+    m.constrain_crop = mc.constrain_crop;
+    std::borrow::Cow::Owned(m)
+}
 /// A measurement copy prepared for `r`: for a regular photo, the borrowed copy as-is;
 /// for a converted negative with an active crop or warp, a copy whose out-of-crop border
 /// pixels are clamped to the nearest in-crop pixel (eliminating film-holder spikes and
@@ -1391,7 +1419,8 @@ pub(super) fn contrast_pivot(
     measures: &crate::develop::scene_tone::PhotoMeasures,
     haze: Option<Arc<crate::develop::scene_tone::Haze>>,
 ) -> f32 {
-    let copy = MeasuredCopy::for_recipe(im, r);
+    let mr = measure_recipe(im, r);
+    let copy = MeasuredCopy::for_recipe(im, &mr);
     let small = &copy.image;
     // Measured on the SDR rendering, HDR or not, as Camera Raw measures it.
     // Saturation and Vibrance apply inside `profile_stage`, so clear them here

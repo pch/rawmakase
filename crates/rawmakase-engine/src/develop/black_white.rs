@@ -35,8 +35,11 @@ impl ColorSpread {
             let row = im.pixels.range(y * width..(y + 1) * width);
             for p in row.iter().step_by(step) {
                 let clipped = if inversion.is_some() {
-                    // For a rendered scan, `im.pixels` holds Camera Raw's pseudo-scene
-                    // whose unclipped values exceed 1.0, so check clip in scan linear space.
+                    // Use the shared negative clip threshold (`negative::clipped`, 0.98 in
+                    // scan linear space) for both RAW and rendered negative scans: rendered
+                    // scans' pseudo-scene exceeds 1.0, and brightly exposed negative film
+                    // bases sit near the top of the scan where all negative measurements
+                    // share the same clip cut-off.
                     super::negative::clipped(*p, &im.metadata)
                 } else {
                     let peak = (0..3)

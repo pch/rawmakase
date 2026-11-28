@@ -79,6 +79,7 @@ fn render_resident(
         measured: Some(measured),
         unretouched: Some(unretouched),
         measures: Some(stages.cache.measures.clone()),
+        measure_crop: stages.measure_crop,
     };
     let params = match stages.hdr {
         Some(_) => develop::pipeline::pixel_params::pixel_params_hdr(toned.source(), &base),
@@ -216,7 +217,7 @@ pub(crate) fn render_level(
     if let Some(frame) = frame {
         return Ok(frame);
     }
-    let (toned, tonal_recipe) = local_stage(
+    let (mut toned, tonal_recipe) = local_stage(
         level,
         full,
         r,
@@ -225,6 +226,7 @@ pub(crate) fn render_level(
         Some(stages.cache),
         Some(stages.backend),
     )?;
+    toned.measure_crop = stages.measure_crop;
     let frame = develop::pipeline::render_display(
         &toned,
         &tonal_recipe,
@@ -423,7 +425,7 @@ pub(crate) fn render_preview(
             return Ok(frame);
         }
     }
-    let (toned, tonal_recipe) = match stages.as_deref_mut() {
+    let (mut toned, tonal_recipe) = match stages.as_deref_mut() {
         Some(s) => local_stage(
             &source.image,
             &source,
@@ -435,6 +437,7 @@ pub(crate) fn render_preview(
         )?,
         None => local_stage(&source.image, &source, r, scale, cancel, None, None)?,
     };
+    toned.measure_crop = stages.as_ref().and_then(|s| s.measure_crop);
     if unresized && let Some(stages) = stages.as_mut() {
         let finish = develop::gpu::Finish {
             sigma,

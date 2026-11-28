@@ -447,6 +447,25 @@ impl Editor {
         }
         r
     }
+    /// The crop a converted negative should still be measured inside while the Crop tool
+    /// displays the full uncropped scan, so opening or closing Crop does not shift tone.
+    pub(in crate::app) fn measure_crop(
+        &self,
+        rendered: &Recipe,
+    ) -> Option<crate::develop::MeasureCrop> {
+        if !self.view.is(crate::app::develop::state::Tool::Crop) || rendered.negative.is_none() {
+            return None;
+        }
+        let r = if self.view.compare.renders_before_alone() {
+            self.before_settings()
+        } else {
+            self.settings_on_screen().clone()
+        };
+        (r.crop != [0., 0., 1., 1.] || r.constrain_crop).then_some(crate::develop::MeasureCrop {
+            crop: r.crop,
+            constrain_crop: r.constrain_crop,
+        })
+    }
     /// The swatch Point Color's Visualize Range shows, while its tab is open on a color
     /// photo in Develop.
     /// Not while an eyedropper is out, which samples the photo as it renders, nor in
@@ -600,6 +619,7 @@ impl Editor {
             // for reads them.
             let hdr = self.hdr_preview_due().ok().map(|due| due.key.headroom());
             self.preview.last_hdr = hdr;
+            let measure_crop = self.measure_crop(&recipe);
             let replaced = self.renderer.submit(RenderJob {
                 pane: crate::app::worker::Pane::After,
                 max_edge,
@@ -617,6 +637,7 @@ impl Editor {
                 ai,
                 drawn: self.preview.presented(),
                 hdr,
+                measure_crop,
             });
             if let Some(replaced) = replaced {
                 self.preview.replaced(replaced);

@@ -82,6 +82,7 @@ impl Magnifier {
 struct MagnifierJob {
     image: Arc<CameraImage>,
     recipe: Recipe,
+    measure_crop: Option<crate::develop::MeasureCrop>,
     /// The AI Denoise source the render captured: a newer result renders again.
     ai: Option<crate::develop::AiSource>,
     region: [u32; 4],
@@ -92,6 +93,7 @@ impl PartialEq for MagnifierJob {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.image, &other.image)
             && self.recipe == other.recipe
+            && self.measure_crop == other.measure_crop
             && self.ai == other.ai
             && self.region == other.region
             && self.monitor == other.monitor
@@ -458,9 +460,11 @@ impl Editor {
             recipe.as_rendered().into_owned()
         };
         let ai = self.shown_ai_source(&image, &recipe.ai_denoise);
+        let measure_crop = self.measure_crop(&recipe);
         let job = MagnifierJob {
             image,
             recipe,
+            measure_crop,
             ai,
             region,
             monitor: self.view.display_profile(),
@@ -491,6 +495,7 @@ impl Editor {
             ai: job.ai,
             drawn,
             hdr: None,
+            measure_crop: job.measure_crop,
         });
     }
     /// A magnifier render arrived.

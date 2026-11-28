@@ -525,6 +525,8 @@ pub(crate) struct RenderJob {
     /// Also present the HDR master's preview, held to this display headroom: where
     /// the viewport is due to show the master (`Editor::hdr_preview_due`).
     pub hdr: Option<f32>,
+    /// Crop override for negative measurements while the Crop tool renders uncropped.
+    pub measure_crop: Option<crate::develop::MeasureCrop>,
 }
 fn send(tx: &Sender<Event>, ctx: &egui::Context, event: Event) {
     let _ = tx.send(event);

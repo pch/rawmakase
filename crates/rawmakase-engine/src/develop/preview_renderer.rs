@@ -23,6 +23,8 @@ pub struct PreviewRenderer {
     retouch: super::retouch::RetouchCache,
     /// The AI Denoise source the next renders use ([`Self::set_ai`]).
     ai: Option<super::AiSource>,
+    /// Optional crop override for negative measurements ([`Self::set_measure_crop`]).
+    measure_crop: Option<super::MeasureCrop>,
     /// An HDR file's master on the GPU ([`HdrFileScenes`]), apart from the stages and
     /// caches its SDR rendition renders with, so the two don't replace each other's.
     hdr_files: HdrFileScenes,
@@ -118,6 +120,8 @@ pub(crate) struct Stages<'a> {
     /// Present the HDR master, held to this display headroom, in place of the SDR
     /// rendition: only on the GPU (`quality::HdrNotOnGpu` otherwise).
     pub(crate) hdr: Option<f32>,
+    /// Crop override for negative measurements while displaying the uncropped frame.
+    pub(crate) measure_crop: Option<super::MeasureCrop>,
 }
 /// Pixel budget of a reduced 100% drag preview.
 const PREVIEW_PIXELS: u64 = 600_000;
@@ -189,6 +193,11 @@ impl PreviewRenderer {
     /// another size than the photo is ignored.
     pub fn set_ai(&mut self, ai: Option<super::AiSource>) {
         self.ai = ai;
+    }
+    /// Sets a crop override for negative measurements on the next renders, so an
+    /// uncropped view (such as the Crop tool) still measures inside the active crop.
+    pub fn set_measure_crop(&mut self, crop: Option<super::MeasureCrop>) {
+        self.measure_crop = crop;
     }
     pub fn adapter_name(&self) -> Option<&str> {
         self.backend.gpu.as_ref().map(gpu::Processor::name)
@@ -351,6 +360,7 @@ impl PreviewRenderer {
             backend: &mut self.backend,
             display,
             hdr: None,
+            measure_crop: self.measure_crop,
         }
     }
     /// Fit and zoomed-out views from the smallest pyramid level with at least one
@@ -554,6 +564,7 @@ impl PreviewRenderer {
             backend: &mut self.backend,
             display,
             hdr: Some(headroom),
+            measure_crop: None,
         };
         quality::render_level(
             &scene,

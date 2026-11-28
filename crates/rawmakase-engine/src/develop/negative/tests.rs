@@ -823,3 +823,114 @@ fn cropped_out_film_holder_does_not_corrupt_tone_haze_or_color_spread() {
         "cached measures stayed stale after cropping out holder (mean diff {diff:.4})"
     );
 }
+
+/// While the Crop tool displays the full uncropped scan, `MeasureCrop` keeps measuring
+/// inside the active crop so entering or leaving the Crop tool does not shift tone.
+#[test]
+fn measure_crop_keeps_negative_tone_steady_in_crop_tool() {
+    let (w, h) = (160u32, 120u32);
+    let with_holder = image(w, h, |x, y| {
+        if x < 16 || x >= w - 16 || y < 12 || y >= h - 12 {
+            [0.0005; 3]
+        } else {
+            let u = (x as f32 / (w - 1) as f32).clamp(0., 1.);
+            let v = (y as f32 / (h - 1) as f32).clamp(0., 1.);
+            let l = 10f32.powf(-1.8 + 1.75 * (0.75 * u + 0.25 * v));
+            COLOUR.scan([l, l * 0.9, l * 0.8])
+        }
+    });
+    let crop = [0.1, 0.1, 0.9, 0.9];
+    let cropped_recipe = Recipe {
+        negative: Some(COLOUR.conversion(FilmType::Colour)),
+        crop,
+        shadows: 0.5,
+        sharpening: 0.,
+        effects: crate::model::effects::Effects {
+            dehaze: 0.5,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut crop_tool_recipe = cropped_recipe.clone();
+    crop_tool_recipe.crop = [0., 0., 1., 1.];
+    crop_tool_recipe.constrain_crop = false;
+
+    let mut renderer = crate::develop::PreviewRenderer::default();
+    let normal = renderer
+        .render(&with_holder, &cropped_recipe, 0, None, Cancel::NEVER)
+        .unwrap();
+    let without_override = renderer
+        .render(&with_holder, &crop_tool_recipe, 0, None, Cancel::NEVER)
+        .unwrap();
+    renderer.set_measure_crop(Some(crate::develop::MeasureCrop {
+        crop,
+        constrain_crop: cropped_recipe.constrain_crop,
+    }));
+    let in_crop_tool = renderer
+        .render(&with_holder, &crop_tool_recipe, 0, None, Cancel::NEVER)
+        .unwrap();
+
+    // Without MeasureCrop the uncropped holder shifts tone; with it every pixel inside
+    // the active crop matches the normal cropped view without a tone jump.
+    assert_eq!((in_crop_tool.width, in_crop_tool.height), (w, h));
+    assert_eq!((normal.width, normal.height), (128, 96));
+    let mut max_diff_without = 0f32;
+    let mut max_diff_with = 0f32;
+    for y in 0..normal.height {
+        for x in 0..normal.width {
+            let a = normal.pixels[(y * normal.width + x) as usize];
+            let idx = ((y + 12) * in_crop_tool.width + (x + 16)) as usize;
+            let b_without = without_override.pixels[idx];
+            let b_with = in_crop_tool.pixels[idx];
+            for c in 0..3 {
+                max_diff_without = max_diff_without.max((a[c] - b_without[c]).abs());
+                max_diff_with = max_diff_with.max((a[c] - b_with[c]).abs());
+            }
+        }
+    }
+    assert!(
+        max_diff_without > 0.05,
+        "test setup must show a tone jump without MeasureCrop (got {max_diff_without:.6})"
+    );
+    assert!(
+        max_diff_with < 1e-5,
+        "Crop tool shifted negative tone inside active crop (max diff {max_diff_with:.6})"
+    );
+}
+
+/// Switching the Transform panel off must make `ColorSpread::for_recipe` sample the
+/// untransformed frame, matching what renders.
+#[test]
+fn color_spread_respects_switched_off_transform_panel() {
+    use crate::model::panels::{Panel, PanelState};
+    let (w, h) = (120u32, 90u32);
+    let scan = image(w, h, |x, y| {
+        let u = x as f32 / (w - 1) as f32;
+        let v = y as f32 / (h - 1) as f32;
+        let scene = if v < 0.35 {
+            [0.8, 0.2, 0.1]
+        } else {
+            [0.1 + 0.3 * u, 0.5, 0.7]
+        };
+        COLOUR.scan(scene)
+    });
+    let base = Recipe {
+        negative: Some(COLOUR.conversion(FilmType::Colour)),
+        ..Default::default()
+    };
+    let mut transformed_on = base.clone();
+    transformed_on.transform.vertical = 0.6;
+    let mut transformed_off = transformed_on.clone();
+    transformed_off
+        .panels
+        .set(Panel::Transform, PanelState::Off);
+
+    let spread_base = crate::develop::ColorSpread::for_recipe(&scan, &base);
+    let spread_on = crate::develop::ColorSpread::for_recipe(&scan, &transformed_on);
+    let spread_off = crate::develop::ColorSpread::for_recipe(&scan, &transformed_off);
+    assert_ne!(spread_base, spread_on, "active transform changes spread");
+    assert_eq!(
+        spread_base, spread_off,
+        "switched-off Transform panel must match the untransformed frame"
+    );
+}

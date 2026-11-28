@@ -435,6 +435,7 @@ impl Editor {
             ai: job.ai,
             drawn,
             hdr: job.hdr,
+            measure_crop: None,
         });
     }
     /// A Before render arrived.

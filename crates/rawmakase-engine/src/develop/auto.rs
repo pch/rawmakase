@@ -220,6 +220,9 @@ pub(super) fn crop_grid(im: &CameraImage, r: &Recipe, inset: f32) -> CropGrid {
 
 /// As [`crop_grid`], sizing the grid to `max_edge` on its long edge.
 pub(super) fn crop_grid_at(im: &CameraImage, r: &Recipe, max_edge: u32, inset: f32) -> CropGrid {
+    // Respect switched-off Transform and Lens Corrections panels, matching rendering.
+    let rendered = r.as_rendered();
+    let r = rendered.as_ref();
     let g = super::Geometry::new(im, r, max_edge);
     let lens = super::image_space::LensMap::new(im, r);
     let (columns, rows) = (g.width.max(1), g.height.max(1));

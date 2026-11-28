@@ -17,13 +17,19 @@ export) works on the positive, as for any photo, and so does everything that
 measures the photo: Auto tone, Auto white balance, the white balance selector, the
 scene tone stage's measures and white point, Shadows and Highlights, Contrast's
 pivot, Dehaze, Point Color, the Targeted Adjustment Tool and the B&W panel's Auto
-mix.
+mix. For a converted negative, the scene tone stage's measures and white point,
+Shadows and Highlights, Contrast's pivot, Dehaze and the B&W Auto mix measure only
+inside the active crop and geometry/lens warp so a cropped-out film holder cannot
+skew tone or airlight; changing crop or geometry therefore re-measures them, while
+the Crop tool keeps measuring inside the active crop so tone does not jump when
+opening or closing it.
 
 The original file is never changed: the conversion is part of the photo's edit.
 
 ## Using it
 
-1. Open a frame and set **Film** to **Color** or **B&W**.
+1. Open a frame, expand the **Negative** panel at the bottom of Develop (below
+   **Calibration**, collapsed by default) and set **Film** to **Color** or **B&W**.
 2. Click the **film base picker** (the eyedropper on the Film base row), then click
    the clear film edge beside the frame: the unexposed film, orange mask and all. The
    picker reads the photo as it is shown, so pick the base before cropping the edge
@@ -76,8 +82,10 @@ makes the levels too dark. Auto can't tell it reliably from a scene's own dense 
 out. When it sees an unlit strip along the crop's edge (samples at most 2<sup>−8</sup>
 of the sensor's white, where camera scans record 0.0005 to 0.002 of it inside a
 holder, running along at least 40% of an edge), the panel says so under Levels: crop
-the holder out and press Auto again. The note goes when the crop or the conversion
-changes (another film base, a paste, Off, or undoing that Auto, which redo doesn't
+the holder out and press Auto again. The note goes when the crop, the geometry or
+lens framing (Straighten, Rotation, Flip, Transform, Upright, lens corrections, or
+switching the Lens Corrections or Transform panel) or the conversion changes
+(another film base, a paste, Off, or undoing that Auto, which redo doesn't
 bring back), when Auto runs again without finding one, and with the photo; it is not
 part of the edit. On a dark scan it can show for dense film where there is no holder; the
 levels are the same either way. Auto refuses a blank or flat frame.
